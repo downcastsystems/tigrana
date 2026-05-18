@@ -423,6 +423,7 @@ body.is-dragging-note.is-over-drop-target * {
 .app-menu-button strong {
   min-width: 0;
   overflow: hidden;
+  text-overflow: clip;
   white-space: nowrap;
   -webkit-mask-image: linear-gradient(to right, #000 calc(100% - 18px), transparent);
   mask-image: linear-gradient(to right, #000 calc(100% - 18px), transparent);
@@ -730,12 +731,8 @@ body.is-dragging-note.is-over-drop-target * {
 .folder-select span {
   min-width: 0;
   overflow: hidden;
+  text-overflow: ellipsis;
   white-space: nowrap;
-}
-
-.folder-select > span:last-child {
-  -webkit-mask-image: linear-gradient(to right, #000 calc(100% - 18px), transparent);
-  mask-image: linear-gradient(to right, #000 calc(100% - 18px), transparent);
 }
 
 .folder-row .tree-action {
@@ -1592,6 +1589,17 @@ html[data-theme="dark"] .tab-list-separator {
 
 .ProseMirror a:hover {
   opacity: 0.8;
+}
+
+.ProseMirror .search-match {
+  border-radius: 3px;
+  background: rgba(245, 191, 79, 0.38);
+  box-shadow: 0 0 0 1px rgba(212, 145, 32, 0.18);
+}
+
+.ProseMirror .search-match.is-active {
+  background: rgba(255, 176, 41, 0.72);
+  box-shadow: 0 0 0 1px rgba(171, 101, 11, 0.35);
 }
 
 .ProseMirror ul,
@@ -2464,6 +2472,16 @@ html[data-theme="dark"] .ProseMirror code {
   color: #eee8df;
   border-color: rgba(238, 232, 223, 0.12);
   background: rgba(238, 232, 223, 0.08);
+}
+
+html[data-theme="dark"] .ProseMirror .search-match {
+  background: rgba(245, 191, 79, 0.28);
+  box-shadow: 0 0 0 1px rgba(245, 191, 79, 0.18);
+}
+
+html[data-theme="dark"] .ProseMirror .search-match.is-active {
+  background: rgba(255, 176, 41, 0.56);
+  box-shadow: 0 0 0 1px rgba(255, 209, 112, 0.3);
 }
 
 html[data-theme="dark"] .ProseMirror blockquote {

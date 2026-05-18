@@ -1,4 +1,5 @@
 import CodeBlockLowlight from "@tiptap/extension-code-block-lowlight";
+import { Extension } from "@tiptap/core";
 import Highlight from "@tiptap/extension-highlight";
 import Image from "@tiptap/extension-image";
 import Link from "@tiptap/extension-link";
@@ -9,7 +10,9 @@ import { TableHeader } from "@tiptap/extension-table-header";
 import { TableRow } from "@tiptap/extension-table-row";
 import TaskItem from "@tiptap/extension-task-item";
 import TaskList from "@tiptap/extension-task-list";
-import { TextSelection } from "@tiptap/pm/state";
+import type { Node as ProseMirrorNode } from "@tiptap/pm/model";
+import { Plugin, PluginKey, TextSelection } from "@tiptap/pm/state";
+import { Decoration, DecorationSet } from "@tiptap/pm/view";
 import { BubbleMenu, EditorContent, Range, useEditor, type Editor } from "@tiptap/react";
 import StarterKit from "@tiptap/starter-kit";
 import {
@@ -56,6 +59,58 @@ type SlashState = {
 };
 
 const lowlight = createLowlight(common);
+const searchHighlightKey = new PluginKey<SearchHighlightState>("searchHighlight");
+
+type SearchHighlightState = {
+  activeIndex: number;
+  decorations: DecorationSet;
+  query: string;
+};
+
+type SearchHighlightMeta = {
+  activeIndex: number;
+  query: string;
+};
+
+const SearchHighlight = Extension.create({
+  name: "searchHighlight",
+  addProseMirrorPlugins() {
+    return [
+      new Plugin<SearchHighlightState>({
+        key: searchHighlightKey,
+        state: {
+          init: () => ({
+            activeIndex: 0,
+            decorations: DecorationSet.empty,
+            query: "",
+          }),
+          apply(transaction, value, _oldState, newState) {
+            const meta = transaction.getMeta(searchHighlightKey) as SearchHighlightMeta | undefined;
+            if (meta) {
+              return {
+                activeIndex: meta.activeIndex,
+                decorations: buildSearchDecorations(newState.doc, meta.query, meta.activeIndex),
+                query: meta.query,
+              };
+            }
+            if (transaction.docChanged && value.query) {
+              return {
+                ...value,
+                decorations: buildSearchDecorations(newState.doc, value.query, value.activeIndex),
+              };
+            }
+            return value;
+          },
+        },
+        props: {
+          decorations(state) {
+            return searchHighlightKey.getState(state)?.decorations ?? DecorationSet.empty;
+          },
+        },
+      }),
+    ];
+  },
+});
 
 export function NotesEditor({ content, focusRequest, focusAtEndRequest, findRequest, notePath, restorePosition, workspace, onChange, onPositionChange }: NotesEditorProps) {
   const [slash, setSlash] = useState<SlashState | null>(null);
@@ -74,6 +129,7 @@ export function NotesEditor({ content, focusRequest, focusAtEndRequest, findRequ
       }),
       CodeBlockLowlight.configure({ lowlight }),
       Highlight,
+      SearchHighlight,
       Image.configure({
         inline: false,
         allowBase64: false,
@@ -257,11 +313,15 @@ export function NotesEditor({ content, focusRequest, focusAtEndRequest, findRequ
   useEffect(() => {
     if (!findRequest) return;
     setFindOpen(true);
+  }, [findRequest]);
+
+  useEffect(() => {
+    if (!findOpen) return;
     requestAnimationFrame(() => {
       findInputRef.current?.focus();
       findInputRef.current?.select();
     });
-  }, [findRequest]);
+  }, [findOpen]);
 
   const findMatches = useMemo(() => (editor && findQuery.trim() ? getEditorMatches(editor, findQuery.trim()) : []), [editor, findQuery]);
 
@@ -270,9 +330,10 @@ export function NotesEditor({ content, focusRequest, focusAtEndRequest, findRequ
     const nextIndex = (index + findMatches.length) % findMatches.length;
     const match = findMatches[nextIndex];
     setFindIndex(nextIndex);
-    editor.chain().focus().setTextSelection({ from: match.from, to: match.to }).run();
+    editor.commands.setTextSelection({ from: match.from, to: match.to });
     requestAnimationFrame(() => {
-      window.getSelection()?.getRangeAt(0)?.startContainer.parentElement?.scrollIntoView({ block: "center", behavior: "smooth" });
+      scrollEditorPositionIntoView(editor, match.from);
+      findInputRef.current?.focus();
     });
   }, [editor, findMatches]);
 
@@ -280,6 +341,13 @@ export function NotesEditor({ content, focusRequest, focusAtEndRequest, findRequ
     setFindIndex(0);
     if (findMatches.length) selectFindMatch(0);
   }, [findMatches.length, selectFindMatch]);
+
+  useEffect(() => {
+    if (!editor) return;
+    const query = findOpen ? findQuery.trim() : "";
+    const activeIndex = findMatches.length ? Math.min(findIndex, findMatches.length - 1) : 0;
+    editor.view.dispatch(editor.state.tr.setMeta(searchHighlightKey, { query, activeIndex }));
+  }, [editor, findIndex, findMatches.length, findOpen, findQuery]);
 
   const commands = slash ? filterSlashCommands(slash.query) : [];
 
@@ -309,6 +377,7 @@ export function NotesEditor({ content, focusRequest, focusAtEndRequest, findRequ
       className="editor-shell"
       onMouseDown={(e) => {
         if (!editor || e.button !== 0) return;
+        if ((e.target as HTMLElement | null)?.closest(".note-find-bar")) return;
         const pm = editor.view.dom;
         if (pm.contains(e.target as Node)) return;
         e.preventDefault();
@@ -335,6 +404,9 @@ export function NotesEditor({ content, focusRequest, focusAtEndRequest, findRequ
             }}
             placeholder="Find in note"
             aria-label="Find in current note"
+            autoCapitalize="off"
+            autoCorrect="off"
+            spellCheck={false}
           />
           <span className="find-count">{findQuery.trim() ? `${findMatches.length ? findIndex + 1 : 0}/${findMatches.length}` : ""}</span>
           <button type="button" title="Previous match" disabled={!findMatches.length} onClick={() => selectFindMatch(findIndex - 1)}>
@@ -414,7 +486,11 @@ function FormattingBubbleMenu({ editor }: { editor: Editor }) {
     <BubbleMenu
       editor={editor}
       tippyOptions={{ duration: 120, placement: "top" }}
-      shouldShow={({ editor }) => !editor.state.selection.empty && editor.isEditable}
+      shouldShow={({ editor }) => {
+        const activeElement = document.activeElement;
+        if (activeElement instanceof HTMLElement && activeElement.closest(".note-find-bar")) return false;
+        return !editor.state.selection.empty && editor.isEditable;
+      }}
     >
       <div className="format-bubble">
         {buttons.map((button) => {
@@ -437,10 +513,14 @@ function FormattingBubbleMenu({ editor }: { editor: Editor }) {
 }
 
 function getEditorMatches(editor: Editor, query: string) {
+  return getDocumentMatches(editor.state.doc, query);
+}
+
+function getDocumentMatches(doc: ProseMirrorNode, query: string) {
   const normalizedQuery = query.toLowerCase();
   const matches: Array<{ from: number; to: number }> = [];
 
-  editor.state.doc.descendants((node, pos) => {
+  doc.descendants((node, pos) => {
     if (!node.isText || !node.text) return;
     const text = node.text.toLowerCase();
     let index = text.indexOf(normalizedQuery);
@@ -451,6 +531,29 @@ function getEditorMatches(editor: Editor, query: string) {
   });
 
   return matches;
+}
+
+function buildSearchDecorations(doc: ProseMirrorNode, query: string, activeIndex: number) {
+  const trimmedQuery = query.trim();
+  if (!trimmedQuery) return DecorationSet.empty;
+  const decorations = getDocumentMatches(doc, trimmedQuery).map((match, index) =>
+    Decoration.inline(match.from, match.to, {
+      class: index === activeIndex ? "search-match is-active" : "search-match",
+    }),
+  );
+  return DecorationSet.create(doc, decorations);
+}
+
+function scrollEditorPositionIntoView(editor: Editor, position: number) {
+  const scrollContainer = editor.view.dom.closest<HTMLElement>(".note-surface");
+  if (!scrollContainer) return;
+  const coords = editor.view.coordsAtPos(position);
+  const containerRect = scrollContainer.getBoundingClientRect();
+  const targetTop = scrollContainer.scrollTop + coords.top - containerRect.top - containerRect.height * 0.42;
+  scrollContainer.scrollTo({
+    top: Math.max(0, targetTop),
+    behavior: "smooth",
+  });
 }
 
 function findSlashQuery(editor: NonNullable<ReturnType<typeof useEditor>>) {

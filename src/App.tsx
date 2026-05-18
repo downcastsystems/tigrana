@@ -2038,7 +2038,16 @@ function FolderSearch({
     <div className="folder-search">
       <div className="folder-search-input">
         <Search size={15} />
-        <input ref={inputRef} value={query} onChange={(event) => onQueryChange(event.target.value)} placeholder="Search notes" autoFocus />
+        <input
+          ref={inputRef}
+          value={query}
+          onChange={(event) => onQueryChange(event.target.value)}
+          placeholder="Search notes"
+          autoCapitalize="off"
+          autoCorrect="off"
+          spellCheck={false}
+          autoFocus
+        />
       </div>
       {query.trim() ? (
         <div className="folder-search-results">
@@ -2969,8 +2978,14 @@ function ManageNotebooksModal({
                   <small>{notebook.path}</small>
                 </span>
               </button>
-              <button className="icon-button" type="button" title="Remove from list" onClick={() => onForget(notebook.path)}>
-                <X size={15} />
+              <button
+                className="icon-button"
+                type="button"
+                title={activeWorkspace === notebook.path ? "The open notebook cannot be removed" : "Remove from list"}
+                disabled={activeWorkspace === notebook.path}
+                onClick={() => onForget(notebook.path)}
+              >
+                <Trash2 size={15} />
               </button>
             </div>
           ))}
