@@ -275,6 +275,14 @@ export async function saveAsset(workspace: string, file: File) {
   return URL.createObjectURL(file);
 }
 
+export async function revealPath(workspace: string, path: string, kind: "folder" | "note") {
+  if (isTauri()) {
+    await invoke("reveal_path", { payload: { workspace, path, kind } });
+    return;
+  }
+  console.info("Reveal in file manager is available in the desktop app.", { workspace, path, kind });
+}
+
 export function validateNoteTitle(title: string) {
   const trimmed = title.trim();
   if (!trimmed) throw new Error("Add a title before saving this note.");

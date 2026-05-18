@@ -49,6 +49,7 @@ import {
   moveFolder,
   moveNote,
   readNote,
+  revealPath,
   readWorkspaceMetadata,
   renameFolder,
   renameNote,
@@ -73,6 +74,7 @@ const fullWidthKey = "lumen-notes-full-width";
 const folderPaneWidthKey = "lumen-notes-folder-pane-width";
 const notesPaneWidthKey = "lumen-notes-notes-pane-width";
 const rightPaneWidthKey = "lumen-notes-right-pane-width";
+const recentNotebooksKey = "lumen-notes-recent-notebooks";
 const notePositionFreshMs = 24 * 60 * 60 * 1000;
 const defaultLightAccent = "#315f59";
 const defaultDarkAccent = "#229ff9";
@@ -99,6 +101,11 @@ type ContextMenuTarget =
   | { kind: "note"; path: string };
 
 type OpenTarget = { kind: "folder" | "note"; path: string };
+type RecentNotebook = {
+  path: string;
+  name: string;
+  lastOpenedAt: number;
+};
 
 type PropertyDialogState =
   | { kind: "rename-folder"; path: string; value: string }
@@ -215,8 +222,12 @@ export default function App() {
   const [isSaving, setIsSaving] = useState(false);
   const [searchOpen, setSearchOpen] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
+  const [searchFocusRequest, setSearchFocusRequest] = useState(0);
+  const [noteFindRequest, setNoteFindRequest] = useState(0);
   const [appError, setAppError] = useState<string | null>(null);
   const [settingsOpen, setSettingsOpen] = useState(false);
+  const [notebooksManageOpen, setNotebooksManageOpen] = useState(false);
+  const [recentNotebooks, setRecentNotebooks] = useState<RecentNotebook[]>(() => readRecentNotebooks());
   const [appMenuOpen, setAppMenuOpen] = useState(false);
   const [leftVisible, setLeftVisible] = useState(true);
   const [outlineVisible, setOutlineVisible] = useState(true);
@@ -248,6 +259,19 @@ export default function App() {
   const metadataRef = useRef(metadata);
   const positionWriteTimerRef = useRef<number | null>(null);
   const restoredTabsWorkspaceRef = useRef<string | null>(null);
+  const keyboardActionsRef = useRef<{
+    addEmptyTab: () => void;
+    chooseWorkspace: (intent: "open" | "new") => void;
+    persistDraft: () => void;
+    requestCreateNote: (parentPath?: string) => void;
+    selectedFolder: string;
+  }>({
+    addEmptyTab: () => {},
+    chooseWorkspace: () => {},
+    persistDraft: () => {},
+    requestCreateNote: () => {},
+    selectedFolder: "",
+  });
 
   const activeNote = notes.find((note) => note.path === activePath) ?? null;
   const noteOpen = pendingNote || activeNote;
@@ -294,6 +318,11 @@ export default function App() {
   useEffect(() => {
     metadataRef.current = metadata;
   }, [metadata]);
+
+  useEffect(() => {
+    if (!workspace) return;
+    setRecentNotebooks((current) => writeRecentNotebooks(touchRecentNotebook(current, workspace)));
+  }, [workspace]);
 
   useEffect(() => {
     document.documentElement.dataset.theme = resolvedTheme;
@@ -567,7 +596,6 @@ export default function App() {
     // array which gives noteOpen a new object reference, spuriously re-firing this effect
     // and scrolling back to the top. activePath and editorRestorePosition only change on
     // actual note switches, which is the only time scroll should be restored.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [activePath, editorRestorePosition]);
 
   function handleNoteSurfaceScroll() {
@@ -678,20 +706,87 @@ export default function App() {
     }
   }, [activePath, draft, noteOpen, pendingNote, placePathInActiveTab, recordNotePosition, refreshWorkspace, savedTitle, titleDraft, updateMetadata, workspace]);
 
+  keyboardActionsRef.current = {
+    addEmptyTab: () => void addEmptyTab(),
+    chooseWorkspace: (intent: "open" | "new") => void chooseWorkspace(intent),
+    persistDraft: () => void persistDraft(),
+    requestCreateNote,
+    selectedFolder,
+  };
+
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
+      const actions = keyboardActionsRef.current;
+      const command = event.metaKey || event.ctrlKey;
+      const key = event.key.toLowerCase();
+      if (event.key === "Escape") {
+        setSettingsOpen(false);
+        setNotebooksManageOpen(false);
+        setAppMenuOpen(false);
+        setContextMenu(null);
+        setTabContextMenu(null);
+      }
+      if (command && event.shiftKey && key === "f") {
+        event.preventDefault();
+        setLeftVisible(true);
+        setSearchOpen(true);
+        setSearchFocusRequest((value) => value + 1);
+        return;
+      }
+      if (command && key === "f") {
+        event.preventDefault();
+        setNoteFindRequest((value) => value + 1);
+        return;
+      }
       if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === "k") {
         event.preventDefault();
         setSearchOpen(true);
+        setSearchFocusRequest((value) => value + 1);
+        return;
       }
-      if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === "s") {
+      if (command && key === "n") {
         event.preventDefault();
-        void persistDraft();
+        actions.requestCreateNote(actions.selectedFolder);
+        return;
+      }
+      if (command && key === "t") {
+        event.preventDefault();
+        actions.addEmptyTab();
+        return;
+      }
+      if (command && event.shiftKey && key === "o") {
+        event.preventDefault();
+        actions.chooseWorkspace("new");
+        return;
+      }
+      if (command && key === "o") {
+        event.preventDefault();
+        actions.chooseWorkspace("open");
+        return;
+      }
+      if (command && key === "\\") {
+        event.preventDefault();
+        setLeftVisible((value) => !value);
+        return;
+      }
+      if (command && event.altKey && key === "r") {
+        event.preventDefault();
+        setRawMarkdownVisible((value) => !value);
+        return;
+      }
+      if (command && key === ",") {
+        event.preventDefault();
+        setSettingsOpen(true);
+        return;
+      }
+      if (command && key === "s") {
+        event.preventDefault();
+        actions.persistDraft();
       }
     };
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
-  }, [persistDraft]);
+  }, []);
 
   useEffect(() => {
     if (!noteOpen || (draft === savedDraft && titleDraft === savedTitle)) return;
@@ -835,28 +930,40 @@ export default function App() {
     }
   }
 
-  async function chooseWorkspace() {
+  function switchNotebook(path: string) {
+    localStorage.setItem(workspaceKey, path);
+    restoredTabsWorkspaceRef.current = null;
+    autoSelectedWorkspaceRef.current = null;
+    initialOpenTargetRef.current = null;
+    setWorkspace(path);
+    setSelectedFolder("");
+    clearCurrentNote();
+    setOpenTabs([]);
+    setActiveTabId(null);
+    setSearchOpen(false);
+    setSearchQuery("");
+    setAppMenuOpen(false);
+    setAppError(null);
+    setRecentNotebooks((current) => writeRecentNotebooks(touchRecentNotebook(current, path)));
+    void refreshWorkspace(path);
+  }
+
+  async function chooseWorkspace(intent: "open" | "new" = "open") {
     try {
       const selected = await open({
         directory: true,
         multiple: false,
-        title: "Open notes folder",
+        title: intent === "new" ? "Choose notebook folder" : "Open notebook",
       });
       if (typeof selected !== "string") return;
-      localStorage.setItem(workspaceKey, selected);
-      setWorkspace(selected);
-      setSelectedFolder("");
-      setActivePath(null);
-      setPendingNote(null);
-      setTitleDraft("");
-      setSavedTitle("");
-      setDraft("");
-      setSavedDraft("");
-      setAppError(null);
-      await refreshWorkspace(selected);
+      switchNotebook(selected);
     } catch (error) {
       setAppError(error instanceof Error ? error.message : String(error));
     }
+  }
+
+  function forgetNotebook(path: string) {
+    setRecentNotebooks((current) => writeRecentNotebooks(current.filter((notebook) => notebook.path !== path)));
   }
 
   async function handleDeleteNote(path: string) {
@@ -1171,6 +1278,16 @@ export default function App() {
     });
   }
 
+  async function revealTarget(target: OpenTarget) {
+    if (!workspace) return;
+    try {
+      setContextMenu(null);
+      await revealPath(workspace, target.path, target.kind);
+    } catch (error) {
+      setAppError(error instanceof Error ? error.message : String(error));
+    }
+  }
+
   function isBookmarked(target: OpenTarget) {
     return metadata.bookmarks.some((bookmark) => bookmark.kind === target.kind && bookmark.path === target.path);
   }
@@ -1326,7 +1443,9 @@ export default function App() {
             folders={folderTree}
             metadata={metadata}
             menuOpen={appMenuOpen}
+            recentNotebooks={recentNotebooks}
             searchOpen={searchOpen}
+            searchFocusRequest={searchFocusRequest}
             searchQuery={searchQuery}
             searchResults={results}
             selectedFolder={selectedFolder}
@@ -1339,10 +1458,16 @@ export default function App() {
             onDropOnFolderFallback={(path, item) => void handleDropOnFolder(path, item)}
             onDropOnFolder={(path, item) => void handleDropOnFolder(path, item)}
             onOpenIcon={(path) => openIconBrowser("folder", path)}
-            onOpenWorkspace={chooseWorkspace}
+            onManageNotebooks={() => {
+              setNotebooksManageOpen(true);
+              setAppMenuOpen(false);
+            }}
+            onNewNotebook={() => void chooseWorkspace("new")}
+            onOpenWorkspace={() => void chooseWorkspace("open")}
             onRemoveBookmark={removeBookmark}
             onSearchQueryChange={setSearchQuery}
             onSelectBookmark={selectBookmark}
+            onSelectNotebook={switchNotebook}
             onSelectSearchResult={selectNote}
             onSelectFolder={(path) => setSelectedFolder(path)}
             onToggleBookmarksExpanded={() =>
@@ -1363,6 +1488,7 @@ export default function App() {
             draggingPath={draggingItem?.kind === "note" ? draggingItem.path : null}
             folderTitle={selectedFolderTitle}
             metadata={metadata}
+            contents={contents}
             notes={visibleNotes}
             selectedFolder={selectedFolder}
             onCreateNote={requestCreateNote}
@@ -1452,6 +1578,7 @@ export default function App() {
                 content={draft}
                 focusRequest={editorFocusRequest}
                 focusAtEndRequest={editorFocusAtEndRequest}
+                findRequest={noteFindRequest}
                 notePath={activePath}
                 restorePosition={editorRestorePosition}
                 workspace={workspace}
@@ -1464,7 +1591,7 @@ export default function App() {
           <EmptyNoteSurface
             hasWorkspace={Boolean(workspace)}
             onCreateNote={() => requestCreateNote(selectedFolder)}
-            onOpenWorkspace={chooseWorkspace}
+            onOpenWorkspace={() => void chooseWorkspace("open")}
             appError={appError}
           />
         )}
@@ -1496,6 +1623,9 @@ export default function App() {
           }}
           onOpenInNewWindow={() => {
             if (contextMenu.kind !== "empty") openTargetInNewWindow({ kind: contextMenu.kind, path: contextMenu.path });
+          }}
+          onReveal={() => {
+            if (contextMenu.kind !== "empty") void revealTarget({ kind: contextMenu.kind, path: contextMenu.path });
           }}
           isBookmarked={contextMenu.kind !== "empty" ? isBookmarked({ kind: contextMenu.kind, path: contextMenu.path }) : false}
           onRenameFolder={() => contextMenu.kind === "folder" && openPropertyDialog("rename-folder", contextMenu.path)}
@@ -1587,6 +1717,19 @@ export default function App() {
           />
       ) : null}
 
+      {notebooksManageOpen ? (
+        <ManageNotebooksModal
+          activeWorkspace={workspace}
+          notebooks={recentNotebooks}
+          onClose={() => setNotebooksManageOpen(false)}
+          onForget={forgetNotebook}
+          onSelect={(path) => {
+            switchNotebook(path);
+            setNotebooksManageOpen(false);
+          }}
+        />
+      ) : null}
+
       {propertyDialog ? (
         <PropertyDialog
           state={propertyDialog}
@@ -1620,6 +1763,8 @@ function FolderPane({
   menuOpen,
   metadata,
   searchOpen,
+  recentNotebooks,
+  searchFocusRequest,
   searchQuery,
   searchResults,
   selectedFolder,
@@ -1632,10 +1777,13 @@ function FolderPane({
   onDropOnFolder,
   onDropOnFolderFallback,
   onOpenIcon,
+  onManageNotebooks,
+  onNewNotebook,
   onOpenWorkspace,
   onRemoveBookmark,
   onSearchQueryChange,
   onSelectBookmark,
+  onSelectNotebook,
   onSelectSearchResult,
   onSelectFolder,
   onToggleBookmarksExpanded,
@@ -1650,7 +1798,9 @@ function FolderPane({
   folders: FolderNode[];
   menuOpen: boolean;
   metadata: WorkspaceMetadata;
+  recentNotebooks: RecentNotebook[];
   searchOpen: boolean;
+  searchFocusRequest: number;
   searchQuery: string;
   searchResults: SearchResult[];
   selectedFolder: string;
@@ -1663,10 +1813,13 @@ function FolderPane({
   onDropOnFolder: (path: string, item?: Exclude<DragItem, null>) => void;
   onDropOnFolderFallback: (path: string, item?: Exclude<DragItem, null>) => void;
   onOpenIcon: (path: string) => void;
+  onManageNotebooks: () => void;
+  onNewNotebook: () => void;
   onOpenWorkspace: () => void;
   onRemoveBookmark: (id: string) => void;
   onSearchQueryChange: (query: string) => void;
   onSelectBookmark: (bookmark: BookmarkEntry) => void;
+  onSelectNotebook: (path: string) => void;
   onSelectSearchResult: (path: string) => void;
   onSelectFolder: (path: string) => void;
   onToggleBookmarksExpanded: () => void;
@@ -1691,9 +1844,37 @@ function FolderPane({
           </button>
           {menuOpen ? (
             <div className="app-menu" onClick={(event) => event.stopPropagation()}>
+              <button type="button" onClick={onNewNotebook}>
+                <Plus size={14} />
+                <span>New Notebook</span>
+              </button>
               <button type="button" onClick={onOpenWorkspace}>
                 <FolderOpen size={14} />
-                <span>Open Folder</span>
+                <span>Open Notebook</span>
+              </button>
+              <div className="app-menu-separator" />
+              <div className="recent-notebooks-list" role="menu" aria-label="Recent notebooks">
+                {recentNotebooks.map((notebook) => (
+                  <button
+                    className={workspace === notebook.path ? "is-active" : ""}
+                    key={notebook.path}
+                    type="button"
+                    onClick={() => onSelectNotebook(notebook.path)}
+                    title={notebook.path}
+                  >
+                    <BookOpen size={14} />
+                    <span>
+                      <strong>{notebook.name}</strong>
+                      <small>{notebook.path}</small>
+                    </span>
+                  </button>
+                ))}
+                {!recentNotebooks.length ? <p className="recent-notebooks-empty">No recent notebooks</p> : null}
+              </div>
+              <div className="app-menu-separator" />
+              <button type="button" onClick={onManageNotebooks}>
+                <Settings size={14} />
+                <span>Manage Notebooks</span>
               </button>
             </div>
           ) : null}
@@ -1710,6 +1891,7 @@ function FolderPane({
       {searchOpen ? (
         <FolderSearch
           query={searchQuery}
+          focusRequest={searchFocusRequest}
           results={searchResults}
           onQueryChange={onSearchQueryChange}
           onSelect={onSelectSearchResult}
@@ -1830,21 +2012,33 @@ function BookmarksSection({
 }
 
 function FolderSearch({
+  focusRequest,
   query,
   results,
   onQueryChange,
   onSelect,
 }: {
+  focusRequest: number;
   query: string;
   results: SearchResult[];
   onQueryChange: (query: string) => void;
   onSelect: (path: string) => void;
 }) {
+  const inputRef = useRef<HTMLInputElement | null>(null);
+
+  useEffect(() => {
+    if (!focusRequest) return;
+    requestAnimationFrame(() => {
+      inputRef.current?.focus();
+      inputRef.current?.select();
+    });
+  }, [focusRequest]);
+
   return (
     <div className="folder-search">
       <div className="folder-search-input">
         <Search size={15} />
-        <input value={query} onChange={(event) => onQueryChange(event.target.value)} placeholder="Search notes" autoFocus />
+        <input ref={inputRef} value={query} onChange={(event) => onQueryChange(event.target.value)} placeholder="Search notes" autoFocus />
       </div>
       {query.trim() ? (
         <div className="folder-search-results">
@@ -2023,6 +2217,7 @@ function FolderRow({
 
 function NotesPane({
   activePath,
+  contents,
   draggingPath,
   folderTitle,
   metadata,
@@ -2036,6 +2231,7 @@ function NotesPane({
   onSelect,
 }: {
   activePath: string | null;
+  contents: Map<string, string>;
   draggingPath: string | null;
   folderTitle: string;
   metadata: WorkspaceMetadata;
@@ -2071,6 +2267,7 @@ function NotesPane({
             metadata={metadata}
             note={note}
             pinned
+            preview={previewNote(contents.get(note.path) ?? "")}
             onContextMenu={onContextMenu}
             onOpenIcon={onOpenIcon}
             onPin={onPin}
@@ -2087,6 +2284,7 @@ function NotesPane({
             metadata={metadata}
             note={note}
             pinned={false}
+            preview={previewNote(contents.get(note.path) ?? "")}
             onContextMenu={onContextMenu}
             onOpenIcon={onOpenIcon}
             onPin={onPin}
@@ -2444,6 +2642,7 @@ function NoteCard({
   metadata,
   note,
   pinned,
+  preview,
   onContextMenu,
   onOpenIcon,
   onPin,
@@ -2455,6 +2654,7 @@ function NoteCard({
   metadata: WorkspaceMetadata;
   note: NoteEntry;
   pinned: boolean;
+  preview: string;
   onContextMenu: (event: React.MouseEvent, state: ContextMenuTarget) => void;
   onOpenIcon: (path: string) => void;
   onPin: (path: string) => void;
@@ -2495,7 +2695,7 @@ function NoteCard({
         </span>
         <span className="note-card-text">
           <strong>{note.title}</strong>
-          <small>{note.path}</small>
+          <small>{preview || "No preview"}</small>
         </span>
       </span>
       <span className="pin-button" data-no-note-drag role="button" tabIndex={0} onClick={(event) => { event.stopPropagation(); onPin(note.path); }}>
@@ -2731,6 +2931,56 @@ function SettingsModal({
   );
 }
 
+function ManageNotebooksModal({
+  activeWorkspace,
+  notebooks,
+  onClose,
+  onForget,
+  onSelect,
+}: {
+  activeWorkspace: string;
+  notebooks: RecentNotebook[];
+  onClose: () => void;
+  onForget: (path: string) => void;
+  onSelect: (path: string) => void;
+}) {
+  return (
+    <div className="dialog-backdrop" onMouseDown={onClose}>
+      <section className="dialog manage-notebooks-dialog" onMouseDown={(event) => event.stopPropagation()}>
+        <div className="dialog-header">
+          <span className="dialog-icon">
+            <BookOpen size={18} />
+          </span>
+          <div>
+            <h2>Manage Notebooks</h2>
+            <p>Remove notebooks from the quick list without touching files on disk.</p>
+          </div>
+          <button className="icon-button" type="button" title="Close" onClick={onClose}>
+            <X size={17} />
+          </button>
+        </div>
+        <div className="manage-notebooks-list">
+          {notebooks.map((notebook) => (
+            <div className="manage-notebook-row" key={notebook.path}>
+              <button className={activeWorkspace === notebook.path ? "is-active" : ""} type="button" onClick={() => onSelect(notebook.path)}>
+                <BookOpen size={15} />
+                <span>
+                  <strong>{notebook.name}</strong>
+                  <small>{notebook.path}</small>
+                </span>
+              </button>
+              <button className="icon-button" type="button" title="Remove from list" onClick={() => onForget(notebook.path)}>
+                <X size={15} />
+              </button>
+            </div>
+          ))}
+          {!notebooks.length ? <p className="empty-sidebar-note">No recent notebooks</p> : null}
+        </div>
+      </section>
+    </div>
+  );
+}
+
 function IconBrowserModal({
   state,
   onClose,
@@ -2833,6 +3083,7 @@ function ContextMenu({
   onCreateNote,
   onDelete,
   onOpenInNewWindow,
+  onReveal,
   onRenameFolder,
   onResetFolderColor,
   onResetFolderIcon,
@@ -2848,6 +3099,7 @@ function ContextMenu({
   onCreateNote: () => void;
   onDelete: () => void;
   onOpenInNewWindow: () => void;
+  onReveal: () => void;
   onRenameFolder: () => void;
   onResetFolderColor: () => void;
   onResetFolderIcon: () => void;
@@ -2872,6 +3124,10 @@ function ContextMenu({
           <button type="button" onClick={onOpenInNewWindow}>
             <PanelRightOpen size={14} />
             <span>Open in New Window</span>
+          </button>
+          <button type="button" onClick={onReveal}>
+            <FolderOpen size={14} />
+            <span>Reveal in Finder</span>
           </button>
           <button type="button" onClick={onToggleBookmark}>
             <Bookmark size={14} />
@@ -2904,6 +3160,10 @@ function ContextMenu({
           <button type="button" onClick={onOpenInNewWindow}>
             <PanelRightOpen size={14} />
             <span>Open in New Window</span>
+          </button>
+          <button type="button" onClick={onReveal}>
+            <FolderOpen size={14} />
+            <span>Reveal in Finder</span>
           </button>
           <button type="button" onClick={onToggleBookmark}>
             <Bookmark size={14} />
@@ -3126,6 +3386,20 @@ function composeMarkdown(title: string, body: string) {
   return `# ${title}\n\n${body.replace(/^\n+/, "")}`;
 }
 
+function previewNote(markdown: string) {
+  return markdown
+    .replace(/\r\n/g, "\n")
+    .split("\n")
+    .filter((line) => !/^#\s+/.test(line.trim()))
+    .join(" ")
+    .replace(/!\[[^\]]*]\([^)]*\)/g, "")
+    .replace(/\[([^\]]+)]\([^)]*\)/g, "$1")
+    .replace(/[`*_>#-]/g, "")
+    .replace(/\s+/g, " ")
+    .trim()
+    .slice(0, 110);
+}
+
 function extractOutline(title: string, body: string) {
   const headings = title.trim() ? [{ level: 1, text: title.trim() }] : [];
   body.split("\n").forEach((line) => {
@@ -3332,6 +3606,37 @@ function readInitialWorkspace() {
     return workspaceParam;
   }
   return localStorage.getItem(workspaceKey) || (isTauri() ? "" : SAMPLE_WORKSPACE);
+}
+
+function readRecentNotebooks(): RecentNotebook[] {
+  const raw = localStorage.getItem(recentNotebooksKey);
+  if (!raw) return [];
+  try {
+    const parsed = JSON.parse(raw) as Partial<RecentNotebook>[];
+    return parsed
+      .filter((entry): entry is RecentNotebook => Boolean(entry.path && entry.name && entry.lastOpenedAt))
+      .sort((a, b) => b.lastOpenedAt - a.lastOpenedAt);
+  } catch {
+    return [];
+  }
+}
+
+function writeRecentNotebooks(notebooks: RecentNotebook[]) {
+  const next = notebooks.slice(0, 24);
+  localStorage.setItem(recentNotebooksKey, JSON.stringify(next));
+  return next;
+}
+
+function touchRecentNotebook(notebooks: RecentNotebook[], path: string) {
+  const next = [
+    {
+      path,
+      name: path.split("/").filter(Boolean).at(-1) || "Notebook",
+      lastOpenedAt: Date.now(),
+    },
+    ...notebooks.filter((notebook) => notebook.path !== path),
+  ];
+  return next.sort((a, b) => b.lastOpenedAt - a.lastOpenedAt);
 }
 
 function readInitialOpenTarget(): OpenTarget | null {

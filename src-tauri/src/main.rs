@@ -1,6 +1,7 @@
 use serde::{Deserialize, Serialize};
 use std::fs;
 use std::path::{Path, PathBuf};
+use std::process::Command;
 use tauri::menu::{Menu, MenuItem, PredefinedMenuItem, Submenu};
 use tauri::Emitter;
 use walkdir::WalkDir;
@@ -73,6 +74,13 @@ struct SaveAssetPayload {
     workspace: String,
     file_name: String,
     bytes: Vec<u8>,
+}
+
+#[derive(Debug, Deserialize)]
+struct RevealPathPayload {
+    workspace: String,
+    path: String,
+    kind: String,
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -481,6 +489,29 @@ fn save_asset(payload: SaveAssetPayload) -> Result<String, String> {
 }
 
 #[tauri::command]
+fn reveal_path(payload: RevealPathPayload) -> Result<(), String> {
+    let root = safe_workspace(&payload.workspace)?;
+    let target = match payload.kind.as_str() {
+        "note" => safe_note_path(&payload.workspace, &payload.path)?,
+        "folder" => {
+            let relative = normalize_relative(&payload.path)?;
+            let folder_path = root.join(relative);
+            if !folder_path.starts_with(&root) {
+                return Err("Path escapes workspace.".to_string());
+            }
+            folder_path
+        }
+        _ => return Err("Unsupported reveal target.".to_string()),
+    };
+
+    if !target.exists() {
+        return Err("That file or folder no longer exists.".to_string());
+    }
+
+    reveal_in_file_manager(&target)
+}
+
+#[tauri::command]
 fn ensure_workspace(workspace: String) -> Result<(), String> {
     let root = safe_workspace(&workspace)?;
     fs::create_dir_all(root.join(".lumen")).map_err(|error| error.to_string())
@@ -610,6 +641,59 @@ fn slugify_asset_name(file_name: &str) -> String {
     format!("{stem}.png")
 }
 
+fn reveal_in_file_manager(path: &Path) -> Result<(), String> {
+    #[cfg(target_os = "macos")]
+    {
+        Command::new("open")
+            .arg("-R")
+            .arg(path)
+            .status()
+            .map_err(|error| error.to_string())
+            .and_then(|status| {
+                if status.success() {
+                    Ok(())
+                } else {
+                    Err("Finder could not reveal that item.".to_string())
+                }
+            })
+    }
+
+    #[cfg(target_os = "windows")]
+    {
+        Command::new("explorer")
+            .arg(format!("/select,{}", path.to_string_lossy()))
+            .status()
+            .map_err(|error| error.to_string())
+            .and_then(|status| {
+                if status.success() {
+                    Ok(())
+                } else {
+                    Err("File Explorer could not reveal that item.".to_string())
+                }
+            })
+    }
+
+    #[cfg(all(unix, not(target_os = "macos")))]
+    {
+        let target = if path.is_dir() {
+            path
+        } else {
+            path.parent().unwrap_or(path)
+        };
+        Command::new("xdg-open")
+            .arg(target)
+            .status()
+            .map_err(|error| error.to_string())
+            .and_then(|status| {
+                if status.success() {
+                    Ok(())
+                } else {
+                    Err("The file manager could not open that location.".to_string())
+                }
+            })
+    }
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
@@ -689,7 +773,8 @@ pub fn run() {
             delete_folder,
             read_workspace_metadata,
             write_workspace_metadata,
-            save_asset
+            save_asset,
+            reveal_path
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

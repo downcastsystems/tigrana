@@ -14,6 +14,8 @@ import { BubbleMenu, EditorContent, Range, useEditor, type Editor } from "@tipta
 import StarterKit from "@tiptap/starter-kit";
 import {
   Bold,
+  ChevronDown,
+  ChevronUp,
   CheckSquare,
   Code,
   Heading1,
@@ -24,7 +26,9 @@ import {
   List,
   ListOrdered,
   Quote,
+  Search,
   Strikethrough,
+  X,
 } from "lucide-react";
 import { common, createLowlight } from "lowlight";
 import { type CSSProperties, useCallback, useEffect, useMemo, useRef, useState } from "react";
@@ -37,6 +41,7 @@ type NotesEditorProps = {
   content: string;
   focusRequest: number;
   focusAtEndRequest: number;
+  findRequest: number;
   notePath: string | null;
   restorePosition: NotePositionMetadata | null;
   workspace: string;
@@ -52,10 +57,14 @@ type SlashState = {
 
 const lowlight = createLowlight(common);
 
-export function NotesEditor({ content, focusRequest, focusAtEndRequest, notePath, restorePosition, workspace, onChange, onPositionChange }: NotesEditorProps) {
+export function NotesEditor({ content, focusRequest, focusAtEndRequest, findRequest, notePath, restorePosition, workspace, onChange, onPositionChange }: NotesEditorProps) {
   const [slash, setSlash] = useState<SlashState | null>(null);
+  const [findOpen, setFindOpen] = useState(false);
+  const [findQuery, setFindQuery] = useState("");
+  const [findIndex, setFindIndex] = useState(0);
   const slashRef = useRef<SlashState | null>(null);
   const editorRef = useRef<Editor | null>(null);
+  const findInputRef = useRef<HTMLInputElement | null>(null);
   const lastLoadedNote = useRef<string | null>(null);
 
   const extensions = useMemo(
@@ -155,6 +164,12 @@ export function NotesEditor({ content, focusRequest, focusAtEndRequest, notePath
           view.dispatch(view.state.tr.setSelection(TextSelection.atEnd(view.state.doc)));
           return true;
         },
+        click(_view, event) {
+          const link = (event.target as HTMLElement | null)?.closest("a");
+          if (!link) return false;
+          event.preventDefault();
+          return true;
+        },
       },
       handlePaste(view, event) {
         const item = Array.from(event.clipboardData?.items ?? []).find((clipboardItem) =>
@@ -239,6 +254,33 @@ export function NotesEditor({ content, focusRequest, focusAtEndRequest, notePath
     editor.chain().focus().setTextSelection(editor.state.doc.content.size).run();
   }, [editor, focusAtEndRequest]);
 
+  useEffect(() => {
+    if (!findRequest) return;
+    setFindOpen(true);
+    requestAnimationFrame(() => {
+      findInputRef.current?.focus();
+      findInputRef.current?.select();
+    });
+  }, [findRequest]);
+
+  const findMatches = useMemo(() => (editor && findQuery.trim() ? getEditorMatches(editor, findQuery.trim()) : []), [editor, findQuery]);
+
+  const selectFindMatch = useCallback((index: number) => {
+    if (!editor || !findMatches.length) return;
+    const nextIndex = (index + findMatches.length) % findMatches.length;
+    const match = findMatches[nextIndex];
+    setFindIndex(nextIndex);
+    editor.chain().focus().setTextSelection({ from: match.from, to: match.to }).run();
+    requestAnimationFrame(() => {
+      window.getSelection()?.getRangeAt(0)?.startContainer.parentElement?.scrollIntoView({ block: "center", behavior: "smooth" });
+    });
+  }, [editor, findMatches]);
+
+  useEffect(() => {
+    setFindIndex(0);
+    if (findMatches.length) selectFindMatch(0);
+  }, [findMatches.length, selectFindMatch]);
+
   const commands = slash ? filterSlashCommands(slash.query) : [];
 
   // Position the slash menu near the cursor in viewport coordinates.
@@ -274,6 +316,38 @@ export function NotesEditor({ content, focusRequest, focusAtEndRequest, notePath
       }}
     >
       {editor ? <FormattingBubbleMenu editor={editor} /> : null}
+      {findOpen ? (
+        <div className="note-find-bar">
+          <Search size={15} />
+          <input
+            ref={findInputRef}
+            value={findQuery}
+            onChange={(event) => setFindQuery(event.target.value)}
+            onKeyDown={(event) => {
+              if (event.key === "Enter") {
+                event.preventDefault();
+                selectFindMatch(findIndex + (event.shiftKey ? -1 : 1));
+              }
+              if (event.key === "Escape") {
+                event.preventDefault();
+                setFindOpen(false);
+              }
+            }}
+            placeholder="Find in note"
+            aria-label="Find in current note"
+          />
+          <span className="find-count">{findQuery.trim() ? `${findMatches.length ? findIndex + 1 : 0}/${findMatches.length}` : ""}</span>
+          <button type="button" title="Previous match" disabled={!findMatches.length} onClick={() => selectFindMatch(findIndex - 1)}>
+            <ChevronUp size={14} />
+          </button>
+          <button type="button" title="Next match" disabled={!findMatches.length} onClick={() => selectFindMatch(findIndex + 1)}>
+            <ChevronDown size={14} />
+          </button>
+          <button type="button" title="Close find" onClick={() => setFindOpen(false)}>
+            <X size={14} />
+          </button>
+        </div>
+      ) : null}
       <EditorContent editor={editor} className="editor-content" />
       {slash && commands.length > 0 ? (
         <div className="slash-menu" style={slashMenuStyle}>
@@ -360,6 +434,23 @@ function FormattingBubbleMenu({ editor }: { editor: Editor }) {
       </div>
     </BubbleMenu>
   );
+}
+
+function getEditorMatches(editor: Editor, query: string) {
+  const normalizedQuery = query.toLowerCase();
+  const matches: Array<{ from: number; to: number }> = [];
+
+  editor.state.doc.descendants((node, pos) => {
+    if (!node.isText || !node.text) return;
+    const text = node.text.toLowerCase();
+    let index = text.indexOf(normalizedQuery);
+    while (index !== -1) {
+      matches.push({ from: pos + index, to: pos + index + query.length });
+      index = text.indexOf(normalizedQuery, index + Math.max(query.length, 1));
+    }
+  });
+
+  return matches;
 }
 
 function findSlashQuery(editor: NonNullable<ReturnType<typeof useEditor>>) {
