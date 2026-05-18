@@ -80,22 +80,36 @@ button:disabled {
 .app-titlebar .note-tab {
   flex: 0 1 200px;  /* equal starting width; shrinks proportionally when space is tight */
   min-width: 0;     /* override base min-width: 150px so tabs can shrink freely */
-  overflow: hidden; /* clip internal grid when tab gets very narrow */
+  overflow: visible; /* allow ::before separator to render in the gap to the left */
   height: 30px;
   border-radius: 8px;
-  /* Thin vertical separator on the left edge of each tab; hidden on the first tab
-     and on the tab that follows the active one (so the active tab is fully isolated). */
-  border-left-color: rgba(52, 48, 43, 0.10);
+  position: relative;
 }
 
-.app-titlebar .note-tab:first-child,
-.app-titlebar .note-tab.is-active + .note-tab {
-  border-left-color: transparent;
+/* Thin vertical separator centered in the 4px gap to the left of each tab.
+   Hidden next to the active tab so it stays visually isolated. */
+.app-titlebar .note-tab + .note-tab::before {
+  content: "";
+  position: absolute;
+  left: -2px;
+  top: 7px;
+  bottom: 7px;
+  width: 1px;
+  background: rgba(52, 48, 43, 0.18);
+  pointer-events: none;
+}
+
+.app-titlebar .note-tab.is-active::before,
+.app-titlebar .note-tab.is-active + .note-tab::before {
+  display: none;
 }
 
 .app-titlebar .note-tab.is-active {
   background: rgba(52, 48, 43, 0.1);
   border-color: transparent;
+  /* Floor the active tab so flex-shrink can never clip the close button.
+     16 (padding) + 16 (icon) + 7 (gap) + 0 (label min) + 7 (gap) + 20 (close) = 66 */
+  min-width: 66px;
 }
 
 .app-titlebar .note-tab-add {
@@ -103,6 +117,15 @@ button:disabled {
   min-width: 30px;
   height: 30px;
   border-radius: 8px;
+}
+
+/* Hide close button on inactive tabs; let the label use the freed space */
+.app-titlebar .note-tab:not(.is-active) {
+  grid-template-columns: 16px minmax(0, 1fr);
+}
+
+.app-titlebar .note-tab:not(.is-active) .tab-close {
+  display: none;
 }
 
 /* Compact / icon-only tab mode when the window is too narrow */
@@ -116,6 +139,35 @@ button:disabled {
 .app-titlebar .note-tabs.is-compact .note-tab-label,
 .app-titlebar .note-tabs.is-compact .tab-close {
   display: none;
+}
+
+/* In compact mode, the active tab swaps the file icon for a close button.
+   Use a single 1fr column with no padding so justify-self: center centers
+   the 20px close button within the full 34px tab. */
+.app-titlebar .note-tabs.is-compact .note-tab.is-active {
+  grid-template-columns: 1fr;
+  padding: 0;
+}
+
+.app-titlebar .note-tabs.is-compact .note-tab.is-active .note-tab-icon {
+  display: none;
+}
+
+.app-titlebar .note-tabs.is-compact .note-tab.is-active .tab-close {
+  display: inline-flex;
+  justify-self: center;
+}
+
+.app-titlebar .note-tabs.is-compact .note-tab.is-active .tab-close svg {
+  width: 15px;
+  height: 15px;
+  stroke-width: 2.25;
+}
+
+/* Make the close X bolder on the active tab in normal mode too — at narrow
+   tab widths the default thin strokes are easy to mistake for a chevron. */
+.app-titlebar .note-tab.is-active .tab-close svg {
+  stroke-width: 2.25;
 }
 
 /* Overflow dropdown — appears when not even icon-only tabs fit */
@@ -1893,13 +1945,8 @@ html[data-theme="dark"] .app-titlebar {
   background: rgba(24, 26, 27, 0.78);
 }
 
-html[data-theme="dark"] .app-titlebar .note-tab {
-  border-left-color: rgba(238, 232, 223, 0.10);
-}
-
-html[data-theme="dark"] .app-titlebar .note-tab:first-child,
-html[data-theme="dark"] .app-titlebar .note-tab.is-active + .note-tab {
-  border-left-color: transparent;
+html[data-theme="dark"] .app-titlebar .note-tab + .note-tab::before {
+  background: rgba(238, 232, 223, 0.18);
 }
 
 html[data-theme="dark"] .app-titlebar .note-tab.is-active {

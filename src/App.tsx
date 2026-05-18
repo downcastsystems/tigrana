@@ -1779,7 +1779,7 @@ function NoteTabs({
           onClick={() => onSelect(tab.id)}
           onContextMenu={(event) => onContextMenu(event, tab.id)}
         >
-          <FileText size={14} />
+          <FileText size={14} className="note-tab-icon" />
           <span className="note-tab-label">{tab.note?.title || "Empty tab"}</span>
           <span
             className="tab-close chrome-interactive"
