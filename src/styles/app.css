@@ -1024,6 +1024,23 @@ kbd {
   white-space: nowrap;
 }
 
+.note-tab-label {
+  justify-self: stretch;
+  width: 100%;
+  min-width: 0;
+  text-align: left;
+}
+
+.tab-list-separator {
+  height: 1px;
+  margin: 4px 2px;
+  background: rgba(52, 48, 43, 0.12);
+}
+
+html[data-theme="dark"] .tab-list-separator {
+  background: rgba(255, 255, 255, 0.12);
+}
+
 .note-tab:hover {
   background: rgba(52, 48, 43, 0.06);
 }

@@ -997,6 +997,13 @@ export default function App() {
           }}
           onSelect={(tabId) => void activateTab(tabId)}
         />
+        <TabListDropdown
+          tabs={visibleTabs}
+          activeTabId={activeTabId}
+          onSelect={(tabId) => void activateTab(tabId)}
+          onClose={(tabId) => void closeTab(tabId)}
+          onCloseAll={() => void closeAllTabs()}
+        />
         <button
           className="icon-button outline-toggle chrome-interactive"
           type="button"
@@ -1859,6 +1866,104 @@ function NoteTabs({
       >
         <Plus size={15} />
       </button>
+    </div>
+  );
+}
+
+function TabListDropdown({
+  tabs,
+  activeTabId,
+  onSelect,
+  onClose,
+  onCloseAll,
+}: {
+  tabs: Array<NoteTab & { note: NoteEntry | null }>;
+  activeTabId: string | null;
+  onSelect: (tabId: string) => void;
+  onClose: (tabId: string) => void;
+  onCloseAll: () => void;
+}) {
+  const wrapRef = useRef<HTMLDivElement>(null);
+  const [open, setOpen] = useState(false);
+
+  useEffect(() => {
+    if (!open) return;
+    const handler = (event: MouseEvent) => {
+      if (wrapRef.current?.contains(event.target as Node)) return;
+      setOpen(false);
+    };
+    document.addEventListener("mousedown", handler);
+    return () => document.removeEventListener("mousedown", handler);
+  }, [open]);
+
+  return (
+    <div className="tab-overflow-wrap chrome-interactive" ref={wrapRef}>
+      <button
+        className="icon-button chrome-interactive"
+        type="button"
+        title="Open tabs"
+        aria-haspopup="menu"
+        aria-expanded={open}
+        onMouseDown={stopChromeMouseDown}
+        onClick={() => setOpen((value) => !value)}
+      >
+        <ChevronDown size={15} />
+      </button>
+      {open ? (
+        <div className="tab-overflow-menu chrome-interactive" role="menu">
+          {tabs.map((tab) => (
+            <button
+              key={tab.id}
+              className={`tab-overflow-item chrome-interactive ${activeTabId === tab.id ? "is-active" : ""}`}
+              type="button"
+              role="menuitem"
+              onMouseDown={stopChromeMouseDown}
+              onClick={() => {
+                setOpen(false);
+                onSelect(tab.id);
+              }}
+            >
+              <FileText size={14} />
+              <span>{tab.note?.title || "Empty tab"}</span>
+              <span
+                className="tab-close chrome-interactive"
+                role="button"
+                tabIndex={0}
+                title="Close tab"
+                onMouseDown={stopChromeMouseDown}
+                onClick={(event) => {
+                  event.stopPropagation();
+                  onClose(tab.id);
+                }}
+                onKeyDown={(event) => {
+                  if (event.key === "Enter" || event.key === " ") {
+                    event.preventDefault();
+                    event.stopPropagation();
+                    onClose(tab.id);
+                  }
+                }}
+              >
+                <X size={13} />
+              </span>
+            </button>
+          ))}
+          {tabs.length > 0 ? <div className="tab-list-separator" /> : null}
+          <button
+            className="tab-overflow-item chrome-interactive"
+            type="button"
+            role="menuitem"
+            disabled={tabs.length === 0}
+            onMouseDown={stopChromeMouseDown}
+            onClick={() => {
+              setOpen(false);
+              onCloseAll();
+            }}
+          >
+            <X size={14} />
+            <span>Close all</span>
+          </button>
+        </div>
+      ) : null}
     </div>
   );
 }
