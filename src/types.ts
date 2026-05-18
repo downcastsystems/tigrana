@@ -25,6 +25,22 @@ export type SearchResult = NoteEntry & {
   snippet: string;
 };
 
+export type NotePositionMetadata = {
+  path: string;
+  lastOpenedAt: number;
+  scrollTop: number;
+  contentLength: number;
+  selectionFrom?: number;
+  selectionTo?: number;
+};
+
+export type BookmarkEntry = {
+  id: string;
+  kind: "folder" | "note";
+  path: string;
+  createdAt: number;
+};
+
 export type WorkspaceMetadata = {
   folderOrder: Record<string, string[]>;
   noteOrder: Record<string, string[]>;
@@ -32,4 +48,9 @@ export type WorkspaceMetadata = {
   folderIcons: Record<string, string>;
   folderColors: Record<string, string>;
   noteIcons: Record<string, string>;
+  notePositions: Record<string, NotePositionMetadata>;
+  bookmarks: BookmarkEntry[];
+  bookmarksExpanded: boolean;
+  sessionOpenTabs: string[];
+  sessionActiveTab: string | null;
 };

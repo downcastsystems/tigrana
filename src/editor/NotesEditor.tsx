@@ -5,6 +5,7 @@ import Link from "@tiptap/extension-link";
 import Placeholder from "@tiptap/extension-placeholder";
 import TaskItem from "@tiptap/extension-task-item";
 import TaskList from "@tiptap/extension-task-list";
+import { TextSelection } from "@tiptap/pm/state";
 import { BubbleMenu, EditorContent, Range, useEditor, type Editor } from "@tiptap/react";
 import StarterKit from "@tiptap/starter-kit";
 import {
@@ -26,13 +27,16 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { filterSlashCommands } from "./slashCommands";
 import { htmlToMarkdown, markdownToHtml } from "../lib/markdown";
 import { saveAsset } from "../lib/notesApi";
+import type { NotePositionMetadata } from "../types";
 
 type NotesEditorProps = {
   content: string;
   focusRequest: number;
   notePath: string | null;
+  restorePosition: NotePositionMetadata | null;
   workspace: string;
   onChange: (markdown: string) => void;
+  onPositionChange: (position: { selectionFrom: number; selectionTo: number }) => void;
 };
 
 type SlashState = {
@@ -43,7 +47,7 @@ type SlashState = {
 
 const lowlight = createLowlight(common);
 
-export function NotesEditor({ content, focusRequest, notePath, workspace, onChange }: NotesEditorProps) {
+export function NotesEditor({ content, focusRequest, notePath, restorePosition, workspace, onChange, onPositionChange }: NotesEditorProps) {
   const [slash, setSlash] = useState<SlashState | null>(null);
   const slashRef = useRef<SlashState | null>(null);
   const editorRef = useRef<Editor | null>(null);
@@ -128,6 +132,20 @@ export function NotesEditor({ content, focusRequest, notePath, workspace, onChan
         keydown(_view, event) {
           return handleSlashKeyDown(event);
         },
+        mousedown(view, event) {
+          if (event.button !== 0) return false;
+          const editorElement = view.dom;
+          if (!(event.target instanceof Node) || !editorElement.contains(event.target)) return false;
+          const blockElements = Array.from(editorElement.children) as HTMLElement[];
+          const lastBlock = blockElements.at(-1);
+          const lastBlockBottom = lastBlock?.getBoundingClientRect().bottom ?? editorElement.getBoundingClientRect().top;
+          if (event.clientY <= lastBlockBottom + 8) return false;
+
+          event.preventDefault();
+          view.focus();
+          view.dispatch(view.state.tr.setSelection(TextSelection.atEnd(view.state.doc)));
+          return true;
+        },
       },
       handlePaste(view, event) {
         const item = Array.from(event.clipboardData?.items ?? []).find((clipboardItem) =>
@@ -146,10 +164,20 @@ export function NotesEditor({ content, focusRequest, notePath, workspace, onChan
     },
     onUpdate({ editor }) {
       onChange(htmlToMarkdown(editor.getHTML()));
+      onPositionChange({
+        selectionFrom: editor.state.selection.from,
+        selectionTo: editor.state.selection.to,
+      });
       const match = findSlashQuery(editor);
       const nextSlash = match ? { ...match, selected: 0 } : null;
       slashRef.current = nextSlash;
       setSlash(nextSlash);
+    },
+    onSelectionUpdate({ editor }) {
+      onPositionChange({
+        selectionFrom: editor.state.selection.from,
+        selectionTo: editor.state.selection.to,
+      });
     },
   });
 
@@ -166,8 +194,21 @@ export function NotesEditor({ content, focusRequest, notePath, workspace, onChan
     if (lastLoadedNote.current === notePath) return;
     const next = markdownToHtml(content);
     editor.commands.setContent(next, false);
+    const selectionFrom = restorePosition?.selectionFrom;
+    const selectionTo = restorePosition?.selectionTo ?? selectionFrom;
+    if (
+      typeof selectionFrom === "number" &&
+      typeof selectionTo === "number" &&
+      selectionFrom >= 0 &&
+      selectionTo >= selectionFrom &&
+      selectionTo <= editor.state.doc.content.size
+    ) {
+      editor.commands.setTextSelection({ from: Math.max(1, selectionFrom), to: Math.max(1, selectionTo) });
+    } else {
+      editor.commands.setTextSelection(1);
+    }
     lastLoadedNote.current = notePath;
-  }, [content, editor, notePath]);
+  }, [content, editor, notePath, restorePosition]);
 
   useEffect(() => {
     if (!editor || !focusRequest) return;

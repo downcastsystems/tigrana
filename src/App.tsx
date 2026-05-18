@@ -1,8 +1,10 @@
 import { open } from "@tauri-apps/plugin-dialog";
 import { listen } from "@tauri-apps/api/event";
-import { getCurrentWindow } from "@tauri-apps/api/window";
+import { getCurrentWindow, LogicalPosition } from "@tauri-apps/api/window";
+import { WebviewWindow } from "@tauri-apps/api/webviewWindow";
 import {
   BookOpen,
+  Bookmark,
   Check,
   ChevronDown,
   ChevronRight,
@@ -55,7 +57,7 @@ import {
   defaultWorkspaceMetadata,
 } from "./lib/notesApi";
 import { searchNotes } from "./lib/search";
-import type { FolderEntry, NoteEntry, SearchResult, WorkspaceMetadata } from "./types";
+import type { BookmarkEntry, FolderEntry, NoteEntry, NotePositionMetadata, SearchResult, WorkspaceMetadata } from "./types";
 
 function stopChromeMouseDown(event: React.MouseEvent) {
   event.stopPropagation();
@@ -68,6 +70,7 @@ const themePresetKey = "lumen-notes-theme-preset";
 const folderPaneWidthKey = "lumen-notes-folder-pane-width";
 const notesPaneWidthKey = "lumen-notes-notes-pane-width";
 const rightPaneWidthKey = "lumen-notes-right-pane-width";
+const notePositionFreshMs = 24 * 60 * 60 * 1000;
 const defaultLightAccent = "#315f59";
 const defaultDarkAccent = "#6fa69a";
 const lucideIconPrefix = "lucide:";
@@ -91,6 +94,8 @@ type ContextMenuTarget =
   | { kind: "empty" }
   | { kind: "folder"; path: string }
   | { kind: "note"; path: string };
+
+type OpenTarget = { kind: "folder" | "note"; path: string };
 
 type PropertyDialogState =
   | { kind: "rename-folder"; path: string; value: string }
@@ -132,6 +137,12 @@ type FolderNode = FolderEntry & {
   children: FolderNode[];
 };
 
+type BookmarkView = BookmarkEntry & {
+  title: string;
+  icon?: string;
+  missing: boolean;
+};
+
 type ThemePreset = {
   id: ThemePresetId;
   name: string;
@@ -144,7 +155,7 @@ const themePresets: ThemePreset[] = [
     id: "default",
     name: "Default",
     accent: { light: defaultLightAccent, dark: defaultDarkAccent },
-    appBackground: { light: "#f7f4ef", dark: "#17191a" },
+    appBackground: { light: "#f7f4ef", dark: "#212225" },
   },
   {
     id: "atom",
@@ -179,7 +190,8 @@ const themePresets: ThemePreset[] = [
 ];
 
 export default function App() {
-  const [workspace, setWorkspace] = useState(() => localStorage.getItem(workspaceKey) || (isTauri() ? "" : SAMPLE_WORKSPACE));
+  const initialOpenTargetRef = useRef(readInitialOpenTarget());
+  const [workspace, setWorkspace] = useState(() => readInitialWorkspace());
   const [colorScheme, setColorScheme] = useState<ColorScheme>(() => readStoredColorScheme());
   const [prefersDark, setPrefersDark] = useState(() => window.matchMedia?.("(prefers-color-scheme: dark)").matches ?? false);
   const [themePresetId, setThemePresetId] = useState<ThemePresetId>(() => readStoredThemePreset());
@@ -188,6 +200,7 @@ export default function App() {
   const [notes, setNotes] = useState<NoteEntry[]>([]);
   const [contents, setContents] = useState(() => new Map<string, string>());
   const [metadata, setMetadata] = useState<WorkspaceMetadata>(() => defaultWorkspaceMetadata());
+  const [metadataLoaded, setMetadataLoaded] = useState(false);
   const [selectedFolder, setSelectedFolder] = useState("");
   const [activePath, setActivePath] = useState<string | null>(null);
   const [pendingNote, setPendingNote] = useState<DraftNote | null>(null);
@@ -195,6 +208,7 @@ export default function App() {
   const [savedTitle, setSavedTitle] = useState("");
   const [draft, setDraft] = useState("");
   const [savedDraft, setSavedDraft] = useState("");
+  const [editorRestorePosition, setEditorRestorePosition] = useState<NotePositionMetadata | null>(null);
   const [isSaving, setIsSaving] = useState(false);
   const [searchOpen, setSearchOpen] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
@@ -221,10 +235,14 @@ export default function App() {
   const [noteDragPreview, setNoteDragPreview] = useState<NoteDragPreview | null>(null);
   const [editorFocusRequest, setEditorFocusRequest] = useState(0);
   const noteSurfaceRef = useRef<HTMLElement | null>(null);
+  const titleInputRef = useRef<HTMLTextAreaElement | null>(null);
   const draggingItemRef = useRef<DragItem>(null);
   const notePointerDragRef = useRef<NotePointerDrag | null>(null);
   const suppressNextNoteClickRef = useRef(false);
   const autoSelectedWorkspaceRef = useRef<string | null>(null);
+  const metadataRef = useRef(metadata);
+  const positionWriteTimerRef = useRef<number | null>(null);
+  const restoredTabsWorkspaceRef = useRef<string | null>(null);
 
   const activeNote = notes.find((note) => note.path === activePath) ?? null;
   const noteOpen = pendingNote || activeNote;
@@ -239,6 +257,7 @@ export default function App() {
   const themePreset = getThemePreset(themePresetId);
   const effectiveAccentColor = accentColor || themePreset.accent[resolvedTheme];
   const selectedFolderTitle = useMemo(() => displayFolderName(selectedFolder, folders), [folders, selectedFolder]);
+  const bookmarks = useMemo(() => buildBookmarkViews(metadata.bookmarks, folders, notes, metadata), [folders, metadata, notes]);
   const visibleTabs = useMemo(
     () =>
       openTabs.map((tab) => ({
@@ -266,6 +285,10 @@ export default function App() {
     const platform = navigator.platform || "";
     if (/Mac|iPhone|iPad/.test(platform)) document.documentElement.dataset.platform = "mac";
   }, []);
+
+  useEffect(() => {
+    metadataRef.current = metadata;
+  }, [metadata]);
 
   useEffect(() => {
     document.documentElement.dataset.theme = resolvedTheme;
@@ -308,10 +331,19 @@ export default function App() {
 
   useEffect(() => {
     if (!workspace) return;
-    void readWorkspaceMetadata(workspace).then(setMetadata).catch((error) => {
-      setAppError(error instanceof Error ? error.message : String(error));
-      setMetadata(defaultWorkspaceMetadata());
-    });
+    setMetadataLoaded(false);
+    void readWorkspaceMetadata(workspace)
+      .then((nextMetadata) => {
+        metadataRef.current = nextMetadata;
+        setMetadata(nextMetadata);
+      })
+      .catch((error) => {
+        setAppError(error instanceof Error ? error.message : String(error));
+        const fallback = defaultWorkspaceMetadata();
+        metadataRef.current = fallback;
+        setMetadata(fallback);
+      })
+      .finally(() => setMetadataLoaded(true));
   }, [workspace]);
 
   useEffect(() => {
@@ -353,23 +385,141 @@ export default function App() {
     void refreshWorkspace();
   }, [refreshWorkspace]);
 
+  const recordNotePosition = useCallback((path: string, markdown: string, patch: Partial<NotePositionMetadata> = {}) => {
+    if (!workspace) return;
+    const current = metadataRef.current;
+    const existing = current.notePositions[path];
+    const nextPosition: NotePositionMetadata = {
+      path,
+      lastOpenedAt: existing?.lastOpenedAt ?? Date.now(),
+      scrollTop: existing?.scrollTop ?? 0,
+      contentLength: markdown.length,
+      selectionFrom: existing?.selectionFrom,
+      selectionTo: existing?.selectionTo,
+      ...patch,
+    };
+    const next: WorkspaceMetadata = {
+      ...current,
+      notePositions: {
+        ...current.notePositions,
+        [path]: nextPosition,
+      },
+    };
+
+    metadataRef.current = next;
+    setMetadata(next);
+    if (positionWriteTimerRef.current) window.clearTimeout(positionWriteTimerRef.current);
+    positionWriteTimerRef.current = window.setTimeout(() => {
+      void writeWorkspaceMetadata(workspace, metadataRef.current).catch((error) => {
+        setAppError(error instanceof Error ? error.message : String(error));
+      });
+    }, 300);
+  }, [workspace]);
+
   useEffect(() => {
     if (!workspace) return;
+    if (!metadataLoaded) return;
     if (autoSelectedWorkspaceRef.current === workspace) return;
+    if (initialOpenTargetRef.current) return;
+    if (metadata.sessionOpenTabs.some((path) => notes.some((note) => note.path === path))) return;
     if (activePath || pendingNote) return;
     if (!notes.length) return;
-    autoSelectedWorkspaceRef.current = workspace;
     const firstNote = notes[0];
+    if (!contents.has(firstNote.path)) return;
+    autoSelectedWorkspaceRef.current = workspace;
     const tabId = createTabId();
     setSelectedFolder(firstNote.parent_path);
     setActivePath(firstNote.path);
     setOpenTabs([{ id: tabId, path: firstNote.path }]);
     setActiveTabId(tabId);
     loadContentIntoEditor(firstNote, contents.get(firstNote.path) ?? "");
-  }, [activePath, contents, notes, pendingNote, workspace]);
+  }, [activePath, contents, metadata.sessionOpenTabs, metadataLoaded, notes, pendingNote, workspace]);
+
+  useEffect(() => {
+    const target = initialOpenTargetRef.current;
+    if (!workspace || !metadataLoaded || !target || !notes.length) return;
+    if (target.kind === "folder") {
+      setSelectedFolder(target.path);
+      clearCurrentNote();
+      initialOpenTargetRef.current = null;
+      return;
+    }
+    const note = notes.find((entry) => entry.path === target.path);
+    const content = contents.get(target.path);
+    if (note && content === undefined) return;
+    if (note && content !== undefined) {
+      initialOpenTargetRef.current = null;
+      const tabId = createTabId();
+      setOpenTabs([{ id: tabId, path: target.path }]);
+      setActiveTabId(tabId);
+      setActivePath(target.path);
+      setPendingNote(null);
+      setSelectedFolder(note.parent_path);
+      loadContentIntoEditor(note, content, getRestorableNotePosition(metadataRef.current, target.path, content));
+      recordNotePosition(target.path, content, { lastOpenedAt: Date.now() });
+      return;
+    }
+    initialOpenTargetRef.current = null;
+  }, [contents, metadataLoaded, notes, recordNotePosition, workspace]);
+
+  useEffect(() => {
+    if (!workspace || !metadataLoaded || initialOpenTargetRef.current) return;
+    if (restoredTabsWorkspaceRef.current === workspace) return;
+    const existingPaths = metadata.sessionOpenTabs.filter((path) => notes.some((note) => note.path === path));
+    if (!existingPaths.length) return;
+
+    restoredTabsWorkspaceRef.current = workspace;
+    const tabs = existingPaths.map((path) => ({ id: createTabId(), path }));
+    const activeSessionPath = metadata.sessionActiveTab && existingPaths.includes(metadata.sessionActiveTab)
+      ? metadata.sessionActiveTab
+      : existingPaths[0];
+    const activeTab = tabs.find((tab) => tab.path === activeSessionPath) ?? tabs[0];
+    if (!contents.has(activeTab.path)) return;
+    const note = notes.find((entry) => entry.path === activeTab.path);
+    const content = contents.get(activeTab.path) ?? "";
+    const restorePosition = getRestorableNotePosition(metadataRef.current, activeTab.path, content);
+
+    setOpenTabs(tabs);
+    setActiveTabId(activeTab.id);
+    setActivePath(activeTab.path);
+    setPendingNote(null);
+    if (note) setSelectedFolder(note.parent_path);
+    loadContentIntoEditor(note ?? null, content, restorePosition);
+    recordNotePosition(activeTab.path, content, { lastOpenedAt: Date.now() });
+  }, [contents, metadata.sessionActiveTab, metadata.sessionOpenTabs, metadataLoaded, notes, recordNotePosition, workspace]);
+
+  useEffect(() => {
+    if (!workspace || !metadataLoaded) return;
+    if (initialOpenTargetRef.current) return;
+    if (restoredTabsWorkspaceRef.current !== workspace && metadata.sessionOpenTabs.length > 0 && openTabs.length === 0) return;
+
+    const sessionOpenTabs = openTabs.map((tab) => tab.path).filter((path): path is string => Boolean(path));
+    const activeTab = openTabs.find((tab) => tab.id === activeTabId);
+    const sessionActiveTab = activeTab?.path && sessionOpenTabs.includes(activeTab.path) ? activeTab.path : sessionOpenTabs.at(-1) ?? null;
+
+    const current = metadataRef.current;
+    if (
+      arraysEqual(current.sessionOpenTabs, sessionOpenTabs) &&
+      current.sessionActiveTab === sessionActiveTab
+    ) {
+      return;
+    }
+
+    const next: WorkspaceMetadata = {
+      ...current,
+      sessionOpenTabs,
+      sessionActiveTab,
+    };
+    metadataRef.current = next;
+    setMetadata(next);
+    void writeWorkspaceMetadata(workspace, next).catch((error) => {
+      setAppError(error instanceof Error ? error.message : String(error));
+    });
+  }, [activeTabId, metadata.sessionOpenTabs.length, metadataLoaded, openTabs, workspace]);
 
   const updateMetadata = useCallback((updater: (current: WorkspaceMetadata) => WorkspaceMetadata) => {
     const next = updater(metadata);
+    metadataRef.current = next;
     setMetadata(next);
     if (workspace) {
       void writeWorkspaceMetadata(workspace, next).catch((error) => {
@@ -377,6 +527,46 @@ export default function App() {
       });
     }
   }, [metadata, workspace]);
+
+  useEffect(() => {
+    return () => {
+      if (positionWriteTimerRef.current) window.clearTimeout(positionWriteTimerRef.current);
+    };
+  }, []);
+
+  function currentMarkdownSnapshot() {
+    return titleDraft.trim() ? composeMarkdown(titleDraft.trim(), draft) : draft;
+  }
+
+  function getRestorableNotePosition(current: WorkspaceMetadata, path: string, markdown: string) {
+    const position = current.notePositions[path];
+    if (!position) return null;
+    if (Date.now() - position.lastOpenedAt > notePositionFreshMs) return null;
+    if (position.contentLength !== markdown.length) return null;
+    return position;
+  }
+
+  useEffect(() => {
+    const surface = noteSurfaceRef.current;
+    if (!surface || !noteOpen) return;
+    requestAnimationFrame(() => {
+      const target = editorRestorePosition?.scrollTop ?? 0;
+      const maxScroll = Math.max(0, surface.scrollHeight - surface.clientHeight);
+      surface.scrollTop = target >= 0 && target <= maxScroll + 16 ? target : 0;
+    });
+  }, [activePath, editorRestorePosition, noteOpen]);
+
+  function handleNoteSurfaceScroll() {
+    if (!activePath) return;
+    recordNotePosition(activePath, currentMarkdownSnapshot(), {
+      scrollTop: noteSurfaceRef.current?.scrollTop ?? 0,
+    });
+  }
+
+  function handleEditorPositionChange(position: { selectionFrom: number; selectionTo: number }) {
+    if (!activePath) return;
+    recordNotePosition(activePath, currentMarkdownSnapshot(), position);
+  }
 
   const placePathInActiveTab = useCallback((path: string) => {
     const tabId = activeTabId && openTabs.some((tab) => tab.id === activeTabId) ? activeTabId : createTabId();
@@ -398,6 +588,7 @@ export default function App() {
   function clearCurrentNote() {
     setActivePath(null);
     setPendingNote(null);
+    setEditorRestorePosition(null);
     setTitleDraft("");
     setSavedTitle("");
     setDraft("");
@@ -410,11 +601,13 @@ export default function App() {
     }
     const content = contents.get(path) ?? (await readNote(workspace, path));
     const note = notes.find((entry) => entry.path === path);
+    const restorePosition = getRestorableNotePosition(metadataRef.current, path, content);
     setActivePath(path);
     setPendingNote(null);
     if (note) setSelectedFolder(note.parent_path);
     placePathInActiveTab(path);
-    loadContentIntoEditor(note ?? null, content);
+    loadContentIntoEditor(note ?? null, content, restorePosition);
+    recordNotePosition(path, content, { lastOpenedAt: Date.now() });
     setSearchQuery("");
   }
 
@@ -454,6 +647,7 @@ export default function App() {
       if (!nextPath) return;
 
       await saveNote(workspace, nextPath, markdown);
+      recordNotePosition(nextPath, markdown);
       setSavedTitle(titleDraft.trim());
       setSavedDraft(draft);
       setContents((current) => {
@@ -468,7 +662,7 @@ export default function App() {
     } finally {
       setIsSaving(false);
     }
-  }, [activePath, draft, noteOpen, pendingNote, placePathInActiveTab, refreshWorkspace, savedTitle, titleDraft, updateMetadata, workspace]);
+  }, [activePath, draft, noteOpen, pendingNote, placePathInActiveTab, recordNotePosition, refreshWorkspace, savedTitle, titleDraft, updateMetadata, workspace]);
 
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
@@ -501,6 +695,7 @@ export default function App() {
     setSelectedFolder(parentPath);
     setPendingNote({ parentPath });
     setActivePath(null);
+    setEditorRestorePosition(null);
     const tabId = activeTabId && openTabs.some((tab) => tab.id === activeTabId) ? activeTabId : createTabId();
     if (!activeTabId || !openTabs.some((tab) => tab.id === activeTabId)) {
       setOpenTabs((current) => [...current, { id: tabId, path: null }]);
@@ -514,6 +709,21 @@ export default function App() {
     setSavedDraft("");
     setAppError(null);
   }
+
+  useEffect(() => {
+    if (!pendingNote) return;
+    requestAnimationFrame(() => {
+      titleInputRef.current?.focus();
+      titleInputRef.current?.select();
+    });
+  }, [pendingNote]);
+
+  useEffect(() => {
+    const titleInput = titleInputRef.current;
+    if (!titleInput || !noteOpen) return;
+    titleInput.style.height = "0px";
+    titleInput.style.height = `${titleInput.scrollHeight}px`;
+  }, [noteOpen, titleDraft]);
 
   async function addEmptyTab() {
     if (noteOpen && (draft !== savedDraft || titleDraft !== savedTitle)) {
@@ -537,10 +747,12 @@ export default function App() {
     if (tab.path) {
       const content = contents.get(tab.path) ?? (await readNote(workspace, tab.path));
       const note = notes.find((entry) => entry.path === tab.path);
+      const restorePosition = getRestorableNotePosition(metadataRef.current, tab.path, content);
       setActivePath(tab.path);
       setPendingNote(null);
       if (note) setSelectedFolder(note.parent_path);
-      loadContentIntoEditor(note ?? null, content);
+      loadContentIntoEditor(note ?? null, content, restorePosition);
+      recordNotePosition(tab.path, content, { lastOpenedAt: Date.now() });
       return;
     }
 
@@ -564,10 +776,12 @@ export default function App() {
       if (nextTab.path) {
         const content = contents.get(nextTab.path) ?? (await readNote(workspace, nextTab.path));
         const note = notes.find((entry) => entry.path === nextTab.path);
+        const restorePosition = getRestorableNotePosition(metadataRef.current, nextTab.path, content);
         setActivePath(nextTab.path);
         setPendingNote(null);
         if (note) setSelectedFolder(note.parent_path);
-        loadContentIntoEditor(note ?? null, content);
+        loadContentIntoEditor(note ?? null, content, restorePosition);
+        recordNotePosition(nextTab.path, content, { lastOpenedAt: Date.now() });
       } else {
         clearCurrentNote();
       }
@@ -710,8 +924,9 @@ export default function App() {
     }
   }
 
-  function loadContentIntoEditor(note: NoteEntry | null, markdown: string) {
+  function loadContentIntoEditor(note: NoteEntry | null, markdown: string, restorePosition: NotePositionMetadata | null = null) {
     const parsed = splitMarkdownTitle(markdown, note?.title ?? "");
+    setEditorRestorePosition(restorePosition);
     setTitleDraft(parsed.title);
     setSavedTitle(parsed.title);
     setDraft(parsed.body);
@@ -904,6 +1119,76 @@ export default function App() {
     setContextMenu({ ...state, x: event.clientX, y: event.clientY } as ContextMenuState);
   }
 
+  function openTargetInNewWindow(target: OpenTarget) {
+    setContextMenu(null);
+    if (!workspace) return;
+
+    if (!isTauri()) {
+      if (target.kind === "folder") {
+        setSelectedFolder(target.path);
+        clearCurrentNote();
+      } else {
+        void selectNote(target.path);
+      }
+      return;
+    }
+
+    const params = new URLSearchParams({
+      workspace,
+      openKind: target.kind,
+      openPath: target.path,
+    });
+    const label = `lumen-${target.kind}-${Date.now()}`;
+    const webview = new WebviewWindow(label, {
+      url: `/?${params.toString()}`,
+      title: "Lumen Notes",
+      width: 1280,
+      height: 860,
+      minWidth: 920,
+      minHeight: 620,
+      decorations: true,
+      resizable: true,
+      titleBarStyle: "overlay",
+      hiddenTitle: true,
+      trafficLightPosition: new LogicalPosition(20, 24),
+    });
+    void webview.once("tauri://error", (event) => {
+      setAppError(String(event.payload));
+    });
+  }
+
+  function isBookmarked(target: OpenTarget) {
+    return metadata.bookmarks.some((bookmark) => bookmark.kind === target.kind && bookmark.path === target.path);
+  }
+
+  function toggleBookmark(target: OpenTarget) {
+    updateMetadata((current) => {
+      const exists = current.bookmarks.some((bookmark) => bookmark.kind === target.kind && bookmark.path === target.path);
+      return {
+        ...current,
+        bookmarks: exists
+          ? current.bookmarks.filter((bookmark) => bookmark.kind !== target.kind || bookmark.path !== target.path)
+          : [...current.bookmarks, { id: createBookmarkId(), kind: target.kind, path: target.path, createdAt: Date.now() }],
+      };
+    });
+  }
+
+  function removeBookmark(bookmarkId: string) {
+    updateMetadata((current) => ({
+      ...current,
+      bookmarks: current.bookmarks.filter((bookmark) => bookmark.id !== bookmarkId),
+    }));
+  }
+
+  function selectBookmark(bookmark: BookmarkEntry) {
+    if (bookmark.kind === "folder") {
+      setSelectedFolder(bookmark.path);
+      clearCurrentNote();
+      return;
+    }
+    void selectNote(bookmark.path);
+  }
+
   function handleOutlineSelect(id: string) {
     const index = Number(id.replace("heading-", ""));
     if (index === 0) {
@@ -1019,6 +1304,8 @@ export default function App() {
       {leftVisible ? (
         <aside className="left-panes" onContextMenu={(event) => openContextMenu(event, { kind: "empty" })}>
           <FolderPane
+            bookmarks={bookmarks}
+            bookmarksExpanded={metadata.bookmarksExpanded}
             disabled={!workspace}
             draggingItem={draggingItem}
             dropTargetFolder={dropTargetFolder}
@@ -1039,9 +1326,17 @@ export default function App() {
             onDropOnFolder={(path, item) => void handleDropOnFolder(path, item)}
             onOpenIcon={(path) => openIconBrowser("folder", path)}
             onOpenWorkspace={chooseWorkspace}
+            onRemoveBookmark={removeBookmark}
             onSearchQueryChange={setSearchQuery}
+            onSelectBookmark={selectBookmark}
             onSelectSearchResult={selectNote}
             onSelectFolder={(path) => setSelectedFolder(path)}
+            onToggleBookmarksExpanded={() =>
+              updateMetadata((current) => ({
+                ...current,
+                bookmarksExpanded: !current.bookmarksExpanded,
+              }))
+            }
             onToggleSearch={() => setSearchOpen((value) => !value)}
             onToggleMenu={(event) => {
               event.stopPropagation();
@@ -1091,9 +1386,10 @@ export default function App() {
         ) : null}
 
         {noteOpen ? (
-          <section className="note-surface" ref={noteSurfaceRef}>
+          <section className="note-surface" ref={noteSurfaceRef} onScroll={handleNoteSurfaceScroll}>
             <div className="title-shell">
-              <input
+              <textarea
+                ref={titleInputRef}
                 className="note-title-input"
                 value={titleDraft}
                 onChange={(event) => setTitleDraft(event.target.value)}
@@ -1105,6 +1401,7 @@ export default function App() {
                 }}
                 placeholder="Untitled"
                 aria-label="Note title"
+                rows={1}
               />
               {appError ? <p className="app-error note-error">{appError}</p> : null}
             </div>
@@ -1123,8 +1420,10 @@ export default function App() {
                 content={draft}
                 focusRequest={editorFocusRequest}
                 notePath={activePath}
+                restorePosition={editorRestorePosition}
                 workspace={workspace}
                 onChange={(markdown) => setDraft(markdown)}
+                onPositionChange={handleEditorPositionChange}
               />
             )}
           </section>
@@ -1162,10 +1461,25 @@ export default function App() {
             if (contextMenu.kind === "note") void handleDeleteNote(contextMenu.path);
             if (contextMenu.kind === "folder") void handleDeleteFolder(contextMenu.path);
           }}
+          onOpenInNewWindow={() => {
+            if (contextMenu.kind !== "empty") openTargetInNewWindow({ kind: contextMenu.kind, path: contextMenu.path });
+          }}
+          isBookmarked={contextMenu.kind !== "empty" ? isBookmarked({ kind: contextMenu.kind, path: contextMenu.path }) : false}
           onRenameFolder={() => contextMenu.kind === "folder" && openPropertyDialog("rename-folder", contextMenu.path)}
+          onResetFolderColor={() =>
+            contextMenu.kind === "folder" &&
+            updateMetadata((current) => setMetadataValue(current, "folderColors", contextMenu.path, ""))
+          }
+          onResetFolderIcon={() =>
+            contextMenu.kind === "folder" &&
+            updateMetadata((current) => setMetadataValue(current, "folderIcons", contextMenu.path, ""))
+          }
           onSetFolderColor={() => contextMenu.kind === "folder" && openPropertyDialog("folder-color", contextMenu.path)}
           onSetFolderIcon={() => contextMenu.kind === "folder" && openIconBrowser("folder", contextMenu.path)}
           onSetNoteIcon={() => contextMenu.kind === "note" && openIconBrowser("note", contextMenu.path)}
+          onToggleBookmark={() => {
+            if (contextMenu.kind !== "empty") toggleBookmark({ kind: contextMenu.kind, path: contextMenu.path });
+          }}
           onClose={() => setContextMenu(null)}
         />
       ) : null}
@@ -1264,6 +1578,8 @@ export default function App() {
 }
 
 function FolderPane({
+  bookmarks,
+  bookmarksExpanded,
   disabled,
   draggingItem,
   dropTargetFolder,
@@ -1284,12 +1600,17 @@ function FolderPane({
   onDropOnFolderFallback,
   onOpenIcon,
   onOpenWorkspace,
+  onRemoveBookmark,
   onSearchQueryChange,
+  onSelectBookmark,
   onSelectSearchResult,
   onSelectFolder,
+  onToggleBookmarksExpanded,
   onToggleSearch,
   onToggleMenu,
 }: {
+  bookmarks: BookmarkView[];
+  bookmarksExpanded: boolean;
   disabled: boolean;
   draggingItem: DragItem;
   dropTargetFolder: string | null;
@@ -1310,9 +1631,12 @@ function FolderPane({
   onDropOnFolderFallback: (path: string, item?: Exclude<DragItem, null>) => void;
   onOpenIcon: (path: string) => void;
   onOpenWorkspace: () => void;
+  onRemoveBookmark: (id: string) => void;
   onSearchQueryChange: (query: string) => void;
+  onSelectBookmark: (bookmark: BookmarkEntry) => void;
   onSelectSearchResult: (path: string) => void;
   onSelectFolder: (path: string) => void;
+  onToggleBookmarksExpanded: () => void;
   onToggleSearch: () => void;
   onToggleMenu: (event: React.MouseEvent) => void;
 }) {
@@ -1358,6 +1682,13 @@ function FolderPane({
           onSelect={onSelectSearchResult}
         />
       ) : null}
+      <BookmarksSection
+        bookmarks={bookmarks}
+        expanded={bookmarksExpanded}
+        onRemove={onRemoveBookmark}
+        onSelect={onSelectBookmark}
+        onToggle={onToggleBookmarksExpanded}
+      />
       <div
         className="folder-tree"
         onDragOver={(event) => {
@@ -1400,6 +1731,67 @@ function FolderPane({
           />
         ))}
       </div>
+    </section>
+  );
+}
+
+function BookmarksSection({
+  bookmarks,
+  expanded,
+  onRemove,
+  onSelect,
+  onToggle,
+}: {
+  bookmarks: BookmarkView[];
+  expanded: boolean;
+  onRemove: (id: string) => void;
+  onSelect: (bookmark: BookmarkEntry) => void;
+  onToggle: () => void;
+}) {
+  return (
+    <section className="bookmarks-section">
+      <button className="section-header-button" type="button" onClick={onToggle}>
+        {expanded ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
+        <span>Bookmarks</span>
+      </button>
+      {expanded ? (
+        <div className="bookmarks-list">
+          {bookmarks.map((bookmark) => (
+            <button
+              className={`bookmark-item ${bookmark.missing ? "is-missing" : ""}`}
+              key={bookmark.id}
+              type="button"
+              aria-disabled={bookmark.missing}
+              onClick={() => {
+                if (!bookmark.missing) onSelect(bookmark);
+              }}
+            >
+              <IconMark value={bookmark.icon} fallback={bookmark.kind === "folder" ? Folder : FileText} size={15} />
+              <span>{bookmark.title}</span>
+              <span
+                className="bookmark-remove"
+                role="button"
+                tabIndex={0}
+                title="Remove bookmark"
+                onClick={(event) => {
+                  event.stopPropagation();
+                  onRemove(bookmark.id);
+                }}
+                onKeyDown={(event) => {
+                  if (event.key === "Enter" || event.key === " ") {
+                    event.preventDefault();
+                    event.stopPropagation();
+                    onRemove(bookmark.id);
+                  }
+                }}
+              >
+                <X size={13} />
+              </span>
+            </button>
+          ))}
+          {!bookmarks.length ? <p className="empty-bookmarks">No bookmarks</p> : null}
+        </div>
+      ) : null}
     </section>
   );
 }
@@ -1760,6 +2152,16 @@ function NoteTabs({
   const visibleTabs = tabs.slice(0, visibleCount);
   const overflowTabs = tabs.slice(visibleCount);
   const hasOverflow = overflowTabs.length > 0;
+  const handleTabMouseDown = (event: React.MouseEvent, tabId: string) => {
+    stopChromeMouseDown(event);
+    if (event.button === 1) {
+      event.preventDefault();
+      onClose(tabId);
+    }
+    if (event.button === 2) {
+      event.preventDefault();
+    }
+  };
 
   return (
     <div
@@ -1775,7 +2177,12 @@ function NoteTabs({
           type="button"
           role="tab"
           aria-selected={activeTabId === tab.id}
-          onMouseDown={stopChromeMouseDown}
+          onMouseDown={(event) => handleTabMouseDown(event, tab.id)}
+          onAuxClick={(event) => {
+            if (event.button !== 1) return;
+            event.preventDefault();
+            onClose(tab.id);
+          }}
           onClick={() => onSelect(tab.id)}
           onContextMenu={(event) => onContextMenu(event, tab.id)}
         >
@@ -1822,7 +2229,12 @@ function NoteTabs({
                   className={`tab-overflow-item chrome-interactive ${activeTabId === tab.id ? "is-active" : ""}`}
                   type="button"
                   role="menuitem"
-                  onMouseDown={stopChromeMouseDown}
+                  onMouseDown={(event) => handleTabMouseDown(event, tab.id)}
+                  onAuxClick={(event) => {
+                    if (event.button !== 1) return;
+                    event.preventDefault();
+                    onClose(tab.id);
+                  }}
                   onClick={() => {
                     setMenuOpen(false);
                     onSelect(tab.id);
@@ -2382,24 +2794,34 @@ function TabContextMenu({
 }
 
 function ContextMenu({
+  isBookmarked,
   state,
   onCreateFolder,
   onCreateNote,
   onDelete,
+  onOpenInNewWindow,
   onRenameFolder,
+  onResetFolderColor,
+  onResetFolderIcon,
   onSetFolderColor,
   onSetFolderIcon,
   onSetNoteIcon,
+  onToggleBookmark,
   onClose,
 }: {
+  isBookmarked: boolean;
   state: ContextMenuState;
   onCreateFolder: () => void;
   onCreateNote: () => void;
   onDelete: () => void;
+  onOpenInNewWindow: () => void;
   onRenameFolder: () => void;
+  onResetFolderColor: () => void;
+  onResetFolderIcon: () => void;
   onSetFolderColor: () => void;
   onSetFolderIcon: () => void;
   onSetNoteIcon: () => void;
+  onToggleBookmark: () => void;
   onClose: () => void;
 }) {
   return (
@@ -2414,6 +2836,14 @@ function ContextMenu({
       </button>
       {state.kind === "folder" && state.path ? (
         <>
+          <button type="button" onClick={onOpenInNewWindow}>
+            <PanelRightOpen size={14} />
+            <span>Open in New Window</span>
+          </button>
+          <button type="button" onClick={onToggleBookmark}>
+            <Bookmark size={14} />
+            <span>{isBookmarked ? "Remove Bookmark" : "Add Bookmark"}</span>
+          </button>
           <button type="button" onClick={onRenameFolder}>
             <Pencil size={14} />
             <span>Rename Folder</span>
@@ -2422,17 +2852,35 @@ function ContextMenu({
             <FileText size={14} />
             <span>Set Folder Icon</span>
           </button>
+          <button type="button" onClick={onResetFolderIcon}>
+            <X size={14} />
+            <span>Reset Folder Icon</span>
+          </button>
           <button type="button" onClick={onSetFolderColor}>
             <Palette size={14} />
             <span>Set Folder Color</span>
           </button>
+          <button type="button" onClick={onResetFolderColor}>
+            <X size={14} />
+            <span>Reset Folder Color</span>
+          </button>
         </>
       ) : null}
       {state.kind === "note" ? (
-        <button type="button" onClick={onSetNoteIcon}>
-          <FileText size={14} />
-          <span>Set Note Icon</span>
-        </button>
+        <>
+          <button type="button" onClick={onOpenInNewWindow}>
+            <PanelRightOpen size={14} />
+            <span>Open in New Window</span>
+          </button>
+          <button type="button" onClick={onToggleBookmark}>
+            <Bookmark size={14} />
+            <span>{isBookmarked ? "Remove Bookmark" : "Add Bookmark"}</span>
+          </button>
+          <button type="button" onClick={onSetNoteIcon}>
+            <FileText size={14} />
+            <span>Set Note Icon</span>
+          </button>
+        </>
       ) : null}
       {state.kind !== "empty" && state.path ? (
         <button className="danger-item" type="button" onClick={onDelete}>
@@ -2574,6 +3022,32 @@ function buildFolderTree(folders: FolderEntry[], workspace: string, metadata: Wo
   return [root];
 }
 
+function buildBookmarkViews(
+  bookmarks: BookmarkEntry[],
+  folders: FolderEntry[],
+  notes: NoteEntry[],
+  metadata: WorkspaceMetadata,
+): BookmarkView[] {
+  return bookmarks.map((bookmark) => {
+    if (bookmark.kind === "folder") {
+      const folder = folders.find((entry) => entry.path === bookmark.path);
+      return {
+        ...bookmark,
+        title: folder ? (folder.path ? folder.name : "All Notes") : `${bookmark.path || "All Notes"} (missing)`,
+        icon: metadata.folderIcons[bookmark.path],
+        missing: !folder,
+      };
+    }
+    const note = notes.find((entry) => entry.path === bookmark.path);
+    return {
+      ...bookmark,
+      title: note?.title ?? `${bookmark.path} (missing)`,
+      icon: metadata.noteIcons[bookmark.path],
+      missing: !note,
+    };
+  });
+}
+
 function orderFolders(folders: FolderNode[], parentPath: string, metadata: WorkspaceMetadata) {
   const order = metadata.folderOrder[parentPath] ?? [];
   return [...folders].sort((a, b) => {
@@ -2665,7 +3139,17 @@ function replaceOrderedPath(metadata: WorkspaceMetadata, oldPath: string, newPat
     noteIcons[newPath] = noteIcons[oldPath];
     delete noteIcons[oldPath];
   }
-  return { ...metadata, noteOrder, pinnedNotes, noteIcons };
+  const notePositions = { ...metadata.notePositions };
+  if (notePositions[oldPath]) {
+    notePositions[newPath] = { ...notePositions[oldPath], path: newPath };
+    delete notePositions[oldPath];
+  }
+  const bookmarks = metadata.bookmarks.map((bookmark) =>
+    bookmark.kind === "note" && bookmark.path === oldPath ? { ...bookmark, path: newPath } : bookmark,
+  );
+  const sessionOpenTabs = metadata.sessionOpenTabs.map((path) => (path === oldPath ? newPath : path));
+  const sessionActiveTab = metadata.sessionActiveTab === oldPath ? newPath : metadata.sessionActiveTab;
+  return { ...metadata, noteOrder, pinnedNotes, noteIcons, notePositions, bookmarks, sessionOpenTabs, sessionActiveTab };
 }
 
 function removeNoteFromMetadata(metadata: WorkspaceMetadata, notePath: string): WorkspaceMetadata {
@@ -2676,6 +3160,10 @@ function removeNoteFromMetadata(metadata: WorkspaceMetadata, notePath: string): 
     ),
     pinnedNotes: Object.fromEntries(Object.entries(metadata.pinnedNotes).filter(([path]) => path !== notePath)),
     noteIcons: Object.fromEntries(Object.entries(metadata.noteIcons).filter(([path]) => path !== notePath)),
+    notePositions: Object.fromEntries(Object.entries(metadata.notePositions).filter(([path]) => path !== notePath)),
+    bookmarks: metadata.bookmarks.filter((bookmark) => bookmark.kind !== "note" || bookmark.path !== notePath),
+    sessionOpenTabs: metadata.sessionOpenTabs.filter((path) => path !== notePath),
+    sessionActiveTab: metadata.sessionActiveTab === notePath ? null : metadata.sessionActiveTab,
   };
 }
 
@@ -2724,7 +3212,19 @@ function replaceFolderPathPrefix(metadata: WorkspaceMetadata, oldPrefix: string,
   const folderIcons = Object.fromEntries(Object.entries(metadata.folderIcons).map(([path, icon]) => [replacePathPrefix(path, oldPrefix, newPrefix), icon]));
   const folderColors = Object.fromEntries(Object.entries(metadata.folderColors).map(([path, color]) => [replacePathPrefix(path, oldPrefix, newPrefix), color]));
   const noteIcons = Object.fromEntries(Object.entries(metadata.noteIcons).map(([path, icon]) => [replacePathPrefix(path, oldPrefix, newPrefix), icon]));
-  return { ...metadata, folderOrder, noteOrder, pinnedNotes, folderIcons, folderColors, noteIcons };
+  const notePositions = Object.fromEntries(
+    Object.entries(metadata.notePositions).map(([path, position]) => {
+      const nextPath = replacePathPrefix(path, oldPrefix, newPrefix);
+      return [nextPath, { ...position, path: nextPath }];
+    }),
+  );
+  const bookmarks = metadata.bookmarks.map((bookmark) => ({
+    ...bookmark,
+    path: replacePathPrefix(bookmark.path, oldPrefix, newPrefix),
+  }));
+  const sessionOpenTabs = metadata.sessionOpenTabs.map((path) => replacePathPrefix(path, oldPrefix, newPrefix));
+  const sessionActiveTab = metadata.sessionActiveTab ? replacePathPrefix(metadata.sessionActiveTab, oldPrefix, newPrefix) : null;
+  return { ...metadata, folderOrder, noteOrder, pinnedNotes, folderIcons, folderColors, noteIcons, notePositions, bookmarks, sessionOpenTabs, sessionActiveTab };
 }
 
 function removeFolderFromMetadata(metadata: WorkspaceMetadata, folderPath: string): WorkspaceMetadata {
@@ -2741,6 +3241,10 @@ function removeFolderFromMetadata(metadata: WorkspaceMetadata, folderPath: strin
     folderIcons: Object.fromEntries(Object.entries(metadata.folderIcons).filter(([path]) => !isInFolder(path))),
     folderColors: Object.fromEntries(Object.entries(metadata.folderColors).filter(([path]) => !isInFolder(path))),
     noteIcons: Object.fromEntries(Object.entries(metadata.noteIcons).filter(([path]) => !isInFolder(path))),
+    notePositions: Object.fromEntries(Object.entries(metadata.notePositions).filter(([path]) => !isInFolder(path))),
+    bookmarks: metadata.bookmarks.filter((bookmark) => !isInFolder(bookmark.path)),
+    sessionOpenTabs: metadata.sessionOpenTabs.filter((path) => !isInFolder(path)),
+    sessionActiveTab: metadata.sessionActiveTab && isInFolder(metadata.sessionActiveTab) ? null : metadata.sessionActiveTab,
   };
 }
 
@@ -2772,11 +3276,39 @@ function splitIconName(value: string) {
   return value.replace(/([a-z0-9])([A-Z])/g, "$1 $2");
 }
 
+function createBookmarkId() {
+  return `bookmark-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+}
+
+function arraysEqual(first: string[], second: string[]) {
+  return first.length === second.length && first.every((value, index) => value === second[index]);
+}
+
 function readStoredNumber(key: string, fallback: number) {
   const rawValue = localStorage.getItem(key);
   if (rawValue === null) return fallback;
   const value = Number(rawValue);
   return Number.isFinite(value) && value > 0 ? value : fallback;
+}
+
+function readInitialWorkspace() {
+  const params = new URLSearchParams(window.location.search);
+  const workspaceParam = params.get("workspace");
+  if (workspaceParam) {
+    localStorage.setItem(workspaceKey, workspaceParam);
+    return workspaceParam;
+  }
+  return localStorage.getItem(workspaceKey) || (isTauri() ? "" : SAMPLE_WORKSPACE);
+}
+
+function readInitialOpenTarget(): OpenTarget | null {
+  const params = new URLSearchParams(window.location.search);
+  const kind = params.get("openKind");
+  const path = params.get("openPath");
+  if ((kind === "folder" || kind === "note") && path !== null) {
+    return { kind, path };
+  }
+  return null;
 }
 
 function readStoredColorScheme(): ColorScheme {

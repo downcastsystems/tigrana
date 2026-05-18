@@ -463,6 +463,92 @@ body.is-dragging-note.is-over-drop-target * {
   padding: 10px 8px;
 }
 
+.bookmarks-section {
+  border-bottom: 1px solid rgba(52, 48, 43, 0.08);
+  padding: 6px 8px 8px;
+}
+
+.section-header-button {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  width: 100%;
+  min-height: 28px;
+  padding: 0 6px;
+  border: 0;
+  border-radius: 6px;
+  color: #817a70;
+  background: transparent;
+  font-size: 12px;
+  font-weight: 750;
+  text-align: left;
+  cursor: pointer;
+}
+
+.section-header-button:hover {
+  background: rgba(52, 48, 43, 0.07);
+}
+
+.bookmarks-list {
+  display: grid;
+  gap: 2px;
+  padding-top: 4px;
+}
+
+.bookmark-item {
+  display: grid;
+  grid-template-columns: 18px minmax(0, 1fr) 20px;
+  align-items: center;
+  gap: 7px;
+  min-height: 30px;
+  padding: 0 4px 0 8px;
+  border: 0;
+  border-radius: 7px;
+  background: transparent;
+  text-align: left;
+  cursor: pointer;
+}
+
+.bookmark-item:hover {
+  background: rgba(52, 48, 43, 0.07);
+}
+
+.bookmark-item.is-missing {
+  color: #817a70;
+}
+
+.bookmark-item span:not(.bookmark-remove) {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.bookmark-remove {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 20px;
+  border-radius: 5px;
+  opacity: 0;
+}
+
+.bookmark-item:hover .bookmark-remove,
+.bookmark-remove:focus {
+  opacity: 1;
+}
+
+.bookmark-remove:hover {
+  background: rgba(52, 48, 43, 0.08);
+}
+
+.empty-bookmarks {
+  margin: 4px 8px 2px;
+  color: #817a70;
+  font-size: 12px;
+}
+
 .folder-tree,
 .folder-tree * {
   user-select: none;
@@ -545,6 +631,7 @@ body.is-dragging-note.is-over-drop-target * {
   grid-template-columns: 22px minmax(0, 1fr) 24px 24px;
   align-items: center;
   min-height: 32px;
+  padding-left: 4px;
   border-radius: 7px;
 }
 
@@ -1027,6 +1114,7 @@ kbd {
   flex-direction: column;
   min-width: 0;
   min-height: 0;
+  background: transparent;
 }
 
 .topbar {
@@ -1068,19 +1156,24 @@ kbd {
   color: #6f675e;
   background: transparent;
   cursor: pointer;
+  user-select: none;
+  -webkit-user-select: none;
 }
 
 .note-tab span {
   overflow: hidden;
-  text-overflow: ellipsis;
+  text-overflow: clip;
   white-space: nowrap;
 }
 
-.note-tab-label {
+.note-tab .note-tab-label {
   justify-self: stretch;
   width: 100%;
   min-width: 0;
   text-align: left;
+  text-overflow: clip;
+  -webkit-mask-image: linear-gradient(to right, #000 calc(100% - 18px), transparent);
+  mask-image: linear-gradient(to right, #000 calc(100% - 18px), transparent);
 }
 
 .tab-list-separator {
@@ -1166,6 +1259,7 @@ html[data-theme="dark"] .tab-list-separator {
   flex: 1;
   min-height: 0;
   overflow: auto;
+  background: transparent;
 }
 
 .note-meta {
@@ -1188,7 +1282,11 @@ html[data-theme="dark"] .tab-list-separator {
 }
 
 .note-title-input {
+  display: block;
   width: 100%;
+  min-height: 1.18em;
+  resize: none;
+  overflow: hidden;
   border: 0;
   outline: none;
   color: #22211f;
@@ -1926,8 +2024,8 @@ html[data-theme="dark"] .tab-list-separator {
 }
 
 html[data-theme="dark"] {
-  color: #eee8df;
-  background: #17191a;
+  color: #fafafa;
+  background: #212225;
 }
 
 html[data-theme="dark"] body {
@@ -1935,14 +2033,33 @@ html[data-theme="dark"] body {
 }
 
 html[data-theme="dark"] .sidebar,
-html[data-theme="dark"] .left-panes,
-html[data-theme="dark"] .folder-pane,
-html[data-theme="dark"] .notes-pane,
 html[data-theme="dark"] .right-sidebar,
-html[data-theme="dark"] .topbar,
 html[data-theme="dark"] .app-titlebar {
   border-color: rgba(238, 232, 223, 0.1);
   background: rgba(24, 26, 27, 0.78);
+}
+
+html[data-theme="dark"] .left-panes {
+  border-color: rgba(238, 232, 223, 0.1);
+  background: transparent;
+}
+
+html[data-theme="dark"] .folder-pane {
+  border-color: rgba(238, 232, 223, 0.1);
+  background: #1d1f21;
+}
+
+html[data-theme="dark"] .notes-pane,
+html[data-theme="dark"] .main-pane,
+html[data-theme="dark"] .topbar,
+html[data-theme="dark"] .note-surface {
+  background: #212225;
+}
+
+html[data-theme="dark"] .left-panes + .pane-resizer::after {
+  left: 0;
+  width: 1px;
+  background: #111315;
 }
 
 html[data-theme="dark"] .app-titlebar .note-tab + .note-tab::before {
@@ -2033,7 +2150,7 @@ html[data-theme="dark"] .theme-option.is-active {
 
 html[data-theme="dark"] .ProseMirror,
 html[data-theme="dark"] .note-title-input {
-  color: #eee8df;
+  color: #fafafa;
 }
 
 html[data-theme="dark"] .icon-choice span {
@@ -2049,6 +2166,7 @@ html[data-theme="dark"] .format-bubble button.is-active {
 html[data-theme="dark"] .note-row,
 html[data-theme="dark"] .folder-row,
 html[data-theme="dark"] .folder-select,
+html[data-theme="dark"] .bookmark-item,
 html[data-theme="dark"] .note-card,
 html[data-theme="dark"] .note-drag-preview,
 html[data-theme="dark"] .note-tab,
@@ -2069,6 +2187,8 @@ html[data-theme="dark"] .slash-item small,
 html[data-theme="dark"] .note-card small,
 html[data-theme="dark"] .note-drag-preview small,
 html[data-theme="dark"] .list-label,
+html[data-theme="dark"] .section-header-button,
+html[data-theme="dark"] .empty-bookmarks,
 html[data-theme="dark"] .palette-result small,
 html[data-theme="dark"] .folder-search-results small,
 html[data-theme="dark"] .folder-search-results p,
@@ -2079,6 +2199,10 @@ html[data-theme="dark"] .palette-empty {
 }
 
 html[data-theme="dark"] .property-row {
+  border-color: rgba(238, 232, 223, 0.1);
+}
+
+html[data-theme="dark"] .bookmarks-section {
   border-color: rgba(238, 232, 223, 0.1);
 }
 
@@ -2093,7 +2217,9 @@ html[data-theme="dark"] .note-card.is-active,
 html[data-theme="dark"] .note-tab.is-active,
 html[data-theme="dark"] .slash-item.is-selected,
 html[data-theme="dark"] .slash-item:hover,
-html[data-theme="dark"] .palette-result:hover {
+html[data-theme="dark"] .palette-result:hover,
+html[data-theme="dark"] .section-header-button:hover,
+html[data-theme="dark"] .bookmark-item:hover {
   color: var(--accent-strong);
   background: var(--accent-soft);
 }

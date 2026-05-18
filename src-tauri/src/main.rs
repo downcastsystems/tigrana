@@ -90,6 +90,16 @@ struct WorkspaceMetadata {
     folder_colors: serde_json::Map<String, serde_json::Value>,
     #[serde(default)]
     note_icons: serde_json::Map<String, serde_json::Value>,
+    #[serde(default)]
+    note_positions: serde_json::Map<String, serde_json::Value>,
+    #[serde(default)]
+    bookmarks: Vec<serde_json::Value>,
+    #[serde(default = "default_true")]
+    bookmarks_expanded: bool,
+    #[serde(default)]
+    session_open_tabs: Vec<String>,
+    #[serde(default)]
+    session_active_tab: Option<String>,
 }
 
 #[tauri::command]
@@ -517,7 +527,16 @@ fn default_workspace_metadata() -> WorkspaceMetadata {
         folder_icons: serde_json::Map::new(),
         folder_colors: serde_json::Map::new(),
         note_icons: serde_json::Map::new(),
+        note_positions: serde_json::Map::new(),
+        bookmarks: Vec::new(),
+        bookmarks_expanded: true,
+        session_open_tabs: Vec::new(),
+        session_active_tab: None,
     }
+}
+
+fn default_true() -> bool {
+    true
 }
 
 fn safe_note_path(workspace: &str, relative: &str) -> Result<PathBuf, String> {
