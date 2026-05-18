@@ -64,6 +64,7 @@ button:disabled {
 .app-titlebar > .note-tabs {
   flex: 1 1 0;          /* grow to fill remaining titlebar space */
   min-width: 0;
+  gap: 4px;             /* small margin between adjacent tabs */
   padding: 0 6px;
   border-bottom: 0;
   background: transparent;
@@ -82,6 +83,14 @@ button:disabled {
   overflow: hidden; /* clip internal grid when tab gets very narrow */
   height: 30px;
   border-radius: 8px;
+  /* Thin vertical separator on the left edge of each tab; hidden on the first tab
+     and on the tab that follows the active one (so the active tab is fully isolated). */
+  border-left-color: rgba(52, 48, 43, 0.10);
+}
+
+.app-titlebar .note-tab:first-child,
+.app-titlebar .note-tab.is-active + .note-tab {
+  border-left-color: transparent;
 }
 
 .app-titlebar .note-tab.is-active {
@@ -1865,6 +1874,15 @@ html[data-theme="dark"] .topbar,
 html[data-theme="dark"] .app-titlebar {
   border-color: rgba(238, 232, 223, 0.1);
   background: rgba(24, 26, 27, 0.78);
+}
+
+html[data-theme="dark"] .app-titlebar .note-tab {
+  border-left-color: rgba(238, 232, 223, 0.10);
+}
+
+html[data-theme="dark"] .app-titlebar .note-tab:first-child,
+html[data-theme="dark"] .app-titlebar .note-tab.is-active + .note-tab {
+  border-left-color: transparent;
 }
 
 html[data-theme="dark"] .app-titlebar .note-tab.is-active {
