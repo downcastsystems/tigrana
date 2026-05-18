@@ -10,6 +10,7 @@ import {
   ListOrdered,
   Minus,
   Quote,
+  Table,
   Type,
   type LucideIcon,
 } from "lucide-react";
@@ -114,6 +115,18 @@ export const slashCommands: SlashCommand[] = [
       const url = window.prompt("Image URL");
       if (!url) return;
       editor.chain().focus().deleteRange(range).setImage({ src: url, alt: "Image" }).run();
+    },
+  },
+  {
+    id: "table",
+    title: "Table",
+    hint: "Insert a table",
+    icon: Table,
+    keywords: ["table", "grid", "spreadsheet"],
+    run: (editor, range) => {
+      editor.chain().focus().deleteRange(range).insertTable({ rows: 3, cols: 3, withHeaderRow: true }).run();
+      // editor.state is updated synchronously after .run(); capture size now for paragraph insertion
+      editor.commands.insertContentAt(editor.state.doc.content.size, { type: "paragraph" });
     },
   },
 ];

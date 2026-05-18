@@ -3,6 +3,10 @@ import Highlight from "@tiptap/extension-highlight";
 import Image from "@tiptap/extension-image";
 import Link from "@tiptap/extension-link";
 import Placeholder from "@tiptap/extension-placeholder";
+import { Table } from "@tiptap/extension-table";
+import { TableCell } from "@tiptap/extension-table-cell";
+import { TableHeader } from "@tiptap/extension-table-header";
+import { TableRow } from "@tiptap/extension-table-row";
 import TaskItem from "@tiptap/extension-task-item";
 import TaskList from "@tiptap/extension-task-list";
 import { TextSelection } from "@tiptap/pm/state";
@@ -23,7 +27,7 @@ import {
   Strikethrough,
 } from "lucide-react";
 import { common, createLowlight } from "lowlight";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { type CSSProperties, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { filterSlashCommands } from "./slashCommands";
 import { htmlToMarkdown, markdownToHtml } from "../lib/markdown";
 import { saveAsset } from "../lib/notesApi";
@@ -32,6 +36,7 @@ import type { NotePositionMetadata } from "../types";
 type NotesEditorProps = {
   content: string;
   focusRequest: number;
+  focusAtEndRequest: number;
   notePath: string | null;
   restorePosition: NotePositionMetadata | null;
   workspace: string;
@@ -47,7 +52,7 @@ type SlashState = {
 
 const lowlight = createLowlight(common);
 
-export function NotesEditor({ content, focusRequest, notePath, restorePosition, workspace, onChange, onPositionChange }: NotesEditorProps) {
+export function NotesEditor({ content, focusRequest, focusAtEndRequest, notePath, restorePosition, workspace, onChange, onPositionChange }: NotesEditorProps) {
   const [slash, setSlash] = useState<SlashState | null>(null);
   const slashRef = useRef<SlashState | null>(null);
   const editorRef = useRef<Editor | null>(null);
@@ -75,6 +80,10 @@ export function NotesEditor({ content, focusRequest, notePath, restorePosition, 
       TaskItem.configure({
         nested: true,
       }),
+      Table.configure({ resizable: false }),
+      TableRow,
+      TableHeader,
+      TableCell,
     ],
     [],
   );
@@ -193,20 +202,30 @@ export function NotesEditor({ content, focusRequest, notePath, restorePosition, 
     if (!editor) return;
     if (lastLoadedNote.current === notePath) return;
     const next = markdownToHtml(content);
-    editor.commands.setContent(next, false);
+    // Chain content + selection into one transaction so there is no intermediate
+    // paint that could leave a ghost cursor from the previous note.
     const selectionFrom = restorePosition?.selectionFrom;
     const selectionTo = restorePosition?.selectionTo ?? selectionFrom;
-    if (
+    const hasValidRestore =
       typeof selectionFrom === "number" &&
       typeof selectionTo === "number" &&
       selectionFrom >= 0 &&
-      selectionTo >= selectionFrom &&
-      selectionTo <= editor.state.doc.content.size
-    ) {
-      editor.commands.setTextSelection({ from: Math.max(1, selectionFrom), to: Math.max(1, selectionTo) });
-    } else {
-      editor.commands.setTextSelection(1);
-    }
+      selectionTo >= selectionFrom;
+    // Blur first so the browser removes the cursor before new content is painted,
+    // preventing a ghost caret from the previous note appearing briefly.
+    editor.commands.blur();
+    editor
+      .chain()
+      .setContent(next, false)
+      .command(({ tr, state }) => {
+        const targetFrom = hasValidRestore ? Math.max(1, selectionFrom as number) : 1;
+        const targetTo = hasValidRestore
+          ? Math.min(Math.max(1, selectionTo as number), state.doc.content.size)
+          : 1;
+        tr.setSelection(TextSelection.create(state.doc, targetFrom, targetTo));
+        return true;
+      })
+      .run();
     lastLoadedNote.current = notePath;
   }, [content, editor, notePath, restorePosition]);
 
@@ -215,7 +234,27 @@ export function NotesEditor({ content, focusRequest, notePath, restorePosition, 
     editor.chain().focus("start").run();
   }, [editor, focusRequest]);
 
+  useEffect(() => {
+    if (!editor || !focusAtEndRequest) return;
+    editor.chain().focus().setTextSelection(editor.state.doc.content.size).run();
+  }, [editor, focusAtEndRequest]);
+
   const commands = slash ? filterSlashCommands(slash.query) : [];
+
+  // Position the slash menu near the cursor in viewport coordinates.
+  const slashMenuStyle = useMemo(() => {
+    if (!slash || !editor) return undefined;
+    const coords = editor.view.coordsAtPos(slash.range.from);
+    const menuWidth = 292;
+    const menuHeight = Math.min(commands.length * 54 + 14, 380);
+    const vw = window.innerWidth;
+    const vh = window.innerHeight;
+    let top = coords.bottom + 4;
+    let left = coords.left;
+    if (left + menuWidth > vw - 8) left = vw - menuWidth - 8;
+    if (top + menuHeight > vh - 8) top = coords.top - menuHeight - 4;
+    return { top, left } as CSSProperties;
+  }, [slash, editor, commands.length]);
 
   useEffect(() => {
     if (!slash || !editor) return;
@@ -224,11 +263,20 @@ export function NotesEditor({ content, focusRequest, notePath, restorePosition, 
   }, [editor, handleSlashKeyDown, slash]);
 
   return (
-    <div className="editor-shell">
+    <div
+      className="editor-shell"
+      onMouseDown={(e) => {
+        if (!editor || e.button !== 0) return;
+        const pm = editor.view.dom;
+        if (pm.contains(e.target as Node)) return;
+        e.preventDefault();
+        editor.chain().focus().setTextSelection(editor.state.doc.content.size).run();
+      }}
+    >
       {editor ? <FormattingBubbleMenu editor={editor} /> : null}
       <EditorContent editor={editor} className="editor-content" />
       {slash && commands.length > 0 ? (
-        <div className="slash-menu">
+        <div className="slash-menu" style={slashMenuStyle}>
           {commands.map((command, index) => {
             const Icon = command.icon;
             return (

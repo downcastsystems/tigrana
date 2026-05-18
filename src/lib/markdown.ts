@@ -16,17 +16,58 @@ const inlineMarkdownToHtml = (value: string) => {
   return html;
 };
 
+function isTableRow(line: string) {
+  return /^\|.+\|/.test(line.trim());
+}
+
+function isTableSeparator(line: string) {
+  return /^\|[\s|:-]+\|/.test(line.trim()) && /[-]/.test(line);
+}
+
+function parseTableRow(line: string): string[] {
+  return line.trim().replace(/^\||\|$/g, "").split("|").map((cell) => cell.trim());
+}
+
 export function markdownToHtml(markdown: string) {
   const lines = markdown.replace(/\r\n/g, "\n").split("\n");
   const html: string[] = [];
   let listType: "ul" | "ol" | "task" | null = null;
   let inCode = false;
   let codeLines: string[] = [];
+  let tableRows: string[][] = [];
+  let inTable = false;
 
   const closeList = () => {
     if (!listType) return;
     html.push(listType === "ol" ? "</ol>" : "</ul>");
     listType = null;
+  };
+
+  const closeTable = () => {
+    if (!inTable || tableRows.length === 0) return;
+    // First row is header, second is separator (skip), rest are body rows
+    const [headerRow, , ...bodyRows] = tableRows;
+    if (!headerRow) { inTable = false; tableRows = []; return; }
+    html.push("<table>");
+    html.push("<thead><tr>");
+    for (const cell of headerRow) {
+      html.push(`<th>${inlineMarkdownToHtml(cell)}</th>`);
+    }
+    html.push("</tr></thead>");
+    if (bodyRows.length > 0) {
+      html.push("<tbody>");
+      for (const row of bodyRows) {
+        html.push("<tr>");
+        for (const cell of row) {
+          html.push(`<td>${inlineMarkdownToHtml(cell)}</td>`);
+        }
+        html.push("</tr>");
+      }
+      html.push("</tbody>");
+    }
+    html.push("</table>");
+    inTable = false;
+    tableRows = [];
   };
 
   for (const line of lines) {
@@ -37,6 +78,7 @@ export function markdownToHtml(markdown: string) {
         inCode = false;
       } else {
         closeList();
+        closeTable();
         inCode = true;
       }
       continue;
@@ -47,8 +89,24 @@ export function markdownToHtml(markdown: string) {
       continue;
     }
 
+    // GFM table rows
+    if (isTableRow(line) && !isTableSeparator(line)) {
+      closeList();
+      if (!inTable) inTable = true;
+      tableRows.push(parseTableRow(line));
+      continue;
+    }
+    if (inTable && isTableSeparator(line)) {
+      tableRows.push([]); // placeholder so header/body split works
+      continue;
+    }
+    if (inTable) {
+      closeTable();
+    }
+
     if (!line.trim()) {
       closeList();
+      closeTable();
       continue;
     }
 
@@ -110,6 +168,7 @@ export function markdownToHtml(markdown: string) {
   }
 
   closeList();
+  closeTable();
   if (inCode) {
     html.push(`<pre><code>${escapeHtml(codeLines.join("\n"))}</code></pre>`);
   }
@@ -172,6 +231,31 @@ export function htmlToMarkdown(html: string) {
           markdown.push(`- ${text}`);
         }
       });
+    } else if (tag === "table") {
+      // Handle both standard <thead>/<tbody> and TipTap's tbody-only structure
+      // (TipTap puts all rows in <tbody>, using <th> for the header row).
+      // Push the entire table as ONE entry so the final \n\n join doesn't insert
+      // blank lines between rows, which would break markdownToHtml's table parser.
+      const allRows = Array.from(block.querySelectorAll("tr"));
+      if (allRows.length > 0) {
+        const tableLines: string[] = [];
+        const firstCells = Array.from(allRows[0].children);
+        const hasHeader = firstCells.some((c) => c.tagName.toLowerCase() === "th");
+        if (hasHeader) {
+          tableLines.push("| " + firstCells.map((c) => inlineHtmlToMarkdown(c).trim()).join(" | ") + " |");
+          tableLines.push("| " + firstCells.map(() => "---").join(" | ") + " |");
+          for (const row of allRows.slice(1)) {
+            const cells = Array.from(row.children);
+            tableLines.push("| " + cells.map((c) => inlineHtmlToMarkdown(c).trim()).join(" | ") + " |");
+          }
+        } else {
+          for (const row of allRows) {
+            const cells = Array.from(row.children);
+            tableLines.push("| " + cells.map((c) => inlineHtmlToMarkdown(c).trim()).join(" | ") + " |");
+          }
+        }
+        markdown.push(tableLines.join("\n"));
+      }
     }
   }
 

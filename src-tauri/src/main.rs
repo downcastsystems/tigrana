@@ -109,7 +109,7 @@ fn list_notes(workspace: String) -> Result<Vec<NoteEntry>, String> {
 
     for entry in WalkDir::new(&root)
         .into_iter()
-        .filter_entry(|entry| !is_hidden_app_dir(entry.path()))
+        .filter_entry(|entry| !is_hidden_entry(entry.path()))
     {
         let entry = entry.map_err(|error| error.to_string())?;
         let path = entry.path();
@@ -170,7 +170,7 @@ fn list_folders(workspace: String) -> Result<Vec<FolderEntry>, String> {
     for entry in WalkDir::new(&root)
         .min_depth(1)
         .into_iter()
-        .filter_entry(|entry| !is_hidden_app_dir(entry.path()))
+        .filter_entry(|entry| !is_hidden_entry(entry.path()))
     {
         let entry = entry.map_err(|error| error.to_string())?;
         let path = entry.path();
@@ -557,10 +557,10 @@ fn normalize_relative(value: &str) -> Result<PathBuf, String> {
     Ok(path)
 }
 
-fn is_hidden_app_dir(path: &Path) -> bool {
+fn is_hidden_entry(path: &Path) -> bool {
     path.file_name()
         .and_then(|name| name.to_str())
-        .map(|name| name == ".lumen" || name == ".assets")
+        .map(|name| name.starts_with('.'))
         .unwrap_or(false)
 }
 

@@ -22,6 +22,8 @@ import {
   PanelRightOpen,
   Pencil,
   Pin,
+  Maximize2,
+  Minimize2,
   Plus,
   Save,
   Search,
@@ -67,12 +69,13 @@ const workspaceKey = "lumen-notes-workspace";
 const themeKey = "lumen-notes-theme";
 const accentKey = "lumen-notes-accent";
 const themePresetKey = "lumen-notes-theme-preset";
+const fullWidthKey = "lumen-notes-full-width";
 const folderPaneWidthKey = "lumen-notes-folder-pane-width";
 const notesPaneWidthKey = "lumen-notes-notes-pane-width";
 const rightPaneWidthKey = "lumen-notes-right-pane-width";
 const notePositionFreshMs = 24 * 60 * 60 * 1000;
 const defaultLightAccent = "#315f59";
-const defaultDarkAccent = "#6fa69a";
+const defaultDarkAccent = "#229ff9";
 const lucideIconPrefix = "lucide:";
 const lucideIconMap = Object.fromEntries(
   Object.entries(LucideIcons).filter(([name, value]) => /^[A-Z]/.test(name) && !name.endsWith("Icon") && isLucideIcon(value)),
@@ -219,6 +222,7 @@ export default function App() {
   const [outlineVisible, setOutlineVisible] = useState(true);
   const [rightSidebarMode, setRightSidebarMode] = useState<RightSidebarMode>("outline");
   const [rawMarkdownVisible, setRawMarkdownVisible] = useState(false);
+  const [fullWidth, setFullWidth] = useState(() => localStorage.getItem(fullWidthKey) === "true");
   const [openTabs, setOpenTabs] = useState<NoteTab[]>([]);
   const [activeTabId, setActiveTabId] = useState<string | null>(null);
   const [folderPaneWidth, setFolderPaneWidth] = useState(() => readStoredNumber(folderPaneWidthKey, 292));
@@ -234,6 +238,7 @@ export default function App() {
   const [dropTargetFolder, setDropTargetFolder] = useState<string | null>(null);
   const [noteDragPreview, setNoteDragPreview] = useState<NoteDragPreview | null>(null);
   const [editorFocusRequest, setEditorFocusRequest] = useState(0);
+  const [editorFocusAtEndRequest, setEditorFocusAtEndRequest] = useState(0);
   const noteSurfaceRef = useRef<HTMLElement | null>(null);
   const titleInputRef = useRef<HTMLTextAreaElement | null>(null);
   const draggingItemRef = useRef<DragItem>(null);
@@ -307,6 +312,10 @@ export default function App() {
     if (accentColor) localStorage.setItem(accentKey, accentColor);
     else localStorage.removeItem(accentKey);
   }, [accentColor, effectiveAccentColor, resolvedTheme]);
+
+  useEffect(() => {
+    localStorage.setItem(fullWidthKey, String(fullWidth));
+  }, [fullWidth]);
 
   useEffect(() => {
     localStorage.setItem(folderPaneWidthKey, String(folderPaneWidth));
@@ -548,13 +557,18 @@ export default function App() {
 
   useEffect(() => {
     const surface = noteSurfaceRef.current;
-    if (!surface || !noteOpen) return;
+    if (!surface || !activePath) return;
     requestAnimationFrame(() => {
       const target = editorRestorePosition?.scrollTop ?? 0;
       const maxScroll = Math.max(0, surface.scrollHeight - surface.clientHeight);
       surface.scrollTop = target >= 0 && target <= maxScroll + 16 ? target : 0;
     });
-  }, [activePath, editorRestorePosition, noteOpen]);
+    // noteOpen intentionally excluded: refreshWorkspace (auto-save) regenerates the notes
+    // array which gives noteOpen a new object reference, spuriously re-firing this effect
+    // and scrolling back to the top. activePath and editorRestorePosition only change on
+    // actual note switches, which is the only time scroll should be restored.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activePath, editorRestorePosition]);
 
   function handleNoteSurfaceScroll() {
     if (!activePath) return;
@@ -1382,11 +1396,29 @@ export default function App() {
             >
               <FileCode2 size={17} />
             </button>
+            <button
+              className={`icon-button ${fullWidth ? "is-active" : ""}`}
+              type="button"
+              title={fullWidth ? "Restore reading width" : "Expand to full width"}
+              onClick={() => setFullWidth((value) => !value)}
+            >
+              {fullWidth ? <Minimize2 size={17} /> : <Maximize2 size={17} />}
+            </button>
           </header>
         ) : null}
 
         {noteOpen ? (
-          <section className="note-surface" ref={noteSurfaceRef} onScroll={handleNoteSurfaceScroll}>
+          <section
+            className={`note-surface${fullWidth ? " is-full-width" : ""}`}
+            ref={noteSurfaceRef}
+            onScroll={handleNoteSurfaceScroll}
+            onMouseDown={(event) => {
+              if (event.target === noteSurfaceRef.current) {
+                event.preventDefault();
+                setEditorFocusAtEndRequest((v) => v + 1);
+              }
+            }}
+          >
             <div className="title-shell">
               <textarea
                 ref={titleInputRef}
@@ -1419,6 +1451,7 @@ export default function App() {
               <NotesEditor
                 content={draft}
                 focusRequest={editorFocusRequest}
+                focusAtEndRequest={editorFocusAtEndRequest}
                 notePath={activePath}
                 restorePosition={editorRestorePosition}
                 workspace={workspace}
