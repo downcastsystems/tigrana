@@ -38,16 +38,78 @@ function parseTableRow(line: string): string[] {
 export function markdownToHtml(markdown: string, options: MarkdownOptions = {}) {
   const lines = markdown.replace(/\r\n/g, "\n").split("\n");
   const html: string[] = [];
-  let listType: "ul" | "ol" | "task" | null = null;
+  type ListLevel = { type: "ul" | "ol" | "task"; indent: number; openLi: boolean };
+  const listStack: ListLevel[] = [];
   let inCode = false;
   let codeLines: string[] = [];
   let tableRows: string[][] = [];
   let inTable = false;
 
+  const openTag = (type: ListLevel["type"]) =>
+    type === "ol" ? "<ol>" : type === "task" ? '<ul data-type="taskList">' : "<ul>";
+  const closeTag = (type: ListLevel["type"]) => (type === "ol" ? "</ol>" : "</ul>");
+
+  const closeOpenLi = () => {
+    const top = listStack[listStack.length - 1];
+    if (top?.openLi) {
+      html.push("</li>");
+      top.openLi = false;
+    }
+  };
+
+  const popList = () => {
+    closeOpenLi();
+    const top = listStack.pop()!;
+    html.push(closeTag(top.type));
+  };
+
   const closeList = () => {
-    if (!listType) return;
-    html.push(listType === "ol" ? "</ol>" : "</ul>");
-    listType = null;
+    while (listStack.length) {
+      popList();
+      // After popping a nested list, also close the parent's li before next iteration.
+      closeOpenLi();
+    }
+  };
+
+  const emitListItem = (indent: number, type: ListLevel["type"], openItemHtml: string) => {
+    // Pop nested levels deeper than this indent.
+    while (listStack.length) {
+      const top = listStack[listStack.length - 1];
+      if (top.indent < indent) break;
+      if (top.indent === indent && top.type === type) break;
+      popList();
+    }
+    let top = listStack[listStack.length - 1];
+
+    if (!top || top.indent < indent) {
+      // Open a new (possibly nested) list. If nested, parent's <li> stays open so
+      // the new <ul>/<ol> renders INSIDE it.
+      html.push(openTag(type));
+      listStack.push({ type, indent, openLi: false });
+      top = listStack[listStack.length - 1];
+    } else if (top.indent === indent && top.type !== type) {
+      closeOpenLi();
+      html.push(closeTag(top.type));
+      listStack.pop();
+      html.push(openTag(type));
+      listStack.push({ type, indent, openLi: false });
+      top = listStack[listStack.length - 1];
+    }
+
+    // Close any previously-open sibling <li>, then emit the new <li> open part.
+    closeOpenLi();
+    html.push(openItemHtml);
+    top.openLi = true;
+  };
+
+  const indentOf = (raw: string) => {
+    let n = 0;
+    for (const ch of raw) {
+      if (ch === " ") n += 1;
+      else if (ch === "\t") n += 4;
+      else break;
+    }
+    return n;
   };
 
   const closeTable = () => {
@@ -137,36 +199,29 @@ export function markdownToHtml(markdown: string, options: MarkdownOptions = {}) 
       continue;
     }
 
-    const task = /^-\s+\[( |x)\]\s+(.*)$/i.exec(line);
+    const indent = indentOf(line);
+    const stripped = line.slice(indent);
+
+    const task = /^-\s+\[( |x)\]\s+(.*)$/i.exec(stripped);
     if (task) {
-      if (listType !== "task") {
-        closeList();
-        html.push('<ul data-type="taskList">');
-        listType = "task";
-      }
-      html.push(`<li data-type="taskItem" data-checked="${task[1].toLowerCase() === "x"}"><label><input type="checkbox" ${task[1].toLowerCase() === "x" ? "checked" : ""}><span></span></label><div><p>${inlineMarkdownToHtml(task[2], options)}</p></div></li>`);
+      const checked = task[1].toLowerCase() === "x";
+      emitListItem(
+        indent,
+        "task",
+        `<li data-type="taskItem" data-checked="${checked}"><label><input type="checkbox"${checked ? " checked" : ""}><span></span></label><div><p>${inlineMarkdownToHtml(task[2], options)}</p></div>`,
+      );
       continue;
     }
 
-    const bullet = /^[-*]\s+(.*)$/.exec(line);
+    const bullet = /^[-*]\s+(.*)$/.exec(stripped);
     if (bullet) {
-      if (listType !== "ul") {
-        closeList();
-        html.push("<ul>");
-        listType = "ul";
-      }
-      html.push(`<li><p>${inlineMarkdownToHtml(bullet[1], options)}</p></li>`);
+      emitListItem(indent, "ul", `<li><p>${inlineMarkdownToHtml(bullet[1], options)}</p>`);
       continue;
     }
 
-    const ordered = /^\d+\.\s+(.*)$/.exec(line);
+    const ordered = /^\d+\.\s+(.*)$/.exec(stripped);
     if (ordered) {
-      if (listType !== "ol") {
-        closeList();
-        html.push("<ol>");
-        listType = "ol";
-      }
-      html.push(`<li><p>${inlineMarkdownToHtml(ordered[1], options)}</p></li>`);
+      emitListItem(indent, "ol", `<li><p>${inlineMarkdownToHtml(ordered[1], options)}</p>`);
       continue;
     }
 
@@ -192,6 +247,9 @@ function inlineHtmlToMarkdown(element: Element): string {
 
     if (!(node instanceof Element)) return;
     const tag = node.tagName.toLowerCase();
+    // Skip nested lists — they're handled separately by serializeList so the
+    // recursion doesn't flatten nested bullets into the parent line.
+    if (tag === "ul" || tag === "ol") return;
     const content = inlineHtmlToMarkdown(node);
 
     if (tag === "strong" || tag === "b") value += `**${content}**`;
@@ -203,6 +261,32 @@ function inlineHtmlToMarkdown(element: Element): string {
     else value += content;
   });
   return value;
+}
+
+function serializeList(list: Element, depth: number): string {
+  const indent = "  ".repeat(depth);
+  const isTask = list.getAttribute("data-type") === "taskList";
+  const tag = list.tagName.toLowerCase();
+  const lines: string[] = [];
+  Array.from(list.children).forEach((item, index) => {
+    if (item.tagName.toLowerCase() !== "li") return;
+    const text = inlineHtmlToMarkdown(item).trim();
+    let prefix = "- ";
+    if (isTask) {
+      const checked = item.getAttribute("data-checked") === "true";
+      prefix = `- [${checked ? "x" : " "}] `;
+    } else if (tag === "ol") {
+      prefix = `${index + 1}. `;
+    }
+    lines.push(`${indent}${prefix}${text}`);
+    Array.from(item.children).forEach((child) => {
+      const childTag = child.tagName.toLowerCase();
+      if (childTag === "ul" || childTag === "ol") {
+        lines.push(serializeList(child, depth + 1));
+      }
+    });
+  });
+  return lines.join("\n");
 }
 
 export function htmlToMarkdown(html: string) {
@@ -226,18 +310,7 @@ export function htmlToMarkdown(html: string) {
     } else if (tag === "hr") {
       markdown.push("---");
     } else if (tag === "ul" || tag === "ol") {
-      const isTask = block.getAttribute("data-type") === "taskList";
-      Array.from(block.children).forEach((item, index) => {
-        const text = inlineHtmlToMarkdown(item);
-        if (isTask) {
-          const checked = item.getAttribute("data-checked") === "true";
-          markdown.push(`- [${checked ? "x" : " "}] ${text}`);
-        } else if (tag === "ol") {
-          markdown.push(`${index + 1}. ${text}`);
-        } else {
-          markdown.push(`- ${text}`);
-        }
-      });
+      markdown.push(serializeList(block, 0));
     } else if (tag === "table") {
       // Handle both standard <thead>/<tbody> and TipTap's tbody-only structure
       // (TipTap puts all rows in <tbody>, using <th> for the header row).

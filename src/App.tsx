@@ -78,6 +78,7 @@ const folderPaneWidthKey = "lumen-notes-folder-pane-width";
 const notesPaneWidthKey = "lumen-notes-notes-pane-width";
 const rightPaneWidthKey = "lumen-notes-right-pane-width";
 const recentNotebooksKey = "lumen-notes-recent-notebooks";
+const accentTitlebarKey = "lumen-notes-accent-titlebar";
 const notePositionFreshMs = 24 * 60 * 60 * 1000;
 const defaultLightAccent = "#315f59";
 
@@ -224,7 +225,14 @@ const themePresets: ThemePreset[] = [
     id: "default",
     name: "Default",
     accent: { light: defaultLightAccent, dark: defaultDarkAccent },
-    appBackground: { light: "#f7f4ef", dark: "#212225" },
+    appBackground: { light: "#ffffff", dark: "#212225" },
+    tokens: {
+      light: {
+        surface: "#f5f5f5",
+        surfaceSoft: "#f5f5f5",
+        surfaceMuted: "#ececec",
+      },
+    },
   },
   {
     id: "atom",
@@ -265,6 +273,7 @@ export default function App() {
   const [prefersDark, setPrefersDark] = useState(() => window.matchMedia?.("(prefers-color-scheme: dark)").matches ?? false);
   const [themePresetId, setThemePresetId] = useState<ThemePresetId>(() => readStoredThemePreset());
   const [accentColor, setAccentColor] = useState<string | null>(() => localStorage.getItem(accentKey));
+  const [accentTitlebar, setAccentTitlebar] = useState<boolean>(() => localStorage.getItem(accentTitlebarKey) === "true");
   const [folders, setFolders] = useState<FolderEntry[]>([]);
   const [notes, setNotes] = useState<NoteEntry[]>([]);
   const [contents, setContents] = useState(() => new Map<string, string>());
@@ -414,11 +423,16 @@ export default function App() {
   }, [colorScheme, resolvedTheme, themePreset]);
 
   useEffect(() => {
+    document.documentElement.dataset.accentTitlebar = accentTitlebar ? "true" : "false";
+    localStorage.setItem(accentTitlebarKey, String(accentTitlebar));
+  }, [accentTitlebar]);
+
+  useEffect(() => {
     const rgb = hexToRgb(effectiveAccentColor);
     document.documentElement.style.setProperty("--accent", effectiveAccentColor);
     document.documentElement.style.setProperty("--accent-strong", resolvedTheme === "dark" ? "#ecf4f1" : "#192d2b");
-    document.documentElement.style.setProperty("--accent-soft", rgb ? `rgba(${rgb.r}, ${rgb.g}, ${rgb.b}, ${resolvedTheme === "dark" ? 0.18 : 0.14})` : "rgba(75, 125, 117, 0.14)");
-    document.documentElement.style.setProperty("--accent-muted", rgb ? `rgba(${rgb.r}, ${rgb.g}, ${rgb.b}, 0.12)` : "rgba(75, 125, 117, 0.12)");
+    document.documentElement.style.setProperty("--accent-soft", rgb ? `rgba(${rgb.r}, ${rgb.g}, ${rgb.b}, ${resolvedTheme === "dark" ? 0.32 : 0.26})` : "rgba(75, 125, 117, 0.26)");
+    document.documentElement.style.setProperty("--accent-muted", rgb ? `rgba(${rgb.r}, ${rgb.g}, ${rgb.b}, ${resolvedTheme === "dark" ? 0.22 : 0.18})` : "rgba(75, 125, 117, 0.18)");
     if (accentColor) localStorage.setItem(accentKey, accentColor);
     else localStorage.removeItem(accentKey);
   }, [accentColor, effectiveAccentColor, resolvedTheme]);
@@ -1710,7 +1724,7 @@ export default function App() {
               setAppMenuOpen((value) => !value);
             }}
           />
-          <PaneResizer label="Resize folder pane" onPointerDown={startFolderPaneResize} />
+          <PaneResizer label="Resize folder pane" variant="inner" onPointerDown={startFolderPaneResize} />
           <NotesPane
             activePath={activePath}
             draggingPath={draggingItem?.kind === "note" ? draggingItem.path : null}
@@ -1733,7 +1747,7 @@ export default function App() {
           />
         </aside>
       ) : null}
-      {leftVisible ? <PaneResizer label="Resize notes pane" onPointerDown={startNotesPaneResize} /> : null}
+      {leftVisible ? <PaneResizer label="Resize notes pane" variant="left-of-main" onPointerDown={startNotesPaneResize} /> : null}
 
       <main className="main-pane">
         {noteOpen ? (
@@ -1844,7 +1858,7 @@ export default function App() {
         ) : null}
       </main>
 
-      {outlineVisible ? <PaneResizer label="Resize right sidebar" onPointerDown={startRightPaneResize} /> : null}
+      {outlineVisible ? <PaneResizer label="Resize right sidebar" variant="right-of-main" onPointerDown={startRightPaneResize} /> : null}
       {outlineVisible ? (
         <RightSidebar
           activeNote={activeNote}
@@ -1955,12 +1969,14 @@ export default function App() {
       {settingsOpen ? (
           <SettingsModal
             accentColor={accentColor}
+            accentTitlebar={accentTitlebar}
             colorScheme={colorScheme}
             effectiveAccentColor={effectiveAccentColor}
             resolvedTheme={resolvedTheme}
             themePresetId={themePreset.id}
             onAccentChange={setAccentColor}
             onAccentReset={() => setAccentColor(null)}
+            onAccentTitlebarChange={setAccentTitlebar}
             onClose={() => setSettingsOpen(false)}
             onColorSchemeChange={setColorScheme}
             onThemePresetChange={setThemePresetId}
@@ -2983,8 +2999,24 @@ function NoteDragPreviewLayer({ preview }: { preview: NoteDragPreview }) {
   );
 }
 
-function PaneResizer({ label, onPointerDown }: { label: string; onPointerDown: (event: React.PointerEvent<HTMLDivElement>) => void }) {
-  return <div aria-label={label} className="pane-resizer" role="separator" tabIndex={0} onPointerDown={onPointerDown} />;
+function PaneResizer({
+  label,
+  variant = "inner",
+  onPointerDown,
+}: {
+  label: string;
+  variant?: "inner" | "left-of-main" | "right-of-main";
+  onPointerDown: (event: React.PointerEvent<HTMLDivElement>) => void;
+}) {
+  return (
+    <div
+      aria-label={label}
+      className={`pane-resizer pane-resizer--${variant}`}
+      role="separator"
+      tabIndex={0}
+      onPointerDown={onPointerDown}
+    />
+  );
 }
 
 function NotebookMenuButton({
@@ -3211,19 +3243,23 @@ function SettingsModal({
   effectiveAccentColor,
   resolvedTheme,
   themePresetId,
+  accentTitlebar,
   onAccentChange,
   onAccentReset,
+  onAccentTitlebarChange,
   onColorSchemeChange,
   onClose,
   onThemePresetChange,
 }: {
   accentColor: string | null;
+  accentTitlebar: boolean;
   colorScheme: ColorScheme;
   effectiveAccentColor: string;
   resolvedTheme: "light" | "dark";
   themePresetId: ThemePresetId;
   onAccentChange: (color: string) => void;
   onAccentReset: () => void;
+  onAccentTitlebarChange: (value: boolean) => void;
   onColorSchemeChange: (scheme: ColorScheme) => void;
   onClose: () => void;
   onThemePresetChange: (theme: ThemePresetId) => void;
@@ -3279,6 +3315,20 @@ function SettingsModal({
                 Reset
               </button>
             </div>
+          </div>
+          <div className="setting-row">
+            <span>
+              <strong>Accent title bar</strong>
+              <small>Tint the window title bar with the accent color.</small>
+            </span>
+            <label className="switch">
+              <input
+                type="checkbox"
+                checked={accentTitlebar}
+                onChange={(event) => onAccentTitlebarChange(event.target.checked)}
+              />
+              <span className="switch-track" />
+            </label>
           </div>
         </div>
       ),
@@ -3521,7 +3571,7 @@ function ContextMenu({
         <Folder size={14} />
         <span>New Folder</span>
       </button>
-      {state.kind === "folder" && state.path ? (
+      {state.kind === "folder" ? (
         <>
           <button type="button" onClick={onOpenInNewWindow}>
             <PanelRightOpen size={14} />
@@ -3531,14 +3581,18 @@ function ContextMenu({
             <FolderOpen size={14} />
             <span>Reveal in Finder</span>
           </button>
-          <button type="button" onClick={onToggleBookmark}>
-            <Bookmark size={14} />
-            <span>{isBookmarked ? "Remove Bookmark" : "Add Bookmark"}</span>
-          </button>
-          <button type="button" onClick={onRenameFolder}>
-            <Pencil size={14} />
-            <span>Rename Folder</span>
-          </button>
+          {state.path ? (
+            <>
+              <button type="button" onClick={onToggleBookmark}>
+                <Bookmark size={14} />
+                <span>{isBookmarked ? "Remove Bookmark" : "Add Bookmark"}</span>
+              </button>
+              <button type="button" onClick={onRenameFolder}>
+                <Pencil size={14} />
+                <span>Rename Folder</span>
+              </button>
+            </>
+          ) : null}
           <button type="button" onClick={onSetFolderIcon}>
             <FileText size={14} />
             <span>Set Folder Icon</span>
@@ -4242,22 +4296,24 @@ function deriveThemeTokens(preset: ThemePreset, mode: "light" | "dark"): ThemeTo
   const bg = preset.appBackground[mode];
   const overrides = preset.tokens?.[mode] ?? {};
   if (mode === "dark") {
+    const sidebar = shiftLightness(bg, -3);
     return {
-      surface: shiftLightness(bg, -2),
-      surfaceSoft: bg,
+      surface: sidebar,
+      surfaceSoft: sidebar,
       surfaceStrong: shiftLightness(bg, 4),
-      surfaceMuted: shiftLightness(bg, 2),
+      surfaceMuted: shiftLightness(sidebar, -1),
       border: "rgba(238, 232, 223, 0.1)",
       text: "#eee8df",
       textMuted: "rgba(238, 232, 223, 0.62)",
       ...overrides,
     };
   }
+  const sidebar = shiftLightness(bg, -4);
   return {
-    surface: shiftLightness(bg, 3),
-    surfaceSoft: bg,
-    surfaceStrong: shiftLightness(bg, 6),
-    surfaceMuted: shiftLightness(bg, 1),
+    surface: sidebar,
+    surfaceSoft: sidebar,
+    surfaceStrong: shiftLightness(bg, 4),
+    surfaceMuted: shiftLightness(sidebar, -2),
     border: "rgba(52, 48, 43, 0.1)",
     text: "#22211f",
     textMuted: "rgba(34, 33, 31, 0.62)",
