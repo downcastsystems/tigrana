@@ -53,6 +53,7 @@ type NotesEditorProps = {
   restorePosition: NotePositionMetadata | null;
   workspace: string;
   onChange: (markdown: string) => void;
+  onLoadError: (error: unknown) => void;
   onPositionChange: (position: { selectedText: string; selectionFrom: number; selectionTo: number }) => void;
 };
 
@@ -129,7 +130,7 @@ const MarkdownImage = Image.extend({
   },
 });
 
-export function NotesEditor({ content, focusRequest, focusAtEndRequest, findRequest, notePath, restorePosition, workspace, onChange, onPositionChange }: NotesEditorProps) {
+export function NotesEditor({ content, focusRequest, focusAtEndRequest, findRequest, notePath, restorePosition, workspace, onChange, onLoadError, onPositionChange }: NotesEditorProps) {
   const [slash, setSlash] = useState<SlashState | null>(null);
   const [findOpen, setFindOpen] = useState(false);
   const [findQuery, setFindQuery] = useState("");
@@ -139,6 +140,21 @@ export function NotesEditor({ content, focusRequest, focusAtEndRequest, findRequ
   const findInputRef = useRef<HTMLInputElement | null>(null);
   const handledFindRequest = useRef(findRequest);
   const lastLoadedNote = useRef<string | null>(null);
+
+  const initialContent = useMemo((): { error: unknown; html: string } => {
+    try {
+      return {
+        error: null,
+        html: markdownToHtml(content, { resolveImageSrc: (src) => resolveNotebookImageSrc(workspace, src) }),
+      };
+    } catch (error) {
+      return { error, html: "" };
+    }
+  }, [content, workspace]);
+
+  useEffect(() => {
+    if (initialContent.error) onLoadError(initialContent.error);
+  }, [initialContent.error, onLoadError]);
 
   const extensions = useMemo(
     () => [
@@ -221,7 +237,7 @@ export function NotesEditor({ content, focusRequest, focusAtEndRequest, findRequ
 
   const editor = useEditor({
     extensions,
-    content: markdownToHtml(content, { resolveImageSrc: (src) => resolveNotebookImageSrc(workspace, src) }),
+    content: initialContent.html,
     editorProps: {
       handleDOMEvents: {
         keydown(_view, event) {
@@ -295,7 +311,13 @@ export function NotesEditor({ content, focusRequest, focusAtEndRequest, findRequ
   useEffect(() => {
     if (!editor) return;
     if (lastLoadedNote.current === notePath) return;
-    const next = markdownToHtml(content, { resolveImageSrc: (src) => resolveNotebookImageSrc(workspace, src) });
+    let next = "";
+    try {
+      next = markdownToHtml(content, { resolveImageSrc: (src) => resolveNotebookImageSrc(workspace, src) });
+    } catch (error) {
+      onLoadError(error);
+      return;
+    }
     // Chain content + selection into one transaction so there is no intermediate
     // paint that could leave a ghost cursor from the previous note.
     const selectionFrom = restorePosition?.selectionFrom;
@@ -309,20 +331,24 @@ export function NotesEditor({ content, focusRequest, focusAtEndRequest, findRequ
     // preventing a ghost caret from the previous note appearing briefly.
     editor.commands.blur();
     setFindOpen(false);
-    editor
-      .chain()
-      .setContent(next, false)
-      .command(({ tr, state }) => {
-        const targetFrom = hasValidRestore ? Math.max(1, selectionFrom as number) : 1;
-        const targetTo = hasValidRestore
-          ? Math.min(Math.max(1, selectionTo as number), state.doc.content.size)
-          : 1;
-        tr.setSelection(TextSelection.create(state.doc, targetFrom, targetTo));
-        return true;
-      })
-      .run();
-    lastLoadedNote.current = notePath;
-  }, [content, editor, notePath, restorePosition, workspace]);
+    try {
+      editor
+        .chain()
+        .setContent(next, false)
+        .command(({ tr, state }) => {
+          const targetFrom = hasValidRestore ? Math.max(1, selectionFrom as number) : 1;
+          const targetTo = hasValidRestore
+            ? Math.min(Math.max(1, selectionTo as number), state.doc.content.size)
+            : 1;
+          tr.setSelection(TextSelection.create(state.doc, targetFrom, targetTo));
+          return true;
+        })
+        .run();
+      lastLoadedNote.current = notePath;
+    } catch (error) {
+      onLoadError(error);
+    }
+  }, [content, editor, notePath, onLoadError, restorePosition, workspace]);
 
   useEffect(() => {
     if (!editor || !focusRequest) return;

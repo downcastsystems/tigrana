@@ -34,8 +34,8 @@ import {
 } from "lucide-react";
 import * as LucideIcons from "lucide-react";
 import type { LucideIcon } from "lucide-react";
-import type { CSSProperties } from "react";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import type { CSSProperties, ReactNode } from "react";
+import { Component, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { NotesEditor } from "./editor/NotesEditor";
 import {
   createFolder,
@@ -78,6 +78,34 @@ const rightPaneWidthKey = "lumen-notes-right-pane-width";
 const recentNotebooksKey = "lumen-notes-recent-notebooks";
 const notePositionFreshMs = 24 * 60 * 60 * 1000;
 const defaultLightAccent = "#315f59";
+
+class EditorErrorBoundary extends Component<
+  { children: ReactNode; onError: (error: unknown) => void; resetKey: string },
+  { hasError: boolean }
+> {
+  state = { hasError: false };
+
+  static getDerivedStateFromError() {
+    return { hasError: true };
+  }
+
+  componentDidCatch(error: unknown) {
+    this.props.onError(error);
+  }
+
+  componentDidUpdate(previousProps: { resetKey: string }) {
+    if (previousProps.resetKey !== this.props.resetKey && this.state.hasError) {
+      this.setState({ hasError: false });
+    }
+  }
+
+  render() {
+    if (this.state.hasError) {
+      return <div className="note-load-fallback">This note could not be loaded.</div>;
+    }
+    return this.props.children;
+  }
+}
 const defaultDarkAccent = "#229ff9";
 const lucideIconPrefix = "lucide:";
 const lucideIconMap = Object.fromEntries(
@@ -668,6 +696,16 @@ export default function App() {
     setSavedDraft("");
     setSelectedEditorText("");
   }
+
+  const handleNoteLoadError = useCallback((error: unknown) => {
+    const noteTitle =
+      titleDraft.trim() ||
+      (activePath ? notes.find((note) => note.path === activePath)?.title : null) ||
+      activePath ||
+      "this note";
+    clearCurrentNote();
+    setAppError(`Could not open "${noteTitle}". ${formatUnknownError(error)}`);
+  }, [activePath, notes, titleDraft]);
 
   async function selectNote(path: string) {
     if (noteOpen && (draft !== savedDraft || titleDraft !== savedTitle)) {
@@ -1663,17 +1701,20 @@ export default function App() {
                 />
               </div>
             ) : (
-              <NotesEditor
-                content={draft}
-                focusRequest={editorFocusRequest}
-                focusAtEndRequest={editorFocusAtEndRequest}
-                findRequest={noteFindRequest}
-                notePath={activePath}
-                restorePosition={editorRestorePosition}
-                workspace={workspace}
-                onChange={(markdown) => setDraft(markdown)}
-                onPositionChange={handleEditorPositionChange}
-              />
+              <EditorErrorBoundary resetKey={activePath ?? "pending-note"} onError={handleNoteLoadError}>
+                <NotesEditor
+                  content={draft}
+                  focusRequest={editorFocusRequest}
+                  focusAtEndRequest={editorFocusAtEndRequest}
+                  findRequest={noteFindRequest}
+                  notePath={activePath}
+                  restorePosition={editorRestorePosition}
+                  workspace={workspace}
+                  onChange={(markdown) => setDraft(markdown)}
+                  onLoadError={handleNoteLoadError}
+                  onPositionChange={handleEditorPositionChange}
+                />
+              </EditorErrorBoundary>
             )}
           </section>
         ) : (
@@ -3487,6 +3528,11 @@ function splitMarkdownTitle(markdown: string, fallbackTitle: string) {
 function composeMarkdown(title: string, body: string) {
   void title;
   return body;
+}
+
+function formatUnknownError(error: unknown) {
+  if (error instanceof Error) return error.message;
+  return String(error);
 }
 
 function previewNote(markdown: string) {

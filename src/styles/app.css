@@ -1463,6 +1463,13 @@ html[data-theme="dark"] .tab-list-separator {
   text-align: left;
 }
 
+.note-load-fallback {
+  width: min(640px, calc(100% - 72px));
+  margin: 24px auto 0;
+  color: #a13d31;
+  font-size: 13px;
+}
+
 .editor-shell {
   position: relative;
   width: min(640px, calc(100% - 72px));
