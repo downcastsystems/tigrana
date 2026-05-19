@@ -336,9 +336,12 @@ export function NotesEditor({ content, focusRequest, focusAtEndRequest, findRequ
         .chain()
         .setContent(next, false)
         .command(({ tr, state }) => {
-          const targetFrom = hasValidRestore ? Math.max(1, selectionFrom as number) : 1;
+          const docSize = state.doc.content.size;
           const targetTo = hasValidRestore
-            ? Math.min(Math.max(1, selectionTo as number), state.doc.content.size)
+            ? Math.min(Math.max(1, selectionTo as number), docSize)
+            : 1;
+          const targetFrom = hasValidRestore
+            ? Math.min(Math.max(1, selectionFrom as number), targetTo)
             : 1;
           tr.setSelection(TextSelection.create(state.doc, targetFrom, targetTo));
           return true;

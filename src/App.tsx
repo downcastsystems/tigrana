@@ -5,9 +5,11 @@ import { WebviewWindow } from "@tauri-apps/api/webviewWindow";
 import {
   BookOpen,
   Bookmark,
+  Braces,
   Check,
   ChevronDown,
   ChevronRight,
+  ChevronUp,
   FileCode2,
   FileText,
   Folder,
@@ -35,7 +37,7 @@ import {
 import * as LucideIcons from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 import type { CSSProperties, ReactNode } from "react";
-import { Component, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { Component, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { NotesEditor } from "./editor/NotesEditor";
 import {
   createFolder,
@@ -170,7 +172,7 @@ type NoteDragPreview = {
 
 type ColorScheme = "system" | "light" | "dark";
 type ThemePresetId = "default" | "atom" | "solarized" | "dracula" | "nord" | "gruvbox";
-type RightSidebarMode = "outline" | "properties";
+type RightSidebarMode = "outline" | "frontmatter" | "properties";
 type NoteTab = {
   id: string;
   path: string | null;
@@ -186,11 +188,35 @@ type BookmarkView = BookmarkEntry & {
   missing: boolean;
 };
 
+type ThemeTokens = {
+  surface: string;
+  surfaceSoft: string;
+  surfaceStrong: string;
+  surfaceMuted: string;
+  border: string;
+  text: string;
+  textMuted: string;
+};
+
 type ThemePreset = {
   id: ThemePresetId;
   name: string;
   accent: Record<"light" | "dark", string>;
   appBackground: Record<"light" | "dark", string>;
+  tokens?: Partial<Record<"light" | "dark", Partial<ThemeTokens>>>;
+};
+
+type ParsedNoteMarkdown = {
+  body: string;
+  frontmatter: string;
+  frontmatterError: string | null;
+};
+
+type FrontmatterField = {
+  editable: boolean;
+  key: string;
+  lineIndex: number;
+  value: string;
 };
 
 const themePresets: ThemePreset[] = [
@@ -251,6 +277,9 @@ export default function App() {
   const [savedTitle, setSavedTitle] = useState("");
   const [draft, setDraft] = useState("");
   const [savedDraft, setSavedDraft] = useState("");
+  const [frontmatterDraft, setFrontmatterDraft] = useState("");
+  const [savedFrontmatter, setSavedFrontmatter] = useState("");
+  const [frontmatterError, setFrontmatterError] = useState<string | null>(null);
   const [selectedEditorText, setSelectedEditorText] = useState("");
   const [editorRestorePosition, setEditorRestorePosition] = useState<NotePositionMetadata | null>(null);
   const [isSaving, setIsSaving] = useState(false);
@@ -320,11 +349,16 @@ export default function App() {
   );
   const outline = useMemo(() => extractOutline(titleDraft, draft), [draft, titleDraft]);
   const noteStats = useMemo(() => getTextStats(selectedEditorText || draft), [draft, selectedEditorText]);
+  const rawMarkdownDraft = useMemo(
+    () => composeMarkdown(frontmatterDraft, draft, Boolean(frontmatterError && !frontmatterDraft)),
+    [draft, frontmatterDraft, frontmatterError],
+  );
+  const hasUnsavedChanges = Boolean(noteOpen) && (draft !== savedDraft || titleDraft !== savedTitle || frontmatterDraft !== savedFrontmatter);
   const resolvedTheme = colorScheme === "system" ? (prefersDark ? "dark" : "light") : colorScheme;
   const themePreset = getThemePreset(themePresetId);
   const effectiveAccentColor = accentColor || themePreset.accent[resolvedTheme];
-  const selectedFolderTitle = useMemo(() => displayFolderName(selectedFolder, folders), [folders, selectedFolder]);
-  const bookmarks = useMemo(() => buildBookmarkViews(metadata.bookmarks, folders, notes, metadata), [folders, metadata, notes]);
+  const selectedFolderTitle = useMemo(() => displayFolderName(selectedFolder, folders, workspace), [folders, selectedFolder, workspace]);
+  const bookmarks = useMemo(() => buildBookmarkViews(metadata.bookmarks, folders, notes, metadata, workspace), [folders, metadata, notes, workspace]);
   const visibleTabs = useMemo(
     () =>
       openTabs.map((tab) => ({
@@ -365,7 +399,16 @@ export default function App() {
   useEffect(() => {
     document.documentElement.dataset.theme = resolvedTheme;
     document.documentElement.dataset.themePreset = themePreset.id;
-    document.documentElement.style.setProperty("--app-bg", themePreset.appBackground[resolvedTheme]);
+    const root = document.documentElement.style;
+    root.setProperty("--app-bg", themePreset.appBackground[resolvedTheme]);
+    const tokens = deriveThemeTokens(themePreset, resolvedTheme);
+    root.setProperty("--surface", tokens.surface);
+    root.setProperty("--surface-soft", tokens.surfaceSoft);
+    root.setProperty("--surface-strong", tokens.surfaceStrong);
+    root.setProperty("--surface-muted", tokens.surfaceMuted);
+    root.setProperty("--border", tokens.border);
+    root.setProperty("--text", tokens.text);
+    root.setProperty("--text-muted", tokens.textMuted);
     localStorage.setItem(themeKey, colorScheme);
     localStorage.setItem(themePresetKey, themePreset.id);
   }, [colorScheme, resolvedTheme, themePreset]);
@@ -628,7 +671,7 @@ export default function App() {
   }, []);
 
   function currentMarkdownSnapshot() {
-    return draft;
+    return rawMarkdownDraft;
   }
 
   function getRestorableNotePosition(current: WorkspaceMetadata, path: string, markdown: string) {
@@ -694,6 +737,9 @@ export default function App() {
     setSavedTitle("");
     setDraft("");
     setSavedDraft("");
+    setFrontmatterDraft("");
+    setSavedFrontmatter("");
+    setFrontmatterError(null);
     setSelectedEditorText("");
   }
 
@@ -708,7 +754,7 @@ export default function App() {
   }, [activePath, notes, titleDraft]);
 
   async function selectNote(path: string) {
-    if (noteOpen && (draft !== savedDraft || titleDraft !== savedTitle)) {
+    if (hasUnsavedChanges) {
       await persistDraft();
     }
     const content = contents.get(path) ?? (await readNote(workspace, path));
@@ -749,7 +795,7 @@ export default function App() {
       const note = refreshedNotes.find((entry) => entry.path === path) ?? notes.find((entry) => entry.path === path) ?? null;
       if (activePath !== path) return;
 
-      if (draft !== savedDraft || titleDraft !== savedTitle) {
+      if (hasUnsavedChanges) {
         setAppError("This note changed on disk, but you have unsaved edits. Save or switch notes before reloading it.");
         return;
       }
@@ -787,7 +833,7 @@ export default function App() {
 
     try {
       let nextPath = activePath;
-      const markdown = composeMarkdown(titleDraft.trim(), draft);
+      const markdown = composeMarkdown(frontmatterDraft, draft, Boolean(frontmatterError && !frontmatterDraft));
 
       if (pendingNote) {
         const note = await createNote(workspace, pendingNote.parentPath, titleDraft.trim());
@@ -811,6 +857,7 @@ export default function App() {
       recordNotePosition(nextPath, markdown);
       setSavedTitle(titleDraft.trim());
       setSavedDraft(draft);
+      setSavedFrontmatter(frontmatterDraft);
       setContents((current) => {
         const next = new Map(current);
         if (activePath && activePath !== nextPath) next.delete(activePath);
@@ -823,7 +870,7 @@ export default function App() {
     } finally {
       setIsSaving(false);
     }
-  }, [activePath, draft, noteOpen, pendingNote, placePathInActiveTab, recordNotePosition, refreshWorkspace, savedTitle, titleDraft, updateMetadata, workspace]);
+  }, [activePath, draft, frontmatterDraft, frontmatterError, noteOpen, pendingNote, placePathInActiveTab, recordNotePosition, refreshWorkspace, savedTitle, titleDraft, updateMetadata, workspace]);
 
   keyboardActionsRef.current = {
     addEmptyTab: () => void addEmptyTab(),
@@ -911,12 +958,12 @@ export default function App() {
   }, []);
 
   useEffect(() => {
-    if (!noteOpen || (draft === savedDraft && titleDraft === savedTitle)) return;
+    if (!hasUnsavedChanges) return;
     const handle = window.setTimeout(() => {
       void persistDraft();
     }, 650);
     return () => window.clearTimeout(handle);
-  }, [draft, noteOpen, persistDraft, savedDraft, savedTitle, titleDraft]);
+  }, [hasUnsavedChanges, persistDraft]);
 
   function requestCreateNote(parentPath = selectedFolder) {
     if (!workspace) {
@@ -938,6 +985,9 @@ export default function App() {
     setSavedTitle("");
     setDraft("");
     setSavedDraft("");
+    setFrontmatterDraft("");
+    setSavedFrontmatter("");
+    setFrontmatterError(null);
     setAppError(null);
   }
 
@@ -957,7 +1007,7 @@ export default function App() {
   }, [noteOpen, titleDraft]);
 
   async function addEmptyTab() {
-    if (noteOpen && (draft !== savedDraft || titleDraft !== savedTitle)) {
+    if (hasUnsavedChanges) {
       await persistDraft();
     }
     const tabId = createTabId();
@@ -970,7 +1020,7 @@ export default function App() {
     const tab = openTabs.find((entry) => entry.id === tabId);
     if (!tab) return;
 
-    if (noteOpen && (draft !== savedDraft || titleDraft !== savedTitle)) {
+    if (hasUnsavedChanges) {
       await persistDraft();
     }
 
@@ -997,7 +1047,7 @@ export default function App() {
     setTabContextMenu(null);
     if (activeTabId !== tabId && activePath !== tab?.path) return;
 
-    if (noteOpen && (draft !== savedDraft || titleDraft !== savedTitle)) {
+    if (hasUnsavedChanges) {
       await persistDraft();
     }
 
@@ -1024,7 +1074,7 @@ export default function App() {
   }
 
   async function closeAllTabs() {
-    if (noteOpen && (draft !== savedDraft || titleDraft !== savedTitle)) {
+    if (hasUnsavedChanges) {
       await persistDraft();
     }
     setOpenTabs([]);
@@ -1070,7 +1120,38 @@ export default function App() {
     void refreshWorkspace(path);
   }
 
-  async function chooseWorkspace(intent: "open" | "new" = "open") {
+  function openNotebookInNewWindow(path: string) {
+    setAppMenuOpen(false);
+    setNotebooksManageOpen(false);
+    if (path === workspace) return;
+    setRecentNotebooks((current) => writeRecentNotebooks(touchRecentNotebook(current, path)));
+
+    if (!isTauri()) {
+      switchNotebook(path);
+      return;
+    }
+
+    const params = new URLSearchParams({ workspace: path });
+    const label = `lumen-notebook-${Date.now()}`;
+    const webview = new WebviewWindow(label, {
+      url: `/?${params.toString()}`,
+      title: path.split("/").filter(Boolean).at(-1) || "Lumen Notes",
+      width: 1280,
+      height: 860,
+      minWidth: 920,
+      minHeight: 620,
+      decorations: true,
+      resizable: true,
+      titleBarStyle: "overlay",
+      hiddenTitle: true,
+      trafficLightPosition: new LogicalPosition(20, 24),
+    });
+    void webview.once("tauri://error", (event) => {
+      setAppError(String(event.payload));
+    });
+  }
+
+  async function chooseWorkspace(intent: "open" | "new" = "open", openInNewWindow = false) {
     try {
       const selected = await open({
         directory: true,
@@ -1078,7 +1159,8 @@ export default function App() {
         title: intent === "new" ? "Choose notebook folder" : "Open notebook",
       });
       if (typeof selected !== "string") return;
-      switchNotebook(selected);
+      if (openInNewWindow) openNotebookInNewWindow(selected);
+      else switchNotebook(selected);
     } catch (error) {
       setAppError(error instanceof Error ? error.message : String(error));
     }
@@ -1092,12 +1174,7 @@ export default function App() {
     if (!workspace) return;
     await deleteNote(workspace, path);
     if (activePath === path) {
-      setActivePath(null);
-      setPendingNote(null);
-      setTitleDraft("");
-      setDraft("");
-      setSavedTitle("");
-      setSavedDraft("");
+      clearCurrentNote();
     }
     setOpenTabs((current) => current.filter((tab) => tab.path !== path));
     updateMetadata((current) => removeNoteFromMetadata(current, path));
@@ -1108,7 +1185,7 @@ export default function App() {
     if (!workspace || !path) return;
     await deleteFolder(workspace, path);
     if (selectedFolder === path || selectedFolder.startsWith(`${path}/`)) setSelectedFolder("");
-    if (activePath?.startsWith(`${path}/`)) setActivePath(null);
+    if (activePath?.startsWith(`${path}/`)) clearCurrentNote();
     setOpenTabs((current) => current.filter((tab) => !tab.path?.startsWith(`${path}/`)));
     updateMetadata((current) => removeFolderFromMetadata(current, path));
     await refreshWorkspace(workspace);
@@ -1169,13 +1246,41 @@ export default function App() {
 
   function loadContentIntoEditor(note: NoteEntry | null, markdown: string, restorePosition: NotePositionMetadata | null = null) {
     const parsed = splitMarkdownTitle(markdown, note?.title ?? "");
+    const noteMarkdown = parseNoteMarkdown(parsed.body);
     setEditorRestorePosition(restorePosition);
     setTitleDraft(parsed.title);
     setSavedTitle(parsed.title);
-    setDraft(parsed.body);
-    setSavedDraft(parsed.body);
+    setDraft(noteMarkdown.body);
+    setSavedDraft(noteMarkdown.body);
+    setFrontmatterDraft(noteMarkdown.frontmatter);
+    setSavedFrontmatter(noteMarkdown.frontmatter);
+    setFrontmatterError(noteMarkdown.frontmatterError);
     setSelectedEditorText("");
-    setAppError(null);
+    if (noteMarkdown.frontmatterError) {
+      setRawMarkdownVisible(true);
+      setRightSidebarMode("frontmatter");
+      setAppError(noteMarkdown.frontmatterError);
+    } else {
+      setRawMarkdownVisible(false);
+      setAppError(null);
+    }
+  }
+
+  function handleRawMarkdownChange(markdown: string) {
+    const parsed = parseNoteMarkdown(markdown);
+    setDraft(parsed.body);
+    setFrontmatterDraft(parsed.frontmatter);
+    setFrontmatterError(parsed.frontmatterError);
+    if (parsed.frontmatterError) setAppError(parsed.frontmatterError);
+    else setAppError(null);
+  }
+
+  function handleFrontmatterChange(frontmatter: string) {
+    setFrontmatterDraft(frontmatter);
+    const error = validateFrontmatter(frontmatter);
+    setFrontmatterError(error ? `This note has malformed frontmatter: ${error}.` : null);
+    if (error) setAppError(`This note has malformed frontmatter: ${error}.`);
+    else setAppError(null);
   }
 
   function handleNoteDrop(targetPath: string) {
@@ -1585,12 +1690,12 @@ export default function App() {
               setNotebooksManageOpen(true);
               setAppMenuOpen(false);
             }}
-            onNewNotebook={() => void chooseWorkspace("new")}
-            onOpenWorkspace={() => void chooseWorkspace("open")}
+            onNewNotebook={() => void chooseWorkspace("new", true)}
+            onOpenWorkspace={() => void chooseWorkspace("open", true)}
             onRemoveBookmark={removeBookmark}
             onSearchQueryChange={setSearchQuery}
             onSelectBookmark={selectBookmark}
-            onSelectNotebook={switchNotebook}
+            onSelectNotebook={openNotebookInNewWindow}
             onSelectSearchResult={selectNote}
             onSelectFolder={(path) => setSelectedFolder(path)}
             onToggleBookmarksExpanded={() =>
@@ -1635,13 +1740,19 @@ export default function App() {
           <header className="topbar">
             <div className="save-state">
               {isSaving ? <Save size={15} /> : <Check size={15} />}
-              <span>{isSaving ? "Saving" : draft === savedDraft && titleDraft === savedTitle ? "Saved" : "Unsaved"}</span>
+              <span>{isSaving ? "Saving" : hasUnsavedChanges ? "Unsaved" : "Saved"}</span>
             </div>
             <button
-              className={`icon-button ${rawMarkdownVisible ? "is-active" : ""}`}
+              className={`icon-button ${rawMarkdownVisible || frontmatterError ? "is-active" : ""}`}
               type="button"
               title={rawMarkdownVisible ? "Show rich editor" : "Show raw Markdown"}
-              onClick={() => setRawMarkdownVisible((value) => !value)}
+              onClick={() => {
+                if (frontmatterError && rawMarkdownVisible) {
+                  setAppError(frontmatterError);
+                  return;
+                }
+                setRawMarkdownVisible((value) => !value);
+              }}
             >
               <FileCode2 size={17} />
             </button>
@@ -1686,13 +1797,13 @@ export default function App() {
               />
               {appError ? <p className="app-error note-error">{appError}</p> : null}
             </div>
-            {rawMarkdownVisible ? (
+            {rawMarkdownVisible || frontmatterError ? (
               <div className="raw-markdown-shell">
                 <textarea
                   aria-label="Raw Markdown"
                   className="raw-markdown-input"
-                  value={draft}
-                  onChange={(event) => setDraft(event.target.value)}
+                  value={rawMarkdownDraft}
+                  onChange={(event) => handleRawMarkdownChange(event.target.value)}
                   onSelect={(event) => {
                     const input = event.currentTarget;
                     setSelectedEditorText(input.value.slice(input.selectionStart, input.selectionEnd));
@@ -1737,10 +1848,13 @@ export default function App() {
       {outlineVisible ? (
         <RightSidebar
           activeNote={activeNote}
+          frontmatter={frontmatterDraft}
+          frontmatterError={frontmatterError}
           mode={rightSidebarMode}
           outline={noteOpen ? outline : []}
           pendingNote={pendingNote}
           workspace={workspace}
+          onFrontmatterChange={handleFrontmatterChange}
           onModeChange={setRightSidebarMode}
           onSelectOutline={handleOutlineSelect}
         />
@@ -1860,6 +1974,10 @@ export default function App() {
           onClose={() => setNotebooksManageOpen(false)}
           onForget={forgetNotebook}
           onSelect={(path) => {
+            if (path === workspace) {
+              setNotebooksManageOpen(false);
+              return;
+            }
             switchNotebook(path);
             setNotebooksManageOpen(false);
           }}
@@ -2043,11 +2161,7 @@ function FolderPane({
       </div>
       <div className="notebook-footer">
         <div className="app-menu-wrap">
-          <button className="app-menu-button" type="button" aria-expanded={menuOpen} onClick={onToggleMenu}>
-            <BookOpen size={16} />
-            <strong>{workspace.split("/").at(-1) || "Notebook"}</strong>
-            <ChevronDown size={14} />
-          </button>
+          <NotebookMenuButton workspace={workspace} menuOpen={menuOpen} onToggleMenu={onToggleMenu} />
           {menuOpen ? (
             <div className="app-menu" onClick={(event) => event.stopPropagation()}>
               <button type="button" onClick={onNewNotebook}>
@@ -2329,7 +2443,7 @@ function FolderRow({
           >
             <IconMark value={customIcon} fallback={Folder} size={15} />
           </span>
-          <span>{isRoot ? "All Notes" : folder.name}</span>
+          <span>{folder.name}</span>
         </button>
         <button className="tree-action" type="button" title="New note" onClick={() => onCreateNote(folder.path)}>
           <FileText size={14} />
@@ -2777,7 +2891,7 @@ function EmptyNoteSurface({
       <h1>{hasWorkspace ? "No note selected" : "Lumen Notes"}</h1>
       <p>{hasWorkspace ? "Pick a note from the sidebar or create a new one." : "Choose a folder to use as your notebook storage."}</p>
       <button className="primary-button" type="button" onClick={hasWorkspace ? onCreateNote : onOpenWorkspace}>
-        {hasWorkspace ? <Plus size={17} /> : <FolderOpen size={17} />}
+        {hasWorkspace ? null : <FolderOpen size={17} />}
         <span>{hasWorkspace ? "Create Note" : "Open Folder"}</span>
       </button>
       {appError ? <p className="app-error">{appError}</p> : null}
@@ -2873,30 +2987,79 @@ function PaneResizer({ label, onPointerDown }: { label: string; onPointerDown: (
   return <div aria-label={label} className="pane-resizer" role="separator" tabIndex={0} onPointerDown={onPointerDown} />;
 }
 
+function NotebookMenuButton({
+  menuOpen,
+  workspace,
+  onToggleMenu,
+}: {
+  menuOpen: boolean;
+  workspace: string;
+  onToggleMenu: (event: React.MouseEvent) => void;
+}) {
+  const titleRef = useRef<HTMLElement | null>(null);
+  const [titleOverflows, setTitleOverflows] = useState(false);
+  const notebookName = getNotebookName(workspace);
+
+  useLayoutEffect(() => {
+    const title = titleRef.current;
+    if (!title) return;
+
+    const updateOverflow = () => {
+      setTitleOverflows(title.scrollWidth > title.clientWidth + 1);
+    };
+
+    updateOverflow();
+    const observer = new ResizeObserver(updateOverflow);
+    observer.observe(title);
+    window.addEventListener("resize", updateOverflow);
+    return () => {
+      observer.disconnect();
+      window.removeEventListener("resize", updateOverflow);
+    };
+  }, [notebookName]);
+
+  return (
+    <button className="app-menu-button" type="button" aria-expanded={menuOpen} onClick={onToggleMenu}>
+      {menuOpen ? <ChevronDown size={16} /> : <ChevronUp size={16} />}
+      <strong ref={titleRef} className={titleOverflows ? "is-overflowing" : ""}>{notebookName}</strong>
+    </button>
+  );
+}
+
 function RightSidebar({
   activeNote,
+  frontmatter,
+  frontmatterError,
   mode,
   outline,
   pendingNote,
   workspace,
+  onFrontmatterChange,
   onModeChange,
   onSelectOutline,
 }: {
   activeNote: NoteEntry | null;
+  frontmatter: string;
+  frontmatterError: string | null;
   mode: RightSidebarMode;
   outline: Array<{ id: string; text: string; level: number }>;
   pendingNote: DraftNote | null;
   workspace: string;
+  onFrontmatterChange: (frontmatter: string) => void;
   onModeChange: (mode: RightSidebarMode) => void;
   onSelectOutline: (id: string) => void;
 }) {
+  const title = mode === "outline" ? "Outline" : mode === "frontmatter" ? "Frontmatter" : "Properties";
   return (
     <aside className="right-sidebar">
       <div className="pane-header">
-        <strong>{mode === "outline" ? "Outline" : "Properties"}</strong>
+        <strong>{title}</strong>
         <div className="sidebar-tabs">
           <button className={`icon-button ${mode === "outline" ? "is-active" : ""}`} type="button" title="Outline" onClick={() => onModeChange("outline")}>
             <LayoutList size={16} />
+          </button>
+          <button className={`icon-button ${mode === "frontmatter" ? "is-active" : ""}`} type="button" title="Frontmatter" onClick={() => onModeChange("frontmatter")}>
+            <Braces size={16} />
           </button>
           <button className={`icon-button ${mode === "properties" ? "is-active" : ""}`} type="button" title="Properties" onClick={() => onModeChange("properties")}>
             <FileText size={16} />
@@ -2912,6 +3075,13 @@ function RightSidebar({
           ))}
           {!outline.length ? <p className="empty-sidebar-note">No headings yet</p> : null}
         </div>
+      ) : mode === "frontmatter" ? (
+        <FrontmatterPane
+          activeNote={activeNote}
+          frontmatter={frontmatter}
+          frontmatterError={frontmatterError}
+          onChange={onFrontmatterChange}
+        />
       ) : (
         <PropertiesPane activeNote={activeNote} pendingNote={pendingNote} workspace={workspace} />
       )}
@@ -2919,9 +3089,86 @@ function RightSidebar({
   );
 }
 
+function FrontmatterPane({
+  activeNote,
+  frontmatter,
+  frontmatterError,
+  onChange,
+}: {
+  activeNote: NoteEntry | null;
+  frontmatter: string;
+  frontmatterError: string | null;
+  onChange: (frontmatter: string) => void;
+}) {
+  const fields = getFrontmatterFields(frontmatter).filter((field) => field.value.trim() !== "");
+  const hasFrontmatter = frontmatter.trim().length > 0;
+  const [showRaw, setShowRaw] = useState(hasFrontmatter);
+  const rawRef = useRef<HTMLTextAreaElement | null>(null);
+
+  useEffect(() => {
+    if (hasFrontmatter) setShowRaw(true);
+  }, [hasFrontmatter]);
+
+  function updateField(field: FrontmatterField, value: string) {
+    onChange(updateFrontmatterField(frontmatter, field, value));
+  }
+
+  if (!activeNote && !frontmatter) {
+    return <p className="empty-sidebar-note">No saved note open.</p>;
+  }
+
+  return (
+    <div className="frontmatter-pane">
+      {frontmatterError ? <p className="app-error">{frontmatterError}</p> : null}
+      {fields.length ? (
+        <div className="frontmatter-fields">
+          {fields.map((field) => (
+            <label className="frontmatter-field" key={`${field.key}-${field.lineIndex}`}>
+              <span>{field.key}</span>
+              <input
+                type="text"
+                value={field.value}
+                disabled={!field.editable}
+                title={field.editable ? field.key : "Nested values can be edited in raw YAML below"}
+                onChange={(event) => updateField(field, event.target.value)}
+              />
+            </label>
+          ))}
+        </div>
+      ) : (
+        <p className="empty-sidebar-note">No frontmatter fields yet.</p>
+      )}
+      {showRaw ? (
+        <label className="frontmatter-raw">
+          <span>Raw YAML</span>
+          <textarea
+            ref={rawRef}
+            value={frontmatter}
+            onChange={(event) => onChange(event.target.value)}
+            placeholder="field: value"
+            spellCheck={false}
+          />
+        </label>
+      ) : (
+        <button
+          type="button"
+          className="frontmatter-add"
+          onClick={() => {
+            setShowRaw(true);
+            requestAnimationFrame(() => rawRef.current?.focus());
+          }}
+        >
+          Add frontmatter
+        </button>
+      )}
+    </div>
+  );
+}
+
 function PropertiesPane({ activeNote, pendingNote, workspace }: { activeNote: NoteEntry | null; pendingNote: DraftNote | null; workspace: string }) {
+  const notebookName = getNotebookName(workspace);
   const filePath = activeNote ? activeNote.path : pendingNote ? "Unsaved note" : "No note open";
-  const folderPath = activeNote ? activeNote.parent_path || "All Notes" : pendingNote ? pendingNote.parentPath || "All Notes" : "None";
+  const folderPath = activeNote ? activeNote.parent_path || notebookName : pendingNote ? pendingNote.parentPath || notebookName : "None";
   const updatedAt = activeNote?.updated_at ? new Date(activeNote.updated_at * 1000).toLocaleString() : "Not saved yet";
 
   return (
@@ -3449,13 +3696,14 @@ function PropertyDialog({
 }
 
 function buildFolderTree(folders: FolderEntry[], workspace: string, metadata: WorkspaceMetadata): FolderNode[] {
+  const notebookName = getNotebookName(workspace);
   const entries = folders.length
     ? folders
-    : [{ path: "", name: workspace.split("/").at(-1) || "Notebook", parent_path: "" }];
+    : [{ path: "", name: notebookName, parent_path: "" }];
   const map = new Map<string, FolderNode>();
   entries.forEach((folder) => map.set(folder.path, { ...folder, children: [] }));
   if (!map.has("")) {
-    map.set("", { path: "", name: workspace.split("/").at(-1) || "Notebook", parent_path: "", children: [] });
+    map.set("", { path: "", name: notebookName, parent_path: "", children: [] });
   }
   map.forEach((node) => {
     if (node.path === "") return;
@@ -3475,13 +3723,15 @@ function buildBookmarkViews(
   folders: FolderEntry[],
   notes: NoteEntry[],
   metadata: WorkspaceMetadata,
+  workspace: string,
 ): BookmarkView[] {
+  const notebookName = getNotebookName(workspace);
   return bookmarks.map((bookmark) => {
     if (bookmark.kind === "folder") {
       const folder = folders.find((entry) => entry.path === bookmark.path);
       return {
         ...bookmark,
-        title: folder ? (folder.path ? folder.name : "All Notes") : `${bookmark.path || "All Notes"} (missing)`,
+        title: folder ? folder.name : `${bookmark.path || notebookName} (missing)`,
         icon: metadata.folderIcons[bookmark.path],
         missing: !folder,
       };
@@ -3525,9 +3775,88 @@ function splitMarkdownTitle(markdown: string, fallbackTitle: string) {
   };
 }
 
-function composeMarkdown(title: string, body: string) {
-  void title;
-  return body;
+function parseNoteMarkdown(markdown: string): ParsedNoteMarkdown {
+  const normalized = markdown.replace(/\r\n/g, "\n");
+  const lines = normalized.split("\n");
+  if (lines[0].trim() !== "---") {
+    return { body: markdown, frontmatter: "", frontmatterError: null };
+  }
+
+  const closingIndex = lines.findIndex((line, index) => index > 0 && line.trim() === "---");
+  if (closingIndex === -1) {
+    return {
+      body: markdown,
+      frontmatter: "",
+      frontmatterError: "This note starts with frontmatter, but the closing --- line is missing. Opened as raw Markdown.",
+    };
+  }
+
+  const frontmatter = lines.slice(1, closingIndex).join("\n");
+  const body = lines.slice(closingIndex + 1).join("\n").replace(/^\n/, "");
+  const validationError = validateFrontmatter(frontmatter);
+
+  if (validationError) {
+    return {
+      body: markdown,
+      frontmatter: "",
+      frontmatterError: `This note has malformed frontmatter: ${validationError}. Opened as raw Markdown.`,
+    };
+  }
+
+  return { body, frontmatter, frontmatterError: null };
+}
+
+function composeMarkdown(frontmatter: string, body: string, preserveRawBody = false) {
+  if (preserveRawBody) return body;
+  const trimmedFrontmatter = frontmatter.trim();
+  if (!trimmedFrontmatter) return body;
+  return `---\n${trimmedFrontmatter}\n---\n\n${body.replace(/^\n+/, "")}`;
+}
+
+function validateFrontmatter(frontmatter: string) {
+  const lines = frontmatter.replace(/\r\n/g, "\n").split("\n");
+  let currentAllowsNested = false;
+
+  for (const line of lines) {
+    if (!line.trim() || line.trimStart().startsWith("#")) continue;
+
+    if (/^\s/.test(line)) {
+      if (!currentAllowsNested) return `unexpected indentation near "${line.trim()}"`;
+      continue;
+    }
+
+    const match = /^([A-Za-z_][\w.-]*)\s*:\s*(.*)$/.exec(line);
+    if (!match) return `expected "key: value" near "${line.trim()}"`;
+    currentAllowsNested = match[2].trim() === "" || /^[>|][+-]?$/.test(match[2].trim());
+  }
+
+  return null;
+}
+
+function getFrontmatterFields(frontmatter: string): FrontmatterField[] {
+  const lines = frontmatter.replace(/\r\n/g, "\n").split("\n");
+  return lines.flatMap((line, index) => {
+    const match = /^([A-Za-z_][\w.-]*)\s*:\s*(.*)$/.exec(line);
+    if (!match) return [];
+    const nextTopLevelIndex = lines.findIndex((nextLine, nextIndex) => nextIndex > index && /^\S/.test(nextLine));
+    const blockEnd = nextTopLevelIndex === -1 ? lines.length : nextTopLevelIndex;
+    const hasNestedContent = lines.slice(index + 1, blockEnd).some((nextLine) => {
+      if (!nextLine.trim()) return false;
+      return /^\s/.test(nextLine);
+    });
+    return [{
+      editable: !hasNestedContent,
+      key: match[1],
+      lineIndex: index,
+      value: match[2],
+    }];
+  });
+}
+
+function updateFrontmatterField(frontmatter: string, field: FrontmatterField, value: string) {
+  const lines = frontmatter.replace(/\r\n/g, "\n").split("\n");
+  lines[field.lineIndex] = `${field.key}: ${value}`;
+  return lines.join("\n");
 }
 
 function formatUnknownError(error: unknown) {
@@ -3536,7 +3865,7 @@ function formatUnknownError(error: unknown) {
 }
 
 function previewNote(markdown: string) {
-  return markdown
+  return parseNoteMarkdown(markdown).body
     .replace(/\r\n/g, "\n")
     .split("\n")
     .filter((line) => !/^#\s+/.test(line.trim()))
@@ -3833,9 +4162,13 @@ function clamp(value: number, min: number, max: number) {
   return Math.min(max, Math.max(min, value));
 }
 
-function displayFolderName(path: string, folders: FolderEntry[]) {
-  if (!path) return "All Notes";
+function displayFolderName(path: string, folders: FolderEntry[], workspace: string) {
+  if (!path) return getNotebookName(workspace);
   return folders.find((folder) => folder.path === path)?.name || path.split("/").at(-1) || path;
+}
+
+function getNotebookName(workspace: string) {
+  return workspace.split("/").filter(Boolean).at(-1) || "Notebook";
 }
 
 function startResize(event: React.PointerEvent, onMove: (clientX: number) => void) {
@@ -3859,6 +4192,76 @@ function hexToRgb(value: string) {
     r: Number.parseInt(normalized.slice(0, 2), 16),
     g: Number.parseInt(normalized.slice(2, 4), 16),
     b: Number.parseInt(normalized.slice(4, 6), 16),
+  };
+}
+
+function rgbToHsl(r: number, g: number, b: number) {
+  const rN = r / 255;
+  const gN = g / 255;
+  const bN = b / 255;
+  const max = Math.max(rN, gN, bN);
+  const min = Math.min(rN, gN, bN);
+  const l = (max + min) / 2;
+  if (max === min) return { h: 0, s: 0, l: l * 100 };
+  const d = max - min;
+  const s = l > 0.5 ? d / (2 - max - min) : d / (max + min);
+  let h = 0;
+  switch (max) {
+    case rN: h = (gN - bN) / d + (gN < bN ? 6 : 0); break;
+    case gN: h = (bN - rN) / d + 2; break;
+    case bN: h = (rN - gN) / d + 4; break;
+  }
+  return { h: h * 60, s: s * 100, l: l * 100 };
+}
+
+function hslToHex({ h, s, l }: { h: number; s: number; l: number }) {
+  const sN = s / 100;
+  const lN = l / 100;
+  const c = (1 - Math.abs(2 * lN - 1)) * sN;
+  const x = c * (1 - Math.abs(((h / 60) % 2) - 1));
+  const m = lN - c / 2;
+  let r = 0, g = 0, b = 0;
+  if (h < 60) [r, g, b] = [c, x, 0];
+  else if (h < 120) [r, g, b] = [x, c, 0];
+  else if (h < 180) [r, g, b] = [0, c, x];
+  else if (h < 240) [r, g, b] = [0, x, c];
+  else if (h < 300) [r, g, b] = [x, 0, c];
+  else [r, g, b] = [c, 0, x];
+  const to = (v: number) => Math.round((v + m) * 255).toString(16).padStart(2, "0");
+  return `#${to(r)}${to(g)}${to(b)}`;
+}
+
+function shiftLightness(hex: string, deltaL: number) {
+  const rgb = hexToRgb(hex);
+  if (!rgb) return hex;
+  const hsl = rgbToHsl(rgb.r, rgb.g, rgb.b);
+  return hslToHex({ ...hsl, l: clamp(hsl.l + deltaL, 0, 100) });
+}
+
+function deriveThemeTokens(preset: ThemePreset, mode: "light" | "dark"): ThemeTokens {
+  const bg = preset.appBackground[mode];
+  const overrides = preset.tokens?.[mode] ?? {};
+  if (mode === "dark") {
+    return {
+      surface: shiftLightness(bg, -2),
+      surfaceSoft: bg,
+      surfaceStrong: shiftLightness(bg, 4),
+      surfaceMuted: shiftLightness(bg, 2),
+      border: "rgba(238, 232, 223, 0.1)",
+      text: "#eee8df",
+      textMuted: "rgba(238, 232, 223, 0.62)",
+      ...overrides,
+    };
+  }
+  return {
+    surface: shiftLightness(bg, 3),
+    surfaceSoft: bg,
+    surfaceStrong: shiftLightness(bg, 6),
+    surfaceMuted: shiftLightness(bg, 1),
+    border: "rgba(52, 48, 43, 0.1)",
+    text: "#22211f",
+    textMuted: "rgba(34, 33, 31, 0.62)",
+    ...overrides,
   };
 }
 
