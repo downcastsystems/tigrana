@@ -2338,6 +2338,7 @@ function FolderSearch({
 }
 
 function FolderRow({
+  depth = 0,
   draggingItem,
   dropTargetFolder,
   folder,
@@ -2352,6 +2353,7 @@ function FolderRow({
   onOpenIcon,
   onSelectFolder,
 }: {
+  depth?: number;
   draggingItem: DragItem;
   dropTargetFolder: string | null;
   folder: FolderNode;
@@ -2398,8 +2400,10 @@ function FolderRow({
     <div className="folder-node">
       <div
         className={`${selectedFolder === folder.path ? "folder-row is-active" : "folder-row"} ${dropTargetFolder === folder.path ? "is-drop-target" : ""}`}
+        style={{ "--row-indent": `${depth * 16}px` } as React.CSSProperties}
         data-folder-path={folder.path}
         draggable={!isRoot}
+        onClick={() => onSelectFolder(folder.path)}
         onContextMenu={(event) => onContextMenu(event, { kind: "folder", path: folder.path })}
         onDragStart={(event) => {
           if (isRoot) return;
@@ -2436,10 +2440,10 @@ function FolderRow({
           if (item && canDropItem(item)) onDropOnFolder(folder.path, item);
         }}
       >
-        <button className="tree-toggle" type="button" onClick={() => setOpen((value) => !value)}>
+        <button className="tree-toggle" type="button" onClick={(event) => { event.stopPropagation(); setOpen((value) => !value); }}>
           {folder.children.length ? open ? <ChevronDown size={15} /> : <ChevronRight size={15} /> : <span />}
         </button>
-        <button className="folder-select" style={folderColor ? { color: folderColor } : undefined} type="button" onClick={() => onSelectFolder(folder.path)}>
+        <button className="folder-select" style={folderColor ? { color: folderColor } : undefined} type="button" onClick={(event) => { event.stopPropagation(); onSelectFolder(folder.path); }}>
           <span
             className="inline-icon-button"
             role="button"
@@ -2461,10 +2465,10 @@ function FolderRow({
           </span>
           <span>{folder.name}</span>
         </button>
-        <button className="tree-action" type="button" title="New note" onClick={() => onCreateNote(folder.path)}>
+        <button className="tree-action" type="button" title="New note" onClick={(event) => { event.stopPropagation(); onCreateNote(folder.path); }}>
           <FileText size={14} />
         </button>
-        <button className="tree-action" type="button" title="New folder" onClick={() => onCreateFolder(folder.path)}>
+        <button className="tree-action" type="button" title="New folder" onClick={(event) => { event.stopPropagation(); onCreateFolder(folder.path); }}>
           <Plus size={14} />
         </button>
       </div>
@@ -2473,6 +2477,7 @@ function FolderRow({
           {folder.children.map((child) => (
             <FolderRow
               key={child.path}
+              depth={depth + 1}
               draggingItem={draggingItem}
               dropTargetFolder={dropTargetFolder}
               folder={child}

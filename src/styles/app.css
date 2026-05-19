@@ -1,6 +1,7 @@
 :root {
   font-family:
     Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  font-size: 14px;
   --accent: #315f59;
   --accent-strong: #192d2b;
   --accent-soft: rgba(49, 95, 89, 0.14);
@@ -551,8 +552,7 @@ body.is-dragging-note.is-over-drop-target * {
   display: block;
   overflow: hidden;
   white-space: nowrap;
-  -webkit-mask-image: linear-gradient(to right, black calc(100% - 24px), transparent);
-  mask-image: linear-gradient(to right, black calc(100% - 24px), transparent);
+  text-overflow: ellipsis;
 }
 
 .app-menu button small {
@@ -774,25 +774,44 @@ body.is-dragging-note.is-over-drop-target * {
 }
 
 .folder-row {
+  position: relative;
+  z-index: 0;
   display: grid;
   grid-template-columns: 22px minmax(0, 1fr) 24px 24px;
   align-items: center;
   min-height: 32px;
-  padding-left: 4px;
+  margin-left: calc(-1 * var(--row-indent, 0px));
+  padding-left: calc(var(--row-indent, 0px) + 4px);
   border-radius: 7px;
+  cursor: pointer;
+}
+
+.folder-row::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: 7px;
+  pointer-events: none;
+  z-index: -1;
+}
+
+.folder-row.is-active::before {
+  background: var(--accent-soft);
 }
 
 .folder-row.is-active {
   color: var(--accent-strong);
+}
+
+.folder-row.is-drop-target::before {
   background: var(--accent-soft);
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--accent) 45%, transparent);
 }
 
 .folder-row.is-drop-target {
   outline: 1px dashed var(--accent);
   outline-offset: -2px;
   color: var(--accent-strong);
-  background: var(--accent-soft);
-  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--accent) 45%, transparent);
 }
 
 .folder-select {
@@ -1389,8 +1408,11 @@ kbd {
   text-align: left;
 }
 
-.note-row:hover,
-.folder-row:hover {
+.note-row:hover {
+  background: rgba(52, 48, 43, 0.07);
+}
+
+.folder-row:hover::before {
   background: rgba(52, 48, 43, 0.07);
 }
 
@@ -1418,6 +1440,10 @@ kbd {
 
 .tree-children {
   margin-left: 16px;
+}
+
+.folder-row {
+  margin-bottom: 2px;
 }
 
 .empty-tree {
@@ -2616,7 +2642,6 @@ html[data-theme="dark"] .app-menu button:hover,
 html[data-theme="dark"] .tree-action:hover,
 html[data-theme="dark"] .tree-toggle:hover,
 html[data-theme="dark"] .note-row:hover,
-html[data-theme="dark"] .folder-row:hover,
 html[data-theme="dark"] .note-card:hover,
 html[data-theme="dark"] .note-tab:hover,
 html[data-theme="dark"] .note-tab-add:hover,
@@ -2627,6 +2652,10 @@ html[data-theme="dark"] .secondary-link:hover,
 html[data-theme="dark"] .folder-search-results button:hover,
 html[data-theme="dark"] .icon-choice:hover,
 html[data-theme="dark"] .icon-choice.is-selected {
+  background: rgba(238, 232, 223, 0.08);
+}
+
+html[data-theme="dark"] .folder-row:hover::before {
   background: rgba(238, 232, 223, 0.08);
 }
 
@@ -2716,7 +2745,6 @@ html[data-theme="dark"] .property-row strong {
 }
 
 html[data-theme="dark"] .note-row.is-active,
-html[data-theme="dark"] .folder-row.is-active,
 html[data-theme="dark"] .note-card.is-active,
 html[data-theme="dark"] .note-tab.is-active,
 html[data-theme="dark"] .slash-item.is-selected,
