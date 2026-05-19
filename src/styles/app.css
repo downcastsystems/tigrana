@@ -538,13 +538,19 @@ body.is-dragging-note.is-over-drop-target * {
   cursor: pointer;
 }
 
+.app-menu button > svg {
+  flex: 0 0 auto;
+}
+
 .app-menu button.is-active {
   color: var(--accent-strong);
   background: var(--accent-soft);
 }
 
 .app-menu button span {
+  flex: 1;
   min-width: 0;
+  border-radius: inherit;
 }
 
 .app-menu button strong,
@@ -571,6 +577,8 @@ body.is-dragging-note.is-over-drop-target * {
   display: grid;
   gap: 4px;
   max-height: min(1040px, calc(100vh - 180px));
+  margin: 0 -4px;
+  padding: 0 4px;
   overflow-x: hidden;
   overflow-y: auto;
 }
@@ -2413,9 +2421,13 @@ html[data-theme="dark"] .ProseMirror th {
   margin-top: 18px;
 }
 
+.dialog-reset-button {
+  margin-right: auto;
+}
+
 .icon-search {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) auto;
+  grid-template-columns: minmax(0, 1fr) auto auto;
   gap: 10px;
   margin-bottom: 12px;
 }

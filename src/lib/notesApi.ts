@@ -269,15 +269,27 @@ export async function deleteFolder(workspace: string, path: string) {
 export async function saveAsset(workspace: string, file: File) {
   if (isTauri()) {
     const bytes = Array.from(new Uint8Array(await file.arrayBuffer()));
+    const fallbackExtension = file.type.split("/").at(1)?.replace("jpeg", "jpg") || "png";
     return invoke<string>("save_asset", {
       payload: {
         workspace,
-        file_name: file.name || `pasted-${Date.now()}.${file.type.split("/").at(1) || "png"}`,
+        file_name: file.name || `pasted-image.${fallbackExtension}`,
+        mime_type: file.type,
         bytes,
       },
     });
   }
   return URL.createObjectURL(file);
+}
+
+export async function saveClipboardImageAsset(workspace: string) {
+  if (isTauri()) return invoke<string>("save_clipboard_image_asset", { workspace });
+  throw new Error("Clipboard image paste is only available in the desktop app.");
+}
+
+export async function readAssetDataUrl(workspace: string, path: string) {
+  if (isTauri()) return invoke<string>("read_asset_data_url", { workspace, path });
+  return path;
 }
 
 export async function revealPath(workspace: string, path: string, kind: "folder" | "note") {

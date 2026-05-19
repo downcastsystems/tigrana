@@ -12,7 +12,7 @@ import TaskItem from "@tiptap/extension-task-item";
 import TaskList from "@tiptap/extension-task-list";
 import type { Node as ProseMirrorNode } from "@tiptap/pm/model";
 import { Plugin, PluginKey, TextSelection } from "@tiptap/pm/state";
-import { Decoration, DecorationSet } from "@tiptap/pm/view";
+import { Decoration, DecorationSet, type EditorView } from "@tiptap/pm/view";
 import { BubbleMenu, EditorContent, Range, useEditor, type Editor } from "@tiptap/react";
 import StarterKit from "@tiptap/starter-kit";
 import { convertFileSrc } from "@tauri-apps/api/core";
@@ -41,7 +41,7 @@ import { common, createLowlight } from "lowlight";
 import { type CSSProperties, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { filterSlashCommands } from "./slashCommands";
 import { htmlToMarkdown, markdownToHtml } from "../lib/markdown";
-import { isTauri, saveAsset } from "../lib/notesApi";
+import { isTauri, readAssetDataUrl, saveAsset, saveClipboardImageAsset } from "../lib/notesApi";
 import type { NotePositionMetadata } from "../types";
 
 type NotesEditorProps = {
@@ -265,17 +265,20 @@ export function NotesEditor({ content, focusRequest, focusAtEndRequest, findRequ
         },
       },
       handlePaste(view, event) {
-        const item = Array.from(event.clipboardData?.items ?? []).find((clipboardItem) =>
-          clipboardItem.type.startsWith("image/"),
-        );
-        const file = item?.getAsFile();
-        if (!file) return false;
+        const file = getClipboardImageFile(event.clipboardData);
+        const htmlFile = file ? null : getClipboardImageFromHtml(event.clipboardData);
+        const hasHtmlImage = clipboardHtmlHasImage(event.clipboardData);
+        if (!file && !htmlFile && !hasHtmlImage && !mayContainAsyncClipboardImage(event.clipboardData)) return false;
 
         event.preventDefault();
-        void saveAsset(workspace, file).then((src) => {
-          const name = file.name || "Pasted image";
-          editor?.chain().focus().setImage({ src: resolveNotebookImageSrc(workspace, src), alt: name, markdownSrc: src } as { src: string; alt: string; markdownSrc: string }).run();
-        });
+        void getBestClipboardImageFile(file ?? htmlFile)
+          .then((imageFile) => {
+            if (imageFile) return insertImageFile(view, workspace, imageFile);
+            return insertNativeClipboardImage(view, workspace);
+          })
+          .catch((error) => {
+            console.error("Failed to paste image", error);
+          });
         return true;
       },
     },
@@ -307,6 +310,11 @@ export function NotesEditor({ content, focusRequest, focusAtEndRequest, findRequ
   useEffect(() => {
     editorRef.current = editor;
   }, [editor]);
+
+  useEffect(() => {
+    if (!editor) return;
+    void hydrateNotebookImageNodes(editor, workspace);
+  }, [content, editor, workspace]);
 
   useEffect(() => {
     if (!editor) return;
@@ -348,6 +356,7 @@ export function NotesEditor({ content, focusRequest, focusAtEndRequest, findRequ
         })
         .run();
       lastLoadedNote.current = notePath;
+      void hydrateNotebookImageNodes(editor, workspace);
     } catch (error) {
       onLoadError(error);
     }
@@ -627,6 +636,140 @@ function resolveNotebookImageSrc(workspace: string, src: string) {
 
 function isExternalImageSrc(src: string) {
   return /^(https?:|asset:|blob:|file:)/i.test(src);
+}
+
+function isRenderableImageType(type: string) {
+  return ["image/png", "image/jpeg", "image/gif", "image/webp", "image/svg+xml"].includes(type);
+}
+
+function getClipboardImageFile(data: DataTransfer | null) {
+  const files = Array.from(data?.files ?? []).filter((file) => file.type.startsWith("image/"));
+  const file = files.find((entry) => isRenderableImageType(entry.type)) ?? files[0];
+  if (file) return file;
+
+  const items = Array.from(data?.items ?? []).filter((item) => item.type.startsWith("image/"));
+  const item = items.find((entry) => isRenderableImageType(entry.type)) ?? items[0];
+  return item?.getAsFile() ?? null;
+}
+
+function getClipboardImageFromHtml(data: DataTransfer | null) {
+  const html = data?.getData("text/html");
+  if (!html) return null;
+  const doc = new DOMParser().parseFromString(html, "text/html");
+  const src = doc.querySelector("img")?.getAttribute("src") ?? "";
+  if (!src.startsWith("data:image/")) return null;
+  return dataUrlToFile(src);
+}
+
+function clipboardHtmlHasImage(data: DataTransfer | null) {
+  return /<img[\s>]/i.test(data?.getData("text/html") ?? "");
+}
+
+function mayContainAsyncClipboardImage(data: DataTransfer | null) {
+  return Array.from(data?.types ?? []).some((type) => type.startsWith("image/"));
+}
+
+async function getBestClipboardImageFile(existing: File | null) {
+  return existing ?? await readClipboardImageFile().catch(() => null);
+}
+
+async function readClipboardImageFile() {
+  const clipboard = navigator.clipboard as Clipboard & {
+    read?: () => Promise<Array<{ types: string[]; getType: (type: string) => Promise<Blob> }>>;
+  };
+  if (!clipboard.read) return null;
+  const items = await clipboard.read();
+  for (const item of items) {
+    const type = item.types.find(isRenderableImageType) ?? item.types.find((entry) => entry.startsWith("image/"));
+    if (!type) continue;
+    const blob = await item.getType(type);
+    return blobToFile(blob, type);
+  }
+  return null;
+}
+
+function dataUrlToFile(dataUrl: string) {
+  const match = /^data:([^;,]+)(;base64)?,(.*)$/i.exec(dataUrl);
+  if (!match) return null;
+  const mimeType = match[1] || "image/png";
+  const encoded = match[3] || "";
+  const binary = match[2] ? atob(encoded) : decodeURIComponent(encoded);
+  const bytes = new Uint8Array(binary.length);
+  for (let index = 0; index < binary.length; index += 1) {
+    bytes[index] = binary.charCodeAt(index);
+  }
+  return new File([bytes], `pasted-image.${extensionForImageType(mimeType)}`, { type: mimeType });
+}
+
+function blobToFile(blob: Blob, type: string) {
+  return new File([blob], `pasted-image.${extensionForImageType(type)}`, { type });
+}
+
+function extensionForImageType(type: string) {
+  if (type === "image/jpeg") return "jpg";
+  if (type === "image/svg+xml") return "svg";
+  return type.split("/").at(1)?.replace(/\W+/g, "-") || "png";
+}
+
+async function insertImageFile(view: EditorView, workspace: string, file: File) {
+  const src = await saveAsset(workspace, file);
+  const previewSrc = await previewSrcForNotebookImage(workspace, src);
+  insertSavedImage(view, previewSrc, src, file.name || "Pasted image");
+}
+
+async function insertNativeClipboardImage(view: EditorView, workspace: string) {
+  const src = await saveClipboardImageAsset(workspace);
+  const previewSrc = await previewSrcForNotebookImage(workspace, src);
+  insertSavedImage(view, previewSrc, src, "Pasted image");
+}
+
+function insertSavedImage(view: EditorView, previewSrc: string, markdownSrc: string, name: string) {
+  const imageType = view.state.schema.nodes.image;
+  if (!imageType) return;
+  const node = imageType.create({
+    src: previewSrc,
+    alt: name,
+    markdownSrc,
+  });
+  view.dispatch(view.state.tr.replaceSelectionWith(node).scrollIntoView());
+  view.focus();
+}
+
+async function previewSrcForNotebookImage(workspace: string, src: string) {
+  if (!workspace || !isTauri() || isExternalImageSrc(src) || src.startsWith("data:")) return src;
+  return readAssetDataUrl(workspace, src);
+}
+
+async function hydrateNotebookImageNodes(editor: Editor, workspace: string) {
+  if (!workspace || !isTauri()) return;
+  const pending: Array<{ attrs: Record<string, unknown>; pos: number; src: string }> = [];
+  editor.state.doc.descendants((node, pos) => {
+    if (node.type.name !== "image") return;
+    const markdownSrc = typeof node.attrs.markdownSrc === "string" ? node.attrs.markdownSrc : "";
+    if (!markdownSrc || isExternalImageSrc(markdownSrc) || markdownSrc.startsWith("data:")) return;
+    if (typeof node.attrs.src === "string" && node.attrs.src.startsWith("data:")) return;
+    pending.push({ attrs: node.attrs, pos, src: markdownSrc });
+  });
+
+  if (!pending.length) return;
+
+  const resolved = await Promise.all(
+    pending.map(async (item) => ({
+      ...item,
+      previewSrc: await previewSrcForNotebookImage(workspace, item.src).catch(() => null),
+    })),
+  );
+
+  const tr = editor.state.tr;
+  let changed = false;
+  for (const item of resolved) {
+    if (!item.previewSrc) continue;
+    const node = tr.doc.nodeAt(item.pos);
+    if (!node || node.type.name !== "image") continue;
+    tr.setNodeMarkup(item.pos, undefined, { ...item.attrs, src: item.previewSrc, markdownSrc: item.src });
+    changed = true;
+  }
+  if (changed) editor.view.dispatch(tr);
 }
 
 function findSlashQuery(editor: NonNullable<ReturnType<typeof useEditor>>) {

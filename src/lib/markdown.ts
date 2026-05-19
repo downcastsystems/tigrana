@@ -257,7 +257,7 @@ function inlineHtmlToMarkdown(element: Element): string {
     else if (tag === "s" || tag === "strike" || tag === "del") value += `~~${content}~~`;
     else if (tag === "code") value += `\`${content}\``;
     else if (tag === "a") value += `[${content}](${node.getAttribute("href") ?? ""})`;
-    else if (tag === "img") value += `![${node.getAttribute("alt") ?? "Image"}](${node.getAttribute("data-markdown-src") ?? node.getAttribute("src") ?? ""})`;
+    else if (tag === "img") value += imageElementToMarkdown(node);
     else value += content;
   });
   return value;
@@ -302,6 +302,8 @@ export function htmlToMarkdown(html: string) {
       markdown.push(`${"#".repeat(level)} ${inlineHtmlToMarkdown(block)}`);
     } else if (tag === "p") {
       markdown.push(inlineHtmlToMarkdown(block));
+    } else if (tag === "img") {
+      markdown.push(imageElementToMarkdown(block));
     } else if (tag === "blockquote") {
       const text = inlineHtmlToMarkdown(block);
       markdown.push(text.split("\n").map((line) => `> ${line}`).join("\n"));
@@ -340,4 +342,8 @@ export function htmlToMarkdown(html: string) {
   }
 
   return `${markdown.join("\n\n").trim()}\n`;
+}
+
+function imageElementToMarkdown(image: Element): string {
+  return `![${image.getAttribute("alt") ?? "Image"}](${image.getAttribute("data-markdown-src") ?? image.getAttribute("src") ?? ""})`;
 }

@@ -148,7 +148,7 @@ type PropertyDialogState =
   | { kind: "folder-color"; path: string; value: string };
 
 type IconBrowserState =
-  | { kind: "folder"; path: string; value: string }
+  | { kind: "folder"; path: string; value: string; onReset?: () => void }
   | { kind: "note"; path: string; value: string };
 
 type DragItem =
@@ -1216,11 +1216,24 @@ export default function App() {
     setAppError(null);
   }
 
+  function resetFolderIcon(path: string) {
+    updateMetadata((current) => setMetadataValue(current, "folderIcons", path, ""));
+    setIconBrowser(null);
+    setContextMenu(null);
+  }
+
+  function resetFolderColor(path: string) {
+    updateMetadata((current) => setMetadataValue(current, "folderColors", path, ""));
+    setPropertyDialog(null);
+    setContextMenu(null);
+  }
+
   function openIconBrowser(kind: IconBrowserState["kind"], path: string) {
     setIconBrowser({
       kind,
       path,
       value: kind === "folder" ? metadata.folderIcons[path] ?? "" : metadata.noteIcons[path] ?? "",
+      ...(kind === "folder" ? { onReset: () => resetFolderIcon(path) } : {}),
     });
     setContextMenu(null);
     setAppError(null);
@@ -1893,14 +1906,6 @@ export default function App() {
           }}
           isBookmarked={contextMenu.kind !== "empty" ? isBookmarked({ kind: contextMenu.kind, path: contextMenu.path }) : false}
           onRenameFolder={() => contextMenu.kind === "folder" && openPropertyDialog("rename-folder", contextMenu.path)}
-          onResetFolderColor={() =>
-            contextMenu.kind === "folder" &&
-            updateMetadata((current) => setMetadataValue(current, "folderColors", contextMenu.path, ""))
-          }
-          onResetFolderIcon={() =>
-            contextMenu.kind === "folder" &&
-            updateMetadata((current) => setMetadataValue(current, "folderIcons", contextMenu.path, ""))
-          }
           onSetFolderColor={() => contextMenu.kind === "folder" && openPropertyDialog("folder-color", contextMenu.path)}
           onSetFolderIcon={() => contextMenu.kind === "folder" && openIconBrowser("folder", contextMenu.path)}
           onSetNoteIcon={() => contextMenu.kind === "note" && openIconBrowser("note", contextMenu.path)}
@@ -2006,6 +2011,7 @@ export default function App() {
           appError={appError}
           onChange={(value) => setPropertyDialog({ ...propertyDialog, value } as PropertyDialogState)}
           onClose={() => setPropertyDialog(null)}
+          onReset={propertyDialog.kind === "folder-color" ? () => resetFolderColor(propertyDialog.path) : undefined}
           onSubmit={() => void submitPropertyDialog()}
         />
       ) : null}
@@ -2014,6 +2020,7 @@ export default function App() {
         <IconBrowserModal
           state={iconBrowser}
           onClose={() => setIconBrowser(null)}
+          onReset={iconBrowser.kind === "folder" ? iconBrowser.onReset : undefined}
           onSelect={setIconValue}
         />
       ) : null}
@@ -3441,10 +3448,12 @@ function ManageNotebooksModal({
 function IconBrowserModal({
   state,
   onClose,
+  onReset,
   onSelect,
 }: {
   state: IconBrowserState;
   onClose: () => void;
+  onReset?: () => void;
   onSelect: (iconName: string) => void;
 }) {
   const [query, setQuery] = useState("");
@@ -3481,6 +3490,11 @@ function IconBrowserModal({
           <button className="toolbar-button" type="button" onClick={() => onSelect("")}>
             Clear
           </button>
+          {onReset ? (
+            <button className="toolbar-button" type="button" onClick={onReset}>
+              Reset
+            </button>
+          ) : null}
         </div>
         <div className="icon-grid">
           {filteredIcons.map((name) => {
@@ -3542,8 +3556,6 @@ function ContextMenu({
   onOpenInNewWindow,
   onReveal,
   onRenameFolder,
-  onResetFolderColor,
-  onResetFolderIcon,
   onSetFolderColor,
   onSetFolderIcon,
   onSetNoteIcon,
@@ -3558,8 +3570,6 @@ function ContextMenu({
   onOpenInNewWindow: () => void;
   onReveal: () => void;
   onRenameFolder: () => void;
-  onResetFolderColor: () => void;
-  onResetFolderIcon: () => void;
   onSetFolderColor: () => void;
   onSetFolderIcon: () => void;
   onSetNoteIcon: () => void;
@@ -3602,17 +3612,9 @@ function ContextMenu({
             <FileText size={14} />
             <span>Set Folder Icon</span>
           </button>
-          <button type="button" onClick={onResetFolderIcon}>
-            <X size={14} />
-            <span>Reset Folder Icon</span>
-          </button>
           <button type="button" onClick={onSetFolderColor}>
             <Palette size={14} />
             <span>Set Folder Color</span>
-          </button>
-          <button type="button" onClick={onResetFolderColor}>
-            <X size={14} />
-            <span>Reset Folder Color</span>
           </button>
         </>
       ) : null}
@@ -3651,12 +3653,14 @@ function PropertyDialog({
   state,
   onChange,
   onClose,
+  onReset,
   onSubmit,
 }: {
   appError: string | null;
   state: PropertyDialogState;
   onChange: (value: string) => void;
   onClose: () => void;
+  onReset?: () => void;
   onSubmit: () => void;
 }) {
   const config = {
@@ -3742,6 +3746,11 @@ function PropertyDialog({
         </div>
         {appError ? <p className="dialog-error">{appError}</p> : null}
         <div className="dialog-actions">
+          {onReset ? (
+            <button className="toolbar-button dialog-reset-button" type="button" onClick={onReset}>
+              Reset
+            </button>
+          ) : null}
           <button className="toolbar-button" type="button" onClick={onClose}>
             Cancel
           </button>
