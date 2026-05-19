@@ -48,6 +48,11 @@ export async function ensureWorkspace(workspace: string) {
   await invoke("ensure_workspace", { workspace });
 }
 
+export async function watchWorkspace(workspace: string) {
+  if (!isTauri()) return;
+  await invoke("watch_workspace", { workspace });
+}
+
 export async function listNotes(workspace: string): Promise<NoteEntry[]> {
   if (isTauri()) return invoke("list_notes", { workspace });
   const store = readDemoStore();
@@ -107,7 +112,7 @@ export async function createNote(workspace: string, parentPath: string, title: s
   if (store.notes[path]) {
     throw new Error("A note with that title already exists in this folder.");
   }
-  store.notes[path] = `# ${title.trim()}\n\n`;
+  store.notes[path] = "";
   writeDemoStore(store);
   return {
     path,
@@ -267,7 +272,7 @@ export async function saveAsset(workspace: string, file: File) {
     return invoke<string>("save_asset", {
       payload: {
         workspace,
-        file_name: file.name || `pasted-${Date.now()}.png`,
+        file_name: file.name || `pasted-${Date.now()}.${file.type.split("/").at(1) || "png"}`,
         bytes,
       },
     });

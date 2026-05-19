@@ -1,9 +1,12 @@
 use serde::{Deserialize, Serialize};
+use notify::{Config, EventKind, RecommendedWatcher, RecursiveMode, Watcher};
+use std::collections::HashMap;
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::Command;
+use std::sync::Mutex;
 use tauri::menu::{Menu, MenuItem, PredefinedMenuItem, Submenu};
-use tauri::Emitter;
+use tauri::{AppHandle, Emitter};
 use walkdir::WalkDir;
 
 #[derive(Debug, Serialize)]
@@ -81,6 +84,17 @@ struct RevealPathPayload {
     workspace: String,
     path: String,
     kind: String,
+}
+
+#[derive(Debug, Serialize, Clone)]
+struct NoteChangedPayload {
+    workspace: String,
+    path: String,
+}
+
+#[derive(Default)]
+struct WatchState {
+    watchers: Mutex<HashMap<String, RecommendedWatcher>>,
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -248,7 +262,7 @@ fn create_note(payload: CreateNotePayload) -> Result<NoteEntry, String> {
         return Err("A note with that title already exists in this folder.".to_string());
     }
 
-    fs::write(&absolute, format!("# {}\n\n", payload.title.trim())).map_err(|error| error.to_string())?;
+    fs::write(&absolute, "").map_err(|error| error.to_string())?;
 
     let path = relative.to_string_lossy().replace('\\', "/");
     Ok(NoteEntry {
@@ -477,7 +491,7 @@ fn save_asset(payload: SaveAssetPayload) -> Result<String, String> {
     let root = safe_workspace(&payload.workspace)?;
     let assets_dir = root.join(".assets");
     fs::create_dir_all(&assets_dir).map_err(|error| error.to_string())?;
-    let clean_name = slugify_asset_name(&payload.file_name);
+    let clean_name = unique_asset_name(&assets_dir, &payload.file_name);
     let path = assets_dir.join(clean_name);
     fs::write(&path, payload.bytes).map_err(|error| error.to_string())?;
     let relative = path
@@ -515,6 +529,53 @@ fn reveal_path(payload: RevealPathPayload) -> Result<(), String> {
 fn ensure_workspace(workspace: String) -> Result<(), String> {
     let root = safe_workspace(&workspace)?;
     fs::create_dir_all(root.join(".lumen")).map_err(|error| error.to_string())
+}
+
+#[tauri::command]
+fn watch_workspace(app: AppHandle, state: tauri::State<WatchState>, workspace: String) -> Result<(), String> {
+    let root = safe_workspace(&workspace)?;
+    fs::create_dir_all(&root).map_err(|error| error.to_string())?;
+
+    let mut watchers = state.watchers.lock().map_err(|error| error.to_string())?;
+    if watchers.contains_key(&workspace) {
+        return Ok(());
+    }
+
+    let watch_root = root.clone();
+    let event_workspace = workspace.clone();
+    let event_app = app.clone();
+    let mut watcher = RecommendedWatcher::new(
+        move |result: notify::Result<notify::Event>| {
+            let Ok(event) = result else { return; };
+            if !matches!(event.kind, EventKind::Create(_) | EventKind::Modify(_) | EventKind::Remove(_)) {
+                return;
+            }
+            for path in event.paths {
+                if path.extension().and_then(|ext| ext.to_str()) != Some("md") {
+                    continue;
+                }
+                if is_hidden_entry(&path) {
+                    continue;
+                }
+                let Ok(relative) = path.strip_prefix(&watch_root) else {
+                    continue;
+                };
+                let payload = NoteChangedPayload {
+                    workspace: event_workspace.clone(),
+                    path: relative.to_string_lossy().replace('\\', "/"),
+                };
+                let _ = event_app.emit("note-changed", payload);
+            }
+        },
+        Config::default(),
+    )
+    .map_err(|error| error.to_string())?;
+
+    watcher
+        .watch(&root, RecursiveMode::Recursive)
+        .map_err(|error| error.to_string())?;
+    watchers.insert(workspace, watcher);
+    Ok(())
 }
 
 #[tauri::command]
@@ -636,9 +697,29 @@ fn validate_note_title(title: &str) -> Result<(), String> {
     Ok(())
 }
 
-fn slugify_asset_name(file_name: &str) -> String {
-    let stem = slugify(file_name.trim_end_matches(".png"));
-    format!("{stem}.png")
+fn unique_asset_name(assets_dir: &Path, file_name: &str) -> String {
+    let original = Path::new(file_name);
+    let extension = original
+        .extension()
+        .and_then(|ext| ext.to_str())
+        .filter(|ext| !ext.is_empty())
+        .unwrap_or("png");
+    let stem = original
+        .file_stem()
+        .and_then(|stem| stem.to_str())
+        .map(slugify)
+        .unwrap_or_else(|| "pasted-image".to_string());
+    let timestamp = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|duration| duration.as_millis())
+        .unwrap_or(0);
+    let mut candidate = format!("{stem}-{timestamp}.{extension}");
+    let mut index = 2;
+    while assets_dir.join(&candidate).exists() {
+        candidate = format!("{stem}-{timestamp}-{index}.{extension}");
+        index += 1;
+    }
+    candidate
 }
 
 fn reveal_in_file_manager(path: &Path) -> Result<(), String> {
@@ -697,6 +778,7 @@ fn reveal_in_file_manager(path: &Path) -> Result<(), String> {
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
+        .manage(WatchState::default())
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_fs::init())
         .plugin(tauri_plugin_shell::init())
@@ -759,6 +841,7 @@ pub fn run() {
         })
         .invoke_handler(tauri::generate_handler![
             ensure_workspace,
+            watch_workspace,
             list_folders,
             list_notes,
             read_note,

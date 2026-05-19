@@ -15,6 +15,7 @@ import { Plugin, PluginKey, TextSelection } from "@tiptap/pm/state";
 import { Decoration, DecorationSet } from "@tiptap/pm/view";
 import { BubbleMenu, EditorContent, Range, useEditor, type Editor } from "@tiptap/react";
 import StarterKit from "@tiptap/starter-kit";
+import { convertFileSrc } from "@tauri-apps/api/core";
 import {
   Bold,
   ChevronDown,
@@ -24,6 +25,9 @@ import {
   Heading1,
   Heading2,
   Heading3,
+  Heading4,
+  Heading5,
+  Heading6,
   Italic,
   Link as LinkIcon,
   List,
@@ -37,7 +41,7 @@ import { common, createLowlight } from "lowlight";
 import { type CSSProperties, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { filterSlashCommands } from "./slashCommands";
 import { htmlToMarkdown, markdownToHtml } from "../lib/markdown";
-import { saveAsset } from "../lib/notesApi";
+import { isTauri, saveAsset } from "../lib/notesApi";
 import type { NotePositionMetadata } from "../types";
 
 type NotesEditorProps = {
@@ -49,7 +53,7 @@ type NotesEditorProps = {
   restorePosition: NotePositionMetadata | null;
   workspace: string;
   onChange: (markdown: string) => void;
-  onPositionChange: (position: { selectionFrom: number; selectionTo: number }) => void;
+  onPositionChange: (position: { selectedText: string; selectionFrom: number; selectionTo: number }) => void;
 };
 
 type SlashState = {
@@ -112,6 +116,19 @@ const SearchHighlight = Extension.create({
   },
 });
 
+const MarkdownImage = Image.extend({
+  addAttributes() {
+    return {
+      ...this.parent?.(),
+      markdownSrc: {
+        default: null,
+        parseHTML: (element) => element.getAttribute("data-markdown-src"),
+        renderHTML: (attributes) => (attributes.markdownSrc ? { "data-markdown-src": attributes.markdownSrc } : {}),
+      },
+    };
+  },
+});
+
 export function NotesEditor({ content, focusRequest, focusAtEndRequest, findRequest, notePath, restorePosition, workspace, onChange, onPositionChange }: NotesEditorProps) {
   const [slash, setSlash] = useState<SlashState | null>(null);
   const [findOpen, setFindOpen] = useState(false);
@@ -120,17 +137,21 @@ export function NotesEditor({ content, focusRequest, focusAtEndRequest, findRequ
   const slashRef = useRef<SlashState | null>(null);
   const editorRef = useRef<Editor | null>(null);
   const findInputRef = useRef<HTMLInputElement | null>(null);
+  const handledFindRequest = useRef(findRequest);
   const lastLoadedNote = useRef<string | null>(null);
 
   const extensions = useMemo(
     () => [
       StarterKit.configure({
         codeBlock: false,
+        heading: {
+          levels: [1, 2, 3, 4, 5, 6],
+        },
       }),
       CodeBlockLowlight.configure({ lowlight }),
       Highlight,
       SearchHighlight,
-      Image.configure({
+      MarkdownImage.configure({
         inline: false,
         allowBase64: false,
       }),
@@ -200,7 +221,7 @@ export function NotesEditor({ content, focusRequest, focusAtEndRequest, findRequ
 
   const editor = useEditor({
     extensions,
-    content: markdownToHtml(content),
+    content: markdownToHtml(content, { resolveImageSrc: (src) => resolveNotebookImageSrc(workspace, src) }),
     editorProps: {
       handleDOMEvents: {
         keydown(_view, event) {
@@ -237,7 +258,7 @@ export function NotesEditor({ content, focusRequest, focusAtEndRequest, findRequ
         event.preventDefault();
         void saveAsset(workspace, file).then((src) => {
           const name = file.name || "Pasted image";
-          editor?.chain().focus().setImage({ src, alt: name }).run();
+          editor?.chain().focus().setImage({ src: resolveNotebookImageSrc(workspace, src), alt: name, markdownSrc: src } as { src: string; alt: string; markdownSrc: string }).run();
         });
         return true;
       },
@@ -245,6 +266,7 @@ export function NotesEditor({ content, focusRequest, focusAtEndRequest, findRequ
     onUpdate({ editor }) {
       onChange(htmlToMarkdown(editor.getHTML()));
       onPositionChange({
+        selectedText: getSelectedText(editor),
         selectionFrom: editor.state.selection.from,
         selectionTo: editor.state.selection.to,
       });
@@ -255,6 +277,7 @@ export function NotesEditor({ content, focusRequest, focusAtEndRequest, findRequ
     },
     onSelectionUpdate({ editor }) {
       onPositionChange({
+        selectedText: getSelectedText(editor),
         selectionFrom: editor.state.selection.from,
         selectionTo: editor.state.selection.to,
       });
@@ -272,7 +295,7 @@ export function NotesEditor({ content, focusRequest, focusAtEndRequest, findRequ
   useEffect(() => {
     if (!editor) return;
     if (lastLoadedNote.current === notePath) return;
-    const next = markdownToHtml(content);
+    const next = markdownToHtml(content, { resolveImageSrc: (src) => resolveNotebookImageSrc(workspace, src) });
     // Chain content + selection into one transaction so there is no intermediate
     // paint that could leave a ghost cursor from the previous note.
     const selectionFrom = restorePosition?.selectionFrom;
@@ -285,6 +308,7 @@ export function NotesEditor({ content, focusRequest, focusAtEndRequest, findRequ
     // Blur first so the browser removes the cursor before new content is painted,
     // preventing a ghost caret from the previous note appearing briefly.
     editor.commands.blur();
+    setFindOpen(false);
     editor
       .chain()
       .setContent(next, false)
@@ -298,7 +322,7 @@ export function NotesEditor({ content, focusRequest, focusAtEndRequest, findRequ
       })
       .run();
     lastLoadedNote.current = notePath;
-  }, [content, editor, notePath, restorePosition]);
+  }, [content, editor, notePath, restorePosition, workspace]);
 
   useEffect(() => {
     if (!editor || !focusRequest) return;
@@ -311,7 +335,8 @@ export function NotesEditor({ content, focusRequest, focusAtEndRequest, findRequ
   }, [editor, focusAtEndRequest]);
 
   useEffect(() => {
-    if (!findRequest) return;
+    if (!findRequest || findRequest === handledFindRequest.current) return;
+    handledFindRequest.current = findRequest;
     setFindOpen(true);
   }, [findRequest]);
 
@@ -476,6 +501,9 @@ function FormattingBubbleMenu({ editor }: { editor: Editor }) {
     { label: "H1", icon: Heading1, active: editor.isActive("heading", { level: 1 }), run: () => editor.chain().focus().toggleHeading({ level: 1 }).run() },
     { label: "H2", icon: Heading2, active: editor.isActive("heading", { level: 2 }), run: () => editor.chain().focus().toggleHeading({ level: 2 }).run() },
     { label: "H3", icon: Heading3, active: editor.isActive("heading", { level: 3 }), run: () => editor.chain().focus().toggleHeading({ level: 3 }).run() },
+    { label: "H4", icon: Heading4, active: editor.isActive("heading", { level: 4 }), run: () => editor.chain().focus().toggleHeading({ level: 4 }).run() },
+    { label: "H5", icon: Heading5, active: editor.isActive("heading", { level: 5 }), run: () => editor.chain().focus().toggleHeading({ level: 5 }).run() },
+    { label: "H6", icon: Heading6, active: editor.isActive("heading", { level: 6 }), run: () => editor.chain().focus().toggleHeading({ level: 6 }).run() },
     { label: "Bullets", icon: List, active: editor.isActive("bulletList"), run: () => editor.chain().focus().toggleBulletList().run() },
     { label: "Numbers", icon: ListOrdered, active: editor.isActive("orderedList"), run: () => editor.chain().focus().toggleOrderedList().run() },
     { label: "Tasks", icon: CheckSquare, active: editor.isActive("taskList"), run: () => editor.chain().focus().toggleTaskList().run() },
@@ -554,6 +582,22 @@ function scrollEditorPositionIntoView(editor: Editor, position: number) {
     top: Math.max(0, targetTop),
     behavior: "smooth",
   });
+}
+
+function getSelectedText(editor: Editor) {
+  const { from, to, empty } = editor.state.selection;
+  if (empty) return "";
+  return editor.state.doc.textBetween(from, to, "\n", "\n");
+}
+
+function resolveNotebookImageSrc(workspace: string, src: string) {
+  if (!workspace || !isTauri() || isExternalImageSrc(src) || src.startsWith("data:")) return src;
+  const relative = src.replace(/^\.?\//, "");
+  return convertFileSrc(`${workspace}/${relative}`);
+}
+
+function isExternalImageSrc(src: string) {
+  return /^(https?:|asset:|blob:|file:)/i.test(src);
 }
 
 function findSlashQuery(editor: NonNullable<ReturnType<typeof useEditor>>) {

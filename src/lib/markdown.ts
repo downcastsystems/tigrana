@@ -5,9 +5,16 @@ const escapeHtml = (value: string) =>
     .replace(/>/g, "&gt;")
     .replace(/"/g, "&quot;");
 
-const inlineMarkdownToHtml = (value: string) => {
+type MarkdownOptions = {
+  resolveImageSrc?: (src: string) => string;
+};
+
+const inlineMarkdownToHtml = (value: string, options: MarkdownOptions = {}) => {
   let html = escapeHtml(value);
-  html = html.replace(/!\[([^\]]*)\]\(([^)]+)\)/g, '<img src="$2" alt="$1" />');
+  html = html.replace(/!\[([^\]]*)\]\(([^)]+)\)/g, (_match, alt: string, src: string) => {
+    const resolvedSrc = options.resolveImageSrc?.(src) ?? src;
+    return `<img src="${escapeHtml(resolvedSrc)}" alt="${escapeHtml(alt)}" data-markdown-src="${escapeHtml(src)}" />`;
+  });
   html = html.replace(/\[([^\]]+)\]\(([^)]+)\)/g, '<a href="$2">$1</a>');
   html = html.replace(/`([^`]+)`/g, "<code>$1</code>");
   html = html.replace(/~~([^~]+)~~/g, "<s>$1</s>");
@@ -28,7 +35,7 @@ function parseTableRow(line: string): string[] {
   return line.trim().replace(/^\||\|$/g, "").split("|").map((cell) => cell.trim());
 }
 
-export function markdownToHtml(markdown: string) {
+export function markdownToHtml(markdown: string, options: MarkdownOptions = {}) {
   const lines = markdown.replace(/\r\n/g, "\n").split("\n");
   const html: string[] = [];
   let listType: "ul" | "ol" | "task" | null = null;
@@ -51,7 +58,7 @@ export function markdownToHtml(markdown: string) {
     html.push("<table>");
     html.push("<thead><tr>");
     for (const cell of headerRow) {
-      html.push(`<th>${inlineMarkdownToHtml(cell)}</th>`);
+        html.push(`<th>${inlineMarkdownToHtml(cell, options)}</th>`);
     }
     html.push("</tr></thead>");
     if (bodyRows.length > 0) {
@@ -59,7 +66,7 @@ export function markdownToHtml(markdown: string) {
       for (const row of bodyRows) {
         html.push("<tr>");
         for (const cell of row) {
-          html.push(`<td>${inlineMarkdownToHtml(cell)}</td>`);
+          html.push(`<td>${inlineMarkdownToHtml(cell, options)}</td>`);
         }
         html.push("</tr>");
       }
@@ -110,10 +117,10 @@ export function markdownToHtml(markdown: string) {
       continue;
     }
 
-    const heading = /^(#{1,3})\s+(.*)$/.exec(line);
+    const heading = /^(#{1,6})\s+(.*)$/.exec(line);
     if (heading) {
       closeList();
-      html.push(`<h${heading[1].length}>${inlineMarkdownToHtml(heading[2])}</h${heading[1].length}>`);
+      html.push(`<h${heading[1].length}>${inlineMarkdownToHtml(heading[2], options)}</h${heading[1].length}>`);
       continue;
     }
 
@@ -126,7 +133,7 @@ export function markdownToHtml(markdown: string) {
     const quote = /^>\s+(.*)$/.exec(line);
     if (quote) {
       closeList();
-      html.push(`<blockquote><p>${inlineMarkdownToHtml(quote[1])}</p></blockquote>`);
+      html.push(`<blockquote><p>${inlineMarkdownToHtml(quote[1], options)}</p></blockquote>`);
       continue;
     }
 
@@ -137,7 +144,7 @@ export function markdownToHtml(markdown: string) {
         html.push('<ul data-type="taskList">');
         listType = "task";
       }
-      html.push(`<li data-type="taskItem" data-checked="${task[1].toLowerCase() === "x"}"><label><input type="checkbox" ${task[1].toLowerCase() === "x" ? "checked" : ""}><span></span></label><div><p>${inlineMarkdownToHtml(task[2])}</p></div></li>`);
+      html.push(`<li data-type="taskItem" data-checked="${task[1].toLowerCase() === "x"}"><label><input type="checkbox" ${task[1].toLowerCase() === "x" ? "checked" : ""}><span></span></label><div><p>${inlineMarkdownToHtml(task[2], options)}</p></div></li>`);
       continue;
     }
 
@@ -148,7 +155,7 @@ export function markdownToHtml(markdown: string) {
         html.push("<ul>");
         listType = "ul";
       }
-      html.push(`<li><p>${inlineMarkdownToHtml(bullet[1])}</p></li>`);
+      html.push(`<li><p>${inlineMarkdownToHtml(bullet[1], options)}</p></li>`);
       continue;
     }
 
@@ -159,12 +166,12 @@ export function markdownToHtml(markdown: string) {
         html.push("<ol>");
         listType = "ol";
       }
-      html.push(`<li><p>${inlineMarkdownToHtml(ordered[1])}</p></li>`);
+      html.push(`<li><p>${inlineMarkdownToHtml(ordered[1], options)}</p></li>`);
       continue;
     }
 
     closeList();
-    html.push(`<p>${inlineMarkdownToHtml(line)}</p>`);
+    html.push(`<p>${inlineMarkdownToHtml(line, options)}</p>`);
   }
 
   closeList();
@@ -192,7 +199,7 @@ function inlineHtmlToMarkdown(element: Element): string {
     else if (tag === "s" || tag === "strike" || tag === "del") value += `~~${content}~~`;
     else if (tag === "code") value += `\`${content}\``;
     else if (tag === "a") value += `[${content}](${node.getAttribute("href") ?? ""})`;
-    else if (tag === "img") value += `![${node.getAttribute("alt") ?? "Image"}](${node.getAttribute("src") ?? ""})`;
+    else if (tag === "img") value += `![${node.getAttribute("alt") ?? "Image"}](${node.getAttribute("data-markdown-src") ?? node.getAttribute("src") ?? ""})`;
     else value += content;
   });
   return value;
@@ -206,9 +213,9 @@ export function htmlToMarkdown(html: string) {
   for (const block of blocks) {
     const tag = block.tagName.toLowerCase();
 
-    if (/h[1-6]/.test(tag)) {
+    if (/^h[1-6]$/.test(tag)) {
       const level = Number(tag.slice(1));
-      markdown.push(`${"#".repeat(Math.min(level, 3))} ${inlineHtmlToMarkdown(block)}`);
+      markdown.push(`${"#".repeat(level)} ${inlineHtmlToMarkdown(block)}`);
     } else if (tag === "p") {
       markdown.push(inlineHtmlToMarkdown(block));
     } else if (tag === "blockquote") {

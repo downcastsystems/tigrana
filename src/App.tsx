@@ -56,6 +56,7 @@ import {
   SAMPLE_WORKSPACE,
   saveNote,
   validateNoteTitle,
+  watchWorkspace,
   writeWorkspaceMetadata,
   defaultWorkspaceMetadata,
 } from "./lib/notesApi";
@@ -101,6 +102,10 @@ type ContextMenuTarget =
   | { kind: "note"; path: string };
 
 type OpenTarget = { kind: "folder" | "note"; path: string };
+type NoteChangedEvent = {
+  workspace: string;
+  path: string;
+};
 type RecentNotebook = {
   path: string;
   name: string;
@@ -218,6 +223,7 @@ export default function App() {
   const [savedTitle, setSavedTitle] = useState("");
   const [draft, setDraft] = useState("");
   const [savedDraft, setSavedDraft] = useState("");
+  const [selectedEditorText, setSelectedEditorText] = useState("");
   const [editorRestorePosition, setEditorRestorePosition] = useState<NotePositionMetadata | null>(null);
   const [isSaving, setIsSaving] = useState(false);
   const [searchOpen, setSearchOpen] = useState(false);
@@ -259,15 +265,18 @@ export default function App() {
   const metadataRef = useRef(metadata);
   const positionWriteTimerRef = useRef<number | null>(null);
   const restoredTabsWorkspaceRef = useRef<string | null>(null);
+  const externalNoteChangeRef = useRef<(path: string) => void>(() => {});
   const keyboardActionsRef = useRef<{
     addEmptyTab: () => void;
     chooseWorkspace: (intent: "open" | "new") => void;
+    hasOpenNote: () => boolean;
     persistDraft: () => void;
     requestCreateNote: (parentPath?: string) => void;
     selectedFolder: string;
   }>({
     addEmptyTab: () => {},
     chooseWorkspace: () => {},
+    hasOpenNote: () => false,
     persistDraft: () => {},
     requestCreateNote: () => {},
     selectedFolder: "",
@@ -282,6 +291,7 @@ export default function App() {
     [metadata, notes, selectedFolder],
   );
   const outline = useMemo(() => extractOutline(titleDraft, draft), [draft, titleDraft]);
+  const noteStats = useMemo(() => getTextStats(selectedEditorText || draft), [draft, selectedEditorText]);
   const resolvedTheme = colorScheme === "system" ? (prefersDark ? "dark" : "light") : colorScheme;
   const themePreset = getThemePreset(themePresetId);
   const effectiveAccentColor = accentColor || themePreset.accent[resolvedTheme];
@@ -366,6 +376,23 @@ export default function App() {
     });
     return () => unlisten?.();
   }, []);
+
+  useEffect(() => {
+    if (!workspace || !isTauri()) return;
+    void watchWorkspace(workspace).catch((error) => {
+      setAppError(error instanceof Error ? error.message : String(error));
+    });
+
+    let unlisten: (() => void) | undefined;
+    void listen<NoteChangedEvent>("note-changed", (event) => {
+      if (event.payload.workspace !== workspace) return;
+      externalNoteChangeRef.current(event.payload.path);
+    }).then((callback) => {
+      unlisten = callback;
+    });
+
+    return () => unlisten?.();
+  }, [workspace]);
 
   useEffect(() => {
     if (!workspace) return;
@@ -573,7 +600,7 @@ export default function App() {
   }, []);
 
   function currentMarkdownSnapshot() {
-    return titleDraft.trim() ? composeMarkdown(titleDraft.trim(), draft) : draft;
+    return draft;
   }
 
   function getRestorableNotePosition(current: WorkspaceMetadata, path: string, markdown: string) {
@@ -605,9 +632,13 @@ export default function App() {
     });
   }
 
-  function handleEditorPositionChange(position: { selectionFrom: number; selectionTo: number }) {
+  function handleEditorPositionChange(position: { selectedText: string; selectionFrom: number; selectionTo: number }) {
+    setSelectedEditorText(position.selectedText);
     if (!activePath) return;
-    recordNotePosition(activePath, currentMarkdownSnapshot(), position);
+    recordNotePosition(activePath, currentMarkdownSnapshot(), {
+      selectionFrom: position.selectionFrom,
+      selectionTo: position.selectionTo,
+    });
   }
 
   const placePathInActiveTab = useCallback((path: string) => {
@@ -635,6 +666,7 @@ export default function App() {
     setSavedTitle("");
     setDraft("");
     setSavedDraft("");
+    setSelectedEditorText("");
   }
 
   async function selectNote(path: string) {
@@ -652,6 +684,55 @@ export default function App() {
     recordNotePosition(path, content, { lastOpenedAt: Date.now() });
     setSearchQuery("");
   }
+
+  async function handleExternalNoteChange(path: string) {
+    if (!workspace) return;
+    try {
+      const nextContent = await readNote(workspace, path);
+      const currentContent = contents.get(path);
+      if (currentContent === nextContent) return;
+      if (activePath === path && nextContent === currentMarkdownSnapshot()) {
+        setContents((current) => {
+          const next = new Map(current);
+          next.set(path, nextContent);
+          return next;
+        });
+        return;
+      }
+
+      setContents((current) => {
+        const next = new Map(current);
+        next.set(path, nextContent);
+        return next;
+      });
+
+      const refreshedNotes = await listNotes(workspace);
+      setNotes(refreshedNotes);
+      const note = refreshedNotes.find((entry) => entry.path === path) ?? notes.find((entry) => entry.path === path) ?? null;
+      if (activePath !== path) return;
+
+      if (draft !== savedDraft || titleDraft !== savedTitle) {
+        setAppError("This note changed on disk, but you have unsaved edits. Save or switch notes before reloading it.");
+        return;
+      }
+
+      const restorePosition: NotePositionMetadata = {
+        path,
+        lastOpenedAt: Date.now(),
+        scrollTop: noteSurfaceRef.current?.scrollTop ?? 0,
+        contentLength: nextContent.length,
+        selectionFrom: metadataRef.current.notePositions[path]?.selectionFrom,
+        selectionTo: metadataRef.current.notePositions[path]?.selectionTo,
+      };
+      loadContentIntoEditor(note, nextContent, restorePosition);
+      recordNotePosition(path, nextContent, restorePosition);
+    } catch {
+      await refreshWorkspace(workspace);
+      if (activePath === path) clearCurrentNote();
+    }
+  }
+
+  externalNoteChangeRef.current = (path: string) => void handleExternalNoteChange(path);
 
   const persistDraft = useCallback(async () => {
     setAppError(null);
@@ -709,6 +790,7 @@ export default function App() {
   keyboardActionsRef.current = {
     addEmptyTab: () => void addEmptyTab(),
     chooseWorkspace: (intent: "open" | "new") => void chooseWorkspace(intent),
+    hasOpenNote: () => Boolean(noteOpen),
     persistDraft: () => void persistDraft(),
     requestCreateNote,
     selectedFolder,
@@ -735,7 +817,9 @@ export default function App() {
       }
       if (command && key === "f") {
         event.preventDefault();
-        setNoteFindRequest((value) => value + 1);
+        if (keyboardActionsRef.current.hasOpenNote()) {
+          setNoteFindRequest((value) => value + 1);
+        }
         return;
       }
       if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === "k") {
@@ -1052,6 +1136,7 @@ export default function App() {
     setSavedTitle(parsed.title);
     setDraft(parsed.body);
     setSavedDraft(parsed.body);
+    setSelectedEditorText("");
     setAppError(null);
   }
 
@@ -1327,7 +1412,7 @@ export default function App() {
       return;
     }
 
-    const heading = document.querySelectorAll<HTMLElement>(".editor-content h1, .editor-content h2, .editor-content h3")[index - 1];
+    const heading = document.querySelectorAll<HTMLElement>(".editor-content h1, .editor-content h2, .editor-content h3, .editor-content h4, .editor-content h5, .editor-content h6")[index - 1];
     heading?.scrollIntoView({ block: "start", behavior: "smooth" });
   }
 
@@ -1570,6 +1655,10 @@ export default function App() {
                   className="raw-markdown-input"
                   value={draft}
                   onChange={(event) => setDraft(event.target.value)}
+                  onSelect={(event) => {
+                    const input = event.currentTarget;
+                    setSelectedEditorText(input.value.slice(input.selectionStart, input.selectionEnd));
+                  }}
                   spellCheck
                 />
               </div>
@@ -1595,6 +1684,12 @@ export default function App() {
             appError={appError}
           />
         )}
+        {noteOpen ? (
+          <div className="note-status-bar">
+            <span>{noteStats.words} {noteStats.words === 1 ? "word" : "words"}</span>
+            <span>{noteStats.characters} {noteStats.characters === 1 ? "character" : "characters"}</span>
+          </div>
+        ) : null}
       </main>
 
       {outlineVisible ? <PaneResizer label="Resize right sidebar" onPointerDown={startRightPaneResize} /> : null}
@@ -1837,48 +1932,7 @@ function FolderPane({
   return (
     <section className="folder-pane">
       <div className="pane-header">
-        <div className="app-menu-wrap">
-          <button className="app-menu-button" type="button" aria-expanded={menuOpen} onClick={onToggleMenu}>
-            <strong>{workspace.split("/").at(-1) || "Notebook"}</strong>
-            <ChevronDown size={14} />
-          </button>
-          {menuOpen ? (
-            <div className="app-menu" onClick={(event) => event.stopPropagation()}>
-              <button type="button" onClick={onNewNotebook}>
-                <Plus size={14} />
-                <span>New Notebook</span>
-              </button>
-              <button type="button" onClick={onOpenWorkspace}>
-                <FolderOpen size={14} />
-                <span>Open Notebook</span>
-              </button>
-              <div className="app-menu-separator" />
-              <div className="recent-notebooks-list" role="menu" aria-label="Recent notebooks">
-                {recentNotebooks.map((notebook) => (
-                  <button
-                    className={workspace === notebook.path ? "is-active" : ""}
-                    key={notebook.path}
-                    type="button"
-                    onClick={() => onSelectNotebook(notebook.path)}
-                    title={notebook.path}
-                  >
-                    <BookOpen size={14} />
-                    <span>
-                      <strong>{notebook.name}</strong>
-                      <small>{notebook.path}</small>
-                    </span>
-                  </button>
-                ))}
-                {!recentNotebooks.length ? <p className="recent-notebooks-empty">No recent notebooks</p> : null}
-              </div>
-              <div className="app-menu-separator" />
-              <button type="button" onClick={onManageNotebooks}>
-                <Settings size={14} />
-                <span>Manage Notebooks</span>
-              </button>
-            </div>
-          ) : null}
-        </div>
+        <strong>Folders</strong>
         <div className="pane-actions">
           <button className="icon-button" type="button" disabled={disabled} title="Search" onClick={onToggleSearch}>
             <Search size={16} />
@@ -1945,6 +1999,51 @@ function FolderPane({
             onSelectFolder={onSelectFolder}
           />
         ))}
+      </div>
+      <div className="notebook-footer">
+        <div className="app-menu-wrap">
+          <button className="app-menu-button" type="button" aria-expanded={menuOpen} onClick={onToggleMenu}>
+            <BookOpen size={16} />
+            <strong>{workspace.split("/").at(-1) || "Notebook"}</strong>
+            <ChevronDown size={14} />
+          </button>
+          {menuOpen ? (
+            <div className="app-menu" onClick={(event) => event.stopPropagation()}>
+              <button type="button" onClick={onNewNotebook}>
+                <Plus size={14} />
+                <span>New Notebook</span>
+              </button>
+              <button type="button" onClick={onOpenWorkspace}>
+                <FolderOpen size={14} />
+                <span>Open Notebook</span>
+              </button>
+              <div className="app-menu-separator" />
+              <div className="recent-notebooks-list" role="menu" aria-label="Recent notebooks">
+                {recentNotebooks.map((notebook) => (
+                  <button
+                    className={workspace === notebook.path ? "is-active" : ""}
+                    key={notebook.path}
+                    type="button"
+                    onClick={() => onSelectNotebook(notebook.path)}
+                    title={notebook.path}
+                  >
+                    <BookOpen size={14} />
+                    <span>
+                      <strong>{notebook.name}</strong>
+                      <small>{notebook.path}</small>
+                    </span>
+                  </button>
+                ))}
+                {!recentNotebooks.length ? <p className="recent-notebooks-empty">No recent notebooks</p> : null}
+              </div>
+              <div className="app-menu-separator" />
+              <button type="button" onClick={onManageNotebooks}>
+                <Settings size={14} />
+                <span>Manage Notebooks</span>
+              </button>
+            </div>
+          ) : null}
+        </div>
       </div>
     </section>
   );
@@ -3379,18 +3478,6 @@ function orderNotes(notes: NoteEntry[], folderPath: string, metadata: WorkspaceM
 }
 
 function splitMarkdownTitle(markdown: string, fallbackTitle: string) {
-  const normalized = markdown.replace(/\r\n/g, "\n");
-  const lines = normalized.split("\n");
-  const firstLine = lines[0] ?? "";
-
-  if (firstLine.startsWith("# ")) {
-    const body = lines.slice(1).join("\n").replace(/^\n+/, "");
-    return {
-      title: firstLine.slice(2).trim() || fallbackTitle,
-      body,
-    };
-  }
-
   return {
     title: fallbackTitle,
     body: markdown,
@@ -3398,7 +3485,8 @@ function splitMarkdownTitle(markdown: string, fallbackTitle: string) {
 }
 
 function composeMarkdown(title: string, body: string) {
-  return `# ${title}\n\n${body.replace(/^\n+/, "")}`;
+  void title;
+  return body;
 }
 
 function previewNote(markdown: string) {
@@ -3415,10 +3503,23 @@ function previewNote(markdown: string) {
     .slice(0, 110);
 }
 
+function getTextStats(text: string) {
+  const plain = text
+    .replace(/!\[[^\]]*]\([^)]*\)/g, "")
+    .replace(/\[([^\]]+)]\([^)]*\)/g, "$1")
+    .replace(/[`*_>#-]/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+  return {
+    words: plain ? plain.split(/\s+/).length : 0,
+    characters: plain.length,
+  };
+}
+
 function extractOutline(title: string, body: string) {
   const headings = title.trim() ? [{ level: 1, text: title.trim() }] : [];
   body.split("\n").forEach((line) => {
-    const match = /^(#{1,3})\s+(.+)$/.exec(line);
+    const match = /^(#{1,6})\s+(.+)$/.exec(line);
     if (match) headings.push({ level: match[1].length, text: match[2].trim() });
   });
   return headings.map((heading, index) => ({
