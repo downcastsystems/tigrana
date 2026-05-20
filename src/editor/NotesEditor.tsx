@@ -448,7 +448,7 @@ export function NotesEditor({ content, focusRequest, focusAtEndRequest, findRequ
   useEffect(() => {
     if (!findRequest || findRequest === handledFindRequest.current) return;
     handledFindRequest.current = findRequest;
-    setFindOpen(true);
+    setFindOpen((prev) => !prev);
   }, [findRequest]);
 
   useEffect(() => {
