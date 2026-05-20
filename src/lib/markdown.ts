@@ -192,6 +192,16 @@ export function markdownToHtml(markdown: string, options: MarkdownOptions = {}) 
       continue;
     }
 
+    const standaloneImage = /^!\[([^\]]*)\]\(([^)]+)\)$/.exec(line.trim());
+    if (standaloneImage) {
+      closeList();
+      closeTable();
+      const [, alt, src] = standaloneImage;
+      const resolvedSrc = options.resolveImageSrc?.(src) ?? src;
+      html.push(`<img src="${escapeHtml(resolvedSrc)}" alt="${escapeHtml(alt)}" data-markdown-src="${escapeHtml(src)}" />`);
+      continue;
+    }
+
     // Handle raw <img> HTML lines (resized images stored with width attribute)
     if (/^<img\s/i.test(line.trim())) {
       closeList();
@@ -367,7 +377,7 @@ export function htmlToMarkdown(html: string) {
     }
   }
 
-  return `${markdown.join("\n\n").trim()}\n`;
+  return `${normalizeMarkdownImageLines(markdown.join("\n\n")).trim()}\n`;
 }
 
 function imageElementToMarkdown(image: Element): string {
@@ -381,4 +391,12 @@ function imageElementToMarkdown(image: Element): string {
     return `<img src="${escapedSrc}" alt="${escapedAlt}" width="${width}" />`;
   }
   return `![${alt}](${src})`;
+}
+
+export function normalizeMarkdownImageLines(markdown: string) {
+  return markdown
+    .replace(/([^\n])(<img\s[^>]*\/>)/gi, "$1\n\n$2")
+    .replace(/(<img\s[^>]*\/>)([^\n])/gi, "$1\n\n$2")
+    .replace(/([^\n])(!\[[^\]]*\]\([^)]+\))/g, "$1\n\n$2")
+    .replace(/(!\[[^\]]*\]\([^)]+\))([^\n])/g, "$1\n\n$2");
 }

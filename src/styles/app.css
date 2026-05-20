@@ -2,6 +2,10 @@
   font-family:
     Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
   font-size: 14px;
+  --app-font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  --app-font-size: 14px;
+  --editor-font-family: var(--app-font-family);
+  --editor-font-size: 17px;
   --accent: #315f59;
   --accent-strong: #192d2b;
   --accent-soft: rgba(49, 95, 89, 0.14);
@@ -67,6 +71,8 @@ body {
   margin: 0;
   min-width: 900px;
   min-height: 620px;
+  font-family: var(--app-font-family);
+  font-size: var(--app-font-size);
   background:
     linear-gradient(135deg, rgba(91, 141, 132, 0.08), transparent 32%),
     linear-gradient(315deg, rgba(154, 111, 67, 0.07), transparent 36%),
@@ -486,7 +492,7 @@ body.is-dragging-note.is-over-drop-target * {
   display: flex;
   align-items: center;
   gap: 4px;
-  min-height: 28px;
+  min-height: calc(var(--app-font-size) * 2);
   padding-left: calc(var(--row-indent, 0px) + 4px);
   padding-right: 4px;
   margin-bottom: 1px;
@@ -526,7 +532,7 @@ body.is-dragging-note.is-over-drop-target * {
   display: inline-flex;
   align-items: center;
   gap: 6px;
-  font-size: 13px;
+  font-size: var(--app-font-size);
   font-weight: 500;
   color: var(--text);
   overflow: hidden;
@@ -540,7 +546,7 @@ body.is-dragging-note.is-over-drop-target * {
   align-items: center;
   gap: 6px;
   width: 100%;
-  min-height: 28px;
+  min-height: calc(var(--app-font-size) * 2);
   padding-left: calc(var(--row-indent, 0px) + 8px);
   padding-right: 8px;
   margin-bottom: 1px;
@@ -549,7 +555,7 @@ body.is-dragging-note.is-over-drop-target * {
   background: transparent;
   text-align: left;
   cursor: pointer;
-  font-size: 13px;
+  font-size: var(--app-font-size);
   color: var(--text);
   z-index: 0;
   user-select: none;
@@ -1837,7 +1843,8 @@ html[data-theme="dark"] .tab-list-separator {
   outline: none;
   color: #22211f;
   background: transparent;
-  font-size: 42px;
+  font-family: var(--editor-font-family);
+  font-size: calc(var(--editor-font-size) * 2.47);
   font-weight: 800;
   line-height: 1.18;
   letter-spacing: 0;
@@ -1950,8 +1957,8 @@ html[data-theme="dark"] .tab-list-separator {
   outline: none;
   color: var(--text);
   background: var(--app-bg);
-  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace;
-  font-size: 14px;
+  font-family: var(--editor-font-family);
+  font-size: calc(var(--editor-font-size) * 0.82);
   line-height: 1.6;
 }
 
@@ -1962,7 +1969,8 @@ html[data-theme="dark"] .tab-list-separator {
 .ProseMirror {
   outline: none;
   color: #22211f;
-  font-size: 17px;
+  font-family: var(--editor-font-family);
+  font-size: var(--editor-font-size);
   line-height: 1.72;
 }
 
@@ -1983,32 +1991,32 @@ html[data-theme="dark"] .tab-list-separator {
 .ProseMirror h1 {
   margin-top: 0.25em;
   margin-bottom: 0.45em;
-  font-size: 36px;
+  font-size: calc(var(--editor-font-size) * 2.12);
 }
 
 .ProseMirror h2 {
   margin-top: 1.6em;
-  font-size: 30px;
+  font-size: calc(var(--editor-font-size) * 1.76);
 }
 
 .ProseMirror h3 {
   margin-top: 1.35em;
-  font-size: 26px;
+  font-size: calc(var(--editor-font-size) * 1.53);
 }
 
 .ProseMirror h4 {
   margin-top: 1.2em;
-  font-size: 22px;
+  font-size: calc(var(--editor-font-size) * 1.29);
 }
 
 .ProseMirror h5 {
   margin-top: 1.1em;
-  font-size: 20px;
+  font-size: calc(var(--editor-font-size) * 1.18);
 }
 
 .ProseMirror h6 {
   margin-top: 1em;
-  font-size: 18px;
+  font-size: calc(var(--editor-font-size) * 1.06);
 }
 
 .ProseMirror p {
@@ -2543,6 +2551,35 @@ html[data-theme="dark"] .ProseMirror th {
   background: rgba(255, 255, 255, 0.48);
 }
 
+.font-controls {
+  display: grid;
+  grid-template-columns: minmax(180px, 1fr) 74px;
+  gap: 8px;
+  width: min(360px, 100%);
+}
+
+.settings-text-input,
+.settings-number-input {
+  min-width: 0;
+  height: 34px;
+  padding: 0 10px;
+  border: 1px solid rgba(52, 48, 43, 0.12);
+  border-radius: 7px;
+  outline: none;
+  color: #22211f;
+  background: rgba(255, 255, 255, 0.82);
+  font: inherit;
+}
+
+.settings-number-input {
+  text-align: right;
+}
+
+html[data-theme="dark"] .settings-number-input::-webkit-inner-spin-button,
+html[data-theme="dark"] .settings-number-input::-webkit-outer-spin-button {
+  filter: invert(1) opacity(0.72);
+}
+
 .dialog-header {
   display: grid;
   grid-template-columns: 38px minmax(0, 1fr) 30px;
@@ -2847,6 +2884,8 @@ html[data-theme="dark"] .context-menu,
 html[data-theme="dark"] .icon-choice,
 html[data-theme="dark"] .folder-search-input,
 html[data-theme="dark"] .format-bubble,
+html[data-theme="dark"] .settings-text-input,
+html[data-theme="dark"] .settings-number-input,
 html[data-theme="dark"] .note-drag-preview,
 html[data-theme="dark"] .raw-markdown-input,
 html[data-theme="dark"] .frontmatter-field input,
@@ -2855,6 +2894,10 @@ html[data-theme="dark"] .accent-control input[type="color"] {
   color: #eee8df;
   border-color: rgba(238, 232, 223, 0.12);
   background: rgba(31, 34, 35, 0.96);
+}
+
+html[data-theme="dark"] .dialog {
+  background: rgb(31, 34, 35);
 }
 
 html[data-theme="dark"] .settings-select {

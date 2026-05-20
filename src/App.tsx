@@ -15,7 +15,6 @@ import {
   Folder,
   FolderOpen,
   LayoutList,
-  Monitor,
   Moon,
   Palette,
   PanelLeftClose,
@@ -63,6 +62,7 @@ import {
   writeWorkspaceMetadata,
   defaultWorkspaceMetadata,
 } from "./lib/notesApi";
+import { normalizeMarkdownImageLines } from "./lib/markdown";
 import { searchNotes } from "./lib/search";
 import type { BookmarkEntry, FolderEntry, NavigationStyle, NoteEntry, NotePositionMetadata, SearchResult, WorkspaceMetadata } from "./types";
 
@@ -82,6 +82,10 @@ const recentNotebooksKey = "lumen-notes-recent-notebooks";
 const accentTitlebarKey = "lumen-notes-accent-titlebar";
 const notePositionFreshMs = 24 * 60 * 60 * 1000;
 const defaultLightAccent = "#315f59";
+const defaultAppFontFamily = 'Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif';
+const defaultEditorFontFamily = defaultAppFontFamily;
+const defaultAppFontSize = 14;
+const defaultEditorFontSize = 17;
 
 class EditorErrorBoundary extends Component<
   { children: ReactNode; onError: (error: unknown) => void; resetKey: string },
@@ -276,6 +280,10 @@ export default function App() {
   const [accentColor, setAccentColor] = useState<string | null>(() => localStorage.getItem(accentKey));
   const [accentTitlebar, setAccentTitlebar] = useState<boolean>(() => localStorage.getItem(accentTitlebarKey) === "true");
   const [navigationStyle, setNavigationStyle] = useState<NavigationStyle>("dual-pane");
+  const [appFontFamily, setAppFontFamily] = useState(defaultAppFontFamily);
+  const [appFontSize, setAppFontSize] = useState(defaultAppFontSize);
+  const [editorFontFamily, setEditorFontFamily] = useState(defaultEditorFontFamily);
+  const [editorFontSize, setEditorFontSize] = useState(defaultEditorFontSize);
   const [folders, setFolders] = useState<FolderEntry[]>([]);
   const [notes, setNotes] = useState<NoteEntry[]>([]);
   const [contents, setContents] = useState(() => new Map<string, string>());
@@ -389,6 +397,10 @@ export default function App() {
     "--folder-pane-width": `${folderPaneWidth}px`,
     "--notes-pane-width": `${notesPaneWidth}px`,
     "--right-pane-width": `${rightPaneWidth}px`,
+    "--app-font-family": appFontFamily,
+    "--app-font-size": `${appFontSize}px`,
+    "--editor-font-family": editorFontFamily,
+    "--editor-font-size": `${editorFontSize}px`,
   } as CSSProperties;
 
   useEffect(() => {
@@ -432,6 +444,14 @@ export default function App() {
   }, [colorScheme, resolvedTheme, themePreset]);
 
   useEffect(() => {
+    const root = document.documentElement.style;
+    root.setProperty("--app-font-family", appFontFamily || defaultAppFontFamily);
+    root.setProperty("--app-font-size", `${appFontSize || defaultAppFontSize}px`);
+    root.setProperty("--editor-font-family", editorFontFamily || defaultEditorFontFamily);
+    root.setProperty("--editor-font-size", `${editorFontSize || defaultEditorFontSize}px`);
+  }, [appFontFamily, appFontSize, editorFontFamily, editorFontSize]);
+
+  useEffect(() => {
     document.documentElement.dataset.accentTitlebar = accentTitlebar ? "true" : "false";
     localStorage.setItem(accentTitlebarKey, String(accentTitlebar));
   }, [accentTitlebar]);
@@ -457,6 +477,10 @@ export default function App() {
       accentColor,
       accentTitlebar,
       navigationStyle,
+      appFontFamily,
+      appFontSize,
+      editorFontFamily,
+      editorFontSize,
     };
     // Skip if unchanged
     const prev = appearanceSavedRef.current;
@@ -466,12 +490,16 @@ export default function App() {
       prev.themePresetId === next.themePresetId &&
       prev.accentColor === next.accentColor &&
       prev.accentTitlebar === next.accentTitlebar &&
-      prev.navigationStyle === next.navigationStyle
+      prev.navigationStyle === next.navigationStyle &&
+      prev.appFontFamily === next.appFontFamily &&
+      prev.appFontSize === next.appFontSize &&
+      prev.editorFontFamily === next.editorFontFamily &&
+      prev.editorFontSize === next.editorFontSize
     ) return;
     appearanceSavedRef.current = next;
     saveAppearancePatch(next);
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [colorScheme, themePreset.id, accentColor, accentTitlebar, navigationStyle, metadataLoaded, workspace]);
+  }, [colorScheme, themePreset.id, accentColor, accentTitlebar, navigationStyle, appFontFamily, appFontSize, editorFontFamily, editorFontSize, metadataLoaded, workspace]);
 
   useEffect(() => {
     localStorage.setItem(fullWidthKey, String(fullWidth));
@@ -529,12 +557,20 @@ export default function App() {
           if ("accentColor" in a) setAccentColor(a.accentColor ?? null);
           if (typeof a.accentTitlebar === "boolean") setAccentTitlebar(a.accentTitlebar);
           if (a.navigationStyle) setNavigationStyle(a.navigationStyle);
+          setAppFontFamily(a.appFontFamily || defaultAppFontFamily);
+          setAppFontSize(readAppearanceFontSize(a.appFontSize, defaultAppFontSize));
+          setEditorFontFamily(a.editorFontFamily || defaultEditorFontFamily);
+          setEditorFontSize(readAppearanceFontSize(a.editorFontSize, defaultEditorFontSize));
         } else {
           setColorScheme(readStoredColorScheme());
           setThemePresetId(readStoredThemePreset());
           setAccentColor(localStorage.getItem(accentKey));
           setAccentTitlebar(localStorage.getItem(accentTitlebarKey) === "true");
           setNavigationStyle("dual-pane");
+          setAppFontFamily(defaultAppFontFamily);
+          setAppFontSize(defaultAppFontSize);
+          setEditorFontFamily(defaultEditorFontFamily);
+          setEditorFontSize(defaultEditorFontSize);
         }
       })
       .catch((error) => {
@@ -727,6 +763,16 @@ export default function App() {
       });
     }
   }, [metadata, workspace]);
+
+  const setFolderExpanded = useCallback((path: string, expanded: boolean) => {
+    updateMetadata((current) => ({
+      ...current,
+      expandedFolders: {
+        ...current.expandedFolders,
+        [path]: expanded,
+      },
+    }));
+  }, [updateMetadata]);
 
   const saveAppearancePatch = useCallback((patch: Partial<NonNullable<WorkspaceMetadata["appearance"]>>) => {
     updateMetadata((current) => ({
@@ -1414,7 +1460,7 @@ export default function App() {
 
   function handleRawMarkdownChange(markdown: string) {
     const parsed = parseNoteMarkdown(markdown);
-    setDraft(parsed.body);
+    setDraft(normalizeMarkdownImageLines(parsed.body));
     setFrontmatterDraft(parsed.frontmatter);
     setFrontmatterError(parsed.frontmatterError);
     if (parsed.frontmatterError) setAppError(parsed.frontmatterError);
@@ -1865,6 +1911,7 @@ export default function App() {
               onSelectFolder={(path) => void selectFolderForNewNote(path)}
               onSelectNotebook={openNotebookInNewWindow}
               onSelectNote={handleNoteSelectFromCard}
+              onSetFolderExpanded={setFolderExpanded}
               onSelectSearchResult={selectNote}
               onToggleBookmarksExpanded={() =>
                 updateMetadata((current) => ({
@@ -1938,6 +1985,7 @@ export default function App() {
                   setSelectedFolder(selectedOneNoteSection);
                   handleNoteSelectFromCard(path, { preserveSelectedFolder: true });
                 }}
+                onSetFolderExpanded={setFolderExpanded}
               />
             </>
           ) : (
@@ -1977,6 +2025,7 @@ export default function App() {
                 onSelectNotebook={openNotebookInNewWindow}
                 onSelectSearchResult={selectNote}
                 onSelectFolder={(path) => setSelectedFolder(path)}
+                onSetFolderExpanded={setFolderExpanded}
                 onToggleBookmarksExpanded={() =>
                   updateMetadata((current) => ({
                     ...current,
@@ -2249,14 +2298,22 @@ export default function App() {
             accentTitlebar={accentTitlebar}
             colorScheme={colorScheme}
             effectiveAccentColor={effectiveAccentColor}
+            appFontFamily={appFontFamily}
+            appFontSize={appFontSize}
+            editorFontFamily={editorFontFamily}
+            editorFontSize={editorFontSize}
             navigationStyle={navigationStyle}
             resolvedTheme={resolvedTheme}
             themePresetId={themePreset.id}
             onAccentChange={setAccentColor}
             onAccentReset={() => setAccentColor(null)}
             onAccentTitlebarChange={setAccentTitlebar}
+            onAppFontFamilyChange={setAppFontFamily}
+            onAppFontSizeChange={setAppFontSize}
             onClose={() => setSettingsOpen(false)}
             onColorSchemeChange={setColorScheme}
+            onEditorFontFamilyChange={setEditorFontFamily}
+            onEditorFontSizeChange={setEditorFontSize}
             onNavigationStyleChange={setNavigationStyle}
             onThemePresetChange={setThemePresetId}
           />
@@ -2336,6 +2393,7 @@ function FolderPane({
   onSelectNotebook,
   onSelectSearchResult,
   onSelectFolder,
+  onSetFolderExpanded,
   onToggleBookmarksExpanded,
   onToggleSearch,
   onToggleMenu,
@@ -2371,6 +2429,7 @@ function FolderPane({
   onSelectNotebook: (path: string) => void;
   onSelectSearchResult: (path: string) => void;
   onSelectFolder: (path: string) => void;
+  onSetFolderExpanded: (path: string, expanded: boolean) => void;
   onToggleBookmarksExpanded: () => void;
   onToggleSearch: () => void;
   onToggleMenu: (event: React.MouseEvent) => void;
@@ -2449,6 +2508,7 @@ function FolderPane({
             onDropOnFolder={onDropOnFolder}
             onOpenIcon={onOpenIcon}
             onSelectFolder={onSelectFolder}
+            onSetFolderExpanded={onSetFolderExpanded}
           />
         ))}
       </div>
@@ -2661,6 +2721,7 @@ function FolderRow({
   onDropOnFolder,
   onOpenIcon,
   onSelectFolder,
+  onSetFolderExpanded,
 }: {
   depth?: number;
   draggingItem: DragItem;
@@ -2674,9 +2735,10 @@ function FolderRow({
   onDropOnFolder: (path: string, item?: Exclude<DragItem, null>) => void;
   onOpenIcon: (path: string) => void;
   onSelectFolder: (path: string) => void;
+  onSetFolderExpanded: (path: string, expanded: boolean) => void;
 }) {
-  const [open, setOpen] = useState(true);
   const isRoot = folder.path === "";
+  const open = metadata.expandedFolders[folder.path] ?? true;
   const folderColor = metadata.folderColors[folder.path];
   const customIcon = metadata.folderIcons[folder.path];
   const canDrop =
@@ -2747,7 +2809,7 @@ function FolderRow({
           if (item && canDropItem(item)) onDropOnFolder(folder.path, item);
         }}
       >
-        <button className="tree-toggle" type="button" onClick={(event) => { event.stopPropagation(); setOpen((value) => !value); }}>
+        <button className="tree-toggle" type="button" onClick={(event) => { event.stopPropagation(); onSetFolderExpanded(folder.path, !open); }}>
           {folder.children.length ? open ? <ChevronDown size={15} /> : <ChevronRight size={15} /> : <span />}
         </button>
         <button className="folder-select" style={folderColor ? { color: folderColor } : undefined} type="button" onClick={(event) => { event.stopPropagation(); onSelectFolder(folder.path); }}>
@@ -2790,6 +2852,7 @@ function FolderRow({
               onDropOnFolder={onDropOnFolder}
               onOpenIcon={onOpenIcon}
               onSelectFolder={onSelectFolder}
+              onSetFolderExpanded={onSetFolderExpanded}
             />
           ))}
         </div>
@@ -2967,6 +3030,7 @@ function UnifiedNode({
   onPointerDragStart,
   onSelectFolder,
   onSelectNote,
+  onSetFolderExpanded,
 }: {
   activePath: string | null;
   contents: Map<string, string>;
@@ -2985,6 +3049,7 @@ function UnifiedNode({
   onPointerDragStart: (path: string, event: React.PointerEvent<HTMLElement>) => void;
   onSelectFolder?: (path: string) => void;
   onSelectNote: (path: string) => void;
+  onSetFolderExpanded: (path: string, expanded: boolean) => void;
 }) {
   const childFolders = useMemo(
     () =>
@@ -3023,6 +3088,7 @@ function UnifiedNode({
           onPointerDragStart={onPointerDragStart}
           onSelectFolder={onSelectFolder}
           onSelectNote={onSelectNote}
+          onSetFolderExpanded={onSetFolderExpanded}
         />
       ))}
       {childNotes.map((note) => {
@@ -3077,6 +3143,7 @@ function UnifiedFolderRow({
   onPointerDragStart,
   onSelectFolder,
   onSelectNote,
+  onSetFolderExpanded,
 }: {
   activePath: string | null;
   contents: Map<string, string>;
@@ -3095,8 +3162,9 @@ function UnifiedFolderRow({
   onPointerDragStart: (path: string, event: React.PointerEvent<HTMLElement>) => void;
   onSelectFolder?: (path: string) => void;
   onSelectNote: (path: string) => void;
+  onSetFolderExpanded: (path: string, expanded: boolean) => void;
 }) {
-  const [open, setOpen] = useState(true);
+  const open = metadata.expandedFolders[folder.path] ?? true;
   const folderColor = metadata.folderColors[folder.path];
   const customIcon = metadata.folderIcons[folder.path];
   const hasChildren =
@@ -3117,7 +3185,7 @@ function UnifiedFolderRow({
           type="button"
           onClick={(event) => {
             event.stopPropagation();
-            setOpen((v) => !v);
+            onSetFolderExpanded(folder.path, !open);
           }}
         >
           {hasChildren && open ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
@@ -3146,6 +3214,7 @@ function UnifiedFolderRow({
           onPointerDragStart={onPointerDragStart}
           onSelectFolder={onSelectFolder}
           onSelectNote={onSelectNote}
+          onSetFolderExpanded={onSetFolderExpanded}
         />
       )}
     </div>
@@ -3192,6 +3261,7 @@ function UnifiedTreePane({
   onSelectFolder,
   onSelectNote,
   onSelectSearchResult,
+  onSetFolderExpanded,
   onToggleBookmarksExpanded,
   onToggleMenu,
   onToggleSearch,
@@ -3235,6 +3305,7 @@ function UnifiedTreePane({
   onSelectFolder?: (path: string) => void;
   onSelectNote: (path: string) => void;
   onSelectSearchResult?: (path: string) => void;
+  onSetFolderExpanded: (path: string, expanded: boolean) => void;
   onToggleBookmarksExpanded?: () => void;
   onToggleMenu?: (event: React.MouseEvent) => void;
   onToggleSearch?: () => void;
@@ -3300,6 +3371,7 @@ function UnifiedTreePane({
           onPointerDragStart={onPointerDragStart}
           onSelectFolder={onSelectFolder}
           onSelectNote={onSelectNote}
+          onSetFolderExpanded={onSetFolderExpanded}
         />
       </div>
       {showNotebookFooter && onManageNotebooks && onNewNotebook && onOpenWorkspace && onSelectNotebook && onToggleMenu ? (
@@ -4065,7 +4137,11 @@ function IconMark({ fallback: Fallback, size, value }: { fallback: LucideIcon; s
 
 function SettingsModal({
   accentColor,
+  appFontFamily,
+  appFontSize,
   colorScheme,
+  editorFontFamily,
+  editorFontSize,
   effectiveAccentColor,
   navigationStyle,
   resolvedTheme,
@@ -4074,14 +4150,22 @@ function SettingsModal({
   onAccentChange,
   onAccentReset,
   onAccentTitlebarChange,
+  onAppFontFamilyChange,
+  onAppFontSizeChange,
   onColorSchemeChange,
   onClose,
+  onEditorFontFamilyChange,
+  onEditorFontSizeChange,
   onNavigationStyleChange,
   onThemePresetChange,
 }: {
   accentColor: string | null;
   accentTitlebar: boolean;
+  appFontFamily: string;
+  appFontSize: number;
   colorScheme: ColorScheme;
+  editorFontFamily: string;
+  editorFontSize: number;
   effectiveAccentColor: string;
   navigationStyle: NavigationStyle;
   resolvedTheme: "light" | "dark";
@@ -4089,11 +4173,38 @@ function SettingsModal({
   onAccentChange: (color: string) => void;
   onAccentReset: () => void;
   onAccentTitlebarChange: (value: boolean) => void;
+  onAppFontFamilyChange: (family: string) => void;
+  onAppFontSizeChange: (size: number) => void;
   onColorSchemeChange: (scheme: ColorScheme) => void;
   onClose: () => void;
+  onEditorFontFamilyChange: (family: string) => void;
+  onEditorFontSizeChange: (size: number) => void;
   onNavigationStyleChange: (style: NavigationStyle) => void;
   onThemePresetChange: (theme: ThemePresetId) => void;
 }) {
+  const [appFontSizeDraft, setAppFontSizeDraft] = useState(String(appFontSize));
+  const [editorFontSizeDraft, setEditorFontSizeDraft] = useState(String(editorFontSize));
+
+  useEffect(() => {
+    setAppFontSizeDraft(String(appFontSize));
+  }, [appFontSize]);
+
+  useEffect(() => {
+    setEditorFontSizeDraft(String(editorFontSize));
+  }, [editorFontSize]);
+
+  const commitAppFontSize = (value: string) => {
+    const next = readAppearanceFontSize(Number(value), appFontSize);
+    onAppFontSizeChange(next);
+    setAppFontSizeDraft(String(next));
+  };
+
+  const commitEditorFontSize = (value: string) => {
+    const next = readAppearanceFontSize(Number(value), editorFontSize);
+    onEditorFontSizeChange(next);
+    setEditorFontSizeDraft(String(next));
+  };
+
   const sections = [
     {
       id: "appearance",
@@ -4106,20 +4217,11 @@ function SettingsModal({
               <strong>Base color scheme</strong>
               <small>Use a fixed scheme or follow this computer.</small>
             </span>
-            <div className="theme-toggle" role="group" aria-label="Base color scheme">
-              <button className={colorScheme === "system" ? "theme-option is-active" : "theme-option"} type="button" onClick={() => onColorSchemeChange("system")}>
-                <Monitor size={16} />
-                <span>System</span>
-              </button>
-              <button className={colorScheme === "light" ? "theme-option is-active" : "theme-option"} type="button" onClick={() => onColorSchemeChange("light")}>
-                <Sun size={16} />
-                <span>Light</span>
-              </button>
-              <button className={colorScheme === "dark" ? "theme-option is-active" : "theme-option"} type="button" onClick={() => onColorSchemeChange("dark")}>
-                <Moon size={16} />
-                <span>Dark</span>
-              </button>
-            </div>
+            <select className="settings-select" value={colorScheme} aria-label="Base color scheme" onChange={(event) => onColorSchemeChange(event.target.value as ColorScheme)}>
+              <option value="system">System</option>
+              <option value="light">Light</option>
+              <option value="dark">Dark</option>
+            </select>
           </div>
           <div className="setting-row">
             <span>
@@ -4175,6 +4277,68 @@ function SettingsModal({
               <option value="single-pane">Single Pane</option>
               <option value="onenote">OneNote</option>
             </select>
+          </div>
+          <div className="setting-row">
+            <span>
+              <strong>App font</strong>
+              <small>Controls panes, settings, buttons, and other interface text.</small>
+            </span>
+            <div className="font-controls">
+              <input
+                className="settings-text-input"
+                value={appFontFamily}
+                aria-label="App font family"
+                onChange={(event) => onAppFontFamilyChange(event.target.value)}
+              />
+              <input
+                className="settings-number-input"
+                type="number"
+                min={11}
+                max={28}
+                value={appFontSizeDraft}
+                aria-label="App font size"
+                onChange={(event) => {
+                  const value = event.target.value;
+                  setAppFontSizeDraft(value);
+                  const numericValue = Number(value);
+                  if (value !== "" && Number.isFinite(numericValue) && numericValue >= 11 && numericValue <= 28) {
+                    onAppFontSizeChange(numericValue);
+                  }
+                }}
+                onBlur={(event) => commitAppFontSize(event.target.value)}
+              />
+            </div>
+          </div>
+          <div className="setting-row">
+            <span>
+              <strong>Editor font</strong>
+              <small>Controls the note title, rich editor, and raw Markdown text.</small>
+            </span>
+            <div className="font-controls">
+              <input
+                className="settings-text-input"
+                value={editorFontFamily}
+                aria-label="Editor font family"
+                onChange={(event) => onEditorFontFamilyChange(event.target.value)}
+              />
+              <input
+                className="settings-number-input"
+                type="number"
+                min={11}
+                max={28}
+                value={editorFontSizeDraft}
+                aria-label="Editor font size"
+                onChange={(event) => {
+                  const value = event.target.value;
+                  setEditorFontSizeDraft(value);
+                  const numericValue = Number(value);
+                  if (value !== "" && Number.isFinite(numericValue) && numericValue >= 11 && numericValue <= 28) {
+                    onEditorFontSizeChange(numericValue);
+                  }
+                }}
+                onBlur={(event) => commitEditorFontSize(event.target.value)}
+              />
+            </div>
           </div>
         </div>
       ),
@@ -4911,6 +5075,7 @@ function replaceFolderPathPrefix(metadata: WorkspaceMetadata, oldPrefix: string,
   const pinnedNotes = Object.fromEntries(Object.entries(metadata.pinnedNotes).map(([path, pinned]) => [replacePathPrefix(path, oldPrefix, newPrefix), pinned]));
   const folderIcons = Object.fromEntries(Object.entries(metadata.folderIcons).map(([path, icon]) => [replacePathPrefix(path, oldPrefix, newPrefix), icon]));
   const folderColors = Object.fromEntries(Object.entries(metadata.folderColors).map(([path, color]) => [replacePathPrefix(path, oldPrefix, newPrefix), color]));
+  const expandedFolders = Object.fromEntries(Object.entries(metadata.expandedFolders).map(([path, expanded]) => [replacePathPrefix(path, oldPrefix, newPrefix), expanded]));
   const noteIcons = Object.fromEntries(Object.entries(metadata.noteIcons).map(([path, icon]) => [replacePathPrefix(path, oldPrefix, newPrefix), icon]));
   const notePositions = Object.fromEntries(
     Object.entries(metadata.notePositions).map(([path, position]) => {
@@ -4924,7 +5089,7 @@ function replaceFolderPathPrefix(metadata: WorkspaceMetadata, oldPrefix: string,
   }));
   const sessionOpenTabs = metadata.sessionOpenTabs.map((path) => replacePathPrefix(path, oldPrefix, newPrefix));
   const sessionActiveTab = metadata.sessionActiveTab ? replacePathPrefix(metadata.sessionActiveTab, oldPrefix, newPrefix) : null;
-  return { ...metadata, folderOrder, noteOrder, pinnedNotes, folderIcons, folderColors, noteIcons, notePositions, bookmarks, sessionOpenTabs, sessionActiveTab };
+  return { ...metadata, folderOrder, noteOrder, pinnedNotes, folderIcons, folderColors, expandedFolders, noteIcons, notePositions, bookmarks, sessionOpenTabs, sessionActiveTab };
 }
 
 function removeFolderFromMetadata(metadata: WorkspaceMetadata, folderPath: string): WorkspaceMetadata {
@@ -4940,6 +5105,7 @@ function removeFolderFromMetadata(metadata: WorkspaceMetadata, folderPath: strin
     pinnedNotes: Object.fromEntries(Object.entries(metadata.pinnedNotes).filter(([path]) => !isInFolder(path))),
     folderIcons: Object.fromEntries(Object.entries(metadata.folderIcons).filter(([path]) => !isInFolder(path))),
     folderColors: Object.fromEntries(Object.entries(metadata.folderColors).filter(([path]) => !isInFolder(path))),
+    expandedFolders: Object.fromEntries(Object.entries(metadata.expandedFolders).filter(([path]) => !isInFolder(path))),
     noteIcons: Object.fromEntries(Object.entries(metadata.noteIcons).filter(([path]) => !isInFolder(path))),
     notePositions: Object.fromEntries(Object.entries(metadata.notePositions).filter(([path]) => !isInFolder(path))),
     bookmarks: metadata.bookmarks.filter((bookmark) => !isInFolder(bookmark.path)),
@@ -4989,6 +5155,10 @@ function readStoredNumber(key: string, fallback: number) {
   if (rawValue === null) return fallback;
   const value = Number(rawValue);
   return Number.isFinite(value) && value > 0 ? value : fallback;
+}
+
+function readAppearanceFontSize(value: number | undefined, fallback: number) {
+  return typeof value === "number" && Number.isFinite(value) && value >= 11 && value <= 28 ? value : fallback;
 }
 
 function readInitialWorkspace() {

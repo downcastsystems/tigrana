@@ -10,8 +10,8 @@ import { TableHeader } from "@tiptap/extension-table-header";
 import { TableRow } from "@tiptap/extension-table-row";
 import TaskItem from "@tiptap/extension-task-item";
 import TaskList from "@tiptap/extension-task-list";
-import type { Node as ProseMirrorNode } from "@tiptap/pm/model";
-import { NodeSelection, Plugin, PluginKey, TextSelection } from "@tiptap/pm/state";
+import { DOMSerializer, type Node as ProseMirrorNode } from "@tiptap/pm/model";
+import { NodeSelection, Plugin, PluginKey, Selection, TextSelection } from "@tiptap/pm/state";
 import { Decoration, DecorationSet, type EditorView } from "@tiptap/pm/view";
 import { BubbleMenu, EditorContent, NodeViewWrapper, Range, ReactNodeViewRenderer, useEditor, type Editor } from "@tiptap/react";
 import StarterKit from "@tiptap/starter-kit";
@@ -309,6 +309,7 @@ export function NotesEditor({ content, focusRequest, focusAtEndRequest, findRequ
     editorProps: {
       handleDOMEvents: {
         keydown(_view, event) {
+          if (handleEmptyListItemDelete(_view, event)) return true;
           return handleSlashKeyDown(event);
         },
         mousedown(view, event) {
@@ -330,6 +331,9 @@ export function NotesEditor({ content, focusRequest, focusAtEndRequest, findRequ
           if (!link) return false;
           event.preventDefault();
           return true;
+        },
+        copy(view, event) {
+          return writeEditorSelectionToClipboard(view, event);
         },
       },
       handlePaste(view, event) {
@@ -624,8 +628,9 @@ function FormattingBubbleMenu({ editor }: { editor: Editor }) {
   return (
     <BubbleMenu
       editor={editor}
-      tippyOptions={{ duration: 120, placement: "top" }}
+      tippyOptions={{ duration: 120, placement: "top", zIndex: 55 }}
       shouldShow={({ editor }) => {
+        if (document.querySelector(".dialog-backdrop")) return false;
         const activeElement = document.activeElement;
         if (activeElement instanceof HTMLElement && activeElement.closest(".note-find-bar")) return false;
         const { selection } = editor.state;
@@ -643,7 +648,10 @@ function FormattingBubbleMenu({ editor }: { editor: Editor }) {
               key={button.label}
               type="button"
               title={button.label}
-              onClick={button.run}
+              onMouseDown={(event) => {
+                event.preventDefault();
+                button.run();
+              }}
             >
               <Icon size={15} />
             </button>
@@ -696,6 +704,69 @@ function scrollEditorPositionIntoView(editor: Editor, position: number) {
     top: Math.max(0, targetTop),
     behavior: "smooth",
   });
+}
+
+function handleEmptyListItemDelete(view: EditorView, event: KeyboardEvent) {
+  if (event.key !== "Delete" || event.metaKey || event.ctrlKey || event.altKey || event.shiftKey) return false;
+  const { selection, schema } = view.state;
+  if (!selection.empty) return false;
+
+  const { $from } = selection;
+  let listItemDepth = -1;
+  for (let depth = $from.depth; depth > 0; depth -= 1) {
+    const nodeName = $from.node(depth).type.name;
+    if (nodeName === "listItem" || nodeName === "taskItem") {
+      listItemDepth = depth;
+      break;
+    }
+  }
+  if (listItemDepth < 1) return false;
+
+  const listItem = $from.node(listItemDepth);
+  if (listItem.textContent.trim()) return false;
+
+  const parentList = $from.node(listItemDepth - 1);
+  const itemIndex = $from.index(listItemDepth - 1);
+  if (itemIndex >= parentList.childCount - 1) return false;
+
+  event.preventDefault();
+  const deleteFrom = $from.before(listItemDepth);
+  const deleteTo = $from.after(listItemDepth);
+  const tr = view.state.tr.delete(deleteFrom, deleteTo);
+  const nextTextPosition = findTextSelectionPosition(tr.doc, deleteFrom, schema.nodes.paragraph?.name ?? "paragraph");
+  const nextSelection = nextTextPosition
+    ? TextSelection.create(tr.doc, nextTextPosition)
+    : Selection.near(tr.doc.resolve(Math.min(deleteFrom, tr.doc.content.size)), 1);
+  view.dispatch(tr.setSelection(nextSelection).scrollIntoView());
+  return true;
+}
+
+function findTextSelectionPosition(doc: ProseMirrorNode, from: number, paragraphName: string) {
+  let found: number | null = null;
+  doc.nodesBetween(from, Math.min(doc.content.size, from + 32), (node, pos) => {
+    if (found !== null) return false;
+    if (node.type.name === paragraphName) {
+      found = pos + 1;
+      return false;
+    }
+    return true;
+  });
+  return found;
+}
+
+function writeEditorSelectionToClipboard(view: EditorView, event: ClipboardEvent) {
+  if (view.state.selection.empty || !event.clipboardData) return false;
+  const slice = view.state.selection.content();
+  const fragment = DOMSerializer.fromSchema(view.state.schema).serializeFragment(slice.content);
+  const container = document.createElement("div");
+  container.appendChild(fragment);
+  const markdown = htmlToMarkdown(container.innerHTML).trimEnd();
+  if (!markdown) return false;
+
+  event.preventDefault();
+  event.clipboardData.setData("text/plain", markdown);
+  event.clipboardData.setData("text/html", container.innerHTML);
+  return true;
 }
 
 function getSelectedText(editor: Editor) {

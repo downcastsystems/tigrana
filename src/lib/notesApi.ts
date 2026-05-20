@@ -373,6 +373,7 @@ export const defaultWorkspaceMetadata = (): WorkspaceMetadata => ({
   notePositions: {},
   bookmarks: [],
   bookmarksExpanded: true,
+  expandedFolders: {},
   sessionOpenTabs: [],
   sessionActiveTab: null,
 });

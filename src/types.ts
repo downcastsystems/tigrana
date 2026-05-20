@@ -49,6 +49,10 @@ export type NotebookAppearance = {
   accentColor?: string | null;
   accentTitlebar?: boolean;
   navigationStyle?: NavigationStyle;
+  appFontFamily?: string;
+  appFontSize?: number;
+  editorFontFamily?: string;
+  editorFontSize?: number;
 };
 
 export type WorkspaceMetadata = {
@@ -61,6 +65,7 @@ export type WorkspaceMetadata = {
   notePositions: Record<string, NotePositionMetadata>;
   bookmarks: BookmarkEntry[];
   bookmarksExpanded: boolean;
+  expandedFolders: Record<string, boolean>;
   sessionOpenTabs: string[];
   sessionActiveTab: string | null;
   appearance?: NotebookAppearance;
