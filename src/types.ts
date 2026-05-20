@@ -41,6 +41,16 @@ export type BookmarkEntry = {
   createdAt: number;
 };
 
+export type NavigationStyle = "dual-pane" | "single-pane" | "onenote";
+
+export type NotebookAppearance = {
+  colorScheme?: "system" | "light" | "dark";
+  themePresetId?: string;
+  accentColor?: string | null;
+  accentTitlebar?: boolean;
+  navigationStyle?: NavigationStyle;
+};
+
 export type WorkspaceMetadata = {
   folderOrder: Record<string, string[]>;
   noteOrder: Record<string, string[]>;
@@ -53,4 +63,5 @@ export type WorkspaceMetadata = {
   bookmarksExpanded: boolean;
   sessionOpenTabs: string[];
   sessionActiveTab: string | null;
+  appearance?: NotebookAppearance;
 };

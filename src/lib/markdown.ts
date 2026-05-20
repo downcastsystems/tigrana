@@ -192,6 +192,32 @@ export function markdownToHtml(markdown: string, options: MarkdownOptions = {}) 
       continue;
     }
 
+    // Handle raw <img> HTML lines (resized images stored with width attribute)
+    if (/^<img\s/i.test(line.trim())) {
+      closeList();
+      closeTable();
+      const trimmed = line.trim();
+      const srcMatch = /\bsrc="([^"]*)"/.exec(trimmed);
+      if (srcMatch) {
+        const src = srcMatch[1].replace(/&quot;/g, '"');
+        const altMatch = /\balt="([^"]*)"/.exec(trimmed);
+        const widthMatch = /\bwidth="([^"]*)"/.exec(trimmed);
+        const alt = altMatch ? altMatch[1].replace(/&quot;/g, '"') : "Image";
+        const width = widthMatch ? widthMatch[1] : null;
+        const resolvedSrc = options.resolveImageSrc?.(src) ?? src;
+        const attrs = [
+          `src="${escapeHtml(resolvedSrc)}"`,
+          `alt="${escapeHtml(alt)}"`,
+          `data-markdown-src="${escapeHtml(src)}"`,
+          width ? `width="${width}"` : null,
+        ].filter(Boolean).join(" ");
+        html.push(`<img ${attrs} />`);
+      } else {
+        html.push(trimmed);
+      }
+      continue;
+    }
+
     const quote = /^>\s+(.*)$/.exec(line);
     if (quote) {
       closeList();
@@ -345,5 +371,14 @@ export function htmlToMarkdown(html: string) {
 }
 
 function imageElementToMarkdown(image: Element): string {
-  return `![${image.getAttribute("alt") ?? "Image"}](${image.getAttribute("data-markdown-src") ?? image.getAttribute("src") ?? ""})`;
+  const src = image.getAttribute("data-markdown-src") ?? image.getAttribute("src") ?? "";
+  const alt = image.getAttribute("alt") ?? "Image";
+  const width = image.getAttribute("width");
+  if (width) {
+    // Resized image: preserve as HTML so the width is round-tripped
+    const escapedSrc = src.replace(/"/g, "&quot;");
+    const escapedAlt = alt.replace(/"/g, "&quot;");
+    return `<img src="${escapedSrc}" alt="${escapedAlt}" width="${width}" />`;
+  }
+  return `![${alt}](${src})`;
 }

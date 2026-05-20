@@ -124,6 +124,8 @@ struct WorkspaceMetadata {
     session_open_tabs: Vec<String>,
     #[serde(default)]
     session_active_tab: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    appearance: Option<serde_json::Value>,
 }
 
 #[tauri::command]
@@ -651,6 +653,7 @@ fn default_workspace_metadata() -> WorkspaceMetadata {
         bookmarks_expanded: true,
         session_open_tabs: Vec::new(),
         session_active_tab: None,
+        appearance: None,
     }
 }
 

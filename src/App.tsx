@@ -10,11 +10,13 @@ import {
   ChevronDown,
   ChevronRight,
   ChevronUp,
+  Columns2,
   FileCode2,
   FileText,
   Folder,
   FolderOpen,
   LayoutList,
+  List,
   Monitor,
   Moon,
   Palette,
@@ -63,7 +65,7 @@ import {
   defaultWorkspaceMetadata,
 } from "./lib/notesApi";
 import { searchNotes } from "./lib/search";
-import type { BookmarkEntry, FolderEntry, NoteEntry, NotePositionMetadata, SearchResult, WorkspaceMetadata } from "./types";
+import type { BookmarkEntry, FolderEntry, NavigationStyle, NoteEntry, NotePositionMetadata, SearchResult, WorkspaceMetadata } from "./types";
 
 function stopChromeMouseDown(event: React.MouseEvent) {
   event.stopPropagation();
@@ -144,12 +146,12 @@ type RecentNotebook = {
 };
 
 type PropertyDialogState =
-  | { kind: "rename-folder"; path: string; value: string }
-  | { kind: "folder-color"; path: string; value: string };
+  | { kind: "rename-folder"; path: string; value: string; name: string }
+  | { kind: "folder-color"; path: string; value: string; name: string };
 
 type IconBrowserState =
-  | { kind: "folder"; path: string; value: string; onReset?: () => void }
-  | { kind: "note"; path: string; value: string };
+  | { kind: "folder"; path: string; value: string; name: string; onReset?: () => void }
+  | { kind: "note"; path: string; value: string; name: string };
 
 type DragItem =
   | { kind: "note"; path: string }
@@ -274,6 +276,7 @@ export default function App() {
   const [themePresetId, setThemePresetId] = useState<ThemePresetId>(() => readStoredThemePreset());
   const [accentColor, setAccentColor] = useState<string | null>(() => localStorage.getItem(accentKey));
   const [accentTitlebar, setAccentTitlebar] = useState<boolean>(() => localStorage.getItem(accentTitlebarKey) === "true");
+  const [navigationStyle, setNavigationStyle] = useState<NavigationStyle>("dual-pane");
   const [folders, setFolders] = useState<FolderEntry[]>([]);
   const [notes, setNotes] = useState<NoteEntry[]>([]);
   const [contents, setContents] = useState(() => new Map<string, string>());
@@ -437,6 +440,32 @@ export default function App() {
     else localStorage.removeItem(accentKey);
   }, [accentColor, effectiveAccentColor, resolvedTheme]);
 
+  // Persist appearance to notebook metadata when settings change (after metadata loads)
+  const appearanceSavedRef = useRef<WorkspaceMetadata["appearance"]>(undefined);
+  useEffect(() => {
+    if (!metadataLoaded || !workspace) return;
+    const next: NonNullable<WorkspaceMetadata["appearance"]> = {
+      colorScheme,
+      themePresetId: themePreset.id,
+      accentColor,
+      accentTitlebar,
+      navigationStyle,
+    };
+    // Skip if unchanged
+    const prev = appearanceSavedRef.current;
+    if (
+      prev &&
+      prev.colorScheme === next.colorScheme &&
+      prev.themePresetId === next.themePresetId &&
+      prev.accentColor === next.accentColor &&
+      prev.accentTitlebar === next.accentTitlebar &&
+      prev.navigationStyle === next.navigationStyle
+    ) return;
+    appearanceSavedRef.current = next;
+    saveAppearancePatch(next);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [colorScheme, themePreset.id, accentColor, accentTitlebar, navigationStyle, metadataLoaded, workspace]);
+
   useEffect(() => {
     localStorage.setItem(fullWidthKey, String(fullWidth));
   }, [fullWidth]);
@@ -486,6 +515,20 @@ export default function App() {
       .then((nextMetadata) => {
         metadataRef.current = nextMetadata;
         setMetadata(nextMetadata);
+        const a = nextMetadata.appearance;
+        if (a) {
+          if (a.colorScheme) setColorScheme(a.colorScheme);
+          if (a.themePresetId && themePresets.some((p) => p.id === a.themePresetId)) setThemePresetId(a.themePresetId as ThemePresetId);
+          if ("accentColor" in a) setAccentColor(a.accentColor ?? null);
+          if (typeof a.accentTitlebar === "boolean") setAccentTitlebar(a.accentTitlebar);
+          if (a.navigationStyle) setNavigationStyle(a.navigationStyle);
+        } else {
+          setColorScheme(readStoredColorScheme());
+          setThemePresetId(readStoredThemePreset());
+          setAccentColor(localStorage.getItem(accentKey));
+          setAccentTitlebar(localStorage.getItem(accentTitlebarKey) === "true");
+          setNavigationStyle("dual-pane");
+        }
       })
       .catch((error) => {
         setAppError(error instanceof Error ? error.message : String(error));
@@ -677,6 +720,13 @@ export default function App() {
       });
     }
   }, [metadata, workspace]);
+
+  const saveAppearancePatch = useCallback((patch: Partial<NonNullable<WorkspaceMetadata["appearance"]>>) => {
+    updateMetadata((current) => ({
+      ...current,
+      appearance: { ...current.appearance, ...patch },
+    }));
+  }, [updateMetadata]);
 
   useEffect(() => {
     return () => {
@@ -1207,11 +1257,12 @@ export default function App() {
 
   function openPropertyDialog(kind: PropertyDialogState["kind"], path: string) {
     const folder = folders.find((entry) => entry.path === path);
+    const name = folder?.name ?? (path ? path.split("/").at(-1) ?? path : "Notebook");
     const value =
       kind === "rename-folder"
         ? folder?.name ?? ""
         : metadata.folderColors[path] ?? "#4b7d75";
-    setPropertyDialog({ kind, path, value } as PropertyDialogState);
+    setPropertyDialog({ kind, path, value, name } as PropertyDialogState);
     setContextMenu(null);
     setAppError(null);
   }
@@ -1229,9 +1280,14 @@ export default function App() {
   }
 
   function openIconBrowser(kind: IconBrowserState["kind"], path: string) {
+    const name =
+      kind === "folder"
+        ? (folders.find((entry) => entry.path === path)?.name ?? (path ? path.split("/").at(-1) ?? path : "Notebook"))
+        : (notes.find((entry) => entry.path === path)?.title ?? path.split("/").at(-1) ?? path);
     setIconBrowser({
       kind,
       path,
+      name,
       value: kind === "folder" ? metadata.folderIcons[path] ?? "" : metadata.noteIcons[path] ?? "",
       ...(kind === "folder" ? { onReset: () => resetFolderIcon(path) } : {}),
     });
@@ -1688,76 +1744,133 @@ export default function App() {
 
       <div className={`app-frame ${leftVisible ? "" : "is-left-hidden"} ${outlineVisible ? "" : "is-outline-hidden"}`} style={frameStyle}>
       {leftVisible ? (
-        <aside className="left-panes" onContextMenu={(event) => openContextMenu(event, { kind: "empty" })}>
-          <FolderPane
-            bookmarks={bookmarks}
-            bookmarksExpanded={metadata.bookmarksExpanded}
-            disabled={!workspace}
-            draggingItem={draggingItem}
-            dropTargetFolder={dropTargetFolder}
-            folders={folderTree}
-            metadata={metadata}
-            menuOpen={appMenuOpen}
-            recentNotebooks={recentNotebooks}
-            searchOpen={searchOpen}
-            searchFocusRequest={searchFocusRequest}
-            searchQuery={searchQuery}
-            searchResults={results}
-            selectedFolder={selectedFolder}
-            workspace={workspace}
-            onCreateFolder={requestCreateFolder}
-            onCreateNote={requestCreateNote}
-            onContextMenu={openContextMenu}
-            onDragStart={setCurrentDragItem}
-            onDropTargetChange={setDropTargetFolder}
-            onDropOnFolderFallback={(path, item) => void handleDropOnFolder(path, item)}
-            onDropOnFolder={(path, item) => void handleDropOnFolder(path, item)}
-            onOpenIcon={(path) => openIconBrowser("folder", path)}
-            onManageNotebooks={() => {
-              setNotebooksManageOpen(true);
-              setAppMenuOpen(false);
-            }}
-            onNewNotebook={() => void chooseWorkspace("new", true)}
-            onOpenWorkspace={() => void chooseWorkspace("open", true)}
-            onRemoveBookmark={removeBookmark}
-            onSearchQueryChange={setSearchQuery}
-            onSelectBookmark={selectBookmark}
-            onSelectNotebook={openNotebookInNewWindow}
-            onSelectSearchResult={selectNote}
-            onSelectFolder={(path) => setSelectedFolder(path)}
-            onToggleBookmarksExpanded={() =>
-              updateMetadata((current) => ({
-                ...current,
-                bookmarksExpanded: !current.bookmarksExpanded,
-              }))
-            }
-            onToggleSearch={() => setSearchOpen((value) => !value)}
-            onToggleMenu={(event) => {
-              event.stopPropagation();
-              setAppMenuOpen((value) => !value);
-            }}
-          />
-          <PaneResizer label="Resize folder pane" variant="inner" onPointerDown={startFolderPaneResize} />
-          <NotesPane
-            activePath={activePath}
-            draggingPath={draggingItem?.kind === "note" ? draggingItem.path : null}
-            folderTitle={selectedFolderTitle}
-            metadata={metadata}
-            contents={contents}
-            notes={visibleNotes}
-            selectedFolder={selectedFolder}
-            onCreateNote={requestCreateNote}
-            onContextMenu={openContextMenu}
-            onOpenIcon={(path) => openIconBrowser("note", path)}
-            onPin={(path) =>
-              updateMetadata((current) => ({
-                ...current,
-                pinnedNotes: { ...current.pinnedNotes, [path]: !current.pinnedNotes[path] },
-              }))
-            }
-            onPointerDragStart={beginNotePointerDrag}
-            onSelect={handleNoteSelectFromCard}
-          />
+        <aside
+          className={`left-panes${navigationStyle !== "dual-pane" ? " is-single-col" : ""}`}
+          onContextMenu={(event) => openContextMenu(event, { kind: "empty" })}
+        >
+          {navigationStyle === "single-pane" ? (
+            <UnifiedTreePane
+              activePath={activePath}
+              contents={contents}
+              folders={folders}
+              metadata={metadata}
+              notes={notes}
+              rootPath=""
+              title={selectedFolderTitle}
+              workspace={workspace}
+              onContextMenu={openContextMenu}
+              onOpenNoteIcon={(path) => openIconBrowser("note", path)}
+              onPin={(path) => updateMetadata((current) => ({ ...current, pinnedNotes: { ...current.pinnedNotes, [path]: !current.pinnedNotes[path] } }))}
+              onPointerDragStart={beginNotePointerDrag}
+              onSelectNote={handleNoteSelectFromCard}
+            />
+          ) : navigationStyle === "onenote" ? (
+            <>
+              <OneNoteFolderPane
+                folders={folderTree[0]?.children ?? []}
+                metadata={metadata}
+                selectedFolder={selectedFolder}
+                workspace={workspace}
+                menuOpen={appMenuOpen}
+                recentNotebooks={recentNotebooks}
+                onContextMenu={openContextMenu}
+                onManageNotebooks={() => { setNotebooksManageOpen(true); setAppMenuOpen(false); }}
+                onNewNotebook={() => void chooseWorkspace("new", true)}
+                onOpenWorkspace={() => void chooseWorkspace("open", true)}
+                onSelectFolder={(path) => setSelectedFolder(path)}
+                onSelectNotebook={(path) => { switchNotebook(path); setAppMenuOpen(false); }}
+                onToggleMenu={(event) => { event.stopPropagation(); setAppMenuOpen((v) => !v); }}
+              />
+              <PaneResizer label="Resize folder pane" variant="inner" onPointerDown={startFolderPaneResize} />
+              <UnifiedTreePane
+                activePath={activePath}
+                contents={contents}
+                folders={folders}
+                metadata={metadata}
+                notes={notes}
+                rootPath={selectedFolder}
+                title={selectedFolderTitle}
+                workspace={workspace}
+                onContextMenu={openContextMenu}
+                onOpenNoteIcon={(path) => openIconBrowser("note", path)}
+                onPin={(path) => updateMetadata((current) => ({ ...current, pinnedNotes: { ...current.pinnedNotes, [path]: !current.pinnedNotes[path] } }))}
+                onPointerDragStart={beginNotePointerDrag}
+                onSelectNote={handleNoteSelectFromCard}
+              />
+            </>
+          ) : (
+            <>
+              <FolderPane
+                bookmarks={bookmarks}
+                bookmarksExpanded={metadata.bookmarksExpanded}
+                disabled={!workspace}
+                draggingItem={draggingItem}
+                dropTargetFolder={dropTargetFolder}
+                folders={folderTree}
+                metadata={metadata}
+                menuOpen={appMenuOpen}
+                recentNotebooks={recentNotebooks}
+                searchOpen={searchOpen}
+                searchFocusRequest={searchFocusRequest}
+                searchQuery={searchQuery}
+                searchResults={results}
+                selectedFolder={selectedFolder}
+                workspace={workspace}
+                onCreateFolder={requestCreateFolder}
+                onCreateNote={requestCreateNote}
+                onContextMenu={openContextMenu}
+                onDragStart={setCurrentDragItem}
+                onDropTargetChange={setDropTargetFolder}
+                onDropOnFolderFallback={(path, item) => void handleDropOnFolder(path, item)}
+                onDropOnFolder={(path, item) => void handleDropOnFolder(path, item)}
+                onOpenIcon={(path) => openIconBrowser("folder", path)}
+                onManageNotebooks={() => {
+                  setNotebooksManageOpen(true);
+                  setAppMenuOpen(false);
+                }}
+                onNewNotebook={() => void chooseWorkspace("new", true)}
+                onOpenWorkspace={() => void chooseWorkspace("open", true)}
+                onRemoveBookmark={removeBookmark}
+                onSearchQueryChange={setSearchQuery}
+                onSelectBookmark={selectBookmark}
+                onSelectNotebook={openNotebookInNewWindow}
+                onSelectSearchResult={selectNote}
+                onSelectFolder={(path) => setSelectedFolder(path)}
+                onToggleBookmarksExpanded={() =>
+                  updateMetadata((current) => ({
+                    ...current,
+                    bookmarksExpanded: !current.bookmarksExpanded,
+                  }))
+                }
+                onToggleSearch={() => setSearchOpen((value) => !value)}
+                onToggleMenu={(event) => {
+                  event.stopPropagation();
+                  setAppMenuOpen((value) => !value);
+                }}
+              />
+              <PaneResizer label="Resize folder pane" variant="inner" onPointerDown={startFolderPaneResize} />
+              <NotesPane
+                activePath={activePath}
+                draggingPath={draggingItem?.kind === "note" ? draggingItem.path : null}
+                folderTitle={selectedFolderTitle}
+                metadata={metadata}
+                contents={contents}
+                notes={visibleNotes}
+                selectedFolder={selectedFolder}
+                onCreateNote={requestCreateNote}
+                onContextMenu={openContextMenu}
+                onOpenIcon={(path) => openIconBrowser("note", path)}
+                onPin={(path) =>
+                  updateMetadata((current) => ({
+                    ...current,
+                    pinnedNotes: { ...current.pinnedNotes, [path]: !current.pinnedNotes[path] },
+                  }))
+                }
+                onPointerDragStart={beginNotePointerDrag}
+                onSelect={handleNoteSelectFromCard}
+              />
+            </>
+          )}
         </aside>
       ) : null}
       {leftVisible ? <PaneResizer label="Resize notes pane" variant="left-of-main" onPointerDown={startNotesPaneResize} /> : null}
@@ -1769,6 +1882,14 @@ export default function App() {
               {isSaving ? <Save size={15} /> : <Check size={15} />}
               <span>{isSaving ? "Saving" : hasUnsavedChanges ? "Unsaved" : "Saved"}</span>
             </div>
+            <button
+              className="icon-button"
+              type="button"
+              title="Find in note"
+              onClick={() => setNoteFindRequest((v) => v + 1)}
+            >
+              <Search size={17} />
+            </button>
             <button
               className={`icon-button ${rawMarkdownVisible || frontmatterError ? "is-active" : ""}`}
               type="button"
@@ -1977,6 +2098,7 @@ export default function App() {
             accentTitlebar={accentTitlebar}
             colorScheme={colorScheme}
             effectiveAccentColor={effectiveAccentColor}
+            navigationStyle={navigationStyle}
             resolvedTheme={resolvedTheme}
             themePresetId={themePreset.id}
             onAccentChange={setAccentColor}
@@ -1984,6 +2106,7 @@ export default function App() {
             onAccentTitlebarChange={setAccentTitlebar}
             onClose={() => setSettingsOpen(false)}
             onColorSchemeChange={setColorScheme}
+            onNavigationStyleChange={setNavigationStyle}
             onThemePresetChange={setThemePresetId}
           />
       ) : null}
@@ -2172,8 +2295,6 @@ function FolderPane({
             metadata={metadata}
             selectedFolder={selectedFolder}
             onContextMenu={onContextMenu}
-            onCreateFolder={onCreateFolder}
-            onCreateNote={onCreateNote}
             onDragStart={onDragStart}
             onDropTargetChange={onDropTargetChange}
             onDropOnFolder={onDropOnFolder}
@@ -2352,8 +2473,6 @@ function FolderRow({
   metadata,
   selectedFolder,
   onContextMenu,
-  onCreateFolder,
-  onCreateNote,
   onDragStart,
   onDropTargetChange,
   onDropOnFolder,
@@ -2367,8 +2486,6 @@ function FolderRow({
   metadata: WorkspaceMetadata;
   selectedFolder: string;
   onContextMenu: (event: React.MouseEvent, state: ContextMenuTarget) => void;
-  onCreateFolder: (parentPath?: string) => void;
-  onCreateNote: (parentPath?: string) => void;
   onDragStart: (item: DragItem) => void;
   onDropTargetChange: (path: string | null) => void;
   onDropOnFolder: (path: string, item?: Exclude<DragItem, null>) => void;
@@ -2472,12 +2589,6 @@ function FolderRow({
           </span>
           <span>{folder.name}</span>
         </button>
-        <button className="tree-action" type="button" title="New note" onClick={(event) => { event.stopPropagation(); onCreateNote(folder.path); }}>
-          <FileText size={14} />
-        </button>
-        <button className="tree-action" type="button" title="New folder" onClick={(event) => { event.stopPropagation(); onCreateFolder(folder.path); }}>
-          <Plus size={14} />
-        </button>
       </div>
       {open && folder.children.length ? (
         <div className="tree-children">
@@ -2491,8 +2602,6 @@ function FolderRow({
               metadata={metadata}
               selectedFolder={selectedFolder}
               onContextMenu={onContextMenu}
-              onCreateFolder={onCreateFolder}
-              onCreateNote={onCreateNote}
               onDragStart={onDragStart}
               onDropTargetChange={onDropTargetChange}
               onDropOnFolder={onDropOnFolder}
@@ -2505,6 +2614,340 @@ function FolderRow({
     </div>
   );
 }
+
+// ---------- OneNote first pane (root folders only) ----------
+
+function OneNoteFolderPane({
+  folders,
+  menuOpen,
+  metadata,
+  recentNotebooks,
+  selectedFolder,
+  workspace,
+  onContextMenu,
+  onManageNotebooks,
+  onNewNotebook,
+  onOpenWorkspace,
+  onSelectFolder,
+  onSelectNotebook,
+  onToggleMenu,
+}: {
+  folders: FolderNode[];
+  menuOpen: boolean;
+  metadata: WorkspaceMetadata;
+  recentNotebooks: RecentNotebook[];
+  selectedFolder: string;
+  workspace: string;
+  onContextMenu: (event: React.MouseEvent, state: ContextMenuTarget) => void;
+  onManageNotebooks: () => void;
+  onNewNotebook: () => void;
+  onOpenWorkspace: () => void;
+  onSelectFolder: (path: string) => void;
+  onSelectNotebook: (path: string) => void;
+  onToggleMenu: (event: React.MouseEvent) => void;
+}) {
+  return (
+    <section className="folder-pane onenote-folder-pane">
+      <div className="pane-header">
+        <strong>Sections</strong>
+      </div>
+      <div className="folder-tree">
+        {folders.map((folder) => {
+          const folderColor = metadata.folderColors[folder.path];
+          const customIcon = metadata.folderIcons[folder.path];
+          return (
+            <div
+              key={folder.path}
+              className={`folder-row${selectedFolder === folder.path ? " is-active" : ""}`}
+              style={folderColor ? { color: folderColor } : undefined}
+              onClick={() => onSelectFolder(folder.path)}
+              onContextMenu={(event) => onContextMenu(event, { kind: "folder", path: folder.path })}
+            >
+              <span className="tree-toggle"><span /></span>
+              <button
+                className="folder-select"
+                style={folderColor ? { color: folderColor } : undefined}
+                type="button"
+                onClick={(event) => { event.stopPropagation(); onSelectFolder(folder.path); }}
+              >
+                <span>
+                  <IconMark value={customIcon} fallback={Folder} size={15} />
+                </span>
+                <span>{folder.name}</span>
+              </button>
+            </div>
+          );
+        })}
+      </div>
+      <div className="notebook-footer">
+        <div className="app-menu-wrap">
+          <NotebookMenuButton workspace={workspace} menuOpen={menuOpen} onToggleMenu={onToggleMenu} />
+          {menuOpen ? (
+            <div className="app-menu" onClick={(event) => event.stopPropagation()}>
+              <button type="button" onClick={onNewNotebook}>
+                <Plus size={14} />
+                <span>New Notebook</span>
+              </button>
+              <button type="button" onClick={onOpenWorkspace}>
+                <FolderOpen size={14} />
+                <span>Open Notebook</span>
+              </button>
+              <div className="app-menu-separator" />
+              <div className="recent-notebooks-list" role="menu" aria-label="Recent notebooks">
+                {recentNotebooks.map((notebook) => (
+                  <button
+                    className={workspace === notebook.path ? "is-active" : ""}
+                    key={notebook.path}
+                    type="button"
+                    role="menuitem"
+                    onClick={() => onSelectNotebook(notebook.path)}
+                  >
+                    <BookOpen size={14} />
+                    <span>
+                      <strong>{notebook.name}</strong>
+                      <small>{notebook.path}</small>
+                    </span>
+                  </button>
+                ))}
+              </div>
+              <div className="app-menu-separator" />
+              <button type="button" onClick={onManageNotebooks}>
+                <Settings size={14} />
+                <span>Manage Notebooks</span>
+              </button>
+            </div>
+          ) : null}
+        </div>
+      </div>
+    </section>
+  );
+}
+
+// ---------- Unified Tree (Single Pane / OneNote second pane) ----------
+
+function UnifiedNode({
+  activePath,
+  contents,
+  depth,
+  folders,
+  metadata,
+  notes,
+  parentPath,
+  workspace,
+  onContextMenu,
+  onOpenNoteIcon,
+  onPin,
+  onPointerDragStart,
+  onSelectNote,
+}: {
+  activePath: string | null;
+  contents: Map<string, string>;
+  depth: number;
+  folders: FolderEntry[];
+  metadata: WorkspaceMetadata;
+  notes: NoteEntry[];
+  parentPath: string;
+  workspace: string;
+  onContextMenu: (event: React.MouseEvent, state: ContextMenuTarget) => void;
+  onOpenNoteIcon: (path: string) => void;
+  onPin: (path: string) => void;
+  onPointerDragStart: (path: string, event: React.PointerEvent<HTMLElement>) => void;
+  onSelectNote: (path: string) => void;
+}) {
+  const childFolders = useMemo(
+    () => folders.filter((f) => f.parent_path === parentPath && f.path !== "").sort((a, b) => a.name.localeCompare(b.name)),
+    [folders, parentPath],
+  );
+  const childNotes = useMemo(
+    () => orderNotes(notes.filter((n) => n.parent_path === parentPath), parentPath, metadata),
+    [metadata, notes, parentPath],
+  );
+
+  return (
+    <>
+      {childFolders.map((folder) => (
+        <UnifiedFolderRow
+          key={folder.path}
+          activePath={activePath}
+          contents={contents}
+          depth={depth}
+          folder={folder}
+          folders={folders}
+          metadata={metadata}
+          notes={notes}
+          workspace={workspace}
+          onContextMenu={onContextMenu}
+          onOpenNoteIcon={onOpenNoteIcon}
+          onPin={onPin}
+          onPointerDragStart={onPointerDragStart}
+          onSelectNote={onSelectNote}
+        />
+      ))}
+      {childNotes.map((note) => {
+        const customIcon = metadata.noteIcons[note.path];
+        const pinned = Boolean(metadata.pinnedNotes[note.path]);
+        return (
+          <button
+            key={note.path}
+            className={`unified-note-row${activePath === note.path ? " is-active" : ""}`}
+            style={{ "--row-indent": `${depth * 16 + 8}px` } as React.CSSProperties}
+            type="button"
+            onClick={() => onSelectNote(note.path)}
+            onContextMenu={(event) => onContextMenu(event, { kind: "note", path: note.path })}
+          >
+            <span
+              className="inline-icon-button"
+              role="button"
+              tabIndex={0}
+              title="Set note icon"
+              onClick={(event) => { event.stopPropagation(); onOpenNoteIcon(note.path); }}
+              onKeyDown={(event) => {
+                if (event.key === "Enter" || event.key === " ") { event.preventDefault(); event.stopPropagation(); onOpenNoteIcon(note.path); }
+              }}
+            >
+              <IconMark value={customIcon} fallback={FileText} size={14} />
+            </span>
+            <span className="unified-note-title">{note.title}</span>
+            {pinned ? <Pin size={12} fill="currentColor" style={{ flexShrink: 0, opacity: 0.5 }} /> : null}
+          </button>
+        );
+      })}
+    </>
+  );
+}
+
+function UnifiedFolderRow({
+  activePath,
+  contents,
+  depth,
+  folder,
+  folders,
+  metadata,
+  notes,
+  workspace,
+  onContextMenu,
+  onOpenNoteIcon,
+  onPin,
+  onPointerDragStart,
+  onSelectNote,
+}: {
+  activePath: string | null;
+  contents: Map<string, string>;
+  depth: number;
+  folder: FolderEntry;
+  folders: FolderEntry[];
+  metadata: WorkspaceMetadata;
+  notes: NoteEntry[];
+  workspace: string;
+  onContextMenu: (event: React.MouseEvent, state: ContextMenuTarget) => void;
+  onOpenNoteIcon: (path: string) => void;
+  onPin: (path: string) => void;
+  onPointerDragStart: (path: string, event: React.PointerEvent<HTMLElement>) => void;
+  onSelectNote: (path: string) => void;
+}) {
+  const [open, setOpen] = useState(true);
+  const folderColor = metadata.folderColors[folder.path];
+  const customIcon = metadata.folderIcons[folder.path];
+  const hasChildren =
+    folders.some((f) => f.parent_path === folder.path) ||
+    notes.some((n) => n.parent_path === folder.path);
+
+  return (
+    <div className="unified-folder-node">
+      <div
+        className="unified-folder-row"
+        style={{ "--row-indent": `${depth * 16}px` } as React.CSSProperties}
+        onContextMenu={(event) => onContextMenu(event, { kind: "folder", path: folder.path })}
+      >
+        <button
+          className="tree-toggle"
+          type="button"
+          onClick={() => setOpen((v) => !v)}
+        >
+          {hasChildren ? (open ? <ChevronDown size={14} /> : <ChevronRight size={14} />) : <span />}
+        </button>
+        <span style={folderColor ? { color: folderColor } : undefined} className="unified-folder-name">
+          <IconMark value={customIcon} fallback={Folder} size={14} />
+          <span>{folder.name}</span>
+        </span>
+      </div>
+      {open && (
+        <UnifiedNode
+          activePath={activePath}
+          contents={contents}
+          depth={depth + 1}
+          folders={folders}
+          metadata={metadata}
+          notes={notes}
+          parentPath={folder.path}
+          workspace={workspace}
+          onContextMenu={onContextMenu}
+          onOpenNoteIcon={onOpenNoteIcon}
+          onPin={onPin}
+          onPointerDragStart={onPointerDragStart}
+          onSelectNote={onSelectNote}
+        />
+      )}
+    </div>
+  );
+}
+
+function UnifiedTreePane({
+  activePath,
+  contents,
+  folders,
+  metadata,
+  notes,
+  rootPath,
+  title,
+  workspace,
+  onContextMenu,
+  onOpenNoteIcon,
+  onPin,
+  onPointerDragStart,
+  onSelectNote,
+}: {
+  activePath: string | null;
+  contents: Map<string, string>;
+  folders: FolderEntry[];
+  metadata: WorkspaceMetadata;
+  notes: NoteEntry[];
+  rootPath: string;
+  title: string;
+  workspace: string;
+  onContextMenu: (event: React.MouseEvent, state: ContextMenuTarget) => void;
+  onOpenNoteIcon: (path: string) => void;
+  onPin: (path: string) => void;
+  onPointerDragStart: (path: string, event: React.PointerEvent<HTMLElement>) => void;
+  onSelectNote: (path: string) => void;
+}) {
+  return (
+    <section className="unified-tree-pane">
+      <div className="pane-header">
+        <strong>{title}</strong>
+      </div>
+      <div className="unified-tree-scroll">
+        <UnifiedNode
+          activePath={activePath}
+          contents={contents}
+          depth={0}
+          folders={folders}
+          metadata={metadata}
+          notes={notes}
+          parentPath={rootPath}
+          workspace={workspace}
+          onContextMenu={onContextMenu}
+          onOpenNoteIcon={onOpenNoteIcon}
+          onPin={onPin}
+          onPointerDragStart={onPointerDragStart}
+          onSelectNote={onSelectNote}
+        />
+      </div>
+    </section>
+  );
+}
+
+// ---------- End Unified Tree ----------
 
 function NotesPane({
   activePath,
@@ -3253,6 +3696,7 @@ function SettingsModal({
   accentColor,
   colorScheme,
   effectiveAccentColor,
+  navigationStyle,
   resolvedTheme,
   themePresetId,
   accentTitlebar,
@@ -3261,12 +3705,14 @@ function SettingsModal({
   onAccentTitlebarChange,
   onColorSchemeChange,
   onClose,
+  onNavigationStyleChange,
   onThemePresetChange,
 }: {
   accentColor: string | null;
   accentTitlebar: boolean;
   colorScheme: ColorScheme;
   effectiveAccentColor: string;
+  navigationStyle: NavigationStyle;
   resolvedTheme: "light" | "dark";
   themePresetId: ThemePresetId;
   onAccentChange: (color: string) => void;
@@ -3274,6 +3720,7 @@ function SettingsModal({
   onAccentTitlebarChange: (value: boolean) => void;
   onColorSchemeChange: (scheme: ColorScheme) => void;
   onClose: () => void;
+  onNavigationStyleChange: (style: NavigationStyle) => void;
   onThemePresetChange: (theme: ThemePresetId) => void;
 }) {
   const sections = [
@@ -3341,6 +3788,41 @@ function SettingsModal({
               />
               <span className="switch-track" />
             </label>
+          </div>
+          <div className="setting-row">
+            <span>
+              <strong>Navigation style</strong>
+              <small>How folders and notes are displayed in the sidebar. Settings are saved per notebook.</small>
+            </span>
+            <div className="theme-toggle" role="group" aria-label="Navigation style">
+              <button
+                className={navigationStyle === "dual-pane" ? "theme-option is-active" : "theme-option"}
+                type="button"
+                title="Standard two-pane layout: folders on the left, notes on the right"
+                onClick={() => onNavigationStyleChange("dual-pane")}
+              >
+                <LayoutList size={16} />
+                <span>Dual Pane</span>
+              </button>
+              <button
+                className={navigationStyle === "single-pane" ? "theme-option is-active" : "theme-option"}
+                type="button"
+                title="Single unified tree showing folders and notes together"
+                onClick={() => onNavigationStyleChange("single-pane")}
+              >
+                <List size={16} />
+                <span>Single</span>
+              </button>
+              <button
+                className={navigationStyle === "onenote" ? "theme-option is-active" : "theme-option"}
+                type="button"
+                title="OneNote-style: root sections on the left, subfolders and notes on the right"
+                onClick={() => onNavigationStyleChange("onenote")}
+              >
+                <Columns2 size={16} />
+                <span>OneNote</span>
+              </button>
+            </div>
           </div>
         </div>
       ),
@@ -3473,7 +3955,7 @@ function IconBrowserModal({
           </span>
           <div>
             <h2>{state.kind === "folder" ? "Folder icon" : "Note icon"}</h2>
-            <p>Search Lucide icons</p>
+            <p>{state.name}</p>
           </div>
           <button className="icon-button" type="button" title="Close" onClick={onClose}>
             <X size={17} />
@@ -3666,7 +4148,7 @@ function PropertyDialog({
   const config = {
     "rename-folder": {
       title: "Rename folder",
-      description: "Change the folder name on disk.",
+      description: state.name,
       label: "Folder name",
       placeholder: "Folder name",
       icon: <Pencil size={18} />,
@@ -3675,7 +4157,7 @@ function PropertyDialog({
     },
     "folder-icon": {
       title: "Folder icon",
-      description: "Shown to the left of this folder.",
+      description: state.name,
       label: "Icon",
       placeholder: "Emoji or short mark",
       icon: <Folder size={18} />,
@@ -3684,7 +4166,7 @@ function PropertyDialog({
     },
     "folder-color": {
       title: "Folder color",
-      description: "Colors the folder icon and title.",
+      description: state.name,
       label: "Color",
       placeholder: "#4b7d75",
       icon: <Palette size={18} />,
@@ -3693,7 +4175,7 @@ function PropertyDialog({
     },
     "note-icon": {
       title: "Note icon",
-      description: "Shown in the notes pane.",
+      description: state.name,
       label: "Icon",
       placeholder: "Emoji or short mark",
       icon: <FileText size={18} />,
