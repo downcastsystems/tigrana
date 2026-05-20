@@ -722,15 +722,17 @@ body.is-dragging-note.is-over-drop-target * {
   background: transparent;
   text-align: left;
   cursor: pointer;
+  overflow: hidden;
 }
 
 .app-menu button > svg {
   flex: 0 0 auto;
 }
 
+.app-menu button:hover,
 .app-menu button.is-active {
   color: var(--accent-strong);
-  background: var(--accent-soft);
+  background: var(--accent-active);
 }
 
 .app-menu button span {
@@ -769,14 +771,15 @@ body.is-dragging-note.is-over-drop-target * {
   overflow-y: auto;
 }
 
+.recent-notebooks-list button {
+  width: calc(100% - 8px);
+  margin-right: 8px;
+}
+
 .recent-notebooks-empty {
   margin: 8px;
   color: #817a70;
   font-size: 12px;
-}
-
-.app-menu button:hover {
-  background: rgba(52, 48, 43, 0.08);
 }
 
 .folder-tree,
@@ -2921,7 +2924,6 @@ html[data-theme="dark"] .segmented-button:hover,
 html[data-theme="dark"] .icon-button:hover,
 html[data-theme="dark"] .icon-button.is-active,
 html[data-theme="dark"] .app-menu-button:hover,
-html[data-theme="dark"] .app-menu button:hover,
 html[data-theme="dark"] .tree-action:hover,
 html[data-theme="dark"] .tree-toggle:hover,
 html[data-theme="dark"] .note-row:hover,
