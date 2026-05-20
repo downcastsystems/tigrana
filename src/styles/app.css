@@ -449,6 +449,8 @@ body.is-dragging-note.is-over-drop-target * {
   min-height: 0;
   overflow: hidden;
   background: var(--surface-soft);
+  user-select: none;
+  -webkit-user-select: none;
 }
 
 .unified-tree-scroll {
@@ -468,19 +470,23 @@ body.is-dragging-note.is-over-drop-target * {
   align-items: center;
   gap: 4px;
   min-height: 28px;
-  margin-left: calc(-1 * var(--row-indent, 0px));
   padding-left: calc(var(--row-indent, 0px) + 4px);
   padding-right: 4px;
   margin-bottom: 1px;
   cursor: default;
   border-radius: 6px;
   z-index: 0;
+  user-select: none;
+  -webkit-user-select: none;
 }
 
 .unified-folder-row::before {
   content: "";
   position: absolute;
-  inset: 0;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  left: calc(-1 * var(--row-indent, 0px));
   border-radius: 6px;
   pointer-events: none;
   z-index: -1;
@@ -510,7 +516,6 @@ body.is-dragging-note.is-over-drop-target * {
   gap: 6px;
   width: 100%;
   min-height: 28px;
-  margin-left: calc(-1 * var(--row-indent, 0px));
   padding-left: calc(var(--row-indent, 0px) + 8px);
   padding-right: 8px;
   margin-bottom: 1px;
@@ -522,12 +527,17 @@ body.is-dragging-note.is-over-drop-target * {
   font-size: 13px;
   color: var(--text);
   z-index: 0;
+  user-select: none;
+  -webkit-user-select: none;
 }
 
 .unified-note-row::before {
   content: "";
   position: absolute;
-  inset: 0;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  left: calc(-1 * var(--row-indent, 0px));
   border-radius: 6px;
   pointer-events: none;
   z-index: -1;

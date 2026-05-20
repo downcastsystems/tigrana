@@ -11,7 +11,7 @@ import { TableRow } from "@tiptap/extension-table-row";
 import TaskItem from "@tiptap/extension-task-item";
 import TaskList from "@tiptap/extension-task-list";
 import type { Node as ProseMirrorNode } from "@tiptap/pm/model";
-import { Plugin, PluginKey, TextSelection } from "@tiptap/pm/state";
+import { NodeSelection, Plugin, PluginKey, TextSelection } from "@tiptap/pm/state";
 import { Decoration, DecorationSet, type EditorView } from "@tiptap/pm/view";
 import { BubbleMenu, EditorContent, NodeViewWrapper, Range, ReactNodeViewRenderer, useEditor, type Editor } from "@tiptap/react";
 import StarterKit from "@tiptap/starter-kit";
@@ -623,6 +623,9 @@ function FormattingBubbleMenu({ editor }: { editor: Editor }) {
       shouldShow={({ editor }) => {
         const activeElement = document.activeElement;
         if (activeElement instanceof HTMLElement && activeElement.closest(".note-find-bar")) return false;
+        const { selection } = editor.state;
+        if (selection instanceof NodeSelection && selection.node.type.name === "image") return false;
+        if (editor.isActive("image")) return false;
         return !editor.state.selection.empty && editor.isEditable;
       }}
     >

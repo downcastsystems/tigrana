@@ -10,13 +10,11 @@ import {
   ChevronDown,
   ChevronRight,
   ChevronUp,
-  Columns2,
   FileCode2,
   FileText,
   Folder,
   FolderOpen,
   LayoutList,
-  List,
   Monitor,
   Moon,
   Palette,
@@ -1745,53 +1743,112 @@ export default function App() {
       <div className={`app-frame ${leftVisible ? "" : "is-left-hidden"} ${outlineVisible ? "" : "is-outline-hidden"}`} style={frameStyle}>
       {leftVisible ? (
         <aside
-          className={`left-panes${navigationStyle !== "dual-pane" ? " is-single-col" : ""}`}
+          className={`left-panes${navigationStyle === "single-pane" ? " is-single-col" : ""}`}
           onContextMenu={(event) => openContextMenu(event, { kind: "empty" })}
         >
           {navigationStyle === "single-pane" ? (
             <UnifiedTreePane
               activePath={activePath}
+              bookmarks={bookmarks}
+              bookmarksExpanded={metadata.bookmarksExpanded}
+              createParentPath={selectedFolder}
               contents={contents}
               folders={folders}
+              menuOpen={appMenuOpen}
               metadata={metadata}
               notes={notes}
+              recentNotebooks={recentNotebooks}
               rootPath=""
-              title={selectedFolderTitle}
+              searchFocusRequest={searchFocusRequest}
+              searchOpen={searchOpen}
+              searchQuery={searchQuery}
+              searchResults={results}
+              showBookmarks
+              showNotebookFooter
+              showPins={false}
+              showSearch
+              title={getNotebookName(workspace)}
               workspace={workspace}
               onContextMenu={openContextMenu}
+              onCreateFolder={requestCreateFolder}
+              onCreateNote={requestCreateNote}
+              onManageNotebooks={() => {
+                setNotebooksManageOpen(true);
+                setAppMenuOpen(false);
+              }}
+              onNewNotebook={() => void chooseWorkspace("new", true)}
               onOpenNoteIcon={(path) => openIconBrowser("note", path)}
+              onOpenWorkspace={() => void chooseWorkspace("open", true)}
               onPin={(path) => updateMetadata((current) => ({ ...current, pinnedNotes: { ...current.pinnedNotes, [path]: !current.pinnedNotes[path] } }))}
               onPointerDragStart={beginNotePointerDrag}
+              onRemoveBookmark={removeBookmark}
+              onSearchQueryChange={setSearchQuery}
+              onSelectBookmark={selectBookmark}
+              onSelectNotebook={openNotebookInNewWindow}
               onSelectNote={handleNoteSelectFromCard}
+              onSelectSearchResult={selectNote}
+              onToggleBookmarksExpanded={() =>
+                updateMetadata((current) => ({
+                  ...current,
+                  bookmarksExpanded: !current.bookmarksExpanded,
+                }))
+              }
+              onToggleMenu={(event) => {
+                event.stopPropagation();
+                setAppMenuOpen((value) => !value);
+              }}
+              onToggleSearch={() => setSearchOpen((value) => !value)}
             />
           ) : navigationStyle === "onenote" ? (
             <>
               <OneNoteFolderPane
+                bookmarks={bookmarks}
+                bookmarksExpanded={metadata.bookmarksExpanded}
                 folders={folderTree[0]?.children ?? []}
                 metadata={metadata}
                 selectedFolder={selectedFolder}
                 workspace={workspace}
                 menuOpen={appMenuOpen}
                 recentNotebooks={recentNotebooks}
+                searchOpen={searchOpen}
+                searchFocusRequest={searchFocusRequest}
+                searchQuery={searchQuery}
+                searchResults={results}
                 onContextMenu={openContextMenu}
+                onCreateFolder={requestCreateFolder}
                 onManageNotebooks={() => { setNotebooksManageOpen(true); setAppMenuOpen(false); }}
                 onNewNotebook={() => void chooseWorkspace("new", true)}
                 onOpenWorkspace={() => void chooseWorkspace("open", true)}
+                onRemoveBookmark={removeBookmark}
+                onSearchQueryChange={setSearchQuery}
+                onSelectBookmark={selectBookmark}
                 onSelectFolder={(path) => setSelectedFolder(path)}
-                onSelectNotebook={(path) => { switchNotebook(path); setAppMenuOpen(false); }}
+                onSelectNotebook={openNotebookInNewWindow}
+                onSelectSearchResult={selectNote}
+                onToggleBookmarksExpanded={() =>
+                  updateMetadata((current) => ({
+                    ...current,
+                    bookmarksExpanded: !current.bookmarksExpanded,
+                  }))
+                }
                 onToggleMenu={(event) => { event.stopPropagation(); setAppMenuOpen((v) => !v); }}
+                onToggleSearch={() => setSearchOpen((value) => !value)}
               />
               <PaneResizer label="Resize folder pane" variant="inner" onPointerDown={startFolderPaneResize} />
               <UnifiedTreePane
                 activePath={activePath}
+                createParentPath={selectedFolder}
                 contents={contents}
                 folders={folders}
                 metadata={metadata}
                 notes={notes}
                 rootPath={selectedFolder}
+                showPins
                 title={selectedFolderTitle}
                 workspace={workspace}
                 onContextMenu={openContextMenu}
+                onCreateFolder={requestCreateFolder}
+                onCreateNote={requestCreateNote}
                 onOpenNoteIcon={(path) => openIconBrowser("note", path)}
                 onPin={(path) => updateMetadata((current) => ({ ...current, pinnedNotes: { ...current.pinnedNotes, [path]: !current.pinnedNotes[path] } }))}
                 onPointerDragStart={beginNotePointerDrag}
@@ -1817,7 +1874,6 @@ export default function App() {
                 selectedFolder={selectedFolder}
                 workspace={workspace}
                 onCreateFolder={requestCreateFolder}
-                onCreateNote={requestCreateNote}
                 onContextMenu={openContextMenu}
                 onDragStart={setCurrentDragItem}
                 onDropTargetChange={setDropTargetFolder}
@@ -2170,7 +2226,6 @@ function FolderPane({
   selectedFolder,
   workspace,
   onCreateFolder,
-  onCreateNote,
   onContextMenu,
   onDragStart,
   onDropTargetChange,
@@ -2206,7 +2261,6 @@ function FolderPane({
   selectedFolder: string;
   workspace: string;
   onCreateFolder: (parentPath?: string) => void;
-  onCreateNote: (parentPath?: string) => void;
   onContextMenu: (event: React.MouseEvent, state: ContextMenuTarget) => void;
   onDragStart: (item: DragItem) => void;
   onDropTargetChange: (path: string | null) => void;
@@ -2303,48 +2357,82 @@ function FolderPane({
           />
         ))}
       </div>
-      <div className="notebook-footer">
-        <div className="app-menu-wrap">
-          <NotebookMenuButton workspace={workspace} menuOpen={menuOpen} onToggleMenu={onToggleMenu} />
-          {menuOpen ? (
-            <div className="app-menu" onClick={(event) => event.stopPropagation()}>
-              <button type="button" onClick={onNewNotebook}>
-                <Plus size={14} />
-                <span>New Notebook</span>
-              </button>
-              <button type="button" onClick={onOpenWorkspace}>
-                <FolderOpen size={14} />
-                <span>Open Notebook</span>
-              </button>
-              <div className="app-menu-separator" />
-              <div className="recent-notebooks-list" role="menu" aria-label="Recent notebooks">
-                {recentNotebooks.map((notebook) => (
-                  <button
-                    className={workspace === notebook.path ? "is-active" : ""}
-                    key={notebook.path}
-                    type="button"
-                    onClick={() => onSelectNotebook(notebook.path)}
-                    title={notebook.path}
-                  >
-                    <BookOpen size={14} />
-                    <span>
-                      <strong>{notebook.name}</strong>
-                      <small>{notebook.path}</small>
-                    </span>
-                  </button>
-                ))}
-                {!recentNotebooks.length ? <p className="recent-notebooks-empty">No recent notebooks</p> : null}
-              </div>
-              <div className="app-menu-separator" />
-              <button type="button" onClick={onManageNotebooks}>
-                <Settings size={14} />
-                <span>Manage Notebooks</span>
-              </button>
-            </div>
-          ) : null}
-        </div>
-      </div>
+      <NotebookFooter
+        menuOpen={menuOpen}
+        recentNotebooks={recentNotebooks}
+        workspace={workspace}
+        onManageNotebooks={onManageNotebooks}
+        onNewNotebook={onNewNotebook}
+        onOpenWorkspace={onOpenWorkspace}
+        onSelectNotebook={onSelectNotebook}
+        onToggleMenu={onToggleMenu}
+      />
     </section>
+  );
+}
+
+function NotebookFooter({
+  menuOpen,
+  recentNotebooks,
+  workspace,
+  onManageNotebooks,
+  onNewNotebook,
+  onOpenWorkspace,
+  onSelectNotebook,
+  onToggleMenu,
+}: {
+  menuOpen: boolean;
+  recentNotebooks: RecentNotebook[];
+  workspace: string;
+  onManageNotebooks: () => void;
+  onNewNotebook: () => void;
+  onOpenWorkspace: () => void;
+  onSelectNotebook: (path: string) => void;
+  onToggleMenu: (event: React.MouseEvent) => void;
+}) {
+  return (
+    <div className="notebook-footer">
+      <div className="app-menu-wrap">
+        <NotebookMenuButton workspace={workspace} menuOpen={menuOpen} onToggleMenu={onToggleMenu} />
+        {menuOpen ? (
+          <div className="app-menu" onClick={(event) => event.stopPropagation()}>
+            <button type="button" onClick={onNewNotebook}>
+              <Plus size={14} />
+              <span>New Notebook</span>
+            </button>
+            <button type="button" onClick={onOpenWorkspace}>
+              <FolderOpen size={14} />
+              <span>Open Notebook</span>
+            </button>
+            <div className="app-menu-separator" />
+            <div className="recent-notebooks-list" role="menu" aria-label="Recent notebooks">
+              {recentNotebooks.map((notebook) => (
+                <button
+                  className={workspace === notebook.path ? "is-active" : ""}
+                  key={notebook.path}
+                  type="button"
+                  role="menuitem"
+                  onClick={() => onSelectNotebook(notebook.path)}
+                  title={notebook.path}
+                >
+                  <BookOpen size={14} />
+                  <span>
+                    <strong>{notebook.name}</strong>
+                    <small>{notebook.path}</small>
+                  </span>
+                </button>
+              ))}
+              {!recentNotebooks.length ? <p className="recent-notebooks-empty">No recent notebooks</p> : null}
+            </div>
+            <div className="app-menu-separator" />
+            <button type="button" onClick={onManageNotebooks}>
+              <Settings size={14} />
+              <span>Manage Notebooks</span>
+            </button>
+          </div>
+        ) : null}
+      </div>
+    </div>
   );
 }
 
@@ -2618,39 +2706,89 @@ function FolderRow({
 // ---------- OneNote first pane (root folders only) ----------
 
 function OneNoteFolderPane({
+  bookmarks,
+  bookmarksExpanded,
   folders,
   menuOpen,
   metadata,
   recentNotebooks,
+  searchOpen,
+  searchFocusRequest,
+  searchQuery,
+  searchResults,
   selectedFolder,
   workspace,
   onContextMenu,
+  onCreateFolder,
   onManageNotebooks,
   onNewNotebook,
   onOpenWorkspace,
+  onRemoveBookmark,
+  onSearchQueryChange,
+  onSelectBookmark,
   onSelectFolder,
   onSelectNotebook,
+  onSelectSearchResult,
+  onToggleBookmarksExpanded,
   onToggleMenu,
+  onToggleSearch,
 }: {
+  bookmarks: BookmarkView[];
+  bookmarksExpanded: boolean;
   folders: FolderNode[];
   menuOpen: boolean;
   metadata: WorkspaceMetadata;
   recentNotebooks: RecentNotebook[];
+  searchOpen: boolean;
+  searchFocusRequest: number;
+  searchQuery: string;
+  searchResults: SearchResult[];
   selectedFolder: string;
   workspace: string;
   onContextMenu: (event: React.MouseEvent, state: ContextMenuTarget) => void;
+  onCreateFolder: (parentPath?: string) => void;
   onManageNotebooks: () => void;
   onNewNotebook: () => void;
   onOpenWorkspace: () => void;
+  onRemoveBookmark: (id: string) => void;
+  onSearchQueryChange: (query: string) => void;
+  onSelectBookmark: (bookmark: BookmarkEntry) => void;
   onSelectFolder: (path: string) => void;
   onSelectNotebook: (path: string) => void;
+  onSelectSearchResult: (path: string) => void;
+  onToggleBookmarksExpanded: () => void;
   onToggleMenu: (event: React.MouseEvent) => void;
+  onToggleSearch: () => void;
 }) {
   return (
     <section className="folder-pane onenote-folder-pane">
       <div className="pane-header">
         <strong>Sections</strong>
+        <div className="pane-actions">
+          <button className="icon-button" type="button" disabled={!workspace} title="Search" onClick={onToggleSearch}>
+            <Search size={16} />
+          </button>
+          <button className="icon-button" type="button" disabled={!workspace} title="New section" onClick={() => onCreateFolder("")}>
+            <Plus size={16} />
+          </button>
+        </div>
       </div>
+      {searchOpen ? (
+        <FolderSearch
+          query={searchQuery}
+          focusRequest={searchFocusRequest}
+          results={searchResults}
+          onQueryChange={onSearchQueryChange}
+          onSelect={onSelectSearchResult}
+        />
+      ) : null}
+      <BookmarksSection
+        bookmarks={bookmarks}
+        expanded={bookmarksExpanded}
+        onRemove={onRemoveBookmark}
+        onSelect={onSelectBookmark}
+        onToggle={onToggleBookmarksExpanded}
+      />
       <div className="folder-tree">
         {folders.map((folder) => {
           const folderColor = metadata.folderColors[folder.path];
@@ -2679,46 +2817,16 @@ function OneNoteFolderPane({
           );
         })}
       </div>
-      <div className="notebook-footer">
-        <div className="app-menu-wrap">
-          <NotebookMenuButton workspace={workspace} menuOpen={menuOpen} onToggleMenu={onToggleMenu} />
-          {menuOpen ? (
-            <div className="app-menu" onClick={(event) => event.stopPropagation()}>
-              <button type="button" onClick={onNewNotebook}>
-                <Plus size={14} />
-                <span>New Notebook</span>
-              </button>
-              <button type="button" onClick={onOpenWorkspace}>
-                <FolderOpen size={14} />
-                <span>Open Notebook</span>
-              </button>
-              <div className="app-menu-separator" />
-              <div className="recent-notebooks-list" role="menu" aria-label="Recent notebooks">
-                {recentNotebooks.map((notebook) => (
-                  <button
-                    className={workspace === notebook.path ? "is-active" : ""}
-                    key={notebook.path}
-                    type="button"
-                    role="menuitem"
-                    onClick={() => onSelectNotebook(notebook.path)}
-                  >
-                    <BookOpen size={14} />
-                    <span>
-                      <strong>{notebook.name}</strong>
-                      <small>{notebook.path}</small>
-                    </span>
-                  </button>
-                ))}
-              </div>
-              <div className="app-menu-separator" />
-              <button type="button" onClick={onManageNotebooks}>
-                <Settings size={14} />
-                <span>Manage Notebooks</span>
-              </button>
-            </div>
-          ) : null}
-        </div>
-      </div>
+      <NotebookFooter
+        menuOpen={menuOpen}
+        recentNotebooks={recentNotebooks}
+        workspace={workspace}
+        onManageNotebooks={onManageNotebooks}
+        onNewNotebook={onNewNotebook}
+        onOpenWorkspace={onOpenWorkspace}
+        onSelectNotebook={onSelectNotebook}
+        onToggleMenu={onToggleMenu}
+      />
     </section>
   );
 }
@@ -2733,6 +2841,7 @@ function UnifiedNode({
   metadata,
   notes,
   parentPath,
+  showPins,
   workspace,
   onContextMenu,
   onOpenNoteIcon,
@@ -2747,6 +2856,7 @@ function UnifiedNode({
   metadata: WorkspaceMetadata;
   notes: NoteEntry[];
   parentPath: string;
+  showPins: boolean;
   workspace: string;
   onContextMenu: (event: React.MouseEvent, state: ContextMenuTarget) => void;
   onOpenNoteIcon: (path: string) => void;
@@ -2775,6 +2885,7 @@ function UnifiedNode({
           folders={folders}
           metadata={metadata}
           notes={notes}
+          showPins={showPins}
           workspace={workspace}
           onContextMenu={onContextMenu}
           onOpenNoteIcon={onOpenNoteIcon}
@@ -2808,7 +2919,7 @@ function UnifiedNode({
               <IconMark value={customIcon} fallback={FileText} size={14} />
             </span>
             <span className="unified-note-title">{note.title}</span>
-            {pinned ? <Pin size={12} fill="currentColor" style={{ flexShrink: 0, opacity: 0.5 }} /> : null}
+            {showPins && pinned ? <Pin size={12} fill="currentColor" style={{ flexShrink: 0, opacity: 0.5 }} /> : null}
           </button>
         );
       })}
@@ -2824,6 +2935,7 @@ function UnifiedFolderRow({
   folders,
   metadata,
   notes,
+  showPins,
   workspace,
   onContextMenu,
   onOpenNoteIcon,
@@ -2838,6 +2950,7 @@ function UnifiedFolderRow({
   folders: FolderEntry[];
   metadata: WorkspaceMetadata;
   notes: NoteEntry[];
+  showPins: boolean;
   workspace: string;
   onContextMenu: (event: React.MouseEvent, state: ContextMenuTarget) => void;
   onOpenNoteIcon: (path: string) => void;
@@ -2880,6 +2993,7 @@ function UnifiedFolderRow({
           metadata={metadata}
           notes={notes}
           parentPath={folder.path}
+          showPins={showPins}
           workspace={workspace}
           onContextMenu={onContextMenu}
           onOpenNoteIcon={onOpenNoteIcon}
@@ -2894,38 +3008,127 @@ function UnifiedFolderRow({
 
 function UnifiedTreePane({
   activePath,
+  bookmarks = [],
+  bookmarksExpanded = true,
+  createParentPath,
   contents,
   folders,
+  menuOpen = false,
   metadata,
   notes,
+  recentNotebooks = [],
   rootPath,
+  searchFocusRequest = 0,
+  searchOpen = false,
+  searchQuery = "",
+  searchResults = [],
+  showBookmarks = false,
+  showNotebookFooter = false,
+  showPins = true,
+  showSearch = false,
   title,
   workspace,
   onContextMenu,
+  onCreateFolder,
+  onCreateNote,
+  onManageNotebooks,
+  onNewNotebook,
   onOpenNoteIcon,
+  onOpenWorkspace,
   onPin,
   onPointerDragStart,
+  onRemoveBookmark,
+  onSearchQueryChange,
+  onSelectBookmark,
+  onSelectNotebook,
   onSelectNote,
+  onSelectSearchResult,
+  onToggleBookmarksExpanded,
+  onToggleMenu,
+  onToggleSearch,
 }: {
   activePath: string | null;
+  bookmarks?: BookmarkView[];
+  bookmarksExpanded?: boolean;
+  createParentPath?: string;
   contents: Map<string, string>;
   folders: FolderEntry[];
+  menuOpen?: boolean;
   metadata: WorkspaceMetadata;
   notes: NoteEntry[];
+  recentNotebooks?: RecentNotebook[];
   rootPath: string;
+  searchFocusRequest?: number;
+  searchOpen?: boolean;
+  searchQuery?: string;
+  searchResults?: SearchResult[];
+  showBookmarks?: boolean;
+  showNotebookFooter?: boolean;
+  showPins?: boolean;
+  showSearch?: boolean;
   title: string;
   workspace: string;
   onContextMenu: (event: React.MouseEvent, state: ContextMenuTarget) => void;
+  onCreateFolder?: (parentPath?: string) => void;
+  onCreateNote?: (parentPath?: string) => void;
+  onManageNotebooks?: () => void;
+  onNewNotebook?: () => void;
   onOpenNoteIcon: (path: string) => void;
+  onOpenWorkspace?: () => void;
   onPin: (path: string) => void;
   onPointerDragStart: (path: string, event: React.PointerEvent<HTMLElement>) => void;
+  onRemoveBookmark?: (id: string) => void;
+  onSearchQueryChange?: (query: string) => void;
+  onSelectBookmark?: (bookmark: BookmarkEntry) => void;
+  onSelectNotebook?: (path: string) => void;
   onSelectNote: (path: string) => void;
+  onSelectSearchResult?: (path: string) => void;
+  onToggleBookmarksExpanded?: () => void;
+  onToggleMenu?: (event: React.MouseEvent) => void;
+  onToggleSearch?: () => void;
 }) {
+  const parentForCreate = createParentPath ?? rootPath;
+
   return (
     <section className="unified-tree-pane">
       <div className="pane-header">
         <strong>{title}</strong>
+        <div className="pane-actions">
+          {showSearch && onToggleSearch ? (
+            <button className="icon-button" type="button" disabled={!workspace} title="Search" onClick={onToggleSearch}>
+              <Search size={16} />
+            </button>
+          ) : null}
+          {onCreateFolder ? (
+            <button className="icon-button" type="button" disabled={!workspace} title="New folder" onClick={() => onCreateFolder(parentForCreate)}>
+              <Folder size={16} />
+            </button>
+          ) : null}
+          {onCreateNote ? (
+            <button className="icon-button" type="button" disabled={!workspace} title="New note" onClick={() => onCreateNote(parentForCreate)}>
+              <Plus size={16} />
+            </button>
+          ) : null}
+        </div>
       </div>
+      {showSearch && searchOpen && onSearchQueryChange && onSelectSearchResult ? (
+        <FolderSearch
+          query={searchQuery}
+          focusRequest={searchFocusRequest}
+          results={searchResults}
+          onQueryChange={onSearchQueryChange}
+          onSelect={onSelectSearchResult}
+        />
+      ) : null}
+      {showBookmarks && onRemoveBookmark && onSelectBookmark && onToggleBookmarksExpanded ? (
+        <BookmarksSection
+          bookmarks={bookmarks}
+          expanded={bookmarksExpanded}
+          onRemove={onRemoveBookmark}
+          onSelect={onSelectBookmark}
+          onToggle={onToggleBookmarksExpanded}
+        />
+      ) : null}
       <div className="unified-tree-scroll">
         <UnifiedNode
           activePath={activePath}
@@ -2935,6 +3138,7 @@ function UnifiedTreePane({
           metadata={metadata}
           notes={notes}
           parentPath={rootPath}
+          showPins={showPins}
           workspace={workspace}
           onContextMenu={onContextMenu}
           onOpenNoteIcon={onOpenNoteIcon}
@@ -2943,6 +3147,18 @@ function UnifiedTreePane({
           onSelectNote={onSelectNote}
         />
       </div>
+      {showNotebookFooter && onManageNotebooks && onNewNotebook && onOpenWorkspace && onSelectNotebook && onToggleMenu ? (
+        <NotebookFooter
+          menuOpen={menuOpen}
+          recentNotebooks={recentNotebooks}
+          workspace={workspace}
+          onManageNotebooks={onManageNotebooks}
+          onNewNotebook={onNewNotebook}
+          onOpenWorkspace={onOpenWorkspace}
+          onSelectNotebook={onSelectNotebook}
+          onToggleMenu={onToggleMenu}
+        />
+      ) : null}
     </section>
   );
 }
@@ -3794,35 +4010,16 @@ function SettingsModal({
               <strong>Navigation style</strong>
               <small>How folders and notes are displayed in the sidebar. Settings are saved per notebook.</small>
             </span>
-            <div className="theme-toggle" role="group" aria-label="Navigation style">
-              <button
-                className={navigationStyle === "dual-pane" ? "theme-option is-active" : "theme-option"}
-                type="button"
-                title="Standard two-pane layout: folders on the left, notes on the right"
-                onClick={() => onNavigationStyleChange("dual-pane")}
-              >
-                <LayoutList size={16} />
-                <span>Dual Pane</span>
-              </button>
-              <button
-                className={navigationStyle === "single-pane" ? "theme-option is-active" : "theme-option"}
-                type="button"
-                title="Single unified tree showing folders and notes together"
-                onClick={() => onNavigationStyleChange("single-pane")}
-              >
-                <List size={16} />
-                <span>Single</span>
-              </button>
-              <button
-                className={navigationStyle === "onenote" ? "theme-option is-active" : "theme-option"}
-                type="button"
-                title="OneNote-style: root sections on the left, subfolders and notes on the right"
-                onClick={() => onNavigationStyleChange("onenote")}
-              >
-                <Columns2 size={16} />
-                <span>OneNote</span>
-              </button>
-            </div>
+            <select
+              className="settings-select"
+              value={navigationStyle}
+              aria-label="Navigation style"
+              onChange={(event) => onNavigationStyleChange(event.target.value as NavigationStyle)}
+            >
+              <option value="dual-pane">Dual Pane</option>
+              <option value="single-pane">Single Pane</option>
+              <option value="onenote">OneNote</option>
+            </select>
           </div>
         </div>
       ),
