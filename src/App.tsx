@@ -323,6 +323,7 @@ export default function App() {
   const [noteDragPreview, setNoteDragPreview] = useState<NoteDragPreview | null>(null);
   const [editorFocusRequest, setEditorFocusRequest] = useState(0);
   const [editorFocusAtEndRequest, setEditorFocusAtEndRequest] = useState(0);
+  const [titleFocusRequest, setTitleFocusRequest] = useState(0);
   const noteSurfaceRef = useRef<HTMLElement | null>(null);
   const titleInputRef = useRef<HTMLTextAreaElement | null>(null);
   const draggingItemRef = useRef<DragItem>(null);
@@ -368,6 +369,11 @@ export default function App() {
   const themePreset = getThemePreset(themePresetId);
   const effectiveAccentColor = accentColor || themePreset.accent[resolvedTheme];
   const selectedFolderTitle = useMemo(() => displayFolderName(selectedFolder, folders, workspace), [folders, selectedFolder, workspace]);
+  const selectedOneNoteSection = useMemo(() => getTopLevelFolderPath(selectedFolder), [selectedFolder]);
+  const selectedOneNoteSectionTitle = useMemo(
+    () => (selectedOneNoteSection ? displayFolderName(selectedOneNoteSection, folders, workspace) : "Unorganized"),
+    [folders, selectedOneNoteSection, workspace],
+  );
   const bookmarks = useMemo(() => buildBookmarkViews(metadata.bookmarks, folders, notes, metadata, workspace), [folders, metadata, notes, workspace]);
   const visibleTabs = useMemo(
     () =>
@@ -815,8 +821,8 @@ export default function App() {
     setAppError(`Could not open "${noteTitle}". ${formatUnknownError(error)}`);
   }, [activePath, notes, titleDraft]);
 
-  async function selectNote(path: string) {
-    if (hasUnsavedChanges) {
+  async function selectNote(path: string, options: { preserveSelectedFolder?: boolean; skipPersist?: boolean } = {}) {
+    if (hasUnsavedChanges && !options.skipPersist) {
       await persistDraft();
     }
     const content = contents.get(path) ?? (await readNote(workspace, path));
@@ -824,11 +830,52 @@ export default function App() {
     const restorePosition = getRestorableNotePosition(metadataRef.current, path, content);
     setActivePath(path);
     setPendingNote(null);
-    if (note) setSelectedFolder(note.parent_path);
+    if (note && !options.preserveSelectedFolder) {
+      setSelectedFolder(navigationStyle === "onenote" ? getTopLevelFolderPath(note.parent_path) : note.parent_path);
+    }
     placePathInActiveTab(path);
     loadContentIntoEditor(note ?? null, content, restorePosition);
     recordNotePosition(path, content, { lastOpenedAt: Date.now() });
     setSearchQuery("");
+  }
+
+  function findLastOpenedNoteInOneNoteSection(sectionPath: string) {
+    const sectionNotes = notes.filter((note) =>
+      sectionPath
+        ? note.parent_path === sectionPath || note.parent_path.startsWith(`${sectionPath}/`)
+        : note.parent_path === "",
+    );
+
+    return sectionNotes
+      .map((note) => ({
+        note,
+        lastOpenedAt: metadataRef.current.notePositions[note.path]?.lastOpenedAt ?? 0,
+      }))
+      .filter(({ lastOpenedAt }) => lastOpenedAt > 0)
+      .sort((a, b) => b.lastOpenedAt - a.lastOpenedAt)[0]?.note ?? null;
+  }
+
+  async function selectOneNoteSection(sectionPath: string) {
+    if (hasUnsavedChanges) {
+      await persistDraft();
+    }
+
+    setSelectedFolder(sectionPath);
+    const lastOpenedNote = findLastOpenedNoteInOneNoteSection(sectionPath);
+    if (lastOpenedNote) {
+      await selectNote(lastOpenedNote.path, { preserveSelectedFolder: true, skipPersist: true });
+      return;
+    }
+
+    requestCreateNote(sectionPath);
+  }
+
+  async function selectOneNoteFolderForNewNote(folderPath: string) {
+    if (hasUnsavedChanges) {
+      await persistDraft();
+    }
+    setSelectedFolder(folderPath);
+    clearCurrentNote();
   }
 
   async function handleExternalNoteChange(path: string) {
@@ -900,9 +947,10 @@ export default function App() {
       if (pendingNote) {
         const note = await createNote(workspace, pendingNote.parentPath, titleDraft.trim());
         nextPath = note.path;
+        setNotes((current) => current.some((entry) => entry.path === note.path) ? current : [...current, note]);
         setActivePath(note.path);
         setPendingNote(null);
-        setSelectedFolder(note.parent_path);
+        setSelectedFolder(navigationStyle === "onenote" ? getTopLevelFolderPath(note.parent_path) : note.parent_path);
         placePathInActiveTab(note.path);
         updateMetadata((current) => addToOrder(current, note.parent_path, note.path));
       } else if (activePath && titleDraft.trim() !== savedTitle) {
@@ -932,7 +980,7 @@ export default function App() {
     } finally {
       setIsSaving(false);
     }
-  }, [activePath, draft, frontmatterDraft, frontmatterError, noteOpen, pendingNote, placePathInActiveTab, recordNotePosition, refreshWorkspace, savedTitle, titleDraft, updateMetadata, workspace]);
+  }, [activePath, draft, frontmatterDraft, frontmatterError, navigationStyle, noteOpen, pendingNote, placePathInActiveTab, recordNotePosition, refreshWorkspace, savedTitle, titleDraft, updateMetadata, workspace]);
 
   keyboardActionsRef.current = {
     addEmptyTab: () => void addEmptyTab(),
@@ -1036,6 +1084,7 @@ export default function App() {
     setPendingNote({ parentPath });
     setActivePath(null);
     setEditorRestorePosition(null);
+    setTitleFocusRequest((value) => value + 1);
     const tabId = activeTabId && openTabs.some((tab) => tab.id === activeTabId) ? activeTabId : createTabId();
     if (!activeTabId || !openTabs.some((tab) => tab.id === activeTabId)) {
       setOpenTabs((current) => [...current, { id: tabId, path: null }]);
@@ -1053,13 +1102,20 @@ export default function App() {
     setAppError(null);
   }
 
-  useEffect(() => {
+  useLayoutEffect(() => {
     if (!pendingNote) return;
-    requestAnimationFrame(() => {
-      titleInputRef.current?.focus();
+    const focusTitle = () => {
+      titleInputRef.current?.focus({ preventScroll: true });
       titleInputRef.current?.select();
-    });
-  }, [pendingNote]);
+    };
+    focusTitle();
+    const frame = requestAnimationFrame(focusTitle);
+    const timeout = window.setTimeout(focusTitle, 50);
+    return () => {
+      cancelAnimationFrame(frame);
+      window.clearTimeout(timeout);
+    };
+  }, [pendingNote, titleFocusRequest]);
 
   useEffect(() => {
     const titleInput = titleInputRef.current;
@@ -1535,12 +1591,12 @@ export default function App() {
     window.addEventListener("pointercancel", handlePointerCancel, { once: true });
   }
 
-  function handleNoteSelectFromCard(path: string) {
+  function handleNoteSelectFromCard(path: string, options: { preserveSelectedFolder?: boolean } = {}) {
     if (suppressNextNoteClickRef.current) {
       suppressNextNoteClickRef.current = false;
       return;
     }
-    selectNote(path);
+    selectNote(path, options);
   }
 
   function openContextMenu(event: React.MouseEvent, state: ContextMenuTarget) {
@@ -1763,6 +1819,7 @@ export default function App() {
               searchOpen={searchOpen}
               searchQuery={searchQuery}
               searchResults={results}
+              selectedFolderPath={selectedFolder}
               showBookmarks
               showNotebookFooter
               showPins={false}
@@ -1806,7 +1863,7 @@ export default function App() {
                 bookmarksExpanded={metadata.bookmarksExpanded}
                 folders={folderTree[0]?.children ?? []}
                 metadata={metadata}
-                selectedFolder={selectedFolder}
+                selectedFolder={selectedOneNoteSection}
                 workspace={workspace}
                 menuOpen={appMenuOpen}
                 recentNotebooks={recentNotebooks}
@@ -1822,7 +1879,7 @@ export default function App() {
                 onRemoveBookmark={removeBookmark}
                 onSearchQueryChange={setSearchQuery}
                 onSelectBookmark={selectBookmark}
-                onSelectFolder={(path) => setSelectedFolder(path)}
+                onSelectFolder={(path) => void selectOneNoteSection(path)}
                 onSelectNotebook={openNotebookInNewWindow}
                 onSelectSearchResult={selectNote}
                 onToggleBookmarksExpanded={() =>
@@ -1842,9 +1899,11 @@ export default function App() {
                 folders={folders}
                 metadata={metadata}
                 notes={notes}
-                rootPath={selectedFolder}
+                rootPath={selectedOneNoteSection}
+                hiddenFolderParentPath={selectedOneNoteSection === "" ? "" : undefined}
+                selectedFolderPath={selectedFolder}
                 showPins
-                title={selectedFolderTitle}
+                title={selectedOneNoteSectionTitle}
                 workspace={workspace}
                 onContextMenu={openContextMenu}
                 onCreateFolder={requestCreateFolder}
@@ -1852,7 +1911,11 @@ export default function App() {
                 onOpenNoteIcon={(path) => openIconBrowser("note", path)}
                 onPin={(path) => updateMetadata((current) => ({ ...current, pinnedNotes: { ...current.pinnedNotes, [path]: !current.pinnedNotes[path] } }))}
                 onPointerDragStart={beginNotePointerDrag}
-                onSelectNote={handleNoteSelectFromCard}
+                onSelectFolder={(path) => void selectOneNoteFolderForNewNote(path)}
+                onSelectNote={(path) => {
+                  setSelectedFolder(selectedOneNoteSection);
+                  handleNoteSelectFromCard(path, { preserveSelectedFolder: true });
+                }}
               />
             </>
           ) : (
@@ -2790,6 +2853,25 @@ function OneNoteFolderPane({
         onToggle={onToggleBookmarksExpanded}
       />
       <div className="folder-tree">
+        <div
+          className={`folder-row${selectedFolder === "" ? " is-active" : ""}`}
+          style={metadata.folderColors[""] ? { color: metadata.folderColors[""] } : undefined}
+          onClick={() => onSelectFolder("")}
+          onContextMenu={(event) => onContextMenu(event, { kind: "folder", path: "" })}
+        >
+          <span className="tree-toggle"><span /></span>
+          <button
+            className="folder-select"
+            style={metadata.folderColors[""] ? { color: metadata.folderColors[""] } : undefined}
+            type="button"
+            onClick={(event) => { event.stopPropagation(); onSelectFolder(""); }}
+          >
+            <span>
+              <IconMark value={metadata.folderIcons[""]} fallback={Folder} size={15} />
+            </span>
+            <span>Unorganized</span>
+          </button>
+        </div>
         {folders.map((folder) => {
           const folderColor = metadata.folderColors[folder.path];
           const customIcon = metadata.folderIcons[folder.path];
@@ -2838,35 +2920,44 @@ function UnifiedNode({
   contents,
   depth,
   folders,
+  hiddenFolderParentPath,
   metadata,
   notes,
   parentPath,
+  selectedFolderPath,
   showPins,
   workspace,
   onContextMenu,
   onOpenNoteIcon,
   onPin,
   onPointerDragStart,
+  onSelectFolder,
   onSelectNote,
 }: {
   activePath: string | null;
   contents: Map<string, string>;
   depth: number;
   folders: FolderEntry[];
+  hiddenFolderParentPath?: string;
   metadata: WorkspaceMetadata;
   notes: NoteEntry[];
   parentPath: string;
+  selectedFolderPath?: string;
   showPins: boolean;
   workspace: string;
   onContextMenu: (event: React.MouseEvent, state: ContextMenuTarget) => void;
   onOpenNoteIcon: (path: string) => void;
   onPin: (path: string) => void;
   onPointerDragStart: (path: string, event: React.PointerEvent<HTMLElement>) => void;
+  onSelectFolder?: (path: string) => void;
   onSelectNote: (path: string) => void;
 }) {
   const childFolders = useMemo(
-    () => folders.filter((f) => f.parent_path === parentPath && f.path !== "").sort((a, b) => a.name.localeCompare(b.name)),
-    [folders, parentPath],
+    () =>
+      hiddenFolderParentPath === parentPath
+        ? []
+        : folders.filter((f) => f.parent_path === parentPath && f.path !== "").sort((a, b) => a.name.localeCompare(b.name)),
+    [folders, hiddenFolderParentPath, parentPath],
   );
   const childNotes = useMemo(
     () => orderNotes(notes.filter((n) => n.parent_path === parentPath), parentPath, metadata),
@@ -2883,14 +2974,17 @@ function UnifiedNode({
           depth={depth}
           folder={folder}
           folders={folders}
+          hiddenFolderParentPath={hiddenFolderParentPath}
           metadata={metadata}
           notes={notes}
+          selectedFolderPath={selectedFolderPath}
           showPins={showPins}
           workspace={workspace}
           onContextMenu={onContextMenu}
           onOpenNoteIcon={onOpenNoteIcon}
           onPin={onPin}
           onPointerDragStart={onPointerDragStart}
+          onSelectFolder={onSelectFolder}
           onSelectNote={onSelectNote}
         />
       ))}
@@ -2901,7 +2995,7 @@ function UnifiedNode({
           <button
             key={note.path}
             className={`unified-note-row${activePath === note.path ? " is-active" : ""}`}
-            style={{ "--row-indent": `${depth * 16 + 8}px` } as React.CSSProperties}
+            style={{ "--row-indent": `${depth * 16}px` } as React.CSSProperties}
             type="button"
             onClick={() => onSelectNote(note.path)}
             onContextMenu={(event) => onContextMenu(event, { kind: "note", path: note.path })}
@@ -2933,14 +3027,17 @@ function UnifiedFolderRow({
   depth,
   folder,
   folders,
+  hiddenFolderParentPath,
   metadata,
   notes,
+  selectedFolderPath,
   showPins,
   workspace,
   onContextMenu,
   onOpenNoteIcon,
   onPin,
   onPointerDragStart,
+  onSelectFolder,
   onSelectNote,
 }: {
   activePath: string | null;
@@ -2948,14 +3045,17 @@ function UnifiedFolderRow({
   depth: number;
   folder: FolderEntry;
   folders: FolderEntry[];
+  hiddenFolderParentPath?: string;
   metadata: WorkspaceMetadata;
   notes: NoteEntry[];
+  selectedFolderPath?: string;
   showPins: boolean;
   workspace: string;
   onContextMenu: (event: React.MouseEvent, state: ContextMenuTarget) => void;
   onOpenNoteIcon: (path: string) => void;
   onPin: (path: string) => void;
   onPointerDragStart: (path: string, event: React.PointerEvent<HTMLElement>) => void;
+  onSelectFolder?: (path: string) => void;
   onSelectNote: (path: string) => void;
 }) {
   const [open, setOpen] = useState(true);
@@ -2968,16 +3068,20 @@ function UnifiedFolderRow({
   return (
     <div className="unified-folder-node">
       <div
-        className="unified-folder-row"
+        className={`unified-folder-row${selectedFolderPath === folder.path ? " is-active" : ""}`}
         style={{ "--row-indent": `${depth * 16}px` } as React.CSSProperties}
+        onClick={() => onSelectFolder?.(folder.path)}
         onContextMenu={(event) => onContextMenu(event, { kind: "folder", path: folder.path })}
       >
         <button
           className="tree-toggle"
           type="button"
-          onClick={() => setOpen((v) => !v)}
+          onClick={(event) => {
+            event.stopPropagation();
+            setOpen((v) => !v);
+          }}
         >
-          {hasChildren ? (open ? <ChevronDown size={14} /> : <ChevronRight size={14} />) : <span />}
+          {hasChildren && open ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
         </button>
         <span style={folderColor ? { color: folderColor } : undefined} className="unified-folder-name">
           <IconMark value={customIcon} fallback={Folder} size={14} />
@@ -2990,15 +3094,18 @@ function UnifiedFolderRow({
           contents={contents}
           depth={depth + 1}
           folders={folders}
+          hiddenFolderParentPath={hiddenFolderParentPath}
           metadata={metadata}
           notes={notes}
           parentPath={folder.path}
+          selectedFolderPath={selectedFolderPath}
           showPins={showPins}
           workspace={workspace}
           onContextMenu={onContextMenu}
           onOpenNoteIcon={onOpenNoteIcon}
           onPin={onPin}
           onPointerDragStart={onPointerDragStart}
+          onSelectFolder={onSelectFolder}
           onSelectNote={onSelectNote}
         />
       )}
@@ -3013,6 +3120,7 @@ function UnifiedTreePane({
   createParentPath,
   contents,
   folders,
+  hiddenFolderParentPath,
   menuOpen = false,
   metadata,
   notes,
@@ -3022,6 +3130,7 @@ function UnifiedTreePane({
   searchOpen = false,
   searchQuery = "",
   searchResults = [],
+  selectedFolderPath,
   showBookmarks = false,
   showNotebookFooter = false,
   showPins = true,
@@ -3041,6 +3150,7 @@ function UnifiedTreePane({
   onSearchQueryChange,
   onSelectBookmark,
   onSelectNotebook,
+  onSelectFolder,
   onSelectNote,
   onSelectSearchResult,
   onToggleBookmarksExpanded,
@@ -3053,6 +3163,7 @@ function UnifiedTreePane({
   createParentPath?: string;
   contents: Map<string, string>;
   folders: FolderEntry[];
+  hiddenFolderParentPath?: string;
   menuOpen?: boolean;
   metadata: WorkspaceMetadata;
   notes: NoteEntry[];
@@ -3062,6 +3173,7 @@ function UnifiedTreePane({
   searchOpen?: boolean;
   searchQuery?: string;
   searchResults?: SearchResult[];
+  selectedFolderPath?: string;
   showBookmarks?: boolean;
   showNotebookFooter?: boolean;
   showPins?: boolean;
@@ -3081,6 +3193,7 @@ function UnifiedTreePane({
   onSearchQueryChange?: (query: string) => void;
   onSelectBookmark?: (bookmark: BookmarkEntry) => void;
   onSelectNotebook?: (path: string) => void;
+  onSelectFolder?: (path: string) => void;
   onSelectNote: (path: string) => void;
   onSelectSearchResult?: (path: string) => void;
   onToggleBookmarksExpanded?: () => void;
@@ -3135,15 +3248,18 @@ function UnifiedTreePane({
           contents={contents}
           depth={0}
           folders={folders}
+          hiddenFolderParentPath={hiddenFolderParentPath}
           metadata={metadata}
           notes={notes}
           parentPath={rootPath}
+          selectedFolderPath={selectedFolderPath}
           showPins={showPins}
           workspace={workspace}
           onContextMenu={onContextMenu}
           onOpenNoteIcon={onOpenNoteIcon}
           onPin={onPin}
           onPointerDragStart={onPointerDragStart}
+          onSelectFolder={onSelectFolder}
           onSelectNote={onSelectNote}
         />
       </div>
@@ -4912,6 +5028,10 @@ function clamp(value: number, min: number, max: number) {
 function displayFolderName(path: string, folders: FolderEntry[], workspace: string) {
   if (!path) return getNotebookName(workspace);
   return folders.find((folder) => folder.path === path)?.name || path.split("/").at(-1) || path;
+}
+
+function getTopLevelFolderPath(path: string) {
+  return path.split("/").filter(Boolean)[0] ?? "";
 }
 
 function getNotebookName(workspace: string) {
