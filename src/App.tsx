@@ -1152,7 +1152,9 @@ export default function App() {
       const restorePosition = getRestorableNotePosition(metadataRef.current, tab.path, content);
       setActivePath(tab.path);
       setPendingNote(null);
-      if (note) setSelectedFolder(note.parent_path);
+      if (note) {
+        setSelectedFolder(navigationStyle === "onenote" ? getTopLevelFolderPath(note.parent_path) : note.parent_path);
+      }
       loadContentIntoEditor(note ?? null, content, restorePosition);
       recordNotePosition(tab.path, content, { lastOpenedAt: Date.now() });
       return;
@@ -1181,7 +1183,9 @@ export default function App() {
         const restorePosition = getRestorableNotePosition(metadataRef.current, nextTab.path, content);
         setActivePath(nextTab.path);
         setPendingNote(null);
-        if (note) setSelectedFolder(note.parent_path);
+        if (note) {
+          setSelectedFolder(navigationStyle === "onenote" ? getTopLevelFolderPath(note.parent_path) : note.parent_path);
+        }
         loadContentIntoEditor(note ?? null, content, restorePosition);
         recordNotePosition(nextTab.path, content, { lastOpenedAt: Date.now() });
       } else {
