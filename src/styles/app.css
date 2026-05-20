@@ -571,6 +571,21 @@ body.is-dragging-note.is-over-drop-target * {
   background: transparent;
 }
 
+.folder-row.is-context-target,
+.unified-folder-row.is-context-target,
+.unified-note-row.is-context-target,
+.note-card.is-context-target {
+  color: var(--accent-strong);
+  background: var(--accent-active);
+}
+
+.folder-row.is-context-target::before,
+.unified-folder-row.is-context-target::before,
+.unified-note-row.is-context-target::before,
+.note-card.is-context-target::before {
+  background: transparent;
+}
+
 .unified-note-title {
   flex: 1;
   min-width: 0;
@@ -2706,13 +2721,25 @@ html[data-theme="dark"] .ProseMirror th {
 }
 
 .settings-select {
+  appearance: none;
+  -webkit-appearance: none;
   min-width: 180px;
   min-height: 34px;
-  padding: 0 10px;
+  padding: 0 32px 0 12px;
   border: 1px solid rgba(52, 48, 43, 0.12);
-  border-radius: 8px;
+  border-radius: 7px;
   color: #22211f;
-  background: rgba(255, 255, 255, 0.68);
+  background-color: rgba(255, 255, 255, 0.7);
+  background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%2322211f' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'><polyline points='6 9 12 15 18 9'/></svg>");
+  background-repeat: no-repeat;
+  background-position: right 10px center;
+  background-size: 12px 12px;
+  font: inherit;
+  cursor: pointer;
+}
+
+.settings-select:hover {
+  background-color: white;
 }
 
 .accent-control input[type="color"] {
@@ -2808,11 +2835,21 @@ html[data-theme="dark"] .note-drag-preview,
 html[data-theme="dark"] .raw-markdown-input,
 html[data-theme="dark"] .frontmatter-field input,
 html[data-theme="dark"] .frontmatter-raw textarea,
-html[data-theme="dark"] .settings-select,
 html[data-theme="dark"] .accent-control input[type="color"] {
   color: #eee8df;
   border-color: rgba(238, 232, 223, 0.12);
   background: rgba(31, 34, 35, 0.96);
+}
+
+html[data-theme="dark"] .settings-select {
+  color: #eee8df;
+  border-color: rgba(238, 232, 223, 0.12);
+  background-color: rgba(31, 34, 35, 0.96);
+  background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%23eee8df' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'><polyline points='6 9 12 15 18 9'/></svg>");
+}
+
+html[data-theme="dark"] .settings-select:hover {
+  background-color: rgba(48, 52, 54, 0.96);
 }
 
 html[data-theme="dark"] .folder-search-input input,

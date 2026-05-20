@@ -1612,6 +1612,17 @@ export default function App() {
     setContextMenu({ ...state, x: event.clientX, y: event.clientY } as ContextMenuState);
   }
 
+  useEffect(() => {
+    if (!contextMenu || contextMenu.kind === "empty") return;
+    const attr = contextMenu.kind === "folder" ? "data-folder-path" : "data-note-path";
+    const escaped = (window.CSS && CSS.escape) ? CSS.escape(contextMenu.path) : contextMenu.path.replace(/"/g, '\\"');
+    const matches = document.querySelectorAll(`[${attr}="${escaped}"]`);
+    matches.forEach((el) => el.classList.add("is-context-target"));
+    return () => {
+      matches.forEach((el) => el.classList.remove("is-context-target"));
+    };
+  }, [contextMenu]);
+
   function openTargetInNewWindow(target: OpenTarget) {
     setContextMenu(null);
     if (!workspace) return;
@@ -1909,7 +1920,7 @@ export default function App() {
                 notes={notes}
                 rootPath={selectedOneNoteSection}
                 hiddenFolderParentPath={selectedOneNoteSection === "" ? "" : undefined}
-                selectedFolderPath={selectedFolder}
+                selectedFolderPath={activePath ? undefined : selectedFolder}
                 showPins
                 title={selectedOneNoteSectionTitle}
                 workspace={workspace}
@@ -2874,6 +2885,7 @@ function OneNoteFolderPane({
         <div
           className={`folder-row${selectedFolder === "" ? " is-active" : ""}`}
           style={metadata.folderColors[""] ? { color: metadata.folderColors[""] } : undefined}
+          data-folder-path=""
           onClick={() => onSelectFolder("")}
           onContextMenu={(event) => onContextMenu(event, { kind: "folder", path: "" })}
         >
@@ -2898,6 +2910,7 @@ function OneNoteFolderPane({
               key={folder.path}
               className={`folder-row${selectedFolder === folder.path ? " is-active" : ""}`}
               style={folderColor ? { color: folderColor } : undefined}
+              data-folder-path={folder.path}
               onClick={() => onSelectFolder(folder.path)}
               onContextMenu={(event) => onContextMenu(event, { kind: "folder", path: folder.path })}
             >
@@ -3014,6 +3027,7 @@ function UnifiedNode({
             key={note.path}
             className={`unified-note-row${activePath === note.path ? " is-active" : ""}`}
             style={{ "--row-indent": `${depth * 16}px` } as React.CSSProperties}
+            data-note-path={note.path}
             type="button"
             onClick={() => onSelectNote(note.path)}
             onContextMenu={(event) => onContextMenu(event, { kind: "note", path: note.path })}
@@ -3088,6 +3102,7 @@ function UnifiedFolderRow({
       <div
         className={`unified-folder-row${selectedFolderPath === folder.path ? " is-active" : ""}`}
         style={{ "--row-indent": `${depth * 16}px` } as React.CSSProperties}
+        data-folder-path={folder.path}
         onClick={() => onSelectFolder?.(folder.path)}
         onContextMenu={(event) => onContextMenu(event, { kind: "folder", path: folder.path })}
       >
