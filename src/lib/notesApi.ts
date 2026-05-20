@@ -54,13 +54,17 @@ export async function watchWorkspace(workspace: string) {
 }
 
 export async function listNotes(workspace: string): Promise<NoteEntry[]> {
-  if (isTauri()) return invoke("list_notes", { workspace });
+  if (isTauri()) {
+    const entries = await invoke<NoteEntry[]>("list_notes", { workspace });
+    return entries.map(decodeNoteEntry);
+  }
   const store = readDemoStore();
   return Object.keys(store.notes).map((path) => {
     const parts = path.split("/");
+    const fileStem = parts.at(-1)?.replace(/\.md$/, "") ?? "Untitled";
     return {
       path,
-      title: parts.at(-1)?.replace(/\.md$/, "") ?? "Untitled",
+      title: decodeTitleFromFilename(fileStem),
       parent_path: parts.slice(0, -1).join("/"),
       updated_at: Date.now() / 1000,
     };
@@ -68,7 +72,10 @@ export async function listNotes(workspace: string): Promise<NoteEntry[]> {
 }
 
 export async function listFolders(workspace: string): Promise<FolderEntry[]> {
-  if (isTauri()) return invoke("list_folders", { workspace });
+  if (isTauri()) {
+    const entries = await invoke<FolderEntry[]>("list_folders", { workspace });
+    return entries.map(decodeFolderEntry);
+  }
   const store = readDemoStore();
   const folderSet = new Set<string>(["", ...store.folders]);
   Object.keys(store.notes).forEach((path) => {
@@ -79,11 +86,16 @@ export async function listFolders(workspace: string): Promise<FolderEntry[]> {
       folderSet.add(current);
     }
   });
-  return Array.from(folderSet).map((path) => ({
-    path,
-    name: path ? path.split("/").at(-1) ?? "Untitled" : workspace.split("/").at(-1) || "Notebook",
-    parent_path: path.split("/").slice(0, -1).join("/"),
-  }));
+  return Array.from(folderSet).map((path) => {
+    const rawName = path
+      ? path.split("/").at(-1) ?? "Untitled"
+      : workspace.split("/").at(-1) || "Notebook";
+    return {
+      path,
+      name: decodeTitleFromFilename(rawName),
+      parent_path: path.split("/").slice(0, -1).join("/"),
+    };
+  });
 }
 
 export async function readNote(workspace: string, path: string) {
@@ -103,11 +115,15 @@ export async function saveNote(workspace: string, path: string, content: string)
 
 export async function createNote(workspace: string, parentPath: string, title: string): Promise<NoteEntry> {
   validateNoteTitle(title);
+  const encodedTitle = encodeTitleForFilename(title.trim());
   if (isTauri()) {
-    return invoke("create_note", { payload: { workspace, parent_path: parentPath, title } });
+    const entry = await invoke<NoteEntry>("create_note", {
+      payload: { workspace, parent_path: parentPath, title: encodedTitle },
+    });
+    return decodeNoteEntry(entry);
   }
   const store = readDemoStore();
-  const fileName = `${title.trim() || "Untitled"}.md`;
+  const fileName = `${encodedTitle || "Untitled"}.md`;
   const path = parentPath ? `${parentPath}/${fileName}` : fileName;
   if (store.notes[path]) {
     throw new Error("A note with that title already exists in this folder.");
@@ -124,11 +140,15 @@ export async function createNote(workspace: string, parentPath: string, title: s
 
 export async function createFolder(workspace: string, parentPath: string, name: string): Promise<FolderEntry> {
   validateNoteTitle(name);
+  const encodedName = encodeTitleForFilename(name.trim());
   if (isTauri()) {
-    return invoke("create_folder", { payload: { workspace, parent_path: parentPath, name } });
+    const entry = await invoke<FolderEntry>("create_folder", {
+      payload: { workspace, parent_path: parentPath, name: encodedName },
+    });
+    return decodeFolderEntry(entry);
   }
   const store = readDemoStore();
-  const path = parentPath ? `${parentPath}/${name.trim()}` : name.trim();
+  const path = parentPath ? `${parentPath}/${encodedName}` : encodedName;
   if (store.folders.includes(path)) throw new Error("A folder with that name already exists here.");
   store.folders.push(path);
   writeDemoStore(store);
@@ -141,13 +161,17 @@ export async function createFolder(workspace: string, parentPath: string, name: 
 
 export async function renameFolder(workspace: string, path: string, name: string): Promise<FolderEntry> {
   validateNoteTitle(name);
+  const encodedName = encodeTitleForFilename(name.trim());
   if (isTauri()) {
-    return invoke("rename_folder", { payload: { workspace, path, name } });
+    const entry = await invoke<FolderEntry>("rename_folder", {
+      payload: { workspace, path, name: encodedName },
+    });
+    return decodeFolderEntry(entry);
   }
 
   const store = readDemoStore();
   const parentPath = path.split("/").slice(0, -1).join("/");
-  const nextPath = parentPath ? `${parentPath}/${name.trim()}` : name.trim();
+  const nextPath = parentPath ? `${parentPath}/${encodedName}` : encodedName;
   if (path !== nextPath && store.folders.includes(nextPath)) {
     throw new Error("A folder with that name already exists here.");
   }
@@ -166,14 +190,18 @@ export async function renameFolder(workspace: string, path: string, name: string
 
 export async function renameNote(workspace: string, path: string, title: string): Promise<NoteEntry> {
   validateNoteTitle(title);
+  const encodedTitle = encodeTitleForFilename(title.trim());
   if (isTauri()) {
-    return invoke("rename_note", { payload: { workspace, path, title } });
+    const entry = await invoke<NoteEntry>("rename_note", {
+      payload: { workspace, path, title: encodedTitle },
+    });
+    return decodeNoteEntry(entry);
   }
 
   const store = readDemoStore();
   const parts = path.split("/");
   const parentPath = parts.slice(0, -1).join("/");
-  const nextPath = parentPath ? `${parentPath}/${title.trim()}.md` : `${title.trim()}.md`;
+  const nextPath = parentPath ? `${parentPath}/${encodedTitle}.md` : `${encodedTitle}.md`;
 
   if (path !== nextPath && store.notes[nextPath]) {
     throw new Error("A note with that title already exists in this folder.");
@@ -193,7 +221,10 @@ export async function renameNote(workspace: string, path: string, title: string)
 
 export async function moveNote(workspace: string, path: string, targetParentPath: string): Promise<NoteEntry> {
   if (isTauri()) {
-    return invoke("move_note", { payload: { workspace, path, target_parent_path: targetParentPath } });
+    const entry = await invoke<NoteEntry>("move_note", {
+      payload: { workspace, path, target_parent_path: targetParentPath },
+    });
+    return decodeNoteEntry(entry);
   }
 
   const store = readDemoStore();
@@ -209,7 +240,7 @@ export async function moveNote(workspace: string, path: string, targetParentPath
 
   return {
     path: nextPath,
-    title: fileName.replace(/\.md$/, ""),
+    title: decodeTitleFromFilename(fileName.replace(/\.md$/, "")),
     parent_path: targetParentPath,
     updated_at: Date.now() / 1000,
   };
@@ -222,7 +253,10 @@ export async function moveFolder(workspace: string, path: string, targetParentPa
   }
 
   if (isTauri()) {
-    return invoke("move_folder", { payload: { workspace, path, target_parent_path: targetParentPath } });
+    const entry = await invoke<FolderEntry>("move_folder", {
+      payload: { workspace, path, target_parent_path: targetParentPath },
+    });
+    return decodeFolderEntry(entry);
   }
 
   const store = readDemoStore();
@@ -238,7 +272,7 @@ export async function moveFolder(workspace: string, path: string, targetParentPa
 
   return {
     path: nextPath,
-    name,
+    name: decodeTitleFromFilename(name),
     parent_path: targetParentPath,
   };
 }
@@ -300,11 +334,29 @@ export async function revealPath(workspace: string, path: string, kind: "folder"
   console.info("Reveal in file manager is available in the desktop app.", { workspace, path, kind });
 }
 
+const FILENAME_SLASH = "／"; // FULLWIDTH SOLIDUS
+
+export function encodeTitleForFilename(title: string): string {
+  return title.replace(/\//g, FILENAME_SLASH);
+}
+
+export function decodeTitleFromFilename(name: string): string {
+  return name.replace(/／/g, "/");
+}
+
+function decodeNoteEntry(entry: NoteEntry): NoteEntry {
+  return { ...entry, title: decodeTitleFromFilename(entry.title) };
+}
+
+function decodeFolderEntry(entry: FolderEntry): FolderEntry {
+  return { ...entry, name: decodeTitleFromFilename(entry.name) };
+}
+
 export function validateNoteTitle(title: string) {
   const trimmed = title.trim();
   if (!trimmed) throw new Error("Add a title before saving this note.");
-  if (/[\\/:*?"<>|]/.test(trimmed)) {
-    throw new Error('Note titles cannot contain / \\ : * ? " < > |');
+  if (/[\\:*?"<>|]/.test(trimmed)) {
+    throw new Error('Note titles cannot contain \\ : * ? " < > |');
   }
   if (trimmed === "." || trimmed === "..") {
     throw new Error("That title is reserved by the filesystem.");

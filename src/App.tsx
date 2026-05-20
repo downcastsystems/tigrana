@@ -57,6 +57,7 @@ import {
   renameNote,
   SAMPLE_WORKSPACE,
   saveNote,
+  decodeTitleFromFilename,
   validateNoteTitle,
   watchWorkspace,
   writeWorkspaceMetadata,
@@ -869,7 +870,7 @@ export default function App() {
       return;
     }
 
-    requestCreateNote(sectionPath);
+    clearCurrentNote();
   }
 
   async function selectFolderForNewNote(folderPath: string) {
@@ -1077,6 +1078,7 @@ export default function App() {
     }, 650);
     return () => window.clearTimeout(handle);
   }, [hasUnsavedBody, pendingNote, titleDraft, persistDraft]);
+
 
   function requestCreateNote(parentPath = selectedFolder) {
     if (!workspace) {
@@ -1318,7 +1320,7 @@ export default function App() {
 
   function openPropertyDialog(kind: PropertyDialogState["kind"], path: string) {
     const folder = folders.find((entry) => entry.path === path);
-    const name = folder?.name ?? (path ? path.split("/").at(-1) ?? path : "Notebook");
+    const name = folder?.name ?? (path ? decodeTitleFromFilename(path.split("/").at(-1) ?? path) : "Notebook");
     const value =
       kind === "rename-folder"
         ? folder?.name ?? ""
@@ -1343,8 +1345,8 @@ export default function App() {
   function openIconBrowser(kind: IconBrowserState["kind"], path: string) {
     const name =
       kind === "folder"
-        ? (folders.find((entry) => entry.path === path)?.name ?? (path ? path.split("/").at(-1) ?? path : "Notebook"))
-        : (notes.find((entry) => entry.path === path)?.title ?? path.split("/").at(-1) ?? path);
+        ? (folders.find((entry) => entry.path === path)?.name ?? (path ? decodeTitleFromFilename(path.split("/").at(-1) ?? path) : "Notebook"))
+        : (notes.find((entry) => entry.path === path)?.title ?? decodeTitleFromFilename((path.split("/").at(-1) ?? path).replace(/\.md$/, "")));
     setIconBrowser({
       kind,
       path,
@@ -1553,7 +1555,7 @@ export default function App() {
       setDropTargetFolder(targetFolder);
       setNoteDragPreview({
         path: drag.path,
-        title: draggedNote?.title || drag.path.split("/").at(-1)?.replace(/\.md$/, "") || "Untitled",
+        title: draggedNote?.title || decodeTitleFromFilename(drag.path.split("/").at(-1)?.replace(/\.md$/, "") || "") || "Untitled",
         x: moveEvent.clientX,
         y: moveEvent.clientY,
         overTarget: targetFolder !== null,
@@ -5064,7 +5066,10 @@ function clamp(value: number, min: number, max: number) {
 
 function displayFolderName(path: string, folders: FolderEntry[], workspace: string) {
   if (!path) return getNotebookName(workspace);
-  return folders.find((folder) => folder.path === path)?.name || path.split("/").at(-1) || path;
+  const match = folders.find((folder) => folder.path === path)?.name;
+  if (match) return match;
+  const tail = path.split("/").at(-1) || path;
+  return decodeTitleFromFilename(tail);
 }
 
 function getTopLevelFolderPath(path: string) {
