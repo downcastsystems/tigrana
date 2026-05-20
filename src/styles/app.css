@@ -8,6 +8,7 @@
   --editor-font-size: 17px;
   --accent: #315f59;
   --accent-strong: #192d2b;
+  --accent-contrast: #ffffff;
   --accent-soft: rgba(49, 95, 89, 0.14);
   --accent-active: rgba(49, 95, 89, 0.3);
   --accent-muted: rgba(49, 95, 89, 0.12);
@@ -618,6 +619,30 @@ body.is-dragging-note.is-over-drop-target * {
 
 .onenote-folder-pane .folder-tree {
   padding: 6px 8px;
+}
+
+.onenote-folder-pane .folder-row:hover,
+.onenote-folder-pane .folder-row.is-active,
+.left-panes:not(.is-single-col) .unified-folder-row:hover,
+.left-panes:not(.is-single-col) .unified-folder-row.is-active,
+.left-panes:not(.is-single-col) .unified-note-row:hover,
+.left-panes:not(.is-single-col) .unified-note-row.is-active {
+  color: var(--accent-contrast);
+  background: var(--accent);
+}
+
+.onenote-folder-pane .folder-row:hover::before,
+.onenote-folder-pane .folder-row.is-active::before {
+  background: transparent;
+}
+
+.onenote-folder-pane .folder-row:hover .folder-select,
+.onenote-folder-pane .folder-row.is-active .folder-select,
+.onenote-folder-pane .folder-row:hover .folder-select span,
+.onenote-folder-pane .folder-row.is-active .folder-select span,
+.left-panes:not(.is-single-col) .unified-folder-row:hover .unified-folder-name,
+.left-panes:not(.is-single-col) .unified-folder-row.is-active .unified-folder-name {
+  color: inherit !important;
 }
 
 /* ---------- End Unified Tree Pane ---------- */
@@ -2959,6 +2984,21 @@ html[data-theme="dark"] .unified-note-row:hover {
 }
 
 html[data-theme="dark"] .folder-row:hover {
+  background: transparent;
+}
+
+html[data-theme="dark"] .onenote-folder-pane .folder-row:hover,
+html[data-theme="dark"] .onenote-folder-pane .folder-row.is-active,
+html[data-theme="dark"] .left-panes:not(.is-single-col) .unified-folder-row:hover,
+html[data-theme="dark"] .left-panes:not(.is-single-col) .unified-folder-row.is-active,
+html[data-theme="dark"] .left-panes:not(.is-single-col) .unified-note-row:hover,
+html[data-theme="dark"] .left-panes:not(.is-single-col) .unified-note-row.is-active {
+  color: var(--accent-contrast);
+  background: var(--accent);
+}
+
+html[data-theme="dark"] .onenote-folder-pane .folder-row:hover::before,
+html[data-theme="dark"] .onenote-folder-pane .folder-row.is-active::before {
   background: transparent;
 }
 

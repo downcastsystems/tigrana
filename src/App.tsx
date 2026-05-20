@@ -460,6 +460,7 @@ export default function App() {
     const rgb = hexToRgb(effectiveAccentColor);
     document.documentElement.style.setProperty("--accent", effectiveAccentColor);
     document.documentElement.style.setProperty("--accent-strong", resolvedTheme === "dark" ? "#ecf4f1" : "#192d2b");
+    document.documentElement.style.setProperty("--accent-contrast", readableTextColor(effectiveAccentColor));
     document.documentElement.style.setProperty("--accent-soft", rgb ? `rgba(${rgb.r}, ${rgb.g}, ${rgb.b}, ${resolvedTheme === "dark" ? 0.32 : 0.26})` : "rgba(75, 125, 117, 0.26)");
     document.documentElement.style.setProperty("--accent-active", rgb ? `rgba(${rgb.r}, ${rgb.g}, ${rgb.b}, ${resolvedTheme === "dark" ? 0.48 : 0.36})` : "rgba(75, 125, 117, 0.36)");
     document.documentElement.style.setProperty("--accent-muted", rgb ? `rgba(${rgb.r}, ${rgb.g}, ${rgb.b}, ${resolvedTheme === "dark" ? 0.22 : 0.18})` : "rgba(75, 125, 117, 0.18)");
@@ -5353,4 +5354,15 @@ function normalizeColorForInput(value: string) {
   return `#${[rgb[1], rgb[2], rgb[3]]
     .map((part) => clamp(Number(part), 0, 255).toString(16).padStart(2, "0"))
     .join("")}`;
+}
+
+function readableTextColor(background: string) {
+  const rgb = hexToRgb(background);
+  if (!rgb) return "#ffffff";
+  const channels = [rgb.r, rgb.g, rgb.b].map((channel) => {
+    const value = channel / 255;
+    return value <= 0.03928 ? value / 12.92 : ((value + 0.055) / 1.055) ** 2.4;
+  });
+  const luminance = channels[0] * 0.2126 + channels[1] * 0.7152 + channels[2] * 0.0722;
+  return luminance > 0.54 ? "#192d2b" : "#ffffff";
 }
