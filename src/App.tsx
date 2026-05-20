@@ -1731,9 +1731,10 @@ export default function App() {
   function startNotesPaneResize(event: React.PointerEvent) {
     const startX = event.clientX;
     const startWidth = notesPaneWidth;
+    const minWidth = navigationStyle === "single-pane" ? 160 : 220;
 
     startResize(event, (clientX) => {
-      setNotesPaneWidth(clamp(startWidth + clientX - startX, 220, 520));
+      setNotesPaneWidth(clamp(startWidth + clientX - startX, minWidth, 520));
     });
   }
 
@@ -1814,7 +1815,7 @@ export default function App() {
         </button>
       </header>
 
-      <div className={`app-frame ${leftVisible ? "" : "is-left-hidden"} ${outlineVisible ? "" : "is-outline-hidden"}`} style={frameStyle}>
+      <div className={`app-frame ${leftVisible ? "" : "is-left-hidden"} ${outlineVisible ? "" : "is-outline-hidden"} ${navigationStyle === "single-pane" ? "is-single-col" : ""}`} style={frameStyle}>
       {leftVisible ? (
         <aside
           className={`left-panes${navigationStyle === "single-pane" ? " is-single-col" : ""}`}
@@ -2991,8 +2992,11 @@ function UnifiedNode({
     [folders, hiddenFolderParentPath, parentPath],
   );
   const childNotes = useMemo(
-    () => orderNotes(notes.filter((n) => n.parent_path === parentPath), parentPath, metadata),
-    [metadata, notes, parentPath],
+    () =>
+      showPins
+        ? orderNotes(notes.filter((n) => n.parent_path === parentPath), parentPath, metadata)
+        : notes.filter((n) => n.parent_path === parentPath).slice().sort((a, b) => a.title.localeCompare(b.title)),
+    [metadata, notes, parentPath, showPins],
   );
 
   return (

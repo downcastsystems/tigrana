@@ -340,6 +340,22 @@ html[data-tauri="true"][data-platform="mac"] .titlebar-traffic-padding {
   grid-template-columns: minmax(0, 1fr);
 }
 
+.app-frame.is-single-col {
+  grid-template-columns: var(--notes-pane-width, 268px) 6px minmax(0, 1fr) 6px var(--right-pane-width, 260px);
+}
+
+.app-frame.is-single-col.is-left-hidden {
+  grid-template-columns: minmax(0, 1fr) 6px var(--right-pane-width, 260px);
+}
+
+.app-frame.is-single-col.is-outline-hidden {
+  grid-template-columns: var(--notes-pane-width, 268px) 6px minmax(0, 1fr);
+}
+
+.app-frame.is-single-col.is-left-hidden.is-outline-hidden {
+  grid-template-columns: minmax(0, 1fr);
+}
+
 .left-panes {
   display: grid;
   grid-template-columns: var(--folder-pane-width, 292px) 6px var(--notes-pane-width, 268px);
