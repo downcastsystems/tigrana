@@ -364,7 +364,8 @@ export default function App() {
     () => composeMarkdown(frontmatterDraft, draft, Boolean(frontmatterError && !frontmatterDraft)),
     [draft, frontmatterDraft, frontmatterError],
   );
-  const hasUnsavedChanges = Boolean(noteOpen) && (draft !== savedDraft || titleDraft !== savedTitle || frontmatterDraft !== savedFrontmatter);
+  const hasUnsavedBody = Boolean(noteOpen) && (draft !== savedDraft || frontmatterDraft !== savedFrontmatter);
+  const hasUnsavedChanges = Boolean(noteOpen) && (hasUnsavedBody || titleDraft !== savedTitle);
   const resolvedTheme = colorScheme === "system" ? (prefersDark ? "dark" : "light") : colorScheme;
   const themePreset = getThemePreset(themePresetId);
   const effectiveAccentColor = accentColor || themePreset.accent[resolvedTheme];
@@ -439,6 +440,7 @@ export default function App() {
     document.documentElement.style.setProperty("--accent", effectiveAccentColor);
     document.documentElement.style.setProperty("--accent-strong", resolvedTheme === "dark" ? "#ecf4f1" : "#192d2b");
     document.documentElement.style.setProperty("--accent-soft", rgb ? `rgba(${rgb.r}, ${rgb.g}, ${rgb.b}, ${resolvedTheme === "dark" ? 0.32 : 0.26})` : "rgba(75, 125, 117, 0.26)");
+    document.documentElement.style.setProperty("--accent-active", rgb ? `rgba(${rgb.r}, ${rgb.g}, ${rgb.b}, ${resolvedTheme === "dark" ? 0.48 : 0.36})` : "rgba(75, 125, 117, 0.36)");
     document.documentElement.style.setProperty("--accent-muted", rgb ? `rgba(${rgb.r}, ${rgb.g}, ${rgb.b}, ${resolvedTheme === "dark" ? 0.22 : 0.18})` : "rgba(75, 125, 117, 0.18)");
     if (accentColor) localStorage.setItem(accentKey, accentColor);
     else localStorage.removeItem(accentKey);
@@ -870,7 +872,7 @@ export default function App() {
     requestCreateNote(sectionPath);
   }
 
-  async function selectOneNoteFolderForNewNote(folderPath: string) {
+  async function selectFolderForNewNote(folderPath: string) {
     if (hasUnsavedChanges) {
       await persistDraft();
     }
@@ -1068,12 +1070,13 @@ export default function App() {
   }, []);
 
   useEffect(() => {
-    if (!hasUnsavedChanges) return;
+    if (!hasUnsavedBody) return;
+    if (pendingNote && !titleDraft.trim()) return;
     const handle = window.setTimeout(() => {
       void persistDraft();
     }, 650);
     return () => window.clearTimeout(handle);
-  }, [hasUnsavedChanges, persistDraft]);
+  }, [hasUnsavedBody, pendingNote, titleDraft, persistDraft]);
 
   function requestCreateNote(parentPath = selectedFolder) {
     if (!workspace) {
@@ -1819,7 +1822,7 @@ export default function App() {
               searchOpen={searchOpen}
               searchQuery={searchQuery}
               searchResults={results}
-              selectedFolderPath={selectedFolder}
+              selectedFolderPath={activePath ? undefined : selectedFolder}
               showBookmarks
               showNotebookFooter
               showPins={false}
@@ -1841,6 +1844,7 @@ export default function App() {
               onRemoveBookmark={removeBookmark}
               onSearchQueryChange={setSearchQuery}
               onSelectBookmark={selectBookmark}
+              onSelectFolder={(path) => void selectFolderForNewNote(path)}
               onSelectNotebook={openNotebookInNewWindow}
               onSelectNote={handleNoteSelectFromCard}
               onSelectSearchResult={selectNote}
@@ -1911,7 +1915,7 @@ export default function App() {
                 onOpenNoteIcon={(path) => openIconBrowser("note", path)}
                 onPin={(path) => updateMetadata((current) => ({ ...current, pinnedNotes: { ...current.pinnedNotes, [path]: !current.pinnedNotes[path] } }))}
                 onPointerDragStart={beginNotePointerDrag}
-                onSelectFolder={(path) => void selectOneNoteFolderForNewNote(path)}
+                onSelectFolder={(path) => void selectFolderForNewNote(path)}
                 onSelectNote={(path) => {
                   setSelectedFolder(selectedOneNoteSection);
                   handleNoteSelectFromCard(path, { preserveSelectedFolder: true });
@@ -2052,10 +2056,20 @@ export default function App() {
                 className="note-title-input"
                 value={titleDraft}
                 onChange={(event) => setTitleDraft(event.target.value)}
+                onBlur={() => {
+                  if (hasUnsavedChanges && titleDraft.trim()) {
+                    void persistDraft();
+                  }
+                }}
                 onKeyDown={(event) => {
-                  if (event.key === "Enter") {
+                  if (event.key === "Enter" || event.key === "Tab") {
                     event.preventDefault();
-                    setEditorFocusRequest((value) => value + 1);
+                    const focusEditor = () => setEditorFocusRequest((value) => value + 1);
+                    if (hasUnsavedChanges && titleDraft.trim()) {
+                      void persistDraft().then(focusEditor);
+                    } else {
+                      focusEditor();
+                    }
                   }
                 }}
                 placeholder="Untitled"

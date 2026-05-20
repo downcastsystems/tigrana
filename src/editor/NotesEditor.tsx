@@ -432,7 +432,12 @@ export function NotesEditor({ content, focusRequest, focusAtEndRequest, findRequ
 
   useEffect(() => {
     if (!editor || !focusRequest) return;
-    editor.chain().focus("start").run();
+    const chain = editor.chain().focus("start");
+    if (!editor.state.doc.textContent.trim()) {
+      chain.setParagraph().run();
+      return;
+    }
+    chain.run();
   }, [editor, focusRequest]);
 
   useEffect(() => {

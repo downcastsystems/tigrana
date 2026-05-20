@@ -5,6 +5,7 @@
   --accent: #315f59;
   --accent-strong: #192d2b;
   --accent-soft: rgba(49, 95, 89, 0.14);
+  --accent-active: rgba(49, 95, 89, 0.3);
   --accent-muted: rgba(49, 95, 89, 0.12);
   --app-bg: #f7f4ef;
   --shadow-popover: 0 10px 28px rgba(35, 30, 24, 0.16);
@@ -152,7 +153,7 @@ button:disabled {
 }
 
 .app-titlebar .note-tab.is-active {
-  background: var(--accent-soft);
+  background: var(--accent-active);
   border-color: transparent;
   /* Floor the active tab so flex-shrink can never clip the close button.
      16 (padding) + 16 (icon) + 7 (gap) + 0 (label min) + 7 (gap) + 20 (close) = 66 */
@@ -473,7 +474,7 @@ body.is-dragging-note.is-over-drop-target * {
   padding-left: calc(var(--row-indent, 0px) + 4px);
   padding-right: 4px;
   margin-bottom: 1px;
-  cursor: default;
+  cursor: pointer;
   border-radius: 6px;
   z-index: 0;
   user-select: none;
@@ -493,15 +494,16 @@ body.is-dragging-note.is-over-drop-target * {
 }
 
 .unified-folder-row:hover::before {
-  background: rgba(52, 48, 43, 0.06);
+  background: transparent;
 }
 
 .unified-folder-row.is-active {
   color: var(--accent-strong);
+  background: var(--accent-active);
 }
 
 .unified-folder-row.is-active::before {
-  background: var(--accent-soft);
+  background: transparent;
 }
 
 .unified-folder-name {
@@ -511,7 +513,6 @@ body.is-dragging-note.is-over-drop-target * {
   font-size: 13px;
   font-weight: 500;
   color: var(--text);
-  opacity: 0.75;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -552,15 +553,22 @@ body.is-dragging-note.is-over-drop-target * {
 }
 
 .unified-note-row:hover::before {
-  background: rgba(52, 48, 43, 0.06);
+  background: transparent;
+}
+
+.unified-folder-row:hover,
+.unified-note-row:hover {
+  color: var(--accent-strong);
+  background: var(--accent-active);
 }
 
 .unified-note-row.is-active {
   color: var(--accent-strong);
+  background: var(--accent-active);
 }
 
 .unified-note-row.is-active::before {
-  background: var(--accent-soft);
+  background: transparent;
 }
 
 .unified-note-title {
@@ -945,7 +953,7 @@ body.is-dragging-note.is-over-drop-target * {
 }
 
 .folder-row.is-active::before {
-  background: var(--accent-soft);
+  background: var(--accent-active);
 }
 
 .folder-row.is-active {
@@ -1062,13 +1070,11 @@ body.is-dragging-note.is-over-drop-target * {
 }
 
 .note-card:hover,
-.note-card.is-active {
-  background: rgba(52, 48, 43, 0.08);
-}
-
-.note-card.is-active {
+.note-card.is-active,
+.note-row:hover,
+.note-row.is-active {
   color: var(--accent-strong);
-  background: var(--accent-soft);
+  background: var(--accent-active);
 }
 
 .note-card.is-dragging {
@@ -1539,7 +1545,7 @@ kbd {
 }
 
 .folder-row {
-  color: #6b6258;
+  color: #4c4842;
   font-weight: 650;
 }
 
@@ -1548,17 +1554,14 @@ kbd {
   text-align: left;
 }
 
-.note-row:hover {
-  background: rgba(52, 48, 43, 0.07);
-}
-
-.folder-row:hover::before {
-  background: rgba(52, 48, 43, 0.07);
-}
-
-.note-row.is-active {
+.folder-row:hover,
+.folder-row.is-active {
   color: var(--accent-strong);
-  background: var(--accent-soft);
+}
+
+.folder-row:hover::before,
+.folder-row.is-active::before {
+  background: var(--accent-active);
 }
 
 .tree-toggle {
@@ -1701,7 +1704,7 @@ html[data-theme="dark"] .tab-list-separator {
 .note-tab.is-active {
   color: var(--accent-strong);
   border-color: rgba(52, 48, 43, 0.1);
-  background: var(--app-bg);
+  background: var(--accent-active);
 }
 
 .note-tab-add {
@@ -2758,7 +2761,7 @@ html[data-theme="dark"] .app-titlebar .note-tab + .note-tab::before {
   background: rgba(238, 232, 223, 0.18);
 }
 
-/* Active tab uses var(--accent-soft) which already has the correct dark value via JS */
+/* Active tab uses the same accent layer as selected navigation rows. */
 
 html[data-theme="dark"] .settings-modal,
 html[data-theme="dark"] .app-menu,
@@ -2840,12 +2843,25 @@ html[data-theme="dark"] .icon-choice.is-selected {
 }
 
 html[data-theme="dark"] .folder-row:hover::before {
-  background: rgba(238, 232, 223, 0.08);
+  background: var(--accent-active);
 }
 
 html[data-theme="dark"] .unified-folder-row:hover::before,
 html[data-theme="dark"] .unified-note-row:hover::before {
-  background: rgba(238, 232, 223, 0.08);
+  background: transparent;
+}
+
+html[data-theme="dark"] .folder-row:hover,
+html[data-theme="dark"] .note-row:hover,
+html[data-theme="dark"] .note-card:hover,
+html[data-theme="dark"] .unified-folder-row:hover,
+html[data-theme="dark"] .unified-note-row:hover {
+  color: var(--accent-strong);
+  background: var(--accent-active);
+}
+
+html[data-theme="dark"] .folder-row:hover {
+  background: transparent;
 }
 
 html[data-theme="dark"] .settings-nav-item:hover,
@@ -2942,7 +2958,13 @@ html[data-theme="dark"] .palette-result:hover,
 html[data-theme="dark"] .section-header-button:hover,
 html[data-theme="dark"] .bookmark-item:hover {
   color: var(--accent-strong);
-  background: var(--accent-soft);
+  background: var(--accent-active);
+}
+
+html[data-theme="dark"] .note-row.is-active,
+html[data-theme="dark"] .note-card.is-active,
+html[data-theme="dark"] .note-tab.is-active {
+  background: var(--accent-active);
 }
 
 html[data-theme="dark"] kbd,
