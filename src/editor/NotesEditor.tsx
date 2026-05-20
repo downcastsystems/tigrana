@@ -10,7 +10,7 @@ import { TableHeader } from "@tiptap/extension-table-header";
 import { TableRow } from "@tiptap/extension-table-row";
 import TaskItem from "@tiptap/extension-task-item";
 import TaskList from "@tiptap/extension-task-list";
-import { DOMSerializer, type Node as ProseMirrorNode } from "@tiptap/pm/model";
+import type { Fragment as ProseMirrorFragment, Node as ProseMirrorNode } from "@tiptap/pm/model";
 import { NodeSelection, Plugin, PluginKey, Selection, TextSelection } from "@tiptap/pm/state";
 import { Decoration, DecorationSet, type EditorView } from "@tiptap/pm/view";
 import { BubbleMenu, EditorContent, NodeViewWrapper, Range, ReactNodeViewRenderer, useEditor, type Editor } from "@tiptap/react";
@@ -40,7 +40,7 @@ import {
 import { common, createLowlight } from "lowlight";
 import { type CSSProperties, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { filterSlashCommands } from "./slashCommands";
-import { htmlToMarkdown, markdownToHtml } from "../lib/markdown";
+import { htmlToMarkdown, markdownToHtml, normalizeMarkdownImageLines } from "../lib/markdown";
 import { isTauri, readAssetDataUrl, saveAsset, saveClipboardImageAsset } from "../lib/notesApi";
 import type { NotePositionMetadata } from "../types";
 
@@ -339,8 +339,7 @@ export function NotesEditor({ content, focusRequest, focusAtEndRequest, findRequ
       handlePaste(view, event) {
         const file = getClipboardImageFile(event.clipboardData);
         const htmlFile = file ? null : getClipboardImageFromHtml(event.clipboardData);
-        const hasHtmlImage = clipboardHtmlHasImage(event.clipboardData);
-        if (!file && !htmlFile && !hasHtmlImage && !mayContainAsyncClipboardImage(event.clipboardData)) return false;
+        if (!file && !htmlFile && !mayContainAsyncClipboardImage(event.clipboardData)) return false;
 
         event.preventDefault();
         void getBestClipboardImageFile(file ?? htmlFile)
@@ -757,16 +756,127 @@ function findTextSelectionPosition(doc: ProseMirrorNode, from: number, paragraph
 function writeEditorSelectionToClipboard(view: EditorView, event: ClipboardEvent) {
   if (view.state.selection.empty || !event.clipboardData) return false;
   const slice = view.state.selection.content();
-  const fragment = DOMSerializer.fromSchema(view.state.schema).serializeFragment(slice.content);
-  const container = document.createElement("div");
-  container.appendChild(fragment);
-  const markdown = htmlToMarkdown(container.innerHTML).trimEnd();
+  const markdown = serializeClipboardFragment(slice.content).trimEnd();
   if (!markdown) return false;
+  const html = markdownToHtml(markdown);
 
   event.preventDefault();
   event.clipboardData.setData("text/plain", markdown);
-  event.clipboardData.setData("text/html", container.innerHTML);
+  event.clipboardData.setData("text/html", html);
   return true;
+}
+
+function serializeClipboardFragment(fragment: ProseMirrorFragment) {
+  const blocks: string[] = [];
+  fragment.forEach((node) => {
+    const markdown = serializeClipboardNode(node, 0);
+    if (markdown) blocks.push(markdown);
+  });
+  return normalizeMarkdownImageLines(blocks.join("\n\n")).trim();
+}
+
+function serializeClipboardNode(node: ProseMirrorNode, depth: number): string {
+  const name = node.type.name;
+  if (node.isText) return serializeTextNode(node);
+  if (name === "image") return imageNodeToMarkdown(node);
+  if (name === "paragraph") return serializeInlineContent(node).trim();
+  if (name === "heading") return `${"#".repeat(Number(node.attrs.level) || 1)} ${serializeInlineContent(node).trim()}`.trim();
+  if (name === "blockquote") {
+    return serializeBlockContent(node, depth)
+      .split("\n")
+      .map((line) => `> ${line}`)
+      .join("\n");
+  }
+  if (name === "codeBlock") return `\`\`\`\n${node.textContent}\n\`\`\``;
+  if (name === "horizontalRule") return "---";
+  if (name === "bulletList" || name === "orderedList" || name === "taskList") return serializeClipboardList(node, depth);
+  if (name === "listItem" || name === "taskItem") return serializeBlockContent(node, depth);
+  return serializeBlockContent(node, depth);
+}
+
+function serializeClipboardList(list: ProseMirrorNode, depth: number) {
+  const lines: string[] = [];
+  const isOrdered = list.type.name === "orderedList";
+  const isTask = list.type.name === "taskList";
+  const start = Number(list.attrs.start) || 1;
+  list.forEach((item, _offset, index) => {
+    const prefix = isTask
+      ? `- [${item.attrs.checked ? "x" : " "}] `
+      : isOrdered
+        ? `${start + index}. `
+        : "- ";
+    const content = serializeListItemContent(item, depth);
+    if (!content.trim()) return;
+    const [firstLine = "", ...rest] = content.split("\n");
+    const indent = "  ".repeat(depth);
+    lines.push(`${indent}${prefix}${firstLine}`);
+    for (const line of rest) {
+      lines.push(`${indent}  ${line}`);
+    }
+  });
+  return lines.join("\n");
+}
+
+function serializeListItemContent(item: ProseMirrorNode, depth: number) {
+  const parts: string[] = [];
+  item.forEach((child) => {
+    if (child.type.name === "bulletList" || child.type.name === "orderedList" || child.type.name === "taskList") {
+      parts.push(serializeClipboardList(child, depth + 1));
+      return;
+    }
+    const markdown = serializeClipboardNode(child, depth);
+    if (markdown) parts.push(markdown);
+  });
+  return parts.join("\n");
+}
+
+function serializeBlockContent(node: ProseMirrorNode, depth: number) {
+  const blocks: string[] = [];
+  node.forEach((child) => {
+    const markdown = serializeClipboardNode(child, depth);
+    if (markdown) blocks.push(markdown);
+  });
+  return blocks.join("\n\n");
+}
+
+function serializeInlineContent(node: ProseMirrorNode) {
+  const parts: string[] = [];
+  node.forEach((child) => {
+    parts.push(serializeInlineNode(child));
+  });
+  return parts.join("");
+}
+
+function serializeInlineNode(node: ProseMirrorNode): string {
+  if (node.isText) return serializeTextNode(node);
+  if (node.type.name === "image") return imageNodeToMarkdown(node);
+  return serializeInlineContent(node);
+}
+
+function serializeTextNode(node: ProseMirrorNode) {
+  let value = node.text ?? "";
+  for (const mark of node.marks) {
+    if (mark.type.name === "bold") value = `**${value}**`;
+    else if (mark.type.name === "italic") value = `*${value}*`;
+    else if (mark.type.name === "strike") value = `~~${value}~~`;
+    else if (mark.type.name === "code") value = `\`${value}\``;
+    else if (mark.type.name === "link") value = `[${value}](${mark.attrs.href ?? ""})`;
+  }
+  return value;
+}
+
+function imageNodeToMarkdown(node: ProseMirrorNode) {
+  const src = (node.attrs.markdownSrc as string | null) ?? (node.attrs.src as string | null) ?? "";
+  const alt = (node.attrs.alt as string | null) ?? "Image";
+  const width = node.attrs.width as number | string | null;
+  if (width) {
+    return `<img src="${escapeMarkdownAttribute(src)}" alt="${escapeMarkdownAttribute(alt)}" width="${String(width)}" />`;
+  }
+  return `![${alt}](${src})`;
+}
+
+function escapeMarkdownAttribute(value: string) {
+  return value.replace(/"/g, "&quot;");
 }
 
 function getSelectedText(editor: Editor) {
@@ -806,10 +916,6 @@ function getClipboardImageFromHtml(data: DataTransfer | null) {
   const src = doc.querySelector("img")?.getAttribute("src") ?? "";
   if (!src.startsWith("data:image/")) return null;
   return dataUrlToFile(src);
-}
-
-function clipboardHtmlHasImage(data: DataTransfer | null) {
-  return /<img[\s>]/i.test(data?.getData("text/html") ?? "");
 }
 
 function mayContainAsyncClipboardImage(data: DataTransfer | null) {
