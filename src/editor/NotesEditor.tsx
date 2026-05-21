@@ -635,7 +635,7 @@ function FormattingBubbleMenu({ editor }: { editor: Editor }) {
         const { selection } = editor.state;
         if (selection instanceof NodeSelection && selection.node.type.name === "image") return false;
         if (editor.isActive("image")) return false;
-        return !editor.state.selection.empty && editor.isEditable;
+        return !editor.state.selection.empty && editor.isEditable && editor.isFocused;
       }}
     >
       <div className="format-bubble">

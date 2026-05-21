@@ -68,5 +68,6 @@ export type WorkspaceMetadata = {
   expandedFolders: Record<string, boolean>;
   sessionOpenTabs: string[];
   sessionActiveTab: string | null;
+  windowSize?: { width: number; height: number };
   appearance?: NotebookAppearance;
 };

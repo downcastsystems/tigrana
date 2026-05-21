@@ -7,7 +7,7 @@ use std::path::{Path, PathBuf};
 use std::process::Command;
 use std::sync::Mutex;
 use tauri::menu::{Menu, MenuItem, PredefinedMenuItem, Submenu};
-use tauri::{AppHandle, Emitter};
+use tauri::{AppHandle, Emitter, Manager};
 use walkdir::WalkDir;
 
 #[derive(Debug, Serialize)]
@@ -126,6 +126,8 @@ struct WorkspaceMetadata {
     session_open_tabs: Vec<String>,
     #[serde(default)]
     session_active_tab: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    window_size: Option<serde_json::Value>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     appearance: Option<serde_json::Value>,
 }
@@ -656,6 +658,7 @@ fn default_workspace_metadata() -> WorkspaceMetadata {
         expanded_folders: serde_json::Map::new(),
         session_open_tabs: Vec::new(),
         session_active_tab: None,
+        window_size: None,
         appearance: None,
     }
 }
@@ -953,6 +956,10 @@ pub fn run() {
         .plugin(tauri_plugin_shell::init())
         .menu(|handle| {
             let settings = MenuItem::with_id(handle, "open_settings", "Settings...", true, Some("Cmd+,"))?;
+            // Custom Quit so Cmd+Q closes the window (firing CloseRequested in JS)
+            // instead of calling app.exit() directly, which would skip the
+            // frontend's metadata-flush handler.
+            let quit_item = MenuItem::with_id(handle, "request_quit", "Quit Lumen Notes", true, Some("Cmd+Q"))?;
             Menu::with_items(
                 handle,
                 &[
@@ -970,7 +977,7 @@ pub fn run() {
                             &PredefinedMenuItem::hide(handle, None)?,
                             &PredefinedMenuItem::hide_others(handle, None)?,
                             &PredefinedMenuItem::separator(handle)?,
-                            &PredefinedMenuItem::quit(handle, None)?,
+                            &quit_item,
                         ],
                     )?,
                     &Submenu::with_items(handle, "File", true, &[&PredefinedMenuItem::close_window(handle, None)?])?,
@@ -1004,8 +1011,16 @@ pub fn run() {
             )
         })
         .on_menu_event(|app, event| {
-            if event.id().as_ref() == "open_settings" {
-                let _ = app.emit("open-settings", ());
+            match event.id().as_ref() {
+                "open_settings" => {
+                    let _ = app.emit("open-settings", ());
+                }
+                "request_quit" => {
+                    if let Some(win) = app.get_webview_window("main") {
+                        let _ = win.close();
+                    }
+                }
+                _ => {}
             }
         })
         .invoke_handler(tauri::generate_handler![

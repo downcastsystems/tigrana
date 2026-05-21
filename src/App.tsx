@@ -1,6 +1,6 @@
 import { open } from "@tauri-apps/plugin-dialog";
 import { listen } from "@tauri-apps/api/event";
-import { getCurrentWindow, LogicalPosition } from "@tauri-apps/api/window";
+import { getCurrentWindow, LogicalPosition, LogicalSize } from "@tauri-apps/api/window";
 import { WebviewWindow } from "@tauri-apps/api/webviewWindow";
 import {
   BookOpen,
@@ -79,6 +79,7 @@ const folderPaneWidthKey = "lumen-notes-folder-pane-width";
 const notesPaneWidthKey = "lumen-notes-notes-pane-width";
 const rightPaneWidthKey = "lumen-notes-right-pane-width";
 const recentNotebooksKey = "lumen-notes-recent-notebooks";
+const lastPathKey = "lumen-notes-last-path";
 const accentTitlebarKey = "lumen-notes-accent-titlebar";
 const notePositionFreshMs = 24 * 60 * 60 * 1000;
 const defaultLightAccent = "#315f59";
@@ -341,7 +342,11 @@ export default function App() {
   const autoSelectedWorkspaceRef = useRef<string | null>(null);
   const metadataRef = useRef(metadata);
   const positionWriteTimerRef = useRef<number | null>(null);
+  const windowResizeTimerRef = useRef<number | null>(null);
   const restoredTabsWorkspaceRef = useRef<string | null>(null);
+  const openTabsRef = useRef<NoteTab[]>([]);
+  const activeTabIdRef = useRef<string | null>(null);
+  const workspaceRef = useRef<string | null>(null);
   const externalNoteChangeRef = useRef<(path: string) => void>(() => {});
   const keyboardActionsRef = useRef<{
     addEmptyTab: () => void;
@@ -425,6 +430,14 @@ export default function App() {
     if (!workspace) return;
     setRecentNotebooks((current) => writeRecentNotebooks(touchRecentNotebook(current, workspace)));
   }, [workspace]);
+
+  // Keep a per-workspace "last opened note" in localStorage so the location can
+  // be restored even if the notebook's metadata.json is reset (e.g. by cloud sync).
+  useEffect(() => {
+    if (activePath && workspace) {
+      localStorage.setItem(lastPathKey, JSON.stringify({ workspace, path: activePath }));
+    }
+  }, [activePath, workspace]);
 
   useEffect(() => {
     document.documentElement.dataset.theme = resolvedTheme;
@@ -573,6 +586,14 @@ export default function App() {
           setEditorFontFamily(defaultEditorFontFamily);
           setEditorFontSize(defaultEditorFontSize);
         }
+        // Restore saved window size, clamped to the available screen area so a
+        // window saved on a large monitor doesn't overflow a smaller one.
+        if (nextMetadata.windowSize && isTauri()) {
+          const { width, height } = nextMetadata.windowSize;
+          const clampedW = Math.max(600, Math.min(Math.round(width), window.screen.availWidth - 40));
+          const clampedH = Math.max(400, Math.min(Math.round(height), window.screen.availHeight - 60));
+          void getCurrentWindow().setSize(new LogicalSize(clampedW, clampedH));
+        }
       })
       .catch((error) => {
         setAppError(error instanceof Error ? error.message : String(error));
@@ -582,6 +603,86 @@ export default function App() {
       })
       .finally(() => setMetadataLoaded(true));
   }, [workspace]);
+
+  // Persist window size to the current notebook's metadata so it can be
+  // restored the next time that notebook is opened.
+  useEffect(() => {
+    if (!isTauri() || !workspace) return;
+    const handleResize = () => {
+      if (windowResizeTimerRef.current) window.clearTimeout(windowResizeTimerRef.current);
+      windowResizeTimerRef.current = window.setTimeout(() => {
+        const size = { width: window.innerWidth, height: window.innerHeight };
+        const next = { ...metadataRef.current, windowSize: size };
+        metadataRef.current = next;
+        setMetadata(next);
+        void writeWorkspaceMetadata(workspace, next).catch(() => {});
+      }, 500);
+    };
+    window.addEventListener("resize", handleResize);
+    return () => {
+      window.removeEventListener("resize", handleResize);
+      if (windowResizeTimerRef.current) window.clearTimeout(windowResizeTimerRef.current);
+    };
+  }, [workspace]);
+
+  useEffect(() => { openTabsRef.current = openTabs; }, [openTabs]);
+  useEffect(() => { activeTabIdRef.current = activeTabId; }, [activeTabId]);
+  useEffect(() => { workspaceRef.current = workspace; }, [workspace]);
+
+  // Flush all pending metadata to disk synchronously before the window closes.
+  // The resize and note-position writers are debounced, and the session-tab
+  // writer is fire-and-forget, so without this any state changed in the last
+  // ~500ms of a session (window size, newly opened tabs, active tab) is lost.
+  useEffect(() => {
+    if (!isTauri()) return;
+    const win = getCurrentWindow();
+    let unlisten: (() => void) | null = null;
+    let disposed = false;
+    void win
+      .onCloseRequested(async (event) => {
+        const workspacePath = workspaceRef.current;
+        if (!workspacePath) return;
+        event.preventDefault();
+        if (windowResizeTimerRef.current) {
+          window.clearTimeout(windowResizeTimerRef.current);
+          windowResizeTimerRef.current = null;
+        }
+        if (positionWriteTimerRef.current) {
+          window.clearTimeout(positionWriteTimerRef.current);
+          positionWriteTimerRef.current = null;
+        }
+        const tabs = openTabsRef.current;
+        const sessionOpenTabs = tabs
+          .map((tab) => tab.path)
+          .filter((path): path is string => Boolean(path));
+        const activeTab = tabs.find((tab) => tab.id === activeTabIdRef.current);
+        const sessionActiveTab =
+          activeTab?.path && sessionOpenTabs.includes(activeTab.path)
+            ? activeTab.path
+            : sessionOpenTabs.at(-1) ?? null;
+        const next: WorkspaceMetadata = {
+          ...metadataRef.current,
+          sessionOpenTabs,
+          sessionActiveTab,
+          windowSize: { width: window.innerWidth, height: window.innerHeight },
+        };
+        metadataRef.current = next;
+        try {
+          await writeWorkspaceMetadata(workspacePath, next);
+        } catch {
+          // Best-effort; we're closing regardless.
+        }
+        if (!disposed) void win.destroy();
+      })
+      .then((fn) => {
+        if (disposed) fn();
+        else unlisten = fn;
+      });
+    return () => {
+      disposed = true;
+      unlisten?.();
+    };
+  }, []);
 
   useEffect(() => {
     const onClick = () => {
@@ -661,15 +762,17 @@ export default function App() {
     if (metadata.sessionOpenTabs.some((path) => notes.some((note) => note.path === path))) return;
     if (activePath || pendingNote) return;
     if (!notes.length) return;
-    const firstNote = notes[0];
-    if (!contents.has(firstNote.path)) return;
+    // Prefer the last note opened in this workspace (localStorage) over the first note in the list.
+    const storedLast = readStoredLastPath(workspace);
+    const targetNote = (storedLast ? notes.find((n) => n.path === storedLast) : null) ?? notes[0];
+    if (!contents.has(targetNote.path)) return;
     autoSelectedWorkspaceRef.current = workspace;
     const tabId = createTabId();
-    setSelectedFolder(firstNote.parent_path);
-    setActivePath(firstNote.path);
-    setOpenTabs([{ id: tabId, path: firstNote.path }]);
+    setSelectedFolder(targetNote.parent_path);
+    setActivePath(targetNote.path);
+    setOpenTabs([{ id: tabId, path: targetNote.path }]);
     setActiveTabId(tabId);
-    loadContentIntoEditor(firstNote, contents.get(firstNote.path) ?? "");
+    loadContentIntoEditor(targetNote, contents.get(targetNote.path) ?? "");
   }, [activePath, contents, metadata.sessionOpenTabs, metadataLoaded, notes, pendingNote, workspace]);
 
   useEffect(() => {
@@ -2214,6 +2317,7 @@ export default function App() {
       {contextMenu ? (
         <ContextMenu
           state={contextMenu}
+          createFolderParentName={displayFolderName(contextMenu.kind === "folder" ? contextMenu.path : selectedFolder, folders, workspace)}
           onCreateFolder={() => requestCreateFolder(contextMenu.kind === "folder" ? contextMenu.path : selectedFolder)}
           onCreateNote={() => requestCreateNote(contextMenu.kind === "folder" ? contextMenu.path : selectedFolder)}
           onDelete={() => {
@@ -2262,7 +2366,7 @@ export default function App() {
                 <Folder size={18} />
               </span>
               <div>
-                <h2>New folder</h2>
+                <h2>{navigationStyle === "onenote" ? "New section" : "New folder"}</h2>
                 <p>{folderDialogParent ? `Create in ${folderDialogParent}` : "Create at the notebook root"}</p>
               </div>
               <button className="icon-button" type="button" title="Close" onClick={() => setFolderDialogParent(null)}>
@@ -2277,7 +2381,7 @@ export default function App() {
               id="folder-name"
               value={folderName}
               onChange={(event) => setFolderName(event.target.value)}
-              placeholder="Folder name"
+              placeholder={navigationStyle === "onenote" ? "Section name" : "Folder name"}
               autoFocus
             />
             {appError ? <p className="dialog-error">{appError}</p> : null}
@@ -2927,7 +3031,7 @@ function OneNoteFolderPane({
           <button className="icon-button" type="button" disabled={!workspace} title="Search" onClick={onToggleSearch}>
             <Search size={16} />
           </button>
-          <button className="icon-button" type="button" disabled={!workspace} title="New section" onClick={() => onCreateFolder("")}>
+          <button className="icon-button" type="button" disabled={!workspace} title="New Section" onClick={() => onCreateFolder("")}>
             <Plus size={16} />
           </button>
         </div>
@@ -4547,6 +4651,7 @@ function TabContextMenu({
 }
 
 function ContextMenu({
+  createFolderParentName,
   isBookmarked,
   state,
   onCreateFolder,
@@ -4561,6 +4666,7 @@ function ContextMenu({
   onToggleBookmark,
   onClose,
 }: {
+  createFolderParentName: string;
   isBookmarked: boolean;
   state: ContextMenuState;
   onCreateFolder: () => void;
@@ -4583,7 +4689,7 @@ function ContextMenu({
       </button>
       <button type="button" onClick={onCreateFolder}>
         <Folder size={14} />
-        <span>New Folder</span>
+        <span>New Folder in {createFolderParentName}</span>
       </button>
       {state.kind === "folder" ? (
         <>
@@ -5160,6 +5266,17 @@ function readStoredNumber(key: string, fallback: number) {
 
 function readAppearanceFontSize(value: number | undefined, fallback: number) {
   return typeof value === "number" && Number.isFinite(value) && value >= 11 && value <= 28 ? value : fallback;
+}
+
+function readStoredLastPath(workspace: string): string | null {
+  try {
+    const raw = localStorage.getItem(lastPathKey);
+    if (!raw) return null;
+    const parsed = JSON.parse(raw) as { workspace?: string; path?: string };
+    return parsed.workspace === workspace && typeof parsed.path === "string" ? parsed.path : null;
+  } catch {
+    return null;
+  }
 }
 
 function readInitialWorkspace() {
