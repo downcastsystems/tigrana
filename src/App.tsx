@@ -416,7 +416,7 @@ export default function App() {
   const selectedFolderTitle = useMemo(() => displayFolderName(selectedFolder, folders, workspace), [folders, selectedFolder, workspace]);
   const selectedSection = useMemo(() => getTopLevelFolderPath(selectedFolder), [selectedFolder]);
   const selectedSectionTitle = useMemo(
-    () => (selectedSection ? displayFolderName(selectedSection, folders, workspace) : "Unorganized"),
+    () => (selectedSection ? displayFolderName(selectedSection, folders, workspace) : "Uncategorized"),
     [folders, selectedSection, workspace],
   );
   const bookmarks = useMemo(() => buildBookmarkViews(metadata.bookmarks, folders, notes, metadata, workspace), [folders, metadata, notes, workspace]);
@@ -3378,7 +3378,7 @@ function SectionViewFolderPane({
             <span>
               <IconMark value={metadata.folderIcons[""]} fallback={Folder} size={15} />
             </span>
-            <span>Unorganized</span>
+            <span>Uncategorized</span>
           </button>
         </div>
         {folders.map((folder) => {
