@@ -2161,6 +2161,10 @@ html[data-theme="dark"] .tab-list-separator {
   padding-left: 1.35em;
 }
 
+.ProseMirror li[data-separator-after="true"] {
+  margin-bottom: 0.6em;
+}
+
 .ProseMirror ul[data-type="taskList"] {
   padding-left: 0;
   list-style: none;

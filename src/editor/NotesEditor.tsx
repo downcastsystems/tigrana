@@ -79,6 +79,25 @@ type SearchHighlightMeta = {
 
 const EM_SPACE = " ";
 
+const ListItemSeparator = Extension.create({
+  name: "listItemSeparator",
+  addGlobalAttributes() {
+    return [
+      {
+        types: ["listItem", "taskItem"],
+        attributes: {
+          separatorAfter: {
+            default: false,
+            parseHTML: (element) => element.getAttribute("data-separator-after") === "true",
+            renderHTML: (attributes) =>
+              attributes.separatorAfter ? { "data-separator-after": "true" } : {},
+          },
+        },
+      },
+    ];
+  },
+});
+
 const EmSpaceIndent = Extension.create({
   name: "emSpaceIndent",
   addKeyboardShortcuts() {
@@ -268,6 +287,7 @@ export function NotesEditor({ content, focusRequest, focusAtEndRequest, findRequ
       Highlight,
       SearchHighlight,
       EmSpaceIndent,
+      ListItemSeparator,
       MarkdownImage.configure({
         inline: false,
         allowBase64: false,
