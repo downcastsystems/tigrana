@@ -43,9 +43,16 @@ export type BookmarkEntry = {
 
 export type NavigationStyle = "dual-pane" | "single-pane" | "onenote";
 
+export type NotebookThemeColors = {
+  accentColor?: string | null;
+  titlebarColor?: string | null;
+  titlebarUseAccent?: boolean;
+};
+
 export type NotebookAppearance = {
   colorScheme?: "system" | "light" | "dark";
   themePresetId?: string;
+  colors?: Partial<Record<"light" | "dark", NotebookThemeColors>>;
   accentColor?: string | null;
   accentTitlebar?: boolean;
   navigationStyle?: NavigationStyle;

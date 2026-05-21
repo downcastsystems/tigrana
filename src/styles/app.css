@@ -490,7 +490,7 @@ body.is-dragging-note.is-over-drop-target * {
   flex: 1;
   overflow-y: auto;
   overflow-x: hidden;
-  padding: 6px 8px 12px;
+  padding: 8px 10px 12px;
 }
 
 .unified-folder-node {
@@ -502,9 +502,9 @@ body.is-dragging-note.is-over-drop-target * {
   display: flex;
   align-items: center;
   gap: 4px;
-  min-height: calc(var(--app-font-size) * 2);
-  padding-left: calc(var(--row-indent, 0px) + 4px);
-  padding-right: 4px;
+  min-height: calc(var(--app-font-size) * 2 + 4px);
+  padding-left: calc(var(--row-indent, 0px) + 6px);
+  padding-right: 6px;
   margin-bottom: 1px;
   cursor: pointer;
   border-radius: 6px;
@@ -556,9 +556,9 @@ body.is-dragging-note.is-over-drop-target * {
   align-items: center;
   gap: 6px;
   width: 100%;
-  min-height: calc(var(--app-font-size) * 2);
-  padding-left: calc(var(--row-indent, 0px) + 8px);
-  padding-right: 8px;
+  min-height: calc(var(--app-font-size) * 2 + 4px);
+  padding-left: calc(var(--row-indent, 0px) + 10px);
+  padding-right: 10px;
   margin-bottom: 1px;
   border: 0;
   border-radius: 6px;
@@ -655,7 +655,7 @@ body.is-dragging-note.is-over-drop-target * {
   left: 0;
   display: none;
   width: 5px;
-  border-radius: 999px;
+  border-radius: 0;
   background: var(--section-color);
 }
 
@@ -2815,6 +2815,10 @@ html[data-theme="dark"] .settings-number-input::-webkit-outer-spin-button {
   padding: 12px 0 2px;
 }
 
+.setting-row-sub {
+  padding-left: 18px;
+}
+
 .setting-row span {
   min-width: 0;
 }
@@ -3268,7 +3272,7 @@ html[data-theme="dark"] .ProseMirror pre {
 }
 
 .switch input:checked + .switch-track {
-  background: var(--accent);
+  background: #4f555c;
 }
 
 .switch input:checked + .switch-track::after {
@@ -3277,6 +3281,10 @@ html[data-theme="dark"] .ProseMirror pre {
 
 html[data-theme="dark"] .switch-track {
   background: rgba(238, 232, 223, 0.2);
+}
+
+html[data-theme="dark"] .switch input:checked + .switch-track {
+  background: #8f98a3;
 }
 
 .left-panes:not(.is-single-col) .folder-pane:not(.onenote-folder-pane) .folder-row:hover,
@@ -3314,14 +3322,14 @@ html[data-theme="dark"] .switch-track {
 }
 
 html[data-accent-titlebar="true"] .app-titlebar {
-  background: var(--accent);
-  border-bottom-color: color-mix(in srgb, var(--accent) 70%, black);
-  color: #ffffff;
+  background: var(--titlebar-bg, var(--accent));
+  border-bottom-color: color-mix(in srgb, var(--titlebar-bg, var(--accent)) 70%, black);
+  color: var(--titlebar-contrast, #ffffff);
 }
 
 html[data-accent-titlebar="true"] .app-titlebar .icon-button,
 html[data-accent-titlebar="true"] .app-titlebar button {
-  color: #ffffff;
+  color: var(--titlebar-contrast, #ffffff);
 }
 
 html[data-accent-titlebar="true"] .app-titlebar .icon-button:hover,
@@ -3330,8 +3338,8 @@ html[data-accent-titlebar="true"] .app-titlebar .icon-button.is-active {
 }
 
 html[data-accent-titlebar="true"] .app-titlebar .note-tab.is-active {
-  background: color-mix(in srgb, var(--accent) 60%, black);
-  color: #ffffff;
+  background: color-mix(in srgb, var(--titlebar-bg, var(--accent)) 60%, black);
+  color: var(--titlebar-contrast, #ffffff);
 }
 
 html[data-accent-titlebar="true"] .app-titlebar .note-tab:not(.is-active):hover {

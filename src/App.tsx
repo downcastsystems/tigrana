@@ -64,7 +64,7 @@ import {
 } from "./lib/notesApi";
 import { normalizeMarkdownImageLines } from "./lib/markdown";
 import { searchNotes } from "./lib/search";
-import type { BookmarkEntry, FolderEntry, NavigationStyle, NoteEntry, NotePositionMetadata, SearchResult, WorkspaceMetadata } from "./types";
+import type { BookmarkEntry, FolderEntry, NavigationStyle, NotebookThemeColors, NoteEntry, NotePositionMetadata, SearchResult, WorkspaceMetadata } from "./types";
 
 function stopChromeMouseDown(event: React.MouseEvent) {
   event.stopPropagation();
@@ -84,7 +84,7 @@ const accentTitlebarKey = "lumen-notes-accent-titlebar";
 const windowSizeKey = "lumen-notes-window-size";
 const sessionKeyPrefix = "lumen-notes-session:";
 const notePositionFreshMs = 24 * 60 * 60 * 1000;
-const defaultLightAccent = "#315f59";
+const defaultLightAccent = "#229ff9";
 const defaultAppFontFamily = 'Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif';
 const defaultEditorFontFamily = defaultAppFontFamily;
 const defaultAppFontSize = 14;
@@ -117,7 +117,7 @@ class EditorErrorBoundary extends Component<
     return this.props.children;
   }
 }
-const defaultDarkAccent = "#229ff9";
+const defaultDarkAccent = "#333333";
 const lucideIconPrefix = "lucide:";
 const lucideIconMap = Object.fromEntries(
   Object.entries(LucideIcons).filter(([name, value]) => /^[A-Z]/.test(name) && !name.endsWith("Icon") && isLucideIcon(value)),
@@ -153,7 +153,7 @@ type RecentNotebook = {
 
 type PropertyDialogState =
   | { kind: "rename-folder"; path: string; value: string; name: string }
-  | { kind: "folder-color"; path: string; value: string; name: string };
+  | { kind: "folder-color"; path: string; value: string; name: string; subject?: "folder" | "section" };
 
 type IconBrowserState =
   | { kind: "folder"; path: string; value: string; name: string; onReset?: () => void }
@@ -214,6 +214,13 @@ type ThemePreset = {
   appBackground: Record<"light" | "dark", string>;
   tokens?: Partial<Record<"light" | "dark", Partial<ThemeTokens>>>;
 };
+
+type NotebookThemeColorSettings = Record<"light" | "dark", NotebookThemeColors>;
+
+const defaultNotebookThemeColors = (): NotebookThemeColorSettings => ({
+  light: { accentColor: null, titlebarColor: null, titlebarUseAccent: true },
+  dark: { accentColor: null, titlebarColor: null, titlebarUseAccent: true },
+});
 
 type ParsedNoteMarkdown = {
   body: string;
@@ -280,7 +287,7 @@ export default function App() {
   const [colorScheme, setColorScheme] = useState<ColorScheme>(() => readStoredColorScheme());
   const [prefersDark, setPrefersDark] = useState(() => window.matchMedia?.("(prefers-color-scheme: dark)").matches ?? false);
   const [themePresetId, setThemePresetId] = useState<ThemePresetId>(() => readStoredThemePreset());
-  const [accentColor, setAccentColor] = useState<string | null>(() => localStorage.getItem(accentKey));
+  const [themeColors, setThemeColors] = useState<NotebookThemeColorSettings>(() => readStoredNotebookThemeColors());
   const [accentTitlebar, setAccentTitlebar] = useState<boolean>(() => localStorage.getItem(accentTitlebarKey) === "true");
   const [navigationStyle, setNavigationStyle] = useState<NavigationStyle>("dual-pane");
   const [appFontFamily, setAppFontFamily] = useState(defaultAppFontFamily);
@@ -384,7 +391,12 @@ export default function App() {
   const hasUnsavedChanges = Boolean(noteOpen) && (hasUnsavedBody || titleDraft !== savedTitle);
   const resolvedTheme = colorScheme === "system" ? (prefersDark ? "dark" : "light") : colorScheme;
   const themePreset = getThemePreset(themePresetId);
+  const activeThemeColors = themeColors[resolvedTheme];
+  const accentColor = activeThemeColors.accentColor ?? null;
   const effectiveAccentColor = accentColor || themePreset.accent[resolvedTheme];
+  const titlebarUseAccent = activeThemeColors.titlebarUseAccent ?? true;
+  const titlebarColor = activeThemeColors.titlebarColor ?? null;
+  const effectiveTitlebarColor = titlebarUseAccent ? effectiveAccentColor : (titlebarColor || effectiveAccentColor);
   const selectedFolderTitle = useMemo(() => displayFolderName(selectedFolder, folders, workspace), [folders, selectedFolder, workspace]);
   const selectedOneNoteSection = useMemo(() => getTopLevelFolderPath(selectedFolder), [selectedFolder]);
   const selectedOneNoteSectionTitle = useMemo(
@@ -468,8 +480,10 @@ export default function App() {
 
   useEffect(() => {
     document.documentElement.dataset.accentTitlebar = accentTitlebar ? "true" : "false";
+    document.documentElement.style.setProperty("--titlebar-bg", effectiveTitlebarColor);
+    document.documentElement.style.setProperty("--titlebar-contrast", readableTextColor(effectiveTitlebarColor));
     localStorage.setItem(accentTitlebarKey, String(accentTitlebar));
-  }, [accentTitlebar]);
+  }, [accentTitlebar, effectiveTitlebarColor]);
 
   useEffect(() => {
     const rgb = hexToRgb(effectiveAccentColor);
@@ -490,7 +504,7 @@ export default function App() {
     const next: NonNullable<WorkspaceMetadata["appearance"]> = {
       colorScheme,
       themePresetId: themePreset.id,
-      accentColor,
+      colors: themeColors,
       accentTitlebar,
       navigationStyle,
       appFontFamily,
@@ -504,7 +518,7 @@ export default function App() {
       prev &&
       prev.colorScheme === next.colorScheme &&
       prev.themePresetId === next.themePresetId &&
-      prev.accentColor === next.accentColor &&
+      appearanceColorsMatch(prev.colors, next.colors) &&
       prev.accentTitlebar === next.accentTitlebar &&
       prev.navigationStyle === next.navigationStyle &&
       prev.appFontFamily === next.appFontFamily &&
@@ -515,7 +529,7 @@ export default function App() {
     appearanceSavedRef.current = next;
     saveAppearancePatch(next);
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [colorScheme, themePreset.id, accentColor, accentTitlebar, navigationStyle, appFontFamily, appFontSize, editorFontFamily, editorFontSize, metadataLoaded, workspace]);
+  }, [colorScheme, themePreset.id, themeColors, accentTitlebar, navigationStyle, appFontFamily, appFontSize, editorFontFamily, editorFontSize, metadataLoaded, workspace]);
 
   useEffect(() => {
     localStorage.setItem(fullWidthKey, String(fullWidth));
@@ -570,7 +584,7 @@ export default function App() {
         if (a) {
           if (a.colorScheme) setColorScheme(a.colorScheme);
           if (a.themePresetId && themePresets.some((p) => p.id === a.themePresetId)) setThemePresetId(a.themePresetId as ThemePresetId);
-          if ("accentColor" in a) setAccentColor(a.accentColor ?? null);
+          setThemeColors(readAppearanceThemeColors(a));
           if (typeof a.accentTitlebar === "boolean") setAccentTitlebar(a.accentTitlebar);
           if (a.navigationStyle) setNavigationStyle(a.navigationStyle);
           setAppFontFamily(a.appFontFamily || defaultAppFontFamily);
@@ -580,7 +594,7 @@ export default function App() {
         } else {
           setColorScheme(readStoredColorScheme());
           setThemePresetId(readStoredThemePreset());
-          setAccentColor(localStorage.getItem(accentKey));
+          setThemeColors(readStoredNotebookThemeColors());
           setAccentTitlebar(localStorage.getItem(accentTitlebarKey) === "true");
           setNavigationStyle("dual-pane");
           setAppFontFamily(defaultAppFontFamily);
@@ -861,6 +875,13 @@ export default function App() {
       appearance: { ...current.appearance, ...patch },
     }));
   }, [updateMetadata]);
+
+  function updateThemeColor(mode: "light" | "dark", patch: Partial<NotebookThemeColors>) {
+    setThemeColors((current) => ({
+      ...current,
+      [mode]: { ...current[mode], ...patch },
+    }));
+  }
 
   useEffect(() => {
     return () => {
@@ -1445,14 +1466,14 @@ export default function App() {
     await refreshWorkspace(workspace);
   }
 
-  function openPropertyDialog(kind: PropertyDialogState["kind"], path: string) {
+  function openPropertyDialog(kind: PropertyDialogState["kind"], path: string, subject: "folder" | "section" = "folder") {
     const folder = folders.find((entry) => entry.path === path);
     const name = folder?.name ?? (path ? decodeTitleFromFilename(path.split("/").at(-1) ?? path) : "Notebook");
     const value =
       kind === "rename-folder"
         ? folder?.name ?? ""
-        : metadata.folderColors[path] ?? "#4b7d75";
-    setPropertyDialog({ kind, path, value, name } as PropertyDialogState);
+        : metadata.folderColors[path] ?? effectiveAccentColor;
+    setPropertyDialog({ kind, path, value, name, ...(kind === "folder-color" ? { subject } : {}) } as PropertyDialogState);
     setContextMenu(null);
     setAppError(null);
   }
@@ -2294,6 +2315,7 @@ export default function App() {
       {contextMenu ? (
         <ContextMenu
           state={contextMenu}
+          folderColorSubject={isOneNoteSectionContextTarget(contextMenu, navigationStyle, folders) ? "section" : "folder"}
           createFolderParentName={displayFolderName(contextMenu.kind === "folder" ? contextMenu.path : selectedFolder, folders, workspace)}
           onCreateFolder={() => requestCreateFolder(contextMenu.kind === "folder" ? contextMenu.path : selectedFolder)}
           onCreateNote={() => requestCreateNote(contextMenu.kind === "folder" ? contextMenu.path : selectedFolder)}
@@ -2309,7 +2331,10 @@ export default function App() {
           }}
           isBookmarked={contextMenu.kind !== "empty" ? isBookmarked({ kind: contextMenu.kind, path: contextMenu.path }) : false}
           onRenameFolder={() => contextMenu.kind === "folder" && openPropertyDialog("rename-folder", contextMenu.path)}
-          onSetFolderColor={() => contextMenu.kind === "folder" && openPropertyDialog("folder-color", contextMenu.path)}
+          onSetFolderColor={() =>
+            contextMenu.kind === "folder" &&
+            openPropertyDialog("folder-color", contextMenu.path, isOneNoteSectionContextTarget(contextMenu, navigationStyle, folders) ? "section" : "folder")
+          }
           onSetFolderIcon={() => contextMenu.kind === "folder" && openIconBrowser("folder", contextMenu.path)}
           onSetNoteIcon={() => contextMenu.kind === "note" && openIconBrowser("note", contextMenu.path)}
           onToggleBookmark={() => {
@@ -2378,6 +2403,9 @@ export default function App() {
           <SettingsModal
             accentColor={accentColor}
             accentTitlebar={accentTitlebar}
+            effectiveTitlebarColor={effectiveTitlebarColor}
+            titlebarColor={titlebarColor}
+            titlebarUseAccent={titlebarUseAccent}
             colorScheme={colorScheme}
             effectiveAccentColor={effectiveAccentColor}
             appFontFamily={appFontFamily}
@@ -2387,8 +2415,8 @@ export default function App() {
             navigationStyle={navigationStyle}
             resolvedTheme={resolvedTheme}
             themePresetId={themePreset.id}
-            onAccentChange={setAccentColor}
-            onAccentReset={() => setAccentColor(null)}
+            onAccentChange={(color) => updateThemeColor(resolvedTheme, { accentColor: color })}
+            onAccentReset={() => updateThemeColor(resolvedTheme, { accentColor: null })}
             onAccentTitlebarChange={setAccentTitlebar}
             onAppFontFamilyChange={setAppFontFamily}
             onAppFontSizeChange={setAppFontSize}
@@ -2398,6 +2426,8 @@ export default function App() {
             onEditorFontSizeChange={setEditorFontSize}
             onNavigationStyleChange={setNavigationStyle}
             onThemePresetChange={setThemePresetId}
+            onTitlebarColorChange={(color) => updateThemeColor(resolvedTheme, { titlebarColor: color })}
+            onTitlebarUseAccentChange={(value) => updateThemeColor(resolvedTheme, { titlebarUseAccent: value })}
           />
       ) : null}
 
@@ -4229,10 +4259,13 @@ function SettingsModal({
   editorFontFamily,
   editorFontSize,
   effectiveAccentColor,
+  effectiveTitlebarColor,
   navigationStyle,
   resolvedTheme,
   themePresetId,
   accentTitlebar,
+  titlebarColor,
+  titlebarUseAccent,
   onAccentChange,
   onAccentReset,
   onAccentTitlebarChange,
@@ -4244,6 +4277,8 @@ function SettingsModal({
   onEditorFontSizeChange,
   onNavigationStyleChange,
   onThemePresetChange,
+  onTitlebarColorChange,
+  onTitlebarUseAccentChange,
 }: {
   accentColor: string | null;
   accentTitlebar: boolean;
@@ -4253,9 +4288,12 @@ function SettingsModal({
   editorFontFamily: string;
   editorFontSize: number;
   effectiveAccentColor: string;
+  effectiveTitlebarColor: string;
   navigationStyle: NavigationStyle;
   resolvedTheme: "light" | "dark";
   themePresetId: ThemePresetId;
+  titlebarColor: string | null;
+  titlebarUseAccent: boolean;
   onAccentChange: (color: string) => void;
   onAccentReset: () => void;
   onAccentTitlebarChange: (value: boolean) => void;
@@ -4267,6 +4305,8 @@ function SettingsModal({
   onEditorFontSizeChange: (size: number) => void;
   onNavigationStyleChange: (style: NavigationStyle) => void;
   onThemePresetChange: (theme: ThemePresetId) => void;
+  onTitlebarColorChange: (color: string) => void;
+  onTitlebarUseAccentChange: (value: boolean) => void;
 }) {
   const [appFontSizeDraft, setAppFontSizeDraft] = useState(String(appFontSize));
   const [editorFontSizeDraft, setEditorFontSizeDraft] = useState(String(editorFontSize));
@@ -4298,6 +4338,22 @@ function SettingsModal({
       icon: resolvedTheme === "dark" ? Moon : Sun,
       content: (
         <div className="settings-card">
+          <div className="setting-row">
+            <span>
+              <strong>Navigation style</strong>
+              <small>How folders and notes are displayed in the sidebar. Settings are saved per notebook.</small>
+            </span>
+            <select
+              className="settings-select"
+              value={navigationStyle}
+              aria-label="Navigation style"
+              onChange={(event) => onNavigationStyleChange(event.target.value as NavigationStyle)}
+            >
+              <option value="dual-pane">Dual Pane</option>
+              <option value="single-pane">Single Pane</option>
+              <option value="onenote">OneNote</option>
+            </select>
+          </div>
           <div className="setting-row">
             <span>
               <strong>Base color scheme</strong>
@@ -4337,7 +4393,7 @@ function SettingsModal({
           <div className="setting-row">
             <span>
               <strong>Accent title bar</strong>
-              <small>Tint the window title bar with the accent color.</small>
+              <small>Color the window title bar for this notebook.</small>
             </span>
             <label className="switch">
               <input
@@ -4348,22 +4404,40 @@ function SettingsModal({
               <span className="switch-track" />
             </label>
           </div>
-          <div className="setting-row">
-            <span>
-              <strong>Navigation style</strong>
-              <small>How folders and notes are displayed in the sidebar. Settings are saved per notebook.</small>
-            </span>
-            <select
-              className="settings-select"
-              value={navigationStyle}
-              aria-label="Navigation style"
-              onChange={(event) => onNavigationStyleChange(event.target.value as NavigationStyle)}
-            >
-              <option value="dual-pane">Dual Pane</option>
-              <option value="single-pane">Single Pane</option>
-              <option value="onenote">OneNote</option>
-            </select>
-          </div>
+          {accentTitlebar ? (
+            <>
+              <div className="setting-row setting-row-sub">
+                <span>
+                  <strong>Use accent color for titlebar background</strong>
+                  <small>Keep the title bar in step with the {resolvedTheme} accent color.</small>
+                </span>
+                <label className="switch">
+                  <input
+                    type="checkbox"
+                    checked={titlebarUseAccent}
+                    onChange={(event) => onTitlebarUseAccentChange(event.target.checked)}
+                  />
+                  <span className="switch-track" />
+                </label>
+              </div>
+              {!titlebarUseAccent ? (
+                <div className="setting-row setting-row-sub">
+                  <span>
+                    <strong>Titlebar background</strong>
+                    <small>Choose a custom {resolvedTheme} mode title bar color.</small>
+                  </span>
+                  <div className="accent-control">
+                    <input
+                      aria-label="Titlebar background"
+                      type="color"
+                      value={titlebarColor || effectiveTitlebarColor}
+                      onChange={(event) => onTitlebarColorChange(event.target.value)}
+                    />
+                  </div>
+                </div>
+              ) : null}
+            </>
+          ) : null}
           <div className="setting-row">
             <span>
               <strong>App font</strong>
@@ -4633,6 +4707,7 @@ function TabContextMenu({
 
 function ContextMenu({
   createFolderParentName,
+  folderColorSubject,
   isBookmarked,
   state,
   onCreateFolder,
@@ -4648,6 +4723,7 @@ function ContextMenu({
   onClose,
 }: {
   createFolderParentName: string;
+  folderColorSubject: "folder" | "section";
   isBookmarked: boolean;
   state: ContextMenuState;
   onCreateFolder: () => void;
@@ -4700,7 +4776,7 @@ function ContextMenu({
           </button>
           <button type="button" onClick={onSetFolderColor}>
             <Palette size={14} />
-            <span>Set Folder Color</span>
+            <span>Set {folderColorSubject === "section" ? "Section" : "Folder"} Color</span>
           </button>
         </>
       ) : null}
@@ -4769,7 +4845,7 @@ function PropertyDialog({
       action: "Save",
     },
     "folder-color": {
-      title: "Folder color",
+      title: state.kind === "folder-color" && state.subject === "section" ? "Section color" : "Folder color",
       description: state.name,
       label: "Color",
       placeholder: "#4b7d75",
@@ -5352,6 +5428,36 @@ function readStoredColorScheme(): ColorScheme {
   return value === "light" || value === "dark" || value === "system" ? value : "system";
 }
 
+function normalizeThemeColors(
+  colors?: Partial<Record<"light" | "dark", NotebookThemeColors>>,
+  legacyAccent?: string | null,
+): NotebookThemeColorSettings {
+  const defaults = defaultNotebookThemeColors();
+  return {
+    light: { ...defaults.light, ...(colors?.light ?? {}), ...(!colors?.light && legacyAccent ? { accentColor: legacyAccent } : {}) },
+    dark: { ...defaults.dark, ...(colors?.dark ?? {}), ...(!colors?.dark && legacyAccent ? { accentColor: legacyAccent } : {}) },
+  };
+}
+
+function readAppearanceThemeColors(appearance: NonNullable<WorkspaceMetadata["appearance"]>) {
+  return normalizeThemeColors(appearance.colors, appearance.accentColor);
+}
+
+function readStoredNotebookThemeColors() {
+  return normalizeThemeColors(undefined, localStorage.getItem(accentKey));
+}
+
+function appearanceColorsMatch(
+  left?: Partial<Record<"light" | "dark", NotebookThemeColors>>,
+  right?: Partial<Record<"light" | "dark", NotebookThemeColors>>,
+) {
+  return (["light", "dark"] as const).every((mode) =>
+    (left?.[mode]?.accentColor ?? null) === (right?.[mode]?.accentColor ?? null) &&
+    (left?.[mode]?.titlebarColor ?? null) === (right?.[mode]?.titlebarColor ?? null) &&
+    (left?.[mode]?.titlebarUseAccent ?? true) === (right?.[mode]?.titlebarUseAccent ?? true),
+  );
+}
+
 function readStoredThemePreset(): ThemePresetId {
   const value = localStorage.getItem(themePresetKey);
   return themePresets.some((preset) => preset.id === value) ? (value as ThemePresetId) : "default";
@@ -5379,6 +5485,16 @@ function displayFolderName(path: string, folders: FolderEntry[], workspace: stri
 
 function getTopLevelFolderPath(path: string) {
   return path.split("/").filter(Boolean)[0] ?? "";
+}
+
+function isOneNoteSectionContextTarget(
+  target: ContextMenuState,
+  navigationStyle: NavigationStyle,
+  folders: FolderEntry[],
+) {
+  return navigationStyle === "onenote" &&
+    target.kind === "folder" &&
+    (target.path === "" || folders.some((folder) => folder.path === target.path && folder.parent_path === ""));
 }
 
 function getNotebookName(workspace: string) {
