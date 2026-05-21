@@ -505,6 +505,7 @@ body.is-dragging-note.is-over-drop-target * {
   min-height: calc(var(--app-font-size) * 2 + 4px);
   padding-left: calc(var(--row-indent, 0px) + 6px);
   padding-right: 6px;
+  margin-top: 1px;
   margin-bottom: 1px;
   cursor: pointer;
   border-radius: 6px;
@@ -559,6 +560,7 @@ body.is-dragging-note.is-over-drop-target * {
   min-height: calc(var(--app-font-size) * 2 + 4px);
   padding-left: calc(var(--row-indent, 0px) + 10px);
   padding-right: 10px;
+  margin-top: 1px;
   margin-bottom: 1px;
   border: 0;
   border-radius: 6px;
@@ -2343,44 +2345,52 @@ html[data-theme="dark"] .tab-list-separator {
   list-style: none;
 }
 
-.ProseMirror li[data-type="taskItem"] {
-  display: grid;
-  grid-template-columns: 18px minmax(0, 1fr);
+.ProseMirror ul[data-type="taskList"] > li {
+  display: grid !important;
+  grid-template-columns: 22px minmax(0, 1fr);
   column-gap: 10px;
   align-items: start;
+  list-style: none;
 }
 
-.ProseMirror li[data-type="taskItem"] > label {
-  display: inline-flex;
+.ProseMirror ul[data-type="taskList"] > li::marker,
+.ProseMirror ul[data-type="taskList"] > li::before {
+  content: none;
+}
+
+.ProseMirror ul[data-type="taskList"] > li > label {
+  display: inline-flex !important;
   align-items: center;
-  justify-content: center;
-  width: 18px;
+  justify-content: flex-start;
+  width: 22px;
   height: 1.6em;
   margin: 0;
+  padding: 0;
 }
 
-.ProseMirror li[data-type="taskItem"] > label > input[type="checkbox"] {
-  width: 16px;
-  height: 16px;
+.ProseMirror ul[data-type="taskList"] > li > label > input[type="checkbox"] {
+  width: 18px;
+  height: 18px;
   margin: 0;
   accent-color: var(--accent);
   cursor: pointer;
+  flex: 0 0 18px;
 }
 
-.ProseMirror li[data-type="taskItem"] > label > span {
-  display: none;
+.ProseMirror ul[data-type="taskList"] > li > label > span {
+  display: none !important;
 }
 
-.ProseMirror li[data-type="taskItem"] > div {
+.ProseMirror ul[data-type="taskList"] > li > div {
   min-width: 0;
 }
 
-.ProseMirror li[data-type="taskItem"] > div > p {
+.ProseMirror ul[data-type="taskList"] > li > div > p {
   margin: 0;
 }
 
-.ProseMirror li[data-type="taskItem"][data-checked="true"] > div > p {
-  color: rgba(52, 48, 43, 0.55);
+.ProseMirror ul[data-type="taskList"] > li[data-checked="true"] > div > p {
+  opacity: 0.55;
   text-decoration: line-through;
 }
 
