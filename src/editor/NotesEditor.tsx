@@ -13,7 +13,7 @@ import TaskList from "@tiptap/extension-task-list";
 import type { Fragment as ProseMirrorFragment, Node as ProseMirrorNode } from "@tiptap/pm/model";
 import { NodeSelection, Plugin, PluginKey, Selection, TextSelection } from "@tiptap/pm/state";
 import { Decoration, DecorationSet, type EditorView } from "@tiptap/pm/view";
-import { BubbleMenu, EditorContent, NodeViewWrapper, Range, ReactNodeViewRenderer, useEditor, type Editor } from "@tiptap/react";
+import { EditorContent, NodeViewWrapper, Range, ReactNodeViewRenderer, useEditor, type Editor } from "@tiptap/react";
 import StarterKit from "@tiptap/starter-kit";
 import { convertFileSrc } from "@tauri-apps/api/core";
 import {
@@ -648,6 +648,80 @@ export function NotesEditor({ content, focusRequest, focusAtEndRequest, findRequ
 }
 
 function FormattingBubbleMenu({ editor }: { editor: Editor }) {
+  const [suppressed, setSuppressed] = useState(false);
+  const [tick, setTick] = useState(0);
+  const [pendingShow, setPendingShow] = useState(false);
+  const showTimerRef = useRef<number | null>(null);
+
+  // Re-render the bubble when the editor's selection / document changes,
+  // when focus changes, and on window resize/scroll so positioning stays sticky.
+  useEffect(() => {
+    const refresh = () => setTick((value) => value + 1);
+    editor.on("selectionUpdate", refresh);
+    editor.on("transaction", refresh);
+    editor.on("focus", refresh);
+    editor.on("blur", refresh);
+    window.addEventListener("resize", refresh);
+    window.addEventListener("scroll", refresh, true);
+    return () => {
+      editor.off("selectionUpdate", refresh);
+      editor.off("transaction", refresh);
+      editor.off("focus", refresh);
+      editor.off("blur", refresh);
+      window.removeEventListener("resize", refresh);
+      window.removeEventListener("scroll", refresh, true);
+    };
+  }, [editor]);
+
+  // Track Shift and left-mouse-button state. While either is held, suppress
+  // the bubble. On release, re-evaluate immediately so the bubble can appear
+  // without needing a follow-up editor action.
+  useEffect(() => {
+    let shift = false;
+    let mouse = false;
+    const sync = () => setSuppressed(shift || mouse);
+
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key !== "Shift" || shift) return;
+      shift = true;
+      sync();
+    };
+    const handleKeyUp = (event: KeyboardEvent) => {
+      if (event.key !== "Shift" || !shift) return;
+      shift = false;
+      sync();
+    };
+    const handleMouseDown = (event: MouseEvent) => {
+      if (event.button !== 0 || mouse) return;
+      mouse = true;
+      sync();
+    };
+    const handleMouseUp = (event: MouseEvent) => {
+      if (event.button !== 0 || !mouse) return;
+      mouse = false;
+      sync();
+    };
+    const handleBlur = () => {
+      if (!shift && !mouse) return;
+      shift = false;
+      mouse = false;
+      sync();
+    };
+
+    window.addEventListener("keydown", handleKeyDown, true);
+    window.addEventListener("keyup", handleKeyUp, true);
+    window.addEventListener("mousedown", handleMouseDown, true);
+    window.addEventListener("mouseup", handleMouseUp, true);
+    window.addEventListener("blur", handleBlur);
+    return () => {
+      window.removeEventListener("keydown", handleKeyDown, true);
+      window.removeEventListener("keyup", handleKeyUp, true);
+      window.removeEventListener("mousedown", handleMouseDown, true);
+      window.removeEventListener("mouseup", handleMouseUp, true);
+      window.removeEventListener("blur", handleBlur);
+    };
+  }, []);
+
   const setLink = () => {
     const previousUrl = editor.getAttributes("link").href as string | undefined;
     const url = window.prompt("Link URL", previousUrl ?? "");
@@ -677,40 +751,85 @@ function FormattingBubbleMenu({ editor }: { editor: Editor }) {
     { label: "Quote", icon: Quote, active: editor.isActive("blockquote"), run: () => editor.chain().focus().toggleBlockquote().run() },
   ];
 
+  const eligible = (() => {
+    if (typeof document === "undefined") return false;
+    if (document.querySelector(".dialog-backdrop")) return false;
+    const activeElement = document.activeElement;
+    if (activeElement instanceof HTMLElement && activeElement.closest(".note-find-bar")) return false;
+    const { selection } = editor.state;
+    if (selection instanceof NodeSelection && selection.node.type.name === "image") return false;
+    if (editor.isActive("image")) return false;
+    return !selection.empty && editor.isEditable && editor.isFocused;
+  })();
+
+  const visible = eligible && !suppressed && pendingShow;
+
+  // Small show delay so the bubble doesn't jump in the moment a selection lands.
+  useEffect(() => {
+    if (eligible && !suppressed) {
+      if (pendingShow) return;
+      const timer = window.setTimeout(() => setPendingShow(true), 80);
+      showTimerRef.current = timer;
+      return () => window.clearTimeout(timer);
+    }
+    if (showTimerRef.current !== null) {
+      window.clearTimeout(showTimerRef.current);
+      showTimerRef.current = null;
+    }
+    if (pendingShow) setPendingShow(false);
+    return undefined;
+  }, [eligible, suppressed, pendingShow]);
+
+  const position = (() => {
+    if (!visible) return null;
+    const { from, to } = editor.state.selection;
+    try {
+      const start = editor.view.coordsAtPos(from);
+      const end = editor.view.coordsAtPos(to);
+      const top = Math.min(start.top, end.top);
+      const left = (start.left + end.left) / 2;
+      return { top, left };
+    } catch {
+      return null;
+    }
+  })();
+
+  // Reference `tick` so the closure stays subscribed to editor events without
+  // ESLint warning. Position is recomputed every render anyway.
+  void tick;
+
+  if (!visible || !position) return null;
+
   return (
-    <BubbleMenu
-      editor={editor}
-      tippyOptions={{ duration: 120, delay: [250, 0], placement: "top", zIndex: 55 }}
-      shouldShow={({ editor }) => {
-        if (document.querySelector(".dialog-backdrop")) return false;
-        const activeElement = document.activeElement;
-        if (activeElement instanceof HTMLElement && activeElement.closest(".note-find-bar")) return false;
-        const { selection } = editor.state;
-        if (selection instanceof NodeSelection && selection.node.type.name === "image") return false;
-        if (editor.isActive("image")) return false;
-        return !editor.state.selection.empty && editor.isEditable && editor.isFocused;
+    <div
+      className="format-bubble"
+      style={{
+        position: "fixed",
+        top: position.top,
+        left: position.left,
+        transform: "translate(-50%, calc(-100% - 8px))",
+        zIndex: 55,
       }}
+      onMouseDown={(event) => event.preventDefault()}
     >
-      <div className="format-bubble">
-        {buttons.map((button) => {
-          const Icon = button.icon;
-          return (
-            <button
-              className={button.active ? "is-active" : ""}
-              key={button.label}
-              type="button"
-              title={button.label}
-              onMouseDown={(event) => {
-                event.preventDefault();
-                button.run();
-              }}
-            >
-              <Icon size={15} />
-            </button>
-          );
-        })}
-      </div>
-    </BubbleMenu>
+      {buttons.map((button) => {
+        const Icon = button.icon;
+        return (
+          <button
+            className={button.active ? "is-active" : ""}
+            key={button.label}
+            type="button"
+            title={button.label}
+            onMouseDown={(event) => {
+              event.preventDefault();
+              button.run();
+            }}
+          >
+            <Icon size={15} />
+          </button>
+        );
+      })}
+    </div>
   );
 }
 
