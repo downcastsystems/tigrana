@@ -39,17 +39,20 @@ import type { CSSProperties, ReactNode } from "react";
 import { Component, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { NotesEditor } from "./editor/NotesEditor";
 import {
+  cleanupTrash,
   createFolder,
   createNote,
-  deleteFolder,
-  deleteNote,
   ensureWorkspace,
   isTauri,
   listFolders,
   listNotes,
+  listTrash,
   moveFolder,
   moveNote,
+  purgeTrash,
+  purgeTrashAll,
   readNote,
+  restoreTrash,
   revealPath,
   readWorkspaceMetadata,
   renameFolder,
@@ -57,11 +60,14 @@ import {
   SAMPLE_WORKSPACE,
   saveNote,
   decodeTitleFromFilename,
+  trashFolder,
+  trashNote,
   validateNoteTitle,
   watchWorkspace,
   writeWorkspaceMetadata,
   defaultWorkspaceMetadata,
 } from "./lib/notesApi";
+import type { TrashEntry } from "./lib/notesApi";
 import { normalizeMarkdownImageLines } from "./lib/markdown";
 import { searchNotes } from "./lib/search";
 import type { BookmarkEntry, FolderEntry, NavigationStyle, NotebookThemeColors, NoteEntry, NotePositionMetadata, SearchResult, WorkspaceMetadata } from "./types";
@@ -84,7 +90,7 @@ const accentTitlebarKey = "lumen-notes-accent-titlebar";
 const windowSizeKey = "lumen-notes-window-size";
 const sessionKeyPrefix = "lumen-notes-session:";
 const notePositionFreshMs = 24 * 60 * 60 * 1000;
-const defaultLightAccent = "#229ff9";
+const defaultLightAccent = "#666666";
 const defaultAppFontFamily = 'Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif';
 const defaultEditorFontFamily = defaultAppFontFamily;
 const defaultAppFontSize = 14;
@@ -291,7 +297,7 @@ export default function App() {
   const [themePresetId, setThemePresetId] = useState<ThemePresetId>(() => readStoredThemePreset());
   const [themeColors, setThemeColors] = useState<NotebookThemeColorSettings>(() => readStoredNotebookThemeColors());
   const [accentTitlebar, setAccentTitlebar] = useState<boolean>(() => localStorage.getItem(accentTitlebarKey) === "true");
-  const [navigationStyle, setNavigationStyle] = useState<NavigationStyle>("dual-pane");
+  const [navigationStyle, setNavigationStyle] = useState<NavigationStyle>("section-view");
   const [appFontFamily, setAppFontFamily] = useState(defaultAppFontFamily);
   const [appFontSize, setAppFontSize] = useState(defaultAppFontSize);
   const [editorFontFamily, setEditorFontFamily] = useState(defaultEditorFontFamily);
@@ -321,6 +327,9 @@ export default function App() {
   const [appError, setAppError] = useState<string | null>(null);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [notebooksManageOpen, setNotebooksManageOpen] = useState(false);
+  const [recentlyDeletedOpen, setRecentlyDeletedOpen] = useState(false);
+  const [trashEntries, setTrashEntries] = useState<TrashEntry[]>([]);
+  const [trashLoading, setTrashLoading] = useState(false);
   const [recentNotebooks, setRecentNotebooks] = useState<RecentNotebook[]>(() => readRecentNotebooks());
   const [appMenuOpen, setAppMenuOpen] = useState(false);
   const [leftVisible, setLeftVisible] = useState(true);
@@ -400,10 +409,10 @@ export default function App() {
   const titlebarColor = activeThemeColors.titlebarColor ?? null;
   const effectiveTitlebarColor = titlebarUseAccent ? effectiveAccentColor : (titlebarColor || effectiveAccentColor);
   const selectedFolderTitle = useMemo(() => displayFolderName(selectedFolder, folders, workspace), [folders, selectedFolder, workspace]);
-  const selectedOneNoteSection = useMemo(() => getTopLevelFolderPath(selectedFolder), [selectedFolder]);
-  const selectedOneNoteSectionTitle = useMemo(
-    () => (selectedOneNoteSection ? displayFolderName(selectedOneNoteSection, folders, workspace) : "Unorganized"),
-    [folders, selectedOneNoteSection, workspace],
+  const selectedSection = useMemo(() => getTopLevelFolderPath(selectedFolder), [selectedFolder]);
+  const selectedSectionTitle = useMemo(
+    () => (selectedSection ? displayFolderName(selectedSection, folders, workspace) : "Unorganized"),
+    [folders, selectedSection, workspace],
   );
   const bookmarks = useMemo(() => buildBookmarkViews(metadata.bookmarks, folders, notes, metadata, workspace), [folders, metadata, notes, workspace]);
   const visibleTabs = useMemo(
@@ -558,6 +567,39 @@ export default function App() {
     return () => unlisten?.();
   }, []);
 
+  const refreshTrash = useCallback(async () => {
+    if (!workspace) {
+      setTrashEntries([]);
+      return;
+    }
+    setTrashLoading(true);
+    try {
+      const entries = await listTrash(workspace);
+      setTrashEntries(entries.sort((a, b) => b.deletedAt - a.deletedAt));
+    } catch (error) {
+      setAppError(error instanceof Error ? error.message : String(error));
+    } finally {
+      setTrashLoading(false);
+    }
+  }, [workspace]);
+
+  useEffect(() => {
+    if (!isTauri()) return;
+    let unlisten: (() => void) | undefined;
+    void listen("open-recently-deleted", () => {
+      setRecentlyDeletedOpen(true);
+      void refreshTrash();
+    }).then((callback) => {
+      unlisten = callback;
+    });
+    return () => unlisten?.();
+  }, [refreshTrash]);
+
+  useEffect(() => {
+    if (!workspace) return;
+    void cleanupTrash(workspace).catch(() => {});
+  }, [workspace]);
+
   useEffect(() => {
     if (!workspace || !isTauri()) return;
     void watchWorkspace(workspace).catch((error) => {
@@ -588,7 +630,7 @@ export default function App() {
           if (a.themePresetId && themePresets.some((p) => p.id === a.themePresetId)) setThemePresetId(a.themePresetId as ThemePresetId);
           setThemeColors(readAppearanceThemeColors(a));
           if (typeof a.accentTitlebar === "boolean") setAccentTitlebar(a.accentTitlebar);
-          if (a.navigationStyle) setNavigationStyle(a.navigationStyle);
+          if (a.navigationStyle) setNavigationStyle(a.navigationStyle === ("onenote" as NavigationStyle) ? "section-view" : a.navigationStyle);
           setAppFontFamily(a.appFontFamily || defaultAppFontFamily);
           setAppFontSize(readAppearanceFontSize(a.appFontSize, defaultAppFontSize));
           setEditorFontFamily(a.editorFontFamily || defaultEditorFontFamily);
@@ -598,7 +640,7 @@ export default function App() {
           setThemePresetId(readStoredThemePreset());
           setThemeColors(readStoredNotebookThemeColors());
           setAccentTitlebar(localStorage.getItem(accentTitlebarKey) === "true");
-          setNavigationStyle("dual-pane");
+          setNavigationStyle("section-view");
           setAppFontFamily(defaultAppFontFamily);
           setAppFontSize(defaultAppFontSize);
           setEditorFontFamily(defaultEditorFontFamily);
@@ -984,7 +1026,7 @@ export default function App() {
     setActivePath(path);
     setPendingNote(null);
     if (note && !options.preserveSelectedFolder) {
-      setSelectedFolder(navigationStyle === "onenote" ? getTopLevelFolderPath(note.parent_path) : note.parent_path);
+      setSelectedFolder(navigationStyle === "section-view" ? getTopLevelFolderPath(note.parent_path) : note.parent_path);
     }
     placePathInActiveTab(path);
     loadContentIntoEditor(note ?? null, content, restorePosition);
@@ -992,7 +1034,7 @@ export default function App() {
     setSearchQuery("");
   }
 
-  function findLastOpenedNoteInOneNoteSection(sectionPath: string) {
+  function findLastOpenedNoteInSection(sectionPath: string) {
     const sectionNotes = notes.filter((note) =>
       sectionPath
         ? note.parent_path === sectionPath || note.parent_path.startsWith(`${sectionPath}/`)
@@ -1008,13 +1050,13 @@ export default function App() {
       .sort((a, b) => b.lastOpenedAt - a.lastOpenedAt)[0]?.note ?? null;
   }
 
-  async function selectOneNoteSection(sectionPath: string) {
+  async function selectSection(sectionPath: string) {
     if (hasUnsavedChanges) {
       await persistDraft();
     }
 
     setSelectedFolder(sectionPath);
-    const lastOpenedNote = findLastOpenedNoteInOneNoteSection(sectionPath);
+    const lastOpenedNote = findLastOpenedNoteInSection(sectionPath);
     if (lastOpenedNote) {
       await selectNote(lastOpenedNote.path, { preserveSelectedFolder: true, skipPersist: true });
       return;
@@ -1103,7 +1145,7 @@ export default function App() {
         setNotes((current) => current.some((entry) => entry.path === note.path) ? current : [...current, note]);
         setActivePath(note.path);
         setPendingNote(null);
-        setSelectedFolder(navigationStyle === "onenote" ? getTopLevelFolderPath(note.parent_path) : note.parent_path);
+        setSelectedFolder(navigationStyle === "section-view" ? getTopLevelFolderPath(note.parent_path) : note.parent_path);
         placePathInActiveTab(note.path);
         updateMetadata((current) => addToOrder(current, note.parent_path, note.path));
       } else if (activePath && titleDraft.trim() !== savedTitle) {
@@ -1305,7 +1347,7 @@ export default function App() {
       setActivePath(tab.path);
       setPendingNote(null);
       if (note) {
-        setSelectedFolder(navigationStyle === "onenote" ? getTopLevelFolderPath(note.parent_path) : note.parent_path);
+        setSelectedFolder(navigationStyle === "section-view" ? getTopLevelFolderPath(note.parent_path) : note.parent_path);
       }
       loadContentIntoEditor(note ?? null, content, restorePosition);
       recordNotePosition(tab.path, content, { lastOpenedAt: Date.now() });
@@ -1336,7 +1378,7 @@ export default function App() {
         setActivePath(nextTab.path);
         setPendingNote(null);
         if (note) {
-          setSelectedFolder(navigationStyle === "onenote" ? getTopLevelFolderPath(note.parent_path) : note.parent_path);
+          setSelectedFolder(navigationStyle === "section-view" ? getTopLevelFolderPath(note.parent_path) : note.parent_path);
         }
         loadContentIntoEditor(note ?? null, content, restorePosition);
         recordNotePosition(nextTab.path, content, { lastOpenedAt: Date.now() });
@@ -1449,7 +1491,7 @@ export default function App() {
 
   async function handleDeleteNote(path: string) {
     if (!workspace) return;
-    await deleteNote(workspace, path);
+    await trashNote(workspace, path);
     if (activePath === path) {
       clearCurrentNote();
     }
@@ -1460,12 +1502,43 @@ export default function App() {
 
   async function handleDeleteFolder(path: string) {
     if (!workspace || !path) return;
-    await deleteFolder(workspace, path);
+    await trashFolder(workspace, path);
     if (selectedFolder === path || selectedFolder.startsWith(`${path}/`)) setSelectedFolder("");
     if (activePath?.startsWith(`${path}/`)) clearCurrentNote();
     setOpenTabs((current) => current.filter((tab) => !tab.path?.startsWith(`${path}/`)));
     updateMetadata((current) => removeFolderFromMetadata(current, path));
     await refreshWorkspace(workspace);
+  }
+
+  async function handleRestoreTrash(id: string) {
+    if (!workspace) return;
+    try {
+      await restoreTrash(workspace, id);
+      await refreshTrash();
+      await refreshWorkspace(workspace);
+    } catch (error) {
+      setAppError(error instanceof Error ? error.message : String(error));
+    }
+  }
+
+  async function handlePurgeTrash(id: string) {
+    if (!workspace) return;
+    try {
+      await purgeTrash(workspace, id);
+      await refreshTrash();
+    } catch (error) {
+      setAppError(error instanceof Error ? error.message : String(error));
+    }
+  }
+
+  async function handlePurgeTrashAll() {
+    if (!workspace) return;
+    try {
+      await purgeTrashAll(workspace);
+      await refreshTrash();
+    } catch (error) {
+      setAppError(error instanceof Error ? error.message : String(error));
+    }
   }
 
   function openPropertyDialog(kind: PropertyDialogState["kind"], path: string, subject: "folder" | "section" = "folder") {
@@ -2056,15 +2129,15 @@ export default function App() {
               }}
               onToggleSearch={() => setSearchOpen((value) => !value)}
             />
-          ) : navigationStyle === "onenote" ? (
+          ) : navigationStyle === "section-view" ? (
             <>
-              <OneNoteFolderPane
+              <SectionViewFolderPane
                 bookmarks={bookmarks}
                 bookmarksExpanded={metadata.bookmarksExpanded}
                 draggingItem={draggingItem}
                 folders={folderTree[0]?.children ?? []}
                 metadata={metadata}
-                selectedFolder={selectedOneNoteSection}
+                selectedFolder={selectedSection}
                 workspace={workspace}
                 menuOpen={appMenuOpen}
                 recentNotebooks={recentNotebooks}
@@ -2082,7 +2155,7 @@ export default function App() {
                 onRemoveBookmark={removeBookmark}
                 onSearchQueryChange={setSearchQuery}
                 onSelectBookmark={selectBookmark}
-                onSelectFolder={(path) => void selectOneNoteSection(path)}
+                onSelectFolder={(path) => void selectSection(path)}
                 onSelectNotebook={openNotebookInNewWindow}
                 onSelectSearchResult={selectNote}
                 onToggleBookmarksExpanded={() =>
@@ -2102,11 +2175,11 @@ export default function App() {
                 folders={folders}
                 metadata={metadata}
                 notes={notes}
-                rootPath={selectedOneNoteSection}
-                hiddenFolderParentPath={selectedOneNoteSection === "" ? "" : undefined}
+                rootPath={selectedSection}
+                hiddenFolderParentPath={selectedSection === "" ? "" : undefined}
                 selectedFolderPath={activePath ? undefined : selectedFolder}
                 showPins
-                title={selectedOneNoteSectionTitle}
+                title={selectedSectionTitle}
                 workspace={workspace}
                 onContextMenu={openContextMenu}
                 onCreateFolder={requestCreateFolder}
@@ -2118,7 +2191,7 @@ export default function App() {
                 onPointerDragStart={beginNotePointerDrag}
                 onSelectFolder={(path) => void selectFolderForNewNote(path)}
                 onSelectNote={(path) => {
-                  setSelectedFolder(selectedOneNoteSection);
+                  setSelectedFolder(selectedSection);
                   handleNoteSelectFromCard(path, { preserveSelectedFolder: true });
                 }}
                 onSetFolderExpanded={setFolderExpanded}
@@ -2349,7 +2422,7 @@ export default function App() {
       {contextMenu ? (
         <ContextMenu
           state={contextMenu}
-          folderColorSubject={isOneNoteSectionContextTarget(contextMenu, navigationStyle, folders) ? "section" : "folder"}
+          folderColorSubject={isSectionContextTarget(contextMenu, navigationStyle, folders) ? "section" : "folder"}
           createFolderParentName={displayFolderName(contextMenu.kind === "folder" ? contextMenu.path : selectedFolder, folders, workspace)}
           onCreateFolder={() => requestCreateFolder(contextMenu.kind === "folder" ? contextMenu.path : selectedFolder)}
           onCreateNote={() => requestCreateNote(contextMenu.kind === "folder" ? contextMenu.path : selectedFolder)}
@@ -2367,7 +2440,7 @@ export default function App() {
           onRenameFolder={() => contextMenu.kind === "folder" && openPropertyDialog("rename-folder", contextMenu.path)}
           onSetFolderColor={() =>
             contextMenu.kind === "folder" &&
-            openPropertyDialog("folder-color", contextMenu.path, isOneNoteSectionContextTarget(contextMenu, navigationStyle, folders) ? "section" : "folder")
+            openPropertyDialog("folder-color", contextMenu.path, isSectionContextTarget(contextMenu, navigationStyle, folders) ? "section" : "folder")
           }
           onSetFolderIcon={() => contextMenu.kind === "folder" && openIconBrowser("folder", contextMenu.path)}
           onSetNoteIcon={() => contextMenu.kind === "note" && openIconBrowser("note", contextMenu.path)}
@@ -2402,7 +2475,7 @@ export default function App() {
                 <Folder size={18} />
               </span>
               <div>
-                <h2>{navigationStyle === "onenote" ? "New section" : "New folder"}</h2>
+                <h2>{navigationStyle === "section-view" ? "New section" : "New folder"}</h2>
                 <p>{folderDialogParent ? `Create in ${folderDialogParent}` : "Create at the notebook root"}</p>
               </div>
               <button className="icon-button" type="button" title="Close" onClick={() => setFolderDialogParent(null)}>
@@ -2417,7 +2490,7 @@ export default function App() {
               id="folder-name"
               value={folderName}
               onChange={(event) => setFolderName(event.target.value)}
-              placeholder={navigationStyle === "onenote" ? "Section name" : "Folder name"}
+              placeholder={navigationStyle === "section-view" ? "Section name" : "Folder name"}
               autoFocus
             />
             {appError ? <p className="dialog-error">{appError}</p> : null}
@@ -2479,6 +2552,17 @@ export default function App() {
             switchNotebook(path);
             setNotebooksManageOpen(false);
           }}
+        />
+      ) : null}
+
+      {recentlyDeletedOpen ? (
+        <RecentlyDeletedDialog
+          entries={trashEntries}
+          loading={trashLoading}
+          onClose={() => setRecentlyDeletedOpen(false)}
+          onRestore={handleRestoreTrash}
+          onPurge={handlePurgeTrash}
+          onPurgeAll={handlePurgeTrashAll}
         />
       ) : null}
 
@@ -2835,6 +2919,20 @@ function FolderSearch({
           spellCheck={false}
           autoFocus
         />
+        {query ? (
+          <button
+            type="button"
+            className="folder-search-clear"
+            aria-label="Clear search"
+            title="Clear search"
+            onClick={() => {
+              onQueryChange("");
+              inputRef.current?.focus();
+            }}
+          >
+            <X size={13} />
+          </button>
+        ) : null}
       </div>
       {query.trim() ? (
         <div className="folder-search-results">
@@ -3007,9 +3105,9 @@ function FolderRow({
   );
 }
 
-// ---------- OneNote first pane (root folders only) ----------
+// ---------- Section View first pane (root folders only) ----------
 
-function OneNoteFolderPane({
+function SectionViewFolderPane({
   bookmarks,
   bookmarksExpanded,
   draggingItem,
@@ -3081,7 +3179,7 @@ function OneNoteFolderPane({
   };
 
   return (
-    <section className="folder-pane onenote-folder-pane">
+    <section className="folder-pane section-view-folder-pane">
       <div className="pane-header">
         <strong>Sections</strong>
         <div className="pane-actions">
@@ -3191,7 +3289,7 @@ function OneNoteFolderPane({
   );
 }
 
-// ---------- Unified Tree (Single Pane / OneNote second pane) ----------
+// ---------- Unified Tree (Single Pane / Section View second pane) ----------
 
 function UnifiedNode({
   activePath,
@@ -4466,7 +4564,7 @@ function SettingsModal({
             >
               <option value="dual-pane">Dual Pane</option>
               <option value="single-pane">Single Pane</option>
-              <option value="onenote">OneNote</option>
+              <option value="section-view">Dual Pane (Sections)</option>
             </select>
           </div>
           <div className="setting-row">
@@ -4712,6 +4810,95 @@ function ManageNotebooksModal({
             </div>
           ))}
           {!notebooks.length ? <p className="empty-sidebar-note">No recent notebooks</p> : null}
+        </div>
+      </section>
+    </div>
+  );
+}
+
+function RecentlyDeletedDialog({
+  entries,
+  loading,
+  onClose,
+  onRestore,
+  onPurge,
+  onPurgeAll,
+}: {
+  entries: TrashEntry[];
+  loading: boolean;
+  onClose: () => void;
+  onRestore: (id: string) => void | Promise<void>;
+  onPurge: (id: string) => void | Promise<void>;
+  onPurgeAll: () => void | Promise<void>;
+}) {
+  const formatDate = (millis: number) => {
+    const date = new Date(millis);
+    return `${date.toLocaleDateString()} ${date.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}`;
+  };
+
+  return (
+    <div className="dialog-backdrop" onMouseDown={onClose}>
+      <section className="dialog recently-deleted-dialog" onMouseDown={(event) => event.stopPropagation()}>
+        <div className="dialog-header">
+          <span className="dialog-icon">
+            <Trash2 size={18} />
+          </span>
+          <div>
+            <h2>Recently Deleted</h2>
+            <p>Items are kept here for 30 days, then removed automatically.</p>
+          </div>
+          <button className="icon-button" type="button" title="Close" onClick={onClose}>
+            <X size={17} />
+          </button>
+        </div>
+        <div className="recently-deleted-list">
+          {loading && !entries.length ? <p className="empty-sidebar-note">Loading…</p> : null}
+          {!loading && !entries.length ? <p className="empty-sidebar-note">Nothing here yet.</p> : null}
+          {entries.map((entry) => (
+            <div className="recently-deleted-row" key={entry.id}>
+              {entry.kind === "folder" ? <Folder size={15} /> : <FileText size={15} />}
+              <div className="recently-deleted-info">
+                <strong>{entry.displayName}</strong>
+                <small>
+                  {entry.originalPath || "(root)"} · deleted {formatDate(entry.deletedAt)}
+                </small>
+              </div>
+              <button
+                type="button"
+                className="recently-deleted-action"
+                title="Restore to its original location"
+                onClick={() => void onRestore(entry.id)}
+              >
+                Restore
+              </button>
+              <button
+                type="button"
+                className="icon-button"
+                title="Delete permanently"
+                onClick={() => {
+                  if (window.confirm(`Permanently delete "${entry.displayName}"?`)) {
+                    void onPurge(entry.id);
+                  }
+                }}
+              >
+                <Trash2 size={15} />
+              </button>
+            </div>
+          ))}
+        </div>
+        <div className="dialog-footer">
+          <button
+            type="button"
+            className="danger-button"
+            disabled={!entries.length}
+            onClick={() => {
+              if (window.confirm("Permanently delete all items in Recently Deleted?")) {
+                void onPurgeAll();
+              }
+            }}
+          >
+            Empty Recently Deleted
+          </button>
         </div>
       </section>
     </div>
@@ -5602,12 +5789,12 @@ function getTopLevelFolderPath(path: string) {
   return path.split("/").filter(Boolean)[0] ?? "";
 }
 
-function isOneNoteSectionContextTarget(
+function isSectionContextTarget(
   target: ContextMenuState,
   navigationStyle: NavigationStyle,
   folders: FolderEntry[],
 ) {
-  return navigationStyle === "onenote" &&
+  return navigationStyle === "section-view" &&
     target.kind === "folder" &&
     (target.path === "" || folders.some((folder) => folder.path === target.path && folder.parent_path === ""));
 }

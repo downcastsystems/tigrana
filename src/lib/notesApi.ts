@@ -300,6 +300,64 @@ export async function deleteFolder(workspace: string, path: string) {
   writeDemoStore(store);
 }
 
+export type TrashEntry = {
+  id: string;
+  kind: "note" | "folder";
+  originalPath: string;
+  displayName: string;
+  trashName: string;
+  deletedAt: number;
+};
+
+export async function trashNote(workspace: string, path: string): Promise<TrashEntry | null> {
+  if (isTauri()) {
+    return invoke<TrashEntry>("trash_note", { payload: { workspace, path } });
+  }
+  await deleteNote(workspace, path);
+  return null;
+}
+
+export async function trashFolder(workspace: string, path: string): Promise<TrashEntry | null> {
+  if (isTauri()) {
+    return invoke<TrashEntry>("trash_folder", { payload: { workspace, path } });
+  }
+  await deleteFolder(workspace, path);
+  return null;
+}
+
+export async function listTrash(workspace: string): Promise<TrashEntry[]> {
+  if (isTauri()) {
+    return invoke<TrashEntry[]>("list_trash", { workspace });
+  }
+  return [];
+}
+
+export async function restoreTrash(workspace: string, id: string): Promise<string | null> {
+  if (isTauri()) {
+    return invoke<string>("restore_trash", { payload: { workspace, id } });
+  }
+  return null;
+}
+
+export async function purgeTrash(workspace: string, id: string): Promise<void> {
+  if (isTauri()) {
+    await invoke("purge_trash", { payload: { workspace, id } });
+  }
+}
+
+export async function purgeTrashAll(workspace: string): Promise<void> {
+  if (isTauri()) {
+    await invoke("purge_trash_all", { workspace });
+  }
+}
+
+export async function cleanupTrash(workspace: string): Promise<number> {
+  if (isTauri()) {
+    return invoke<number>("cleanup_trash", { workspace });
+  }
+  return 0;
+}
+
 export async function saveAsset(workspace: string, file: File) {
   if (isTauri()) {
     const bytes = Array.from(new Uint8Array(await file.arrayBuffer()));

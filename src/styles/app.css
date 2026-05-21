@@ -473,7 +473,7 @@ body.is-dragging-note.is-over-drop-target * {
   background: var(--surface-soft);
 }
 
-/* ---------- Unified Tree Pane (Single Pane / OneNote) ---------- */
+/* ---------- Unified Tree Pane (Single Pane / Section View) ---------- */
 
 .unified-tree-pane {
   display: flex;
@@ -632,7 +632,7 @@ body.is-dragging-note.is-over-drop-target * {
   white-space: nowrap;
 }
 
-.onenote-folder-pane .folder-tree {
+.section-view-folder-pane .folder-tree {
   padding: 6px 0;
 }
 
@@ -640,7 +640,7 @@ body.is-dragging-note.is-over-drop-target * {
   display: none;
 }
 
-.onenote-folder-pane .folder-row {
+.section-view-folder-pane .folder-row {
   grid-template-columns: minmax(0, 1fr);
   min-height: 42px;
   padding: 0;
@@ -648,7 +648,7 @@ body.is-dragging-note.is-over-drop-target * {
   --section-color: transparent;
 }
 
-.onenote-folder-pane .section-color-chip {
+.section-view-folder-pane .section-color-chip {
   position: absolute;
   top: 0;
   bottom: 0;
@@ -659,31 +659,31 @@ body.is-dragging-note.is-over-drop-target * {
   background: var(--section-color);
 }
 
-.onenote-folder-pane .folder-row[data-has-section-color="true"] .section-color-chip {
+.section-view-folder-pane .folder-row[data-has-section-color="true"] .section-color-chip {
   display: block;
 }
 
-.onenote-folder-pane .folder-row .tree-toggle {
+.section-view-folder-pane .folder-row .tree-toggle {
   display: none;
 }
 
-.onenote-folder-pane .folder-row .folder-select {
+.section-view-folder-pane .folder-row .folder-select {
   min-height: 42px;
   padding: 0 14px;
   border-radius: inherit;
 }
 
-.onenote-folder-pane .folder-select svg,
-.onenote-folder-pane .folder-select .custom-icon,
+.section-view-folder-pane .folder-select svg,
+.section-view-folder-pane .folder-select .custom-icon,
 .unified-folder-name > svg,
 .unified-folder-name > .custom-icon,
 .unified-note-row > .inline-icon-button {
   transform: translateY(2px);
 }
 
-.onenote-folder-pane .folder-row:hover,
-.onenote-folder-pane .folder-row.is-active,
-.onenote-folder-pane .folder-row.is-context-target,
+.section-view-folder-pane .folder-row:hover,
+.section-view-folder-pane .folder-row.is-active,
+.section-view-folder-pane .folder-row.is-context-target,
 .left-panes:not(.is-single-col) .unified-folder-row:hover,
 .left-panes:not(.is-single-col) .unified-folder-row.is-active,
 .left-panes:not(.is-single-col) .unified-note-row:hover,
@@ -692,15 +692,15 @@ body.is-dragging-note.is-over-drop-target * {
   background: var(--accent);
 }
 
-.onenote-folder-pane .folder-row:hover::before,
-.onenote-folder-pane .folder-row.is-active::before,
-.onenote-folder-pane .folder-row.is-context-target::before {
+.section-view-folder-pane .folder-row:hover::before,
+.section-view-folder-pane .folder-row.is-active::before,
+.section-view-folder-pane .folder-row.is-context-target::before {
   background: transparent;
 }
 
-.onenote-folder-pane .folder-row:hover .folder-select span,
-.onenote-folder-pane .folder-row.is-active .folder-select span,
-.onenote-folder-pane .folder-row.is-context-target .folder-select span,
+.section-view-folder-pane .folder-row:hover .folder-select span,
+.section-view-folder-pane .folder-row.is-active .folder-select span,
+.section-view-folder-pane .folder-row.is-context-target .folder-select span,
 .left-panes:not(.is-single-col) .unified-folder-row:hover .unified-folder-name,
 .left-panes:not(.is-single-col) .unified-folder-row.is-active .unified-folder-name {
   color: inherit !important;
@@ -931,7 +931,7 @@ body.is-dragging-note.is-over-drop-target * {
   align-items: center;
   gap: 7px;
   min-height: 30px;
-  padding: 0 4px 0 8px;
+  padding: 0 4px 0 22px;
   border: 0;
   border-radius: 7px;
   background: transparent;
@@ -999,7 +999,7 @@ body.is-dragging-note.is-over-drop-target * {
 
 .folder-search-input {
   display: grid;
-  grid-template-columns: 16px minmax(0, 1fr);
+  grid-template-columns: 16px minmax(0, 1fr) auto;
   align-items: center;
   gap: 8px;
   min-height: 34px;
@@ -1015,6 +1015,26 @@ body.is-dragging-note.is-over-drop-target * {
   outline: 0;
   color: #302b25;
   background: transparent;
+}
+
+.folder-search-clear {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  height: 18px;
+  padding: 0;
+  border: 0;
+  border-radius: 4px;
+  background: transparent;
+  color: inherit;
+  opacity: 0.55;
+  cursor: pointer;
+}
+
+.folder-search-clear:hover {
+  background: color-mix(in srgb, currentColor 12%, transparent);
+  opacity: 1;
 }
 
 .folder-search-results {
@@ -1517,6 +1537,97 @@ html[data-theme="dark"] .frontmatter-add:hover {
   margin-top: 3px;
   color: var(--text-muted);
   font-size: 12px;
+}
+
+.recently-deleted-dialog {
+  width: min(760px, 92vw);
+}
+
+.recently-deleted-dialog .dialog-header p {
+  overflow: visible;
+  white-space: normal;
+  text-overflow: clip;
+}
+
+.recently-deleted-list {
+  display: grid;
+  gap: 6px;
+  max-height: min(520px, calc(100vh - 240px));
+  margin-top: 14px;
+  padding: 4px;
+  overflow: auto;
+}
+
+.recently-deleted-row {
+  display: grid;
+  grid-template-columns: 18px minmax(0, 1fr) auto 28px;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 10px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--surface);
+}
+
+.recently-deleted-info {
+  min-width: 0;
+}
+
+.recently-deleted-info strong {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 14px;
+}
+
+.recently-deleted-info small {
+  display: block;
+  color: var(--text-muted);
+  font-size: 12px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.recently-deleted-action {
+  padding: 4px 10px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: transparent;
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.recently-deleted-action:hover {
+  background: var(--accent-soft);
+  border-color: color-mix(in srgb, var(--accent) 35%, var(--border));
+  color: var(--accent-strong);
+}
+
+.dialog-footer {
+  display: flex;
+  justify-content: flex-end;
+  margin-top: 16px;
+}
+
+.danger-button {
+  padding: 8px 14px;
+  border: 1px solid rgba(180, 60, 60, 0.35);
+  border-radius: 7px;
+  background: rgba(180, 60, 60, 0.08);
+  color: rgb(140, 40, 40);
+  cursor: pointer;
+  font-size: 13px;
+}
+
+.danger-button:hover:not(:disabled) {
+  background: rgba(180, 60, 60, 0.16);
+}
+
+.danger-button:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
 }
 
 .context-menu {
@@ -2244,7 +2355,20 @@ html[data-theme="dark"] .tab-list-separator {
   align-items: center;
   justify-content: center;
   width: 18px;
-  margin-top: 5px;
+  height: 1.6em;
+  margin: 0;
+}
+
+.ProseMirror li[data-type="taskItem"] > label > input[type="checkbox"] {
+  width: 16px;
+  height: 16px;
+  margin: 0;
+  accent-color: var(--accent);
+  cursor: pointer;
+}
+
+.ProseMirror li[data-type="taskItem"] > label > span {
+  display: none;
 }
 
 .ProseMirror li[data-type="taskItem"] > div {
@@ -2253,6 +2377,11 @@ html[data-theme="dark"] .tab-list-separator {
 
 .ProseMirror li[data-type="taskItem"] > div > p {
   margin: 0;
+}
+
+.ProseMirror li[data-type="taskItem"][data-checked="true"] > div > p {
+  color: rgba(52, 48, 43, 0.55);
+  text-decoration: line-through;
 }
 
 .ProseMirror table {
@@ -3058,9 +3187,9 @@ html[data-theme="dark"] .folder-row:hover {
   background: transparent;
 }
 
-html[data-theme="dark"] .onenote-folder-pane .folder-row:hover,
-html[data-theme="dark"] .onenote-folder-pane .folder-row.is-active,
-html[data-theme="dark"] .onenote-folder-pane .folder-row.is-context-target,
+html[data-theme="dark"] .section-view-folder-pane .folder-row:hover,
+html[data-theme="dark"] .section-view-folder-pane .folder-row.is-active,
+html[data-theme="dark"] .section-view-folder-pane .folder-row.is-context-target,
 html[data-theme="dark"] .left-panes:not(.is-single-col) .unified-folder-row:hover,
 html[data-theme="dark"] .left-panes:not(.is-single-col) .unified-folder-row.is-active,
 html[data-theme="dark"] .left-panes:not(.is-single-col) .unified-note-row:hover,
@@ -3069,9 +3198,9 @@ html[data-theme="dark"] .left-panes:not(.is-single-col) .unified-note-row.is-act
   background: var(--accent);
 }
 
-html[data-theme="dark"] .onenote-folder-pane .folder-row:hover::before,
-html[data-theme="dark"] .onenote-folder-pane .folder-row.is-active::before,
-html[data-theme="dark"] .onenote-folder-pane .folder-row.is-context-target::before {
+html[data-theme="dark"] .section-view-folder-pane .folder-row:hover::before,
+html[data-theme="dark"] .section-view-folder-pane .folder-row.is-active::before,
+html[data-theme="dark"] .section-view-folder-pane .folder-row.is-context-target::before {
   background: transparent;
 }
 
@@ -3287,8 +3416,8 @@ html[data-theme="dark"] .switch input:checked + .switch-track {
   background: #8f98a3;
 }
 
-.left-panes:not(.is-single-col) .folder-pane:not(.onenote-folder-pane) .folder-row:hover,
-.left-panes:not(.is-single-col) .folder-pane:not(.onenote-folder-pane) .folder-row.is-active,
+.left-panes:not(.is-single-col) .folder-pane:not(.section-view-folder-pane) .folder-row:hover,
+.left-panes:not(.is-single-col) .folder-pane:not(.section-view-folder-pane) .folder-row.is-active,
 .left-panes:not(.is-single-col) .notes-pane .note-card:hover,
 .left-panes:not(.is-single-col) .notes-pane .note-card.is-active,
 .left-panes.is-single-col .unified-folder-row:hover,
@@ -3299,8 +3428,8 @@ html[data-theme="dark"] .switch input:checked + .switch-track {
   background: var(--accent);
 }
 
-.left-panes:not(.is-single-col) .folder-pane:not(.onenote-folder-pane) .folder-row:hover::before,
-.left-panes:not(.is-single-col) .folder-pane:not(.onenote-folder-pane) .folder-row.is-active::before,
+.left-panes:not(.is-single-col) .folder-pane:not(.section-view-folder-pane) .folder-row:hover::before,
+.left-panes:not(.is-single-col) .folder-pane:not(.section-view-folder-pane) .folder-row.is-active::before,
 .left-panes.is-single-col .unified-folder-row:hover::before,
 .left-panes.is-single-col .unified-folder-row.is-active::before,
 .left-panes.is-single-col .unified-note-row:hover::before,
@@ -3308,10 +3437,10 @@ html[data-theme="dark"] .switch input:checked + .switch-track {
   background: transparent;
 }
 
-.left-panes:not(.is-single-col) .folder-pane:not(.onenote-folder-pane) .folder-row:hover .folder-select,
-.left-panes:not(.is-single-col) .folder-pane:not(.onenote-folder-pane) .folder-row.is-active .folder-select,
-.left-panes:not(.is-single-col) .folder-pane:not(.onenote-folder-pane) .folder-row:hover .folder-select span,
-.left-panes:not(.is-single-col) .folder-pane:not(.onenote-folder-pane) .folder-row.is-active .folder-select span,
+.left-panes:not(.is-single-col) .folder-pane:not(.section-view-folder-pane) .folder-row:hover .folder-select,
+.left-panes:not(.is-single-col) .folder-pane:not(.section-view-folder-pane) .folder-row.is-active .folder-select,
+.left-panes:not(.is-single-col) .folder-pane:not(.section-view-folder-pane) .folder-row:hover .folder-select span,
+.left-panes:not(.is-single-col) .folder-pane:not(.section-view-folder-pane) .folder-row.is-active .folder-select span,
 .left-panes:not(.is-single-col) .notes-pane .note-card:hover strong,
 .left-panes:not(.is-single-col) .notes-pane .note-card.is-active strong,
 .left-panes:not(.is-single-col) .notes-pane .note-card:hover small,

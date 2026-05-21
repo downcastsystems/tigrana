@@ -680,7 +680,7 @@ function FormattingBubbleMenu({ editor }: { editor: Editor }) {
   return (
     <BubbleMenu
       editor={editor}
-      tippyOptions={{ duration: 120, placement: "top", zIndex: 55 }}
+      tippyOptions={{ duration: 120, delay: [250, 0], placement: "top", zIndex: 55 }}
       shouldShow={({ editor }) => {
         if (document.querySelector(".dialog-backdrop")) return false;
         const activeElement = document.activeElement;

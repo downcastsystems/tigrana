@@ -41,7 +41,7 @@ export type BookmarkEntry = {
   createdAt: number;
 };
 
-export type NavigationStyle = "dual-pane" | "single-pane" | "onenote";
+export type NavigationStyle = "dual-pane" | "single-pane" | "section-view";
 
 export type NotebookThemeColors = {
   accentColor?: string | null;
