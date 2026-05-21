@@ -374,8 +374,6 @@ export const defaultWorkspaceMetadata = (): WorkspaceMetadata => ({
   bookmarks: [],
   bookmarksExpanded: true,
   expandedFolders: {},
-  sessionOpenTabs: [],
-  sessionActiveTab: null,
 });
 
 const demoMetadataKey = (workspace: string) => `lumen-notes-meta:${workspace}`;

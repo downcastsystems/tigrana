@@ -81,6 +81,8 @@ const rightPaneWidthKey = "lumen-notes-right-pane-width";
 const recentNotebooksKey = "lumen-notes-recent-notebooks";
 const lastPathKey = "lumen-notes-last-path";
 const accentTitlebarKey = "lumen-notes-accent-titlebar";
+const windowSizeKey = "lumen-notes-window-size";
+const sessionKeyPrefix = "lumen-notes-session:";
 const notePositionFreshMs = 24 * 60 * 60 * 1000;
 const defaultLightAccent = "#315f59";
 const defaultAppFontFamily = 'Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif';
@@ -586,14 +588,6 @@ export default function App() {
           setEditorFontFamily(defaultEditorFontFamily);
           setEditorFontSize(defaultEditorFontSize);
         }
-        // Restore saved window size, clamped to the available screen area so a
-        // window saved on a large monitor doesn't overflow a smaller one.
-        if (nextMetadata.windowSize && isTauri()) {
-          const { width, height } = nextMetadata.windowSize;
-          const clampedW = Math.max(600, Math.min(Math.round(width), window.screen.availWidth - 40));
-          const clampedH = Math.max(400, Math.min(Math.round(height), window.screen.availHeight - 60));
-          void getCurrentWindow().setSize(new LogicalSize(clampedW, clampedH));
-        }
       })
       .catch((error) => {
         setAppError(error instanceof Error ? error.message : String(error));
@@ -604,35 +598,46 @@ export default function App() {
       .finally(() => setMetadataLoaded(true));
   }, [workspace]);
 
-  // Persist window size to the current notebook's metadata so it can be
-  // restored the next time that notebook is opened.
+  // Restore the saved window size from localStorage on first launch (app-wide,
+  // not tied to a specific notebook). Clamped to available screen area.
   useEffect(() => {
-    if (!isTauri() || !workspace) return;
+    if (!isTauri()) return;
+    const saved = readStoredWindowSize();
+    if (!saved) return;
+    const clampedW = Math.max(600, Math.min(Math.round(saved.width), window.screen.availWidth - 40));
+    const clampedH = Math.max(400, Math.min(Math.round(saved.height), window.screen.availHeight - 60));
+    void getCurrentWindow().setSize(new LogicalSize(clampedW, clampedH));
+  }, []);
+
+  // Persist window size to localStorage as the user resizes. localStorage is
+  // synchronous, so the latest value is on disk immediately — no flush needed
+  // on close, and no race with concurrent workspace-metadata writes.
+  useEffect(() => {
+    if (!isTauri()) return;
     const handleResize = () => {
       if (windowResizeTimerRef.current) window.clearTimeout(windowResizeTimerRef.current);
       windowResizeTimerRef.current = window.setTimeout(() => {
-        const size = { width: window.innerWidth, height: window.innerHeight };
-        const next = { ...metadataRef.current, windowSize: size };
-        metadataRef.current = next;
-        setMetadata(next);
-        void writeWorkspaceMetadata(workspace, next).catch(() => {});
-      }, 500);
+        writeStoredWindowSize({ width: window.innerWidth, height: window.innerHeight });
+      }, 200);
     };
     window.addEventListener("resize", handleResize);
     return () => {
       window.removeEventListener("resize", handleResize);
-      if (windowResizeTimerRef.current) window.clearTimeout(windowResizeTimerRef.current);
+      if (windowResizeTimerRef.current) {
+        window.clearTimeout(windowResizeTimerRef.current);
+        // Flush the final size immediately on unmount.
+        writeStoredWindowSize({ width: window.innerWidth, height: window.innerHeight });
+      }
     };
-  }, [workspace]);
+  }, []);
 
   useEffect(() => { openTabsRef.current = openTabs; }, [openTabs]);
   useEffect(() => { activeTabIdRef.current = activeTabId; }, [activeTabId]);
   useEffect(() => { workspaceRef.current = workspace; }, [workspace]);
 
-  // Flush all pending metadata to disk synchronously before the window closes.
-  // The resize and note-position writers are debounced, and the session-tab
-  // writer is fire-and-forget, so without this any state changed in the last
-  // ~500ms of a session (window size, newly opened tabs, active tab) is lost.
+  // Window size and session tabs live in localStorage (sync writes), so the
+  // only debounced write left is recordNotePosition. Flush it on close so the
+  // last scroll/selection position survives a quick quit.
   useEffect(() => {
     if (!isTauri()) return;
     const win = getCurrentWindow();
@@ -641,34 +646,12 @@ export default function App() {
     void win
       .onCloseRequested(async (event) => {
         const workspacePath = workspaceRef.current;
-        if (!workspacePath) return;
+        if (!workspacePath || positionWriteTimerRef.current === null) return;
         event.preventDefault();
-        if (windowResizeTimerRef.current) {
-          window.clearTimeout(windowResizeTimerRef.current);
-          windowResizeTimerRef.current = null;
-        }
-        if (positionWriteTimerRef.current) {
-          window.clearTimeout(positionWriteTimerRef.current);
-          positionWriteTimerRef.current = null;
-        }
-        const tabs = openTabsRef.current;
-        const sessionOpenTabs = tabs
-          .map((tab) => tab.path)
-          .filter((path): path is string => Boolean(path));
-        const activeTab = tabs.find((tab) => tab.id === activeTabIdRef.current);
-        const sessionActiveTab =
-          activeTab?.path && sessionOpenTabs.includes(activeTab.path)
-            ? activeTab.path
-            : sessionOpenTabs.at(-1) ?? null;
-        const next: WorkspaceMetadata = {
-          ...metadataRef.current,
-          sessionOpenTabs,
-          sessionActiveTab,
-          windowSize: { width: window.innerWidth, height: window.innerHeight },
-        };
-        metadataRef.current = next;
+        window.clearTimeout(positionWriteTimerRef.current);
+        positionWriteTimerRef.current = null;
         try {
-          await writeWorkspaceMetadata(workspacePath, next);
+          await writeWorkspaceMetadata(workspacePath, metadataRef.current);
         } catch {
           // Best-effort; we're closing regardless.
         }
@@ -759,7 +742,8 @@ export default function App() {
     if (!metadataLoaded) return;
     if (autoSelectedWorkspaceRef.current === workspace) return;
     if (initialOpenTargetRef.current) return;
-    if (metadata.sessionOpenTabs.some((path) => notes.some((note) => note.path === path))) return;
+    const storedSession = readStoredSession(workspace);
+    if (storedSession.openTabs.some((path) => notes.some((note) => note.path === path))) return;
     if (activePath || pendingNote) return;
     if (!notes.length) return;
     // Prefer the last note opened in this workspace (localStorage) over the first note in the list.
@@ -773,7 +757,7 @@ export default function App() {
     setOpenTabs([{ id: tabId, path: targetNote.path }]);
     setActiveTabId(tabId);
     loadContentIntoEditor(targetNote, contents.get(targetNote.path) ?? "");
-  }, [activePath, contents, metadata.sessionOpenTabs, metadataLoaded, notes, pendingNote, workspace]);
+  }, [activePath, contents, metadataLoaded, notes, pendingNote, workspace]);
 
   useEffect(() => {
     const target = initialOpenTargetRef.current;
@@ -805,13 +789,14 @@ export default function App() {
   useEffect(() => {
     if (!workspace || !metadataLoaded || initialOpenTargetRef.current) return;
     if (restoredTabsWorkspaceRef.current === workspace) return;
-    const existingPaths = metadata.sessionOpenTabs.filter((path) => notes.some((note) => note.path === path));
+    const storedSession = readStoredSession(workspace);
+    const existingPaths = storedSession.openTabs.filter((path) => notes.some((note) => note.path === path));
     if (!existingPaths.length) return;
 
     restoredTabsWorkspaceRef.current = workspace;
     const tabs = existingPaths.map((path) => ({ id: createTabId(), path }));
-    const activeSessionPath = metadata.sessionActiveTab && existingPaths.includes(metadata.sessionActiveTab)
-      ? metadata.sessionActiveTab
+    const activeSessionPath = storedSession.activeTab && existingPaths.includes(storedSession.activeTab)
+      ? storedSession.activeTab
       : existingPaths[0];
     const activeTab = tabs.find((tab) => tab.path === activeSessionPath) ?? tabs[0];
     if (!contents.has(activeTab.path)) return;
@@ -826,36 +811,24 @@ export default function App() {
     if (note) setSelectedFolder(note.parent_path);
     loadContentIntoEditor(note ?? null, content, restorePosition);
     recordNotePosition(activeTab.path, content, { lastOpenedAt: Date.now() });
-  }, [contents, metadata.sessionActiveTab, metadata.sessionOpenTabs, metadataLoaded, notes, recordNotePosition, workspace]);
+  }, [contents, metadataLoaded, notes, recordNotePosition, workspace]);
 
   useEffect(() => {
     if (!workspace || !metadataLoaded) return;
     if (initialOpenTargetRef.current) return;
-    if (restoredTabsWorkspaceRef.current !== workspace && metadata.sessionOpenTabs.length > 0 && openTabs.length === 0) return;
+    // Don't overwrite a stored session with an empty React state before the
+    // restore-tabs effect has had a chance to hydrate from localStorage.
+    if (restoredTabsWorkspaceRef.current !== workspace && openTabs.length === 0) {
+      if (readStoredSession(workspace).openTabs.length > 0) return;
+    }
 
     const sessionOpenTabs = openTabs.map((tab) => tab.path).filter((path): path is string => Boolean(path));
     const activeTab = openTabs.find((tab) => tab.id === activeTabId);
-    const sessionActiveTab = activeTab?.path && sessionOpenTabs.includes(activeTab.path) ? activeTab.path : sessionOpenTabs.at(-1) ?? null;
-
-    const current = metadataRef.current;
-    if (
-      arraysEqual(current.sessionOpenTabs, sessionOpenTabs) &&
-      current.sessionActiveTab === sessionActiveTab
-    ) {
-      return;
-    }
-
-    const next: WorkspaceMetadata = {
-      ...current,
-      sessionOpenTabs,
-      sessionActiveTab,
-    };
-    metadataRef.current = next;
-    setMetadata(next);
-    void writeWorkspaceMetadata(workspace, next).catch((error) => {
-      setAppError(error instanceof Error ? error.message : String(error));
-    });
-  }, [activeTabId, metadata.sessionOpenTabs.length, metadataLoaded, openTabs, workspace]);
+    const sessionActiveTab = activeTab?.path && sessionOpenTabs.includes(activeTab.path)
+      ? activeTab.path
+      : sessionOpenTabs.at(-1) ?? null;
+    writeStoredSession(workspace, { openTabs: sessionOpenTabs, activeTab: sessionActiveTab });
+  }, [activeTabId, metadataLoaded, openTabs, workspace]);
 
   const updateMetadata = useCallback((updater: (current: WorkspaceMetadata) => WorkspaceMetadata) => {
     const next = updater(metadata);
@@ -5118,9 +5091,7 @@ function replaceOrderedPath(metadata: WorkspaceMetadata, oldPath: string, newPat
   const bookmarks = metadata.bookmarks.map((bookmark) =>
     bookmark.kind === "note" && bookmark.path === oldPath ? { ...bookmark, path: newPath } : bookmark,
   );
-  const sessionOpenTabs = metadata.sessionOpenTabs.map((path) => (path === oldPath ? newPath : path));
-  const sessionActiveTab = metadata.sessionActiveTab === oldPath ? newPath : metadata.sessionActiveTab;
-  return { ...metadata, noteOrder, pinnedNotes, noteIcons, notePositions, bookmarks, sessionOpenTabs, sessionActiveTab };
+  return { ...metadata, noteOrder, pinnedNotes, noteIcons, notePositions, bookmarks };
 }
 
 function removeNoteFromMetadata(metadata: WorkspaceMetadata, notePath: string): WorkspaceMetadata {
@@ -5133,8 +5104,6 @@ function removeNoteFromMetadata(metadata: WorkspaceMetadata, notePath: string): 
     noteIcons: Object.fromEntries(Object.entries(metadata.noteIcons).filter(([path]) => path !== notePath)),
     notePositions: Object.fromEntries(Object.entries(metadata.notePositions).filter(([path]) => path !== notePath)),
     bookmarks: metadata.bookmarks.filter((bookmark) => bookmark.kind !== "note" || bookmark.path !== notePath),
-    sessionOpenTabs: metadata.sessionOpenTabs.filter((path) => path !== notePath),
-    sessionActiveTab: metadata.sessionActiveTab === notePath ? null : metadata.sessionActiveTab,
   };
 }
 
@@ -5194,9 +5163,7 @@ function replaceFolderPathPrefix(metadata: WorkspaceMetadata, oldPrefix: string,
     ...bookmark,
     path: replacePathPrefix(bookmark.path, oldPrefix, newPrefix),
   }));
-  const sessionOpenTabs = metadata.sessionOpenTabs.map((path) => replacePathPrefix(path, oldPrefix, newPrefix));
-  const sessionActiveTab = metadata.sessionActiveTab ? replacePathPrefix(metadata.sessionActiveTab, oldPrefix, newPrefix) : null;
-  return { ...metadata, folderOrder, noteOrder, pinnedNotes, folderIcons, folderColors, expandedFolders, noteIcons, notePositions, bookmarks, sessionOpenTabs, sessionActiveTab };
+  return { ...metadata, folderOrder, noteOrder, pinnedNotes, folderIcons, folderColors, expandedFolders, noteIcons, notePositions, bookmarks };
 }
 
 function removeFolderFromMetadata(metadata: WorkspaceMetadata, folderPath: string): WorkspaceMetadata {
@@ -5216,8 +5183,6 @@ function removeFolderFromMetadata(metadata: WorkspaceMetadata, folderPath: strin
     noteIcons: Object.fromEntries(Object.entries(metadata.noteIcons).filter(([path]) => !isInFolder(path))),
     notePositions: Object.fromEntries(Object.entries(metadata.notePositions).filter(([path]) => !isInFolder(path))),
     bookmarks: metadata.bookmarks.filter((bookmark) => !isInFolder(bookmark.path)),
-    sessionOpenTabs: metadata.sessionOpenTabs.filter((path) => !isInFolder(path)),
-    sessionActiveTab: metadata.sessionActiveTab && isInFolder(metadata.sessionActiveTab) ? null : metadata.sessionActiveTab,
   };
 }
 
@@ -5253,10 +5218,6 @@ function createBookmarkId() {
   return `bookmark-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
 }
 
-function arraysEqual(first: string[], second: string[]) {
-  return first.length === second.length && first.every((value, index) => value === second[index]);
-}
-
 function readStoredNumber(key: string, fallback: number) {
   const rawValue = localStorage.getItem(key);
   if (rawValue === null) return fallback;
@@ -5278,6 +5239,54 @@ function readStoredLastPath(workspace: string): string | null {
     return null;
   }
 }
+
+function readStoredWindowSize(): { width: number; height: number } | null {
+  try {
+    const raw = localStorage.getItem(windowSizeKey);
+    if (!raw) return null;
+    const parsed = JSON.parse(raw) as { width?: unknown; height?: unknown };
+    const width = Number(parsed.width);
+    const height = Number(parsed.height);
+    if (!Number.isFinite(width) || !Number.isFinite(height) || width <= 0 || height <= 0) return null;
+    return { width, height };
+  } catch {
+    return null;
+  }
+}
+
+function writeStoredWindowSize(size: { width: number; height: number }) {
+  try {
+    localStorage.setItem(windowSizeKey, JSON.stringify(size));
+  } catch {
+    // localStorage may be unavailable (private mode quota); ignore.
+  }
+}
+
+type StoredSession = { openTabs: string[]; activeTab: string | null };
+
+function readStoredSession(workspace: string): StoredSession {
+  try {
+    const raw = localStorage.getItem(`${sessionKeyPrefix}${workspace}`);
+    if (!raw) return { openTabs: [], activeTab: null };
+    const parsed = JSON.parse(raw) as { openTabs?: unknown; activeTab?: unknown };
+    const openTabs = Array.isArray(parsed.openTabs)
+      ? parsed.openTabs.filter((path): path is string => typeof path === "string")
+      : [];
+    const activeTab = typeof parsed.activeTab === "string" ? parsed.activeTab : null;
+    return { openTabs, activeTab };
+  } catch {
+    return { openTabs: [], activeTab: null };
+  }
+}
+
+function writeStoredSession(workspace: string, session: StoredSession) {
+  try {
+    localStorage.setItem(`${sessionKeyPrefix}${workspace}`, JSON.stringify(session));
+  } catch {
+    // ignore localStorage failures
+  }
+}
+
 
 function readInitialWorkspace() {
   const params = new URLSearchParams(window.location.search);

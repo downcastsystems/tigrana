@@ -66,8 +66,5 @@ export type WorkspaceMetadata = {
   bookmarks: BookmarkEntry[];
   bookmarksExpanded: boolean;
   expandedFolders: Record<string, boolean>;
-  sessionOpenTabs: string[];
-  sessionActiveTab: string | null;
-  windowSize?: { width: number; height: number };
   appearance?: NotebookAppearance;
 };

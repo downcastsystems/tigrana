@@ -122,12 +122,6 @@ struct WorkspaceMetadata {
     bookmarks_expanded: bool,
     #[serde(default)]
     expanded_folders: serde_json::Map<String, serde_json::Value>,
-    #[serde(default)]
-    session_open_tabs: Vec<String>,
-    #[serde(default)]
-    session_active_tab: Option<String>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    window_size: Option<serde_json::Value>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     appearance: Option<serde_json::Value>,
 }
@@ -656,9 +650,6 @@ fn default_workspace_metadata() -> WorkspaceMetadata {
         bookmarks: Vec::new(),
         bookmarks_expanded: true,
         expanded_folders: serde_json::Map::new(),
-        session_open_tabs: Vec::new(),
-        session_active_tab: None,
-        window_size: None,
         appearance: None,
     }
 }
