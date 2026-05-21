@@ -23,6 +23,27 @@ const inlineMarkdownToHtml = (value: string, options: MarkdownOptions = {}) => {
   return html;
 };
 
+const EM_SPACE = " ";
+
+// Convert leading 4-space groups to em-spaces so the editor preserves
+// paragraph indents visually (HTML collapses runs of regular spaces, but not
+// em-spaces).
+function paragraphIndentToEditor(line: string) {
+  let i = 0;
+  let prefix = "";
+  while (line.slice(i, i + 4) === "    ") {
+    prefix += EM_SPACE;
+    i += 4;
+  }
+  return prefix + line.slice(i);
+}
+
+// Convert leading em-spaces back to 4 regular spaces each so the .md file
+// reads cleanly in plain text editors.
+export function paragraphIndentToMarkdown(text: string) {
+  return text.replace(new RegExp(`^${EM_SPACE}+`), (match) => "    ".repeat(match.length));
+}
+
 function isTableRow(line: string) {
   return /^\|.+\|/.test(line.trim());
 }
@@ -262,7 +283,7 @@ export function markdownToHtml(markdown: string, options: MarkdownOptions = {}) 
     }
 
     closeList();
-    html.push(`<p>${inlineMarkdownToHtml(line, options)}</p>`);
+    html.push(`<p>${inlineMarkdownToHtml(paragraphIndentToEditor(line), options)}</p>`);
   }
 
   closeList();
@@ -337,7 +358,7 @@ export function htmlToMarkdown(html: string) {
       const level = Number(tag.slice(1));
       markdown.push(`${"#".repeat(level)} ${inlineHtmlToMarkdown(block)}`);
     } else if (tag === "p") {
-      markdown.push(inlineHtmlToMarkdown(block));
+      markdown.push(paragraphIndentToMarkdown(inlineHtmlToMarkdown(block)));
     } else if (tag === "img") {
       markdown.push(imageElementToMarkdown(block));
     } else if (tag === "blockquote") {

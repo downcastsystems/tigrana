@@ -77,6 +77,38 @@ type SearchHighlightMeta = {
   query: string;
 };
 
+const EM_SPACE = " ";
+
+const EmSpaceIndent = Extension.create({
+  name: "emSpaceIndent",
+  addKeyboardShortcuts() {
+    const passThroughContext = () => {
+      const { editor } = this;
+      return (
+        editor.isActive("listItem") ||
+        editor.isActive("taskItem") ||
+        editor.isActive("table") ||
+        editor.isActive("codeBlock")
+      );
+    };
+
+    return {
+      Tab: () => {
+        if (passThroughContext()) return false;
+        return this.editor.commands.insertContent(EM_SPACE);
+      },
+      "Shift-Tab": () => {
+        if (passThroughContext()) return false;
+        const { state } = this.editor;
+        const { from, empty } = state.selection;
+        if (!empty || from === 0) return false;
+        if (state.doc.textBetween(from - 1, from) !== EM_SPACE) return false;
+        return this.editor.chain().deleteRange({ from: from - 1, to: from }).run();
+      },
+    };
+  },
+});
+
 const SearchHighlight = Extension.create({
   name: "searchHighlight",
   addProseMirrorPlugins() {
@@ -235,6 +267,7 @@ export function NotesEditor({ content, focusRequest, focusAtEndRequest, findRequ
       CodeBlockLowlight.configure({ lowlight }),
       Highlight,
       SearchHighlight,
+      EmSpaceIndent,
       MarkdownImage.configure({
         inline: false,
         allowBase64: false,
