@@ -793,7 +793,6 @@ export default function App() {
     const existingPaths = storedSession.openTabs.filter((path) => notes.some((note) => note.path === path));
     if (!existingPaths.length) return;
 
-    restoredTabsWorkspaceRef.current = workspace;
     const tabs = existingPaths.map((path) => ({ id: createTabId(), path }));
     const activeSessionPath = storedSession.activeTab && existingPaths.includes(storedSession.activeTab)
       ? storedSession.activeTab
@@ -804,6 +803,11 @@ export default function App() {
     const content = contents.get(activeTab.path) ?? "";
     const restorePosition = getRestorableNotePosition(metadataRef.current, activeTab.path, content);
 
+    // Mark restored only after we commit the new state — otherwise an early
+    // bail (e.g. contents not loaded yet) would block re-entry on the next
+    // run and the persist-tabs effect would then overwrite localStorage with
+    // an empty session.
+    restoredTabsWorkspaceRef.current = workspace;
     setOpenTabs(tabs);
     setActiveTabId(activeTab.id);
     setActivePath(activeTab.path);
