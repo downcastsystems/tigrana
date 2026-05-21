@@ -41,7 +41,7 @@ import { common, createLowlight } from "lowlight";
 import { type CSSProperties, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { filterSlashCommands } from "./slashCommands";
 import { htmlToMarkdown, markdownToHtml, normalizeMarkdownImageLines } from "../lib/markdown";
-import { isTauri, readAssetDataUrl, saveAsset, saveClipboardImageAsset } from "../lib/notesApi";
+import { isTauri, openExternal, readAssetDataUrl, saveAsset, saveClipboardImageAsset } from "../lib/notesApi";
 import type { NotePositionMetadata } from "../types";
 
 type NotesEditorProps = {
@@ -55,6 +55,8 @@ type NotesEditorProps = {
   onChange: (markdown: string) => void;
   onLoadError: (error: unknown) => void;
   onPositionChange: (position: { selectedText: string; selectionFrom: number; selectionTo: number }) => void;
+  onInternalLinkClick?: (href: string) => void;
+  onRequestLink?: () => Promise<{ href: string; title: string } | null>;
 };
 
 type SlashState = {
@@ -249,7 +251,7 @@ const MarkdownImage = Image.extend({
   },
 });
 
-export function NotesEditor({ content, focusRequest, focusAtEndRequest, findRequest, notePath, restorePosition, workspace, onChange, onLoadError, onPositionChange }: NotesEditorProps) {
+export function NotesEditor({ content, focusRequest, focusAtEndRequest, findRequest, notePath, restorePosition, workspace, onChange, onLoadError, onPositionChange, onInternalLinkClick, onRequestLink }: NotesEditorProps) {
   const [slash, setSlash] = useState<SlashState | null>(null);
   const [findOpen, setFindOpen] = useState(false);
   const [findQuery, setFindQuery] = useState("");
@@ -341,7 +343,7 @@ export function NotesEditor({ content, focusRequest, focusAtEndRequest, findRequ
       const command = currentCommands[currentState.selected] ?? currentCommands[0];
       if (!command) return false;
       event.preventDefault();
-      command.run(currentEditor, currentSlash.range);
+      command.run(currentEditor, currentSlash.range, { requestLink: onRequestLink });
       slashRef.current = null;
       setSlash(null);
       return true;
@@ -354,7 +356,7 @@ export function NotesEditor({ content, focusRequest, focusAtEndRequest, findRequ
       return true;
     }
     return false;
-  }, []);
+  }, [onRequestLink]);
 
   const editor = useEditor({
     extensions,
@@ -383,6 +385,15 @@ export function NotesEditor({ content, focusRequest, focusAtEndRequest, findRequ
           const link = (event.target as HTMLElement | null)?.closest("a");
           if (!link) return false;
           event.preventDefault();
+          const href = link.getAttribute("href") ?? "";
+          if (!href) return true;
+          if (isInternalNotebookHref(href)) {
+            if (onInternalLinkClick) onInternalLinkClick(decodeInternalHref(href));
+          } else {
+            void openExternal(href).catch((error) => {
+              console.error("Failed to open external link", error);
+            });
+          }
           return true;
         },
         copy(view, event) {
@@ -576,7 +587,7 @@ export function NotesEditor({ content, focusRequest, focusAtEndRequest, findRequ
         editor.chain().focus().setTextSelection(editor.state.doc.content.size).run();
       }}
     >
-      {editor ? <FormattingBubbleMenu editor={editor} /> : null}
+      {editor ? <FormattingBubbleMenu editor={editor} onRequestLink={onRequestLink} /> : null}
       {findOpen ? (
         <div className="note-find-bar">
           <Search size={15} />
@@ -626,7 +637,7 @@ export function NotesEditor({ content, focusRequest, focusAtEndRequest, findRequ
                   event.preventDefault();
                   if (!editor) return;
                   const currentSlash = findSlashQuery(editor) ?? slash;
-                  command.run(editor, currentSlash.range);
+                  command.run(editor, currentSlash.range, { requestLink: onRequestLink });
                   slashRef.current = null;
                   setSlash(null);
                 }}
@@ -647,7 +658,13 @@ export function NotesEditor({ content, focusRequest, focusAtEndRequest, findRequ
   );
 }
 
-function FormattingBubbleMenu({ editor }: { editor: Editor }) {
+function FormattingBubbleMenu({
+  editor,
+  onRequestLink,
+}: {
+  editor: Editor;
+  onRequestLink?: () => Promise<{ href: string; title: string } | null>;
+}) {
   const [suppressed, setSuppressed] = useState(false);
   const [tick, setTick] = useState(0);
   const [pendingShow, setPendingShow] = useState(false);
@@ -723,14 +740,34 @@ function FormattingBubbleMenu({ editor }: { editor: Editor }) {
   }, []);
 
   const setLink = () => {
-    const previousUrl = editor.getAttributes("link").href as string | undefined;
-    const url = window.prompt("Link URL", previousUrl ?? "");
-    if (url === null) return;
-    if (!url) {
-      editor.chain().focus().extendMarkRange("link").unsetLink().run();
-      return;
-    }
-    editor.chain().focus().extendMarkRange("link").setLink({ href: url }).run();
+    if (!onRequestLink) return;
+    const { from, to, empty } = editor.state.selection;
+    void onRequestLink().then((pick) => {
+      if (!pick) return;
+      if (empty) {
+        // Nothing selected: insert the link's title and link it.
+        editor
+          .chain()
+          .focus()
+          .insertContent({
+            type: "text",
+            text: pick.title,
+            marks: [{ type: "link", attrs: { href: pick.href } }],
+          })
+          .unsetMark("link")
+          .insertContent(" ")
+          .run();
+      } else {
+        // Apply the link mark to the existing selection.
+        editor
+          .chain()
+          .focus()
+          .setTextSelection({ from, to })
+          .extendMarkRange("link")
+          .setLink({ href: pick.href })
+          .run();
+      }
+    });
   };
 
   const buttons = [
@@ -1049,6 +1086,22 @@ function imageNodeToMarkdown(node: ProseMirrorNode) {
 
 function escapeMarkdownAttribute(value: string) {
   return value.replace(/"/g, "&quot;");
+}
+
+export function isInternalNotebookHref(href: string) {
+  if (!href) return false;
+  if (/^(?:[a-z][a-z0-9+.-]*:)/i.test(href)) return false; // any scheme: http, mailto, lumen-note, etc.
+  if (href.startsWith("//")) return false;
+  if (href.startsWith("#")) return false;
+  return true;
+}
+
+export function decodeInternalHref(href: string) {
+  try {
+    return decodeURI(href);
+  } catch {
+    return href;
+  }
 }
 
 function getSelectedText(editor: Editor) {

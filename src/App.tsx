@@ -15,7 +15,9 @@ import {
   Folder,
   FolderOpen,
   LayoutList,
+  Link2,
   Moon,
+  MoveRight,
   Palette,
   PanelLeftClose,
   PanelLeftOpen,
@@ -348,6 +350,9 @@ export default function App() {
   const [folderName, setFolderName] = useState("");
   const [propertyDialog, setPropertyDialog] = useState<PropertyDialogState | null>(null);
   const [iconBrowser, setIconBrowser] = useState<IconBrowserState | null>(null);
+  const [moveDialog, setMoveDialog] = useState<{ kind: "note" | "folder"; path: string } | null>(null);
+  const [linkPickerOpen, setLinkPickerOpen] = useState(false);
+  const linkPickerResolverRef = useRef<((result: LinkPickerResult | null) => void) | null>(null);
   const [draggingItem, setDraggingItem] = useState<DragItem>(null);
   const [dropTargetFolder, setDropTargetFolder] = useState<string | null>(null);
   const [noteDragPreview, setNoteDragPreview] = useState<NoteDragPreview | null>(null);
@@ -824,6 +829,9 @@ export default function App() {
       setSelectedFolder(target.path);
       clearCurrentNote();
       initialOpenTargetRef.current = null;
+      // Mark tabs/auto-select restored so they don't repopulate the previous window's note.
+      restoredTabsWorkspaceRef.current = workspace;
+      autoSelectedWorkspaceRef.current = workspace;
       return;
     }
     const note = notes.find((entry) => entry.path === target.path);
@@ -831,6 +839,10 @@ export default function App() {
     if (note && content === undefined) return;
     if (note && content !== undefined) {
       initialOpenTargetRef.current = null;
+      // Mark tabs/auto-select restored so the restore-tabs effect doesn't run
+      // afterward and overwrite this tab with the previous window's session.
+      restoredTabsWorkspaceRef.current = workspace;
+      autoSelectedWorkspaceRef.current = workspace;
       const tabId = createTabId();
       setOpenTabs([{ id: tabId, path: target.path }]);
       setActiveTabId(tabId);
@@ -1409,12 +1421,16 @@ export default function App() {
 
   async function submitFolder() {
     if (!workspace || folderDialogParent === null) return;
+    if (hasUnsavedChanges) {
+      await persistDraft();
+    }
     try {
       const folder = await createFolder(workspace, folderDialogParent, folderName);
       updateMetadata((current) => addFolderToOrder(current, folder.parent_path, folder.path));
       setFolderDialogParent(null);
       setFolderName("");
       setSelectedFolder(folder.path);
+      clearCurrentNote();
       await refreshWorkspace(workspace);
     } catch (error) {
       setAppError(error instanceof Error ? error.message : String(error));
@@ -1536,6 +1552,82 @@ export default function App() {
     try {
       await purgeTrashAll(workspace);
       await refreshTrash();
+    } catch (error) {
+      setAppError(error instanceof Error ? error.message : String(error));
+    }
+  }
+
+  function handleInternalLinkClick(href: string) {
+    if (!workspace) return;
+    const normalized = href.replace(/^\.\//, "");
+    if (notes.find((entry) => entry.path === normalized)) {
+      void selectNote(normalized);
+      return;
+    }
+    if (folders.find((entry) => entry.path === normalized)) {
+      setSelectedFolder(normalized);
+      clearCurrentNote();
+      return;
+    }
+    // Best-effort match by title alone for back-compat with hand-written links.
+    const byTitle = notes.find((entry) => entry.title === normalized || `${entry.title}.md` === normalized);
+    if (byTitle) {
+      void selectNote(byTitle.path);
+      return;
+    }
+    setAppError(`No note or folder found at "${href}".`);
+  }
+
+  function requestLink(): Promise<LinkPickerResult | null> {
+    return new Promise((resolve) => {
+      linkPickerResolverRef.current = resolve;
+      setLinkPickerOpen(true);
+    });
+  }
+
+  function openMoveDialog(kind: "note" | "folder", path: string) {
+    setMoveDialog({ kind, path });
+    setContextMenu(null);
+    setAppError(null);
+  }
+
+  async function handleMoveSubmit(targetParentPath: string) {
+    const target = moveDialog;
+    if (!workspace || !target) return;
+    try {
+      if (target.kind === "note") {
+        const sourceNote = notes.find((entry) => entry.path === target.path);
+        if (!sourceNote || sourceNote.parent_path === targetParentPath) {
+          setMoveDialog(null);
+          return;
+        }
+        const moved = await moveNote(workspace, target.path, targetParentPath);
+        updateMetadata((current) => moveNoteInMetadata(current, target.path, moved.path, sourceNote.parent_path, moved.parent_path));
+        if (activePath === target.path) setActivePath(moved.path);
+        replaceOpenTabPath(target.path, moved.path);
+        setSelectedFolder(moved.parent_path);
+      } else {
+        if (target.path === targetParentPath || targetParentPath.startsWith(`${target.path}/`)) {
+          setAppError("A folder cannot be moved inside itself.");
+          return;
+        }
+        const sourceFolder = folders.find((entry) => entry.path === target.path);
+        if (!sourceFolder || sourceFolder.parent_path === targetParentPath) {
+          setMoveDialog(null);
+          return;
+        }
+        const moved = await moveFolder(workspace, target.path, targetParentPath);
+        updateMetadata((current) => moveFolderInMetadata(current, target.path, moved.path, sourceFolder.parent_path, moved.parent_path));
+        if (selectedFolder === target.path || selectedFolder.startsWith(`${target.path}/`)) {
+          setSelectedFolder(replacePathPrefix(selectedFolder, target.path, moved.path));
+        }
+        if (activePath?.startsWith(`${target.path}/`)) {
+          setActivePath(replacePathPrefix(activePath, target.path, moved.path));
+        }
+        replaceOpenTabPrefix(target.path, moved.path);
+      }
+      await refreshWorkspace(workspace);
+      setMoveDialog(null);
     } catch (error) {
       setAppError(error instanceof Error ? error.message : String(error));
     }
@@ -2100,6 +2192,9 @@ export default function App() {
               onContextMenu={openContextMenu}
               onCreateFolder={requestCreateFolder}
               onCreateNote={requestCreateNote}
+              onDragStart={setCurrentDragItem}
+              onDropOnFolder={(path, item) => void handleDropOnFolder(path, item)}
+              onFolderReorder={handleFolderReorder}
               onManageNotebooks={() => {
                 setNotebooksManageOpen(true);
                 setAppMenuOpen(false);
@@ -2148,6 +2243,7 @@ export default function App() {
                 onContextMenu={openContextMenu}
                 onCreateFolder={requestCreateFolder}
                 onDragStart={setCurrentDragItem}
+                onDropOnFolder={(path, item) => void handleDropOnFolder(path, item)}
                 onFolderReorder={handleFolderReorder}
                 onManageNotebooks={() => { setNotebooksManageOpen(true); setAppMenuOpen(false); }}
                 onNewNotebook={() => void chooseWorkspace("new", true)}
@@ -2185,6 +2281,7 @@ export default function App() {
                 onCreateFolder={requestCreateFolder}
                 onCreateNote={requestCreateNote}
                 onDragStart={setCurrentDragItem}
+                onDropOnFolder={(path, item) => void handleDropOnFolder(path, item)}
                 onFolderReorder={handleFolderReorder}
                 onOpenNoteIcon={(path) => openIconBrowser("note", path)}
                 onPin={(path) => updateMetadata((current) => ({ ...current, pinnedNotes: { ...current.pinnedNotes, [path]: !current.pinnedNotes[path] } }))}
@@ -2381,6 +2478,8 @@ export default function App() {
                   onChange={(markdown) => setDraft(markdown)}
                   onLoadError={handleNoteLoadError}
                   onPositionChange={handleEditorPositionChange}
+                  onInternalLinkClick={handleInternalLinkClick}
+                  onRequestLink={requestLink}
                 />
               </EditorErrorBoundary>
             )}
@@ -2429,6 +2528,9 @@ export default function App() {
           onDelete={() => {
             if (contextMenu.kind === "note") void handleDeleteNote(contextMenu.path);
             if (contextMenu.kind === "folder") void handleDeleteFolder(contextMenu.path);
+          }}
+          onMoveTo={() => {
+            if (contextMenu.kind !== "empty" && contextMenu.path) openMoveDialog(contextMenu.kind, contextMenu.path);
           }}
           onOpenInNewWindow={() => {
             if (contextMenu.kind !== "empty") openTargetInNewWindow({ kind: contextMenu.kind, path: contextMenu.path });
@@ -2504,6 +2606,39 @@ export default function App() {
             </div>
           </form>
         </div>
+      ) : null}
+
+      {moveDialog ? (
+        <MoveDialog
+          state={moveDialog}
+          folderTree={folderTree}
+          folders={folders}
+          notes={notes}
+          metadata={metadata}
+          workspace={workspace}
+          appError={appError}
+          onClose={() => { setMoveDialog(null); setAppError(null); }}
+          onSubmit={handleMoveSubmit}
+        />
+      ) : null}
+
+      {linkPickerOpen ? (
+        <LinkPicker
+          folders={folders}
+          notes={notes}
+          workspace={workspace}
+          metadata={metadata}
+          onClose={() => {
+            linkPickerResolverRef.current?.(null);
+            linkPickerResolverRef.current = null;
+            setLinkPickerOpen(false);
+          }}
+          onPick={(pick) => {
+            linkPickerResolverRef.current?.(pick);
+            linkPickerResolverRef.current = null;
+            setLinkPickerOpen(false);
+          }}
+        />
       ) : null}
 
       {settingsOpen ? (
@@ -3124,6 +3259,7 @@ function SectionViewFolderPane({
   onContextMenu,
   onCreateFolder,
   onDragStart,
+  onDropOnFolder,
   onFolderReorder,
   onManageNotebooks,
   onNewNotebook,
@@ -3154,6 +3290,7 @@ function SectionViewFolderPane({
   onContextMenu: (event: React.MouseEvent, state: ContextMenuTarget) => void;
   onCreateFolder: (parentPath?: string) => void;
   onDragStart: (item: DragItem) => void;
+  onDropOnFolder?: (path: string, item?: Exclude<DragItem, null>) => void;
   onFolderReorder: (targetPath: string, item: Exclude<DragItem, null> | null, placement?: DropPlacement) => void;
   onManageNotebooks: () => void;
   onNewNotebook: () => void;
@@ -3169,9 +3306,12 @@ function SectionViewFolderPane({
   onToggleSearch: () => void;
 }) {
   const rootSectionColor = metadata.folderColors[""];
-  const folderDragItemFromEvent = (event: React.DragEvent) => {
-    const path = event.dataTransfer.getData("application/lumen-folder-path");
-    return path ? { kind: "folder", path } as const : draggingItem?.kind === "folder" ? draggingItem : null;
+  const folderDragItemFromEvent = (event: React.DragEvent): Exclude<DragItem, null> | null => {
+    const folderPath = event.dataTransfer.getData("application/lumen-folder-path");
+    if (folderPath) return { kind: "folder", path: folderPath };
+    const notePath = event.dataTransfer.getData("application/lumen-note-path") || event.dataTransfer.getData("text/plain");
+    if (notePath) return { kind: "note", path: notePath };
+    return draggingItem ?? null;
   };
   const folderDropPlacement = (event: React.DragEvent<HTMLElement>): DropPlacement => {
     const bounds = event.currentTarget.getBoundingClientRect();
@@ -3215,6 +3355,18 @@ function SectionViewFolderPane({
           data-folder-path=""
           onClick={() => onSelectFolder("")}
           onContextMenu={(event) => onContextMenu(event, { kind: "folder", path: "" })}
+          onDragOver={(event) => {
+            const item = folderDragItemFromEvent(event);
+            if (!item) return;
+            event.preventDefault();
+            event.dataTransfer.dropEffect = "move";
+          }}
+          onDrop={(event) => {
+            const item = folderDragItemFromEvent(event);
+            if (!item) return;
+            event.preventDefault();
+            onDropOnFolder?.("", item);
+          }}
         >
           <span className="section-color-chip" aria-hidden="true" />
           <span className="tree-toggle"><span /></span>
@@ -3255,8 +3407,21 @@ function SectionViewFolderPane({
                 }
               }}
               onDrop={(event) => {
+                const item = folderDragItemFromEvent(event);
+                if (!item) return;
                 event.preventDefault();
-                onFolderReorder(folder.path, folderDragItemFromEvent(event), folderDropPlacement(event));
+                // Notes always move into the section.
+                if (item.kind === "note") {
+                  onDropOnFolder?.(folder.path, item);
+                  return;
+                }
+                // Folders: sibling reorder when same parent, otherwise move into.
+                const sourceFolder = folders.find((entry) => entry.path === item.path);
+                if (sourceFolder && sourceFolder.parent_path === folder.parent_path && item.path !== folder.path) {
+                  onFolderReorder(folder.path, item, folderDropPlacement(event));
+                } else {
+                  onDropOnFolder?.(folder.path, item);
+                }
               }}
             >
               <span className="section-color-chip" aria-hidden="true" />
@@ -3305,6 +3470,7 @@ function UnifiedNode({
   workspace,
   onContextMenu,
   onDragStart,
+  onDropOnFolder,
   onFolderReorder,
   onOpenNoteIcon,
   onPin,
@@ -3326,6 +3492,7 @@ function UnifiedNode({
   workspace: string;
   onContextMenu: (event: React.MouseEvent, state: ContextMenuTarget) => void;
   onDragStart?: (item: DragItem) => void;
+  onDropOnFolder?: (path: string, item?: Exclude<DragItem, null>) => void;
   onFolderReorder?: (targetPath: string, item: Exclude<DragItem, null> | null, placement?: DropPlacement) => void;
   onOpenNoteIcon: (path: string) => void;
   onPin: (path: string) => void;
@@ -3371,6 +3538,7 @@ function UnifiedNode({
           workspace={workspace}
           onContextMenu={onContextMenu}
           onDragStart={onDragStart}
+          onDropOnFolder={onDropOnFolder}
           onFolderReorder={onFolderReorder}
           onOpenNoteIcon={onOpenNoteIcon}
           onPin={onPin}
@@ -3430,6 +3598,7 @@ function UnifiedFolderRow({
   workspace,
   onContextMenu,
   onDragStart,
+  onDropOnFolder,
   onFolderReorder,
   onOpenNoteIcon,
   onPin,
@@ -3451,6 +3620,7 @@ function UnifiedFolderRow({
   workspace: string;
   onContextMenu: (event: React.MouseEvent, state: ContextMenuTarget) => void;
   onDragStart?: (item: DragItem) => void;
+  onDropOnFolder?: (path: string, item?: Exclude<DragItem, null>) => void;
   onFolderReorder?: (targetPath: string, item: Exclude<DragItem, null> | null, placement?: DropPlacement) => void;
   onOpenNoteIcon: (path: string) => void;
   onPin: (path: string) => void;
@@ -3469,9 +3639,12 @@ function UnifiedFolderRow({
     const bounds = event.currentTarget.getBoundingClientRect();
     return event.clientY > bounds.top + bounds.height / 2 ? "after" : "before";
   };
-  const getDraggedFolder = (event: React.DragEvent) => {
-    const path = event.dataTransfer.getData("application/lumen-folder-path");
-    return path ? { kind: "folder", path } as const : null;
+  const getDraggedItem = (event: React.DragEvent): Exclude<DragItem, null> | null => {
+    const folderPath = event.dataTransfer.getData("application/lumen-folder-path");
+    if (folderPath) return { kind: "folder", path: folderPath };
+    const notePath = event.dataTransfer.getData("application/lumen-note-path") || event.dataTransfer.getData("text/plain");
+    if (notePath) return { kind: "note", path: notePath };
+    return null;
   };
 
   return (
@@ -3491,14 +3664,27 @@ function UnifiedFolderRow({
         }}
         onDragEnd={() => onDragStart?.(null)}
         onDragOver={(event) => {
-          if (!onFolderReorder || !getDraggedFolder(event)) return;
+          const item = getDraggedItem(event);
+          if (!item) return;
+          if (item.kind === "folder" && (item.path === folder.path || folder.path.startsWith(`${item.path}/`))) return;
           event.preventDefault();
           event.dataTransfer.dropEffect = "move";
         }}
         onDrop={(event) => {
-          if (!onFolderReorder) return;
+          const item = getDraggedItem(event);
+          if (!item) return;
           event.preventDefault();
-          onFolderReorder(folder.path, getDraggedFolder(event), folderDropPlacement(event));
+          if (item.kind === "note") {
+            onDropOnFolder?.(folder.path, item);
+            return;
+          }
+          if (item.path === folder.path || folder.path.startsWith(`${item.path}/`)) return;
+          const sourceFolder = folders.find((entry) => entry.path === item.path);
+          if (sourceFolder && sourceFolder.parent_path === folder.parent_path && onFolderReorder) {
+            onFolderReorder(folder.path, item, folderDropPlacement(event));
+          } else {
+            onDropOnFolder?.(folder.path, item);
+          }
         }}
       >
         <button
@@ -3531,6 +3717,7 @@ function UnifiedFolderRow({
           workspace={workspace}
           onContextMenu={onContextMenu}
           onDragStart={onDragStart}
+          onDropOnFolder={onDropOnFolder}
           onFolderReorder={onFolderReorder}
           onOpenNoteIcon={onOpenNoteIcon}
           onPin={onPin}
@@ -3572,6 +3759,7 @@ function UnifiedTreePane({
   onCreateFolder,
   onCreateNote,
   onDragStart,
+  onDropOnFolder,
   onFolderReorder,
   onManageNotebooks,
   onNewNotebook,
@@ -3618,6 +3806,7 @@ function UnifiedTreePane({
   onCreateFolder?: (parentPath?: string) => void;
   onCreateNote?: (parentPath?: string) => void;
   onDragStart?: (item: DragItem) => void;
+  onDropOnFolder?: (path: string, item?: Exclude<DragItem, null>) => void;
   onFolderReorder?: (targetPath: string, item: Exclude<DragItem, null> | null, placement?: DropPlacement) => void;
   onManageNotebooks?: () => void;
   onNewNotebook?: () => void;
@@ -3694,6 +3883,7 @@ function UnifiedTreePane({
           workspace={workspace}
           onContextMenu={onContextMenu}
           onDragStart={onDragStart}
+          onDropOnFolder={onDropOnFolder}
           onFolderReorder={onFolderReorder}
           onOpenNoteIcon={onOpenNoteIcon}
           onPin={onPin}
@@ -5015,6 +5205,7 @@ function ContextMenu({
   onCreateFolder,
   onCreateNote,
   onDelete,
+  onMoveTo,
   onOpenInNewWindow,
   onReveal,
   onRenameFolder,
@@ -5031,6 +5222,7 @@ function ContextMenu({
   onCreateFolder: () => void;
   onCreateNote: () => void;
   onDelete: () => void;
+  onMoveTo: () => void;
   onOpenInNewWindow: () => void;
   onReveal: () => void;
   onRenameFolder: () => void;
@@ -5066,6 +5258,10 @@ function ContextMenu({
                 <Bookmark size={14} />
                 <span>{isBookmarked ? "Remove Bookmark" : "Add Bookmark"}</span>
               </button>
+              <button type="button" onClick={onMoveTo}>
+                <MoveRight size={14} />
+                <span>Move to…</span>
+              </button>
               <button type="button" onClick={onRenameFolder}>
                 <Pencil size={14} />
                 <span>Rename Folder</span>
@@ -5095,6 +5291,10 @@ function ContextMenu({
           <button type="button" onClick={onToggleBookmark}>
             <Bookmark size={14} />
             <span>{isBookmarked ? "Remove Bookmark" : "Add Bookmark"}</span>
+          </button>
+          <button type="button" onClick={onMoveTo}>
+            <MoveRight size={14} />
+            <span>Move to…</span>
           </button>
           <button type="button" onClick={onSetNoteIcon}>
             <FileText size={14} />
@@ -5223,6 +5423,331 @@ function PropertyDialog({
           </button>
         </div>
       </form>
+    </div>
+  );
+}
+
+function MoveDialog({
+  state,
+  folderTree,
+  folders,
+  notes,
+  metadata,
+  workspace,
+  appError,
+  onClose,
+  onSubmit,
+}: {
+  state: { kind: "note" | "folder"; path: string };
+  folderTree: FolderNode[];
+  folders: FolderEntry[];
+  notes: NoteEntry[];
+  metadata: WorkspaceMetadata;
+  workspace: string;
+  appError: string | null;
+  onClose: () => void;
+  onSubmit: (targetParentPath: string) => void;
+}) {
+  const sourceName =
+    state.kind === "folder"
+      ? folders.find((f) => f.path === state.path)?.name ?? state.path
+      : notes.find((n) => n.path === state.path)?.title ?? state.path;
+  const currentParent =
+    state.kind === "folder"
+      ? folders.find((f) => f.path === state.path)?.parent_path ?? ""
+      : notes.find((n) => n.path === state.path)?.parent_path ?? "";
+
+  const [query, setQuery] = useState("");
+  const [selectedTarget, setSelectedTarget] = useState<string>(currentParent);
+
+  const isInvalidTarget = (path: string) => {
+    if (state.kind === "folder") {
+      if (path === state.path) return true;
+      if (path.startsWith(`${state.path}/`)) return true;
+    }
+    return false;
+  };
+
+  const allFolderPaths = useMemo(() => {
+    const root: { path: string; name: string }[] = [{ path: "", name: getNotebookName(workspace) }];
+    folders.filter((f) => f.path !== "").forEach((f) => root.push({ path: f.path, name: f.name }));
+    return root;
+  }, [folders, workspace]);
+
+  const filtered = useMemo(() => {
+    if (!query.trim()) return null;
+    const q = query.toLowerCase();
+    return allFolderPaths.filter((f) =>
+      f.name.toLowerCase().includes(q) || f.path.toLowerCase().includes(q),
+    );
+  }, [allFolderPaths, query]);
+
+  const renderTree = (nodes: FolderNode[], depth: number): React.ReactNode =>
+    nodes.map((node) => {
+      const invalid = isInvalidTarget(node.path);
+      const isSameLocation = node.path === currentParent;
+      const label = node.path === "" ? getNotebookName(workspace) : node.name;
+      const customIcon = metadata.folderIcons[node.path];
+      return (
+        <div key={node.path || "root"}>
+          <button
+            type="button"
+            className={`move-target-row${selectedTarget === node.path ? " is-selected" : ""}${invalid ? " is-invalid" : ""}`}
+            style={{ paddingLeft: 8 + depth * 16 }}
+            disabled={invalid}
+            onClick={() => setSelectedTarget(node.path)}
+          >
+            <IconMark value={customIcon} fallback={Folder} size={14} />
+            <span>{label}</span>
+            {isSameLocation ? <span className="move-current-tag">current</span> : null}
+          </button>
+          {node.children.length ? renderTree(node.children, depth + 1) : null}
+        </div>
+      );
+    });
+
+  return (
+    <div className="dialog-backdrop" onMouseDown={onClose}>
+      <form
+        className="dialog move-dialog"
+        onMouseDown={(event) => event.stopPropagation()}
+        onSubmit={(event) => {
+          event.preventDefault();
+          if (isInvalidTarget(selectedTarget)) return;
+          if (selectedTarget === currentParent) {
+            onClose();
+            return;
+          }
+          onSubmit(selectedTarget);
+        }}
+      >
+        <div className="dialog-header">
+          <span className="dialog-icon"><MoveRight size={18} /></span>
+          <div>
+            <h2>Move {state.kind === "folder" ? "folder" : "note"}</h2>
+            <p>{sourceName}</p>
+          </div>
+          <button className="icon-button" type="button" title="Close" onClick={onClose}>
+            <X size={17} />
+          </button>
+        </div>
+        <label className="field-label" htmlFor="move-search">Destination</label>
+        <input
+          id="move-search"
+          className="dialog-input"
+          placeholder="Search folders…"
+          value={query}
+          onChange={(event) => setQuery(event.target.value)}
+          autoFocus
+        />
+        <div className="move-target-list" role="listbox">
+          {filtered
+            ? filtered.length
+              ? filtered.map((entry) => {
+                  const invalid = isInvalidTarget(entry.path);
+                  const isSameLocation = entry.path === currentParent;
+                  return (
+                    <button
+                      key={entry.path || "root"}
+                      type="button"
+                      className={`move-target-row${selectedTarget === entry.path ? " is-selected" : ""}${invalid ? " is-invalid" : ""}`}
+                      disabled={invalid}
+                      onClick={() => setSelectedTarget(entry.path)}
+                    >
+                      <Folder size={14} />
+                      <span>{entry.path ? entry.path : getNotebookName(workspace)}</span>
+                      {isSameLocation ? <span className="move-current-tag">current</span> : null}
+                    </button>
+                  );
+                })
+              : <div className="move-empty">No matches</div>
+            : renderTree(folderTree, 0)}
+        </div>
+        {appError ? <p className="dialog-error">{appError}</p> : null}
+        <div className="dialog-actions">
+          <button type="button" className="toolbar-button" onClick={onClose}>Cancel</button>
+          <button
+            type="submit"
+            className="primary-button"
+            disabled={isInvalidTarget(selectedTarget) || selectedTarget === currentParent}
+          >
+            Move
+          </button>
+        </div>
+      </form>
+    </div>
+  );
+}
+
+export type LinkPickerResult = { href: string; title: string };
+
+function looksLikeUrl(text: string) {
+  const value = text.trim();
+  if (!value) return false;
+  if (/^(https?:|mailto:|tel:|ftps?:)/i.test(value)) return true;
+  // bare domain heuristic: contains a dot, no spaces, has a letter
+  return /^[^\s]+\.[^\s]+$/.test(value) && /[a-z]/i.test(value);
+}
+
+function normalizeExternalUrl(text: string) {
+  const value = text.trim();
+  if (/^(https?:|mailto:|tel:|ftps?:)/i.test(value)) return value;
+  return `https://${value}`;
+}
+
+function LinkPicker({
+  folders,
+  notes,
+  workspace,
+  metadata,
+  onClose,
+  onPick,
+}: {
+  folders: FolderEntry[];
+  notes: NoteEntry[];
+  workspace: string;
+  metadata: WorkspaceMetadata;
+  onClose: () => void;
+  onPick: (pick: LinkPickerResult | null) => void;
+}) {
+  const [query, setQuery] = useState("");
+  const [selectedIndex, setSelectedIndex] = useState(0);
+
+  type Entry = { kind: "note" | "folder"; path: string; title: string; parentDisplay: string };
+
+  const allEntries = useMemo<Entry[]>(() => {
+    const list: Entry[] = [];
+    notes.forEach((note) => {
+      list.push({
+        kind: "note",
+        path: note.path,
+        title: note.title,
+        parentDisplay: note.parent_path
+          ? note.parent_path
+          : getNotebookName(workspace),
+      });
+    });
+    folders
+      .filter((folder) => folder.path !== "")
+      .forEach((folder) => {
+        list.push({
+          kind: "folder",
+          path: folder.path,
+          title: folder.name,
+          parentDisplay: folder.parent_path ? folder.parent_path : getNotebookName(workspace),
+        });
+      });
+    return list.sort((a, b) => a.title.localeCompare(b.title));
+  }, [folders, notes, workspace]);
+
+  const trimmed = query.trim();
+  const urlOption = looksLikeUrl(trimmed) ? normalizeExternalUrl(trimmed) : null;
+
+  const filtered = useMemo(() => {
+    const q = trimmed.toLowerCase();
+    if (!q) return allEntries.slice(0, 50);
+    return allEntries
+      .filter((entry) =>
+        entry.title.toLowerCase().includes(q) || entry.path.toLowerCase().includes(q),
+      )
+      .slice(0, 50);
+  }, [allEntries, trimmed]);
+
+  // The combined list: optional URL option first, then notebook results.
+  const totalCount = (urlOption ? 1 : 0) + filtered.length;
+
+  useEffect(() => {
+    setSelectedIndex(0);
+  }, [query]);
+
+  const submitAtIndex = (index: number) => {
+    if (urlOption && index === 0) {
+      onPick({ href: urlOption, title: urlOption });
+      return;
+    }
+    const entry = filtered[index - (urlOption ? 1 : 0)];
+    if (entry) onPick({ href: entry.path, title: entry.title });
+  };
+
+  return (
+    <div className="dialog-backdrop" onMouseDown={onClose}>
+      <div
+        className="dialog link-picker"
+        onMouseDown={(event) => event.stopPropagation()}
+      >
+        <div className="dialog-header">
+          <span className="dialog-icon"><Link2 size={18} /></span>
+          <div>
+            <h2>Add link</h2>
+            <p>Paste a URL or search this notebook</p>
+          </div>
+          <button className="icon-button" type="button" title="Close" onClick={onClose}>
+            <X size={17} />
+          </button>
+        </div>
+        <input
+          className="dialog-input"
+          placeholder="Paste link or search pages"
+          value={query}
+          onChange={(event) => setQuery(event.target.value)}
+          onKeyDown={(event) => {
+            if (event.key === "ArrowDown") {
+              event.preventDefault();
+              setSelectedIndex((index) => Math.min(index + 1, Math.max(totalCount - 1, 0)));
+            } else if (event.key === "ArrowUp") {
+              event.preventDefault();
+              setSelectedIndex((index) => Math.max(index - 1, 0));
+            } else if (event.key === "Enter") {
+              event.preventDefault();
+              submitAtIndex(selectedIndex);
+            } else if (event.key === "Escape") {
+              event.preventDefault();
+              onClose();
+            }
+          }}
+          autoFocus
+        />
+        <div className="link-picker-list" role="listbox">
+          {urlOption ? (
+            <button
+              type="button"
+              className={`link-picker-row${selectedIndex === 0 ? " is-selected" : ""}`}
+              onMouseEnter={() => setSelectedIndex(0)}
+              onClick={() => submitAtIndex(0)}
+            >
+              <Link2 size={14} />
+              <span className="link-picker-title">Use as link</span>
+              <span className="link-picker-parent">{urlOption}</span>
+            </button>
+          ) : null}
+          {filtered.length || urlOption ? (
+            <>
+              {filtered.length ? <div className="link-picker-section-label">{trimmed ? "Pages" : "Recents"}</div> : null}
+              {filtered.map((entry, index) => {
+                const Icon = entry.kind === "folder" ? Folder : FileText;
+                const customIcon =
+                  entry.kind === "folder" ? metadata.folderIcons[entry.path] : metadata.noteIcons[entry.path];
+                const totalIndex = index + (urlOption ? 1 : 0);
+                return (
+                  <button
+                    key={`${entry.kind}-${entry.path}`}
+                    type="button"
+                    className={`link-picker-row${totalIndex === selectedIndex ? " is-selected" : ""}`}
+                    onMouseEnter={() => setSelectedIndex(totalIndex)}
+                    onClick={() => submitAtIndex(totalIndex)}
+                  >
+                    <IconMark value={customIcon} fallback={Icon} size={14} />
+                    <span className="link-picker-title">{entry.title}</span>
+                    <span className="link-picker-parent">{entry.parentDisplay}</span>
+                  </button>
+                );
+              })}
+            </>
+          ) : (
+            <div className="move-empty">No matches</div>
+          )}
+        </div>
+      </div>
     </div>
   );
 }

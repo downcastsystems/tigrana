@@ -392,6 +392,14 @@ export async function revealPath(workspace: string, path: string, kind: "folder"
   console.info("Reveal in file manager is available in the desktop app.", { workspace, path, kind });
 }
 
+export async function openExternal(url: string) {
+  if (isTauri()) {
+    await invoke("open_external", { url });
+    return;
+  }
+  window.open(url, "_blank", "noopener,noreferrer");
+}
+
 const FILENAME_SLASH = "／"; // FULLWIDTH SOLIDUS
 
 export function encodeTitleForFilename(title: string): string {

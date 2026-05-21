@@ -811,6 +811,41 @@ fn read_asset_data_url(workspace: String, path: String) -> Result<String, String
 }
 
 #[tauri::command]
+fn open_external(url: String) -> Result<(), String> {
+    if url.is_empty() {
+        return Err("URL is empty.".to_string());
+    }
+    let lower = url.to_lowercase();
+    let allowed = ["http://", "https://", "mailto:", "tel:", "ftp://", "ftps://"];
+    if !allowed.iter().any(|prefix| lower.starts_with(prefix)) {
+        return Err("Unsupported URL scheme.".to_string());
+    }
+
+    #[cfg(target_os = "macos")]
+    let mut command = Command::new("open");
+    #[cfg(target_os = "windows")]
+    let mut command = {
+        let mut c = Command::new("cmd");
+        c.args(["/C", "start", ""]);
+        c
+    };
+    #[cfg(target_os = "linux")]
+    let mut command = Command::new("xdg-open");
+
+    command
+        .arg(&url)
+        .status()
+        .map_err(|error| error.to_string())
+        .and_then(|status| {
+            if status.success() {
+                Ok(())
+            } else {
+                Err("The system could not open that URL.".to_string())
+            }
+        })
+}
+
+#[tauri::command]
 fn reveal_path(payload: RevealPathPayload) -> Result<(), String> {
     let root = safe_workspace(&payload.workspace)?;
     let target = match payload.kind.as_str() {
@@ -1335,7 +1370,8 @@ pub fn run() {
             save_asset,
             save_clipboard_image_asset,
             read_asset_data_url,
-            reveal_path
+            reveal_path,
+            open_external
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

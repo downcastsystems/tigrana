@@ -9,6 +9,7 @@ import {
   Heading5,
   Heading6,
   Image,
+  Link2,
   List,
   ListOrdered,
   Minus,
@@ -18,13 +19,17 @@ import {
   type LucideIcon,
 } from "lucide-react";
 
+export type SlashCommandContext = {
+  requestLink?: () => Promise<{ href: string; title: string } | null>;
+};
+
 export type SlashCommand = {
   id: string;
   title: string;
   hint: string;
   icon: LucideIcon;
   keywords: string[];
-  run: (editor: Editor, range: Range) => void;
+  run: (editor: Editor, range: Range, context: SlashCommandContext) => void;
 };
 
 export const slashCommands: SlashCommand[] = [
@@ -131,6 +136,36 @@ export const slashCommands: SlashCommand[] = [
     icon: Minus,
     keywords: ["hr", "divider", "line"],
     run: (editor, range) => editor.chain().focus().deleteRange(range).setHorizontalRule().run(),
+  },
+  {
+    id: "link",
+    title: "Link to note",
+    hint: "Link to another note or folder",
+    icon: Link2,
+    keywords: ["link", "note", "internal", "wiki", "reference"],
+    run: (editor, range, context) => {
+      if (!context.requestLink) return;
+      void context.requestLink().then((pick) => {
+        if (!pick) {
+          editor.chain().focus().deleteRange(range).run();
+          return;
+        }
+        editor
+          .chain()
+          .focus()
+          .deleteRange(range)
+          .insertContent({
+            type: "text",
+            text: pick.title,
+            marks: [{ type: "link", attrs: { href: pick.href } }],
+          })
+          // Drop the link mark and add a trailing space so subsequent typing
+          // is not part of the link.
+          .unsetMark("link")
+          .insertContent(" ")
+          .run();
+      });
+    },
   },
   {
     id: "image",
