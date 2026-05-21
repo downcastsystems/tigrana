@@ -3000,6 +3000,8 @@ function OneNoteFolderPane({
   onToggleMenu: (event: React.MouseEvent) => void;
   onToggleSearch: () => void;
 }) {
+  const rootSectionColor = metadata.folderColors[""];
+
   return (
     <section className="folder-pane onenote-folder-pane">
       <div className="pane-header">
@@ -3032,15 +3034,16 @@ function OneNoteFolderPane({
       <div className="folder-tree">
         <div
           className={`folder-row${selectedFolder === "" ? " is-active" : ""}`}
-          style={metadata.folderColors[""] ? { color: metadata.folderColors[""] } : undefined}
+          style={rootSectionColor ? { "--section-color": rootSectionColor } as React.CSSProperties : undefined}
+          data-has-section-color={rootSectionColor ? "true" : "false"}
           data-folder-path=""
           onClick={() => onSelectFolder("")}
           onContextMenu={(event) => onContextMenu(event, { kind: "folder", path: "" })}
         >
+          <span className="section-color-chip" aria-hidden="true" />
           <span className="tree-toggle"><span /></span>
           <button
             className="folder-select"
-            style={metadata.folderColors[""] ? { color: metadata.folderColors[""] } : undefined}
             type="button"
             onClick={(event) => { event.stopPropagation(); onSelectFolder(""); }}
           >
@@ -3057,15 +3060,16 @@ function OneNoteFolderPane({
             <div
               key={folder.path}
               className={`folder-row${selectedFolder === folder.path ? " is-active" : ""}`}
-              style={folderColor ? { color: folderColor } : undefined}
+              style={folderColor ? { "--section-color": folderColor } as React.CSSProperties : undefined}
+              data-has-section-color={folderColor ? "true" : "false"}
               data-folder-path={folder.path}
               onClick={() => onSelectFolder(folder.path)}
               onContextMenu={(event) => onContextMenu(event, { kind: "folder", path: folder.path })}
             >
+              <span className="section-color-chip" aria-hidden="true" />
               <span className="tree-toggle"><span /></span>
               <button
                 className="folder-select"
-                style={folderColor ? { color: folderColor } : undefined}
                 type="button"
                 onClick={(event) => { event.stopPropagation(); onSelectFolder(folder.path); }}
               >

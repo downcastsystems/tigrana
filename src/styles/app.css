@@ -12,6 +12,7 @@
   --accent-soft: rgba(49, 95, 89, 0.14);
   --accent-active: rgba(49, 95, 89, 0.3);
   --accent-muted: rgba(49, 95, 89, 0.12);
+  --link-color: var(--accent);
   --app-bg: #f7f4ef;
   --shadow-popover: 0 10px 28px rgba(35, 30, 24, 0.16);
   --shadow-modal: 0 24px 70px rgba(35, 30, 24, 0.22);
@@ -139,6 +140,12 @@ button:disabled {
   height: 30px;
   border-radius: 8px;
   position: relative;
+}
+
+.app-titlebar .note-tab > .note-tab-icon,
+.app-titlebar .note-tab > .note-tab-label,
+.app-titlebar .note-tab > .tab-close {
+  transform: translateY(-1px);
 }
 
 /* Thin vertical separator centered in the 4px gap to the left of each tab.
@@ -364,6 +371,8 @@ html[data-tauri="true"][data-platform="mac"] .titlebar-traffic-padding {
 }
 
 .left-panes {
+  position: relative;
+  z-index: 20;
   display: grid;
   grid-template-columns: var(--folder-pane-width, 292px) 6px var(--notes-pane-width, 268px);
   min-width: 0;
@@ -471,7 +480,7 @@ body.is-dragging-note.is-over-drop-target * {
   flex-direction: column;
   min-width: 0;
   min-height: 0;
-  overflow: hidden;
+  overflow: visible;
   background: var(--surface-soft);
   user-select: none;
   -webkit-user-select: none;
@@ -594,7 +603,6 @@ body.is-dragging-note.is-over-drop-target * {
   background: transparent;
 }
 
-.folder-row.is-context-target,
 .unified-folder-row.is-context-target,
 .unified-note-row.is-context-target,
 .note-card.is-context-target {
@@ -602,7 +610,14 @@ body.is-dragging-note.is-over-drop-target * {
   background: var(--accent-active);
 }
 
-.folder-row.is-context-target::before,
+.folder-row.is-context-target {
+  color: var(--accent-strong);
+}
+
+.folder-row.is-context-target::before {
+  background: var(--accent-active);
+}
+
 .unified-folder-row.is-context-target::before,
 .unified-note-row.is-context-target::before,
 .note-card.is-context-target::before {
@@ -618,11 +633,57 @@ body.is-dragging-note.is-over-drop-target * {
 }
 
 .onenote-folder-pane .folder-tree {
-  padding: 6px 8px;
+  padding: 6px 0;
+}
+
+.section-color-chip {
+  display: none;
+}
+
+.onenote-folder-pane .folder-row {
+  grid-template-columns: minmax(0, 1fr);
+  min-height: 42px;
+  padding: 0;
+  border-radius: 0;
+  --section-color: transparent;
+}
+
+.onenote-folder-pane .section-color-chip {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 0;
+  display: none;
+  width: 5px;
+  border-radius: 999px;
+  background: var(--section-color);
+}
+
+.onenote-folder-pane .folder-row[data-has-section-color="true"] .section-color-chip {
+  display: block;
+}
+
+.onenote-folder-pane .folder-row .tree-toggle {
+  display: none;
+}
+
+.onenote-folder-pane .folder-row .folder-select {
+  min-height: 42px;
+  padding: 0 14px;
+  border-radius: inherit;
+}
+
+.onenote-folder-pane .folder-select svg,
+.onenote-folder-pane .folder-select .custom-icon,
+.unified-folder-name > svg,
+.unified-folder-name > .custom-icon,
+.unified-note-row > .inline-icon-button {
+  transform: translateY(2px);
 }
 
 .onenote-folder-pane .folder-row:hover,
 .onenote-folder-pane .folder-row.is-active,
+.onenote-folder-pane .folder-row.is-context-target,
 .left-panes:not(.is-single-col) .unified-folder-row:hover,
 .left-panes:not(.is-single-col) .unified-folder-row.is-active,
 .left-panes:not(.is-single-col) .unified-note-row:hover,
@@ -632,14 +693,14 @@ body.is-dragging-note.is-over-drop-target * {
 }
 
 .onenote-folder-pane .folder-row:hover::before,
-.onenote-folder-pane .folder-row.is-active::before {
+.onenote-folder-pane .folder-row.is-active::before,
+.onenote-folder-pane .folder-row.is-context-target::before {
   background: transparent;
 }
 
-.onenote-folder-pane .folder-row:hover .folder-select,
-.onenote-folder-pane .folder-row.is-active .folder-select,
 .onenote-folder-pane .folder-row:hover .folder-select span,
 .onenote-folder-pane .folder-row.is-active .folder-select span,
+.onenote-folder-pane .folder-row.is-context-target .folder-select span,
 .left-panes:not(.is-single-col) .unified-folder-row:hover .unified-folder-name,
 .left-panes:not(.is-single-col) .unified-folder-row.is-active .unified-folder-name {
   color: inherit !important;
@@ -722,7 +783,7 @@ body.is-dragging-note.is-over-drop-target * {
   z-index: 75;
   display: grid;
   gap: 4px;
-  width: min(600px, calc(100vw - 80px));
+  width: min(600px, calc(100vw - 32px));
   padding: 14px;
   border: 1px solid var(--border);
   border-radius: 12px;
@@ -790,15 +851,16 @@ body.is-dragging-note.is-over-drop-target * {
   display: grid;
   gap: 4px;
   max-height: min(1040px, calc(100vh - 180px));
-  margin: 0 -4px;
-  padding: 0 4px;
+  margin: 0;
+  padding: 0 4px 0 0;
   overflow-x: hidden;
   overflow-y: auto;
+  scrollbar-gutter: stable;
 }
 
 .recent-notebooks-list button {
-  width: calc(100% - 8px);
-  margin-right: 8px;
+  width: 100%;
+  margin: 0;
 }
 
 .recent-notebooks-empty {
@@ -2136,7 +2198,7 @@ html[data-theme="dark"] .tab-list-separator {
 }
 
 .ProseMirror a {
-  color: var(--accent);
+  color: var(--link-color);
   text-decoration: underline;
   text-underline-offset: 2px;
 }
@@ -2856,6 +2918,7 @@ html[data-theme="dark"] .settings-number-input::-webkit-outer-spin-button {
 html[data-theme="dark"] {
   color: #fafafa;
   background: var(--app-bg);
+  --link-color: color-mix(in srgb, var(--accent) 45%, white);
   --shadow-popover: 0 10px 28px rgba(0, 0, 0, 0.55);
   --shadow-modal: 0 24px 70px rgba(0, 0, 0, 0.7);
   --shadow-modal-strong: 0 30px 90px rgba(0, 0, 0, 0.8);
@@ -2993,6 +3056,7 @@ html[data-theme="dark"] .folder-row:hover {
 
 html[data-theme="dark"] .onenote-folder-pane .folder-row:hover,
 html[data-theme="dark"] .onenote-folder-pane .folder-row.is-active,
+html[data-theme="dark"] .onenote-folder-pane .folder-row.is-context-target,
 html[data-theme="dark"] .left-panes:not(.is-single-col) .unified-folder-row:hover,
 html[data-theme="dark"] .left-panes:not(.is-single-col) .unified-folder-row.is-active,
 html[data-theme="dark"] .left-panes:not(.is-single-col) .unified-note-row:hover,
@@ -3002,7 +3066,8 @@ html[data-theme="dark"] .left-panes:not(.is-single-col) .unified-note-row.is-act
 }
 
 html[data-theme="dark"] .onenote-folder-pane .folder-row:hover::before,
-html[data-theme="dark"] .onenote-folder-pane .folder-row.is-active::before {
+html[data-theme="dark"] .onenote-folder-pane .folder-row.is-active::before,
+html[data-theme="dark"] .onenote-folder-pane .folder-row.is-context-target::before {
   background: transparent;
 }
 
@@ -3212,6 +3277,40 @@ html[data-theme="dark"] .ProseMirror pre {
 
 html[data-theme="dark"] .switch-track {
   background: rgba(238, 232, 223, 0.2);
+}
+
+.left-panes:not(.is-single-col) .folder-pane:not(.onenote-folder-pane) .folder-row:hover,
+.left-panes:not(.is-single-col) .folder-pane:not(.onenote-folder-pane) .folder-row.is-active,
+.left-panes:not(.is-single-col) .notes-pane .note-card:hover,
+.left-panes:not(.is-single-col) .notes-pane .note-card.is-active,
+.left-panes.is-single-col .unified-folder-row:hover,
+.left-panes.is-single-col .unified-folder-row.is-active,
+.left-panes.is-single-col .unified-note-row:hover,
+.left-panes.is-single-col .unified-note-row.is-active {
+  color: var(--accent-contrast);
+  background: var(--accent);
+}
+
+.left-panes:not(.is-single-col) .folder-pane:not(.onenote-folder-pane) .folder-row:hover::before,
+.left-panes:not(.is-single-col) .folder-pane:not(.onenote-folder-pane) .folder-row.is-active::before,
+.left-panes.is-single-col .unified-folder-row:hover::before,
+.left-panes.is-single-col .unified-folder-row.is-active::before,
+.left-panes.is-single-col .unified-note-row:hover::before,
+.left-panes.is-single-col .unified-note-row.is-active::before {
+  background: transparent;
+}
+
+.left-panes:not(.is-single-col) .folder-pane:not(.onenote-folder-pane) .folder-row:hover .folder-select,
+.left-panes:not(.is-single-col) .folder-pane:not(.onenote-folder-pane) .folder-row.is-active .folder-select,
+.left-panes:not(.is-single-col) .folder-pane:not(.onenote-folder-pane) .folder-row:hover .folder-select span,
+.left-panes:not(.is-single-col) .folder-pane:not(.onenote-folder-pane) .folder-row.is-active .folder-select span,
+.left-panes:not(.is-single-col) .notes-pane .note-card:hover strong,
+.left-panes:not(.is-single-col) .notes-pane .note-card.is-active strong,
+.left-panes:not(.is-single-col) .notes-pane .note-card:hover small,
+.left-panes:not(.is-single-col) .notes-pane .note-card.is-active small,
+.left-panes.is-single-col .unified-folder-row:hover .unified-folder-name,
+.left-panes.is-single-col .unified-folder-row.is-active .unified-folder-name {
+  color: inherit !important;
 }
 
 html[data-accent-titlebar="true"] .app-titlebar {
