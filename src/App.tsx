@@ -140,16 +140,16 @@ type DraftNote = {
 };
 
 type ContextMenuState =
-  | { x: number; y: number; kind: "empty" }
-  | { x: number; y: number; kind: "folder"; path: string }
-  | { x: number; y: number; kind: "note"; path: string };
+  | { x: number; y: number; kind: "empty"; parentPath?: string; source?: "sections-pane" }
+  | { x: number; y: number; kind: "folder"; path: string; source?: "sections-pane" }
+  | { x: number; y: number; kind: "note"; path: string; source?: "sections-pane" };
 
 type TabContextMenuState = { x: number; y: number; tabId: string };
 
 type ContextMenuTarget =
-  | { kind: "empty" }
-  | { kind: "folder"; path: string }
-  | { kind: "note"; path: string };
+  | { kind: "empty"; parentPath?: string; source?: "sections-pane" }
+  | { kind: "folder"; path: string; source?: "sections-pane" }
+  | { kind: "note"; path: string; source?: "sections-pane" };
 
 type OpenTarget = { kind: "folder" | "note"; path: string };
 type NoteChangedEvent = {
@@ -2751,14 +2751,20 @@ export default function App() {
       {noteDragPreview ? <NoteDragPreviewLayer preview={noteDragPreview} /> : null}
 
       {contextMenu ? (
+        (() => {
+          const createParent =
+            contextMenu.kind === "folder" ? contextMenu.path
+              : contextMenu.kind === "empty" && contextMenu.parentPath !== undefined ? contextMenu.parentPath
+              : selectedFolder;
+          return (
         <ContextMenu
           state={contextMenu}
           folderColorSubject={isSectionContextTarget(contextMenu, navigationStyle, folders) ? "section" : "folder"}
-          createFolderParentName={displayFolderName(contextMenu.kind === "folder" ? contextMenu.path : selectedFolder, folders, workspace)}
-          createNoteParentName={displayFolderName(contextMenu.kind === "folder" ? contextMenu.path : selectedFolder, folders, workspace)}
-          showCreateSection={navigationStyle === "section-view"}
-          onCreateFolder={() => requestCreateFolder(contextMenu.kind === "folder" ? contextMenu.path : selectedFolder)}
-          onCreateNote={() => requestCreateNote(contextMenu.kind === "folder" ? contextMenu.path : selectedFolder)}
+          createFolderParentName={displayFolderName(createParent, folders, workspace)}
+          createNoteParentName={displayFolderName(createParent, folders, workspace)}
+          showCreateSection={contextMenu.source === "sections-pane"}
+          onCreateFolder={() => requestCreateFolder(createParent)}
+          onCreateNote={() => requestCreateNote(createParent)}
           onCreateSection={() => requestCreateFolder("")}
           onDelete={() => {
             if (contextMenu.kind === "note") void handleDeleteNote(contextMenu.path);
@@ -2786,6 +2792,8 @@ export default function App() {
           }}
           onClose={() => setContextMenu(null)}
         />
+          );
+        })()
       ) : null}
 
       {tabContextMenu ? (
@@ -3572,7 +3580,13 @@ function SectionViewFolderPane({
   };
 
   return (
-    <section className="folder-pane section-view-folder-pane">
+    <section
+      className="folder-pane section-view-folder-pane"
+      onContextMenu={(event) => {
+        if ((event.target as HTMLElement | null)?.closest("[data-folder-path]")) return;
+        onContextMenu(event, { kind: "empty", parentPath: "", source: "sections-pane" });
+      }}
+    >
       <div className="pane-header">
         <strong>Sections</strong>
         <div className="pane-actions">
@@ -3607,7 +3621,7 @@ function SectionViewFolderPane({
           data-has-section-color={rootSectionColor ? "true" : "false"}
           data-folder-path=""
           onClick={() => onSelectFolder("")}
-          onContextMenu={(event) => onContextMenu(event, { kind: "folder", path: "" })}
+          onContextMenu={(event) => onContextMenu(event, { kind: "folder", path: "", source: "sections-pane" })}
           onDragOver={(event) => {
             const item = folderDragItemFromEvent(event);
             if (!item) return;
@@ -3666,7 +3680,7 @@ function SectionViewFolderPane({
               data-has-section-color={folderColor ? "true" : "false"}
               data-folder-path={folder.path}
               onClick={handleSelectClick}
-              onContextMenu={(event) => onContextMenu(event, { kind: "folder", path: folder.path })}
+              onContextMenu={(event) => onContextMenu(event, { kind: "folder", path: folder.path, source: "sections-pane" })}
               onPointerDown={(event) => onSectionPointerDragStart(folder.path, event)}
               // Still accept HTML5 drops from notes / nested folders (those sources use HTML5 drag).
               onDragOver={(event) => {
@@ -4154,7 +4168,14 @@ function UnifiedTreePane({
           onToggle={onToggleBookmarksExpanded}
         />
       ) : null}
-      <div className="unified-tree-scroll" data-pane-root-path={rootPath}>
+      <div
+        className="unified-tree-scroll"
+        data-pane-root-path={rootPath}
+        onContextMenu={(event) => {
+          if ((event.target as HTMLElement | null)?.closest("[data-note-path], [data-folder-path]")) return;
+          onContextMenu(event, { kind: "empty", parentPath: rootPath });
+        }}
+      >
         <UnifiedNode
           activePath={activePath}
           contents={contents}
