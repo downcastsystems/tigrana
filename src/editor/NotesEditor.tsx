@@ -10,7 +10,7 @@ import { TableHeader } from "@tiptap/extension-table-header";
 import { TableRow } from "@tiptap/extension-table-row";
 import TaskItem from "@tiptap/extension-task-item";
 import TaskList from "@tiptap/extension-task-list";
-import type { Fragment as ProseMirrorFragment, Node as ProseMirrorNode } from "@tiptap/pm/model";
+import type { Fragment as ProseMirrorFragment, Node as ProseMirrorNode, ResolvedPos } from "@tiptap/pm/model";
 import { NodeSelection, Plugin, PluginKey, Selection, TextSelection } from "@tiptap/pm/state";
 import { Decoration, DecorationSet, type EditorView } from "@tiptap/pm/view";
 import { EditorContent, NodeViewWrapper, Range, ReactNodeViewRenderer, useEditor, type Editor } from "@tiptap/react";
@@ -377,6 +377,8 @@ export function NotesEditor({ content, focusRequest, focusAtEndRequest, findRequ
     editorProps: {
       handleDOMEvents: {
         keydown(_view, event) {
+          if (handleEmptyTaskItemBackspace(_view, event)) return true;
+          if (handleEmptyTaskItemForwardDelete(_view, event)) return true;
           if (handleEmptyListItemDelete(_view, event)) return true;
           return handleSlashKeyDown(event);
         },
@@ -969,6 +971,108 @@ function handleEmptyListItemDelete(view: EditorView, event: KeyboardEvent) {
     : Selection.near(tr.doc.resolve(Math.min(deleteFrom, tr.doc.content.size)), 1);
   view.dispatch(tr.setSelection(nextSelection).scrollIntoView());
   return true;
+}
+
+function handleEmptyTaskItemBackspace(view: EditorView, event: KeyboardEvent) {
+  if (!isPlainDeleteKey(event, "Backspace")) return false;
+  const { selection } = view.state;
+  if (!selection.empty) return false;
+
+  const item = findListItemAtSelection(selection.$from);
+  if (!item || item.node.type.name !== "taskItem" || item.node.textContent.trim()) return false;
+
+  event.preventDefault();
+  deleteEmptyListItem(view, item, -1);
+  return true;
+}
+
+function handleEmptyTaskItemForwardDelete(view: EditorView, event: KeyboardEvent) {
+  if (!isPlainDeleteKey(event, "Delete")) return false;
+  const { selection } = view.state;
+  if (!selection.empty || !selection.$from.parent.isTextblock) return false;
+  if (selection.$from.parentOffset !== selection.$from.parent.content.size) return false;
+
+  const item = findListItemAtSelection(selection.$from);
+  if (!item) return false;
+
+  const next = findNextEmptyTaskItem(selection.$from, item);
+  if (!next) return false;
+
+  event.preventDefault();
+  deleteEmptyListItem(view, next, -1);
+  return true;
+}
+
+function isPlainDeleteKey(event: KeyboardEvent, key: "Backspace" | "Delete") {
+  return event.key === key && !event.metaKey && !event.ctrlKey && !event.altKey && !event.shiftKey;
+}
+
+type ListItemRange = {
+  depth: number;
+  from: number;
+  node: ProseMirrorNode;
+  parentDepth: number;
+  parentFrom: number;
+  parentNode: ProseMirrorNode;
+};
+
+function findListItemAtSelection($from: ResolvedPos): ListItemRange | null {
+  for (let depth = $from.depth; depth > 0; depth -= 1) {
+    const node = $from.node(depth);
+    if (node.type.name !== "listItem" && node.type.name !== "taskItem") continue;
+    const parentDepth = depth - 1;
+    return {
+      depth,
+      from: $from.before(depth),
+      node,
+      parentDepth,
+      parentFrom: $from.before(parentDepth),
+      parentNode: $from.node(parentDepth),
+    };
+  }
+  return null;
+}
+
+function findNextEmptyTaskItem($from: ResolvedPos, current: ListItemRange): ListItemRange | null {
+  const itemIndex = $from.index(current.parentDepth);
+  const nextSibling = itemIndex < current.parentNode.childCount - 1
+    ? current.parentNode.child(itemIndex + 1)
+    : null;
+  if (nextSibling?.type.name === "taskItem" && !nextSibling.textContent.trim()) {
+    return {
+      depth: current.depth,
+      from: $from.after(current.depth),
+      node: nextSibling,
+      parentDepth: current.parentDepth,
+      parentFrom: current.parentFrom,
+      parentNode: current.parentNode,
+    };
+  }
+
+  if (itemIndex < current.parentNode.childCount - 1) return null;
+
+  const nextListFrom = $from.after(current.parentDepth);
+  const nextList = $from.doc.resolve(nextListFrom).nodeAfter;
+  const nextItem = nextList?.type.name === "taskList" ? nextList.firstChild : null;
+  if (!nextList || !nextItem || nextItem.type.name !== "taskItem" || nextItem.textContent.trim()) return null;
+
+  return {
+    depth: current.parentDepth + 1,
+    from: nextListFrom + 1,
+    node: nextItem,
+    parentDepth: current.parentDepth,
+    parentFrom: nextListFrom,
+    parentNode: nextList,
+  };
+}
+
+function deleteEmptyListItem(view: EditorView, item: ListItemRange, bias: -1 | 1) {
+  const removeParentList = item.parentNode.childCount === 1;
+  const deleteFrom = removeParentList ? item.parentFrom : item.from;
+  const deleteTo = deleteFrom + (removeParentList ? item.parentNode.nodeSize : item.node.nodeSize);
+  const tr = view.state.tr.delete(deleteFrom, deleteTo);
+  const near = Math.min(deleteFrom, tr.doc.content.size);
+  view.dispatch(tr.setSelection(Selection.near(tr.doc.resolve(near), bias)).scrollIntoView());
 }
 
 function findTextSelectionPosition(doc: ProseMirrorNode, from: number, paragraphName: string) {
