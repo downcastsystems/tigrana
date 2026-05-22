@@ -1447,6 +1447,26 @@ export default function App() {
     clearCurrentNote();
   }
 
+  async function openNoteInNewTab(path: string) {
+    if (hasUnsavedChanges) {
+      await persistDraft();
+    }
+    const tabId = createTabId();
+    setOpenTabs((current) => [...current, { id: tabId, path }]);
+    setActiveTabId(tabId);
+
+    const content = contents.get(path) ?? (await readNote(workspace, path));
+    const note = notes.find((entry) => entry.path === path);
+    const restorePosition = getRestorableNotePosition(metadataRef.current, path, content);
+    setActivePath(path);
+    setPendingNote(null);
+    if (note) {
+      setSelectedFolder(navigationStyle === "section-view" ? getTopLevelFolderPath(note.parent_path) : note.parent_path);
+    }
+    loadContentIntoEditor(note ?? null, content, restorePosition);
+    recordNotePosition(path, content, { lastOpenedAt: Date.now() });
+  }
+
   async function closeTab(tabId: string) {
     const tab = openTabs.find((entry) => entry.id === tabId);
     const nextTabs = openTabs.filter((entry) => entry.id !== tabId);
@@ -2775,6 +2795,9 @@ export default function App() {
           }}
           onOpenInNewWindow={() => {
             if (contextMenu.kind !== "empty") openTargetInNewWindow({ kind: contextMenu.kind, path: contextMenu.path });
+          }}
+          onOpenInNewTab={() => {
+            if (contextMenu.kind === "note") void openNoteInNewTab(contextMenu.path);
           }}
           onReveal={() => {
             if (contextMenu.kind !== "empty") void revealTarget({ kind: contextMenu.kind, path: contextMenu.path });
@@ -5628,6 +5651,7 @@ function ContextMenu({
   onCreateSection,
   onDelete,
   onMoveTo,
+  onOpenInNewTab,
   onOpenInNewWindow,
   onReveal,
   onRenameFolder,
@@ -5648,6 +5672,7 @@ function ContextMenu({
   onCreateSection: () => void;
   onDelete: () => void;
   onMoveTo: () => void;
+  onOpenInNewTab: () => void;
   onOpenInNewWindow: () => void;
   onReveal: () => void;
   onRenameFolder: () => void;
@@ -5659,14 +5684,18 @@ function ContextMenu({
 }) {
   return (
     <div className="context-menu" style={{ left: state.x, top: state.y }} onClick={onClose}>
-      <button type="button" onClick={onCreateNote}>
-        <FileText size={14} />
-        <span>New Note in {createNoteParentName}</span>
-      </button>
-      <button type="button" onClick={onCreateFolder}>
-        <Folder size={14} />
-        <span>New Folder in {createFolderParentName}</span>
-      </button>
+      {state.kind !== "note" ? (
+        <>
+          <button type="button" onClick={onCreateNote}>
+            <FileText size={14} />
+            <span>New Note in {createNoteParentName}</span>
+          </button>
+          <button type="button" onClick={onCreateFolder}>
+            <Folder size={14} />
+            <span>New Folder in {createFolderParentName}</span>
+          </button>
+        </>
+      ) : null}
       {showCreateSection ? (
         <button type="button" onClick={onCreateSection}>
           <LayoutList size={14} />
@@ -5711,6 +5740,10 @@ function ContextMenu({
       ) : null}
       {state.kind === "note" ? (
         <>
+          <button type="button" onClick={onOpenInNewTab}>
+            <Plus size={14} />
+            <span>Open in New Tab</span>
+          </button>
           <button type="button" onClick={onOpenInNewWindow}>
             <PanelRightOpen size={14} />
             <span>Open in New Window</span>

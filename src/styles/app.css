@@ -190,6 +190,16 @@ button:disabled {
   display: none;
 }
 
+.app-titlebar .note-tab:not(.is-active):hover,
+.app-titlebar .note-tab:not(.is-active):focus-within {
+  grid-template-columns: 16px minmax(0, 1fr) 20px;
+}
+
+.app-titlebar .note-tab:not(.is-active):hover .tab-close,
+.app-titlebar .note-tab:not(.is-active):focus-within .tab-close {
+  display: inline-flex;
+}
+
 /* Compact / icon-only tab mode when the window is too narrow */
 .app-titlebar .note-tabs.is-compact .note-tab {
   grid-template-columns: 16px;
@@ -200,6 +210,16 @@ button:disabled {
 
 .app-titlebar .note-tabs.is-compact .note-tab-label,
 .app-titlebar .note-tabs.is-compact .tab-close {
+  display: none;
+}
+
+.app-titlebar .note-tabs.is-compact .note-tab:not(.is-active):hover,
+.app-titlebar .note-tabs.is-compact .note-tab:not(.is-active):focus-within {
+  grid-template-columns: 16px;
+}
+
+.app-titlebar .note-tabs.is-compact .note-tab:not(.is-active):hover .tab-close,
+.app-titlebar .note-tabs.is-compact .note-tab:not(.is-active):focus-within .tab-close {
   display: none;
 }
 
