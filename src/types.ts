@@ -62,6 +62,37 @@ export type NotebookAppearance = {
   editorFontSize?: number;
 };
 
+export type LinkRef = {
+  sourceId: string;
+  targetId: string | null;
+  targetKind: "note" | "folder" | "unknown";
+  targetPath: string;
+  displayText: string;
+  anchor: string | null;
+  occurrence: number;
+  broken: boolean;
+};
+
+export type NoteRecord = {
+  id: string;
+  path: string;
+  title: string;
+};
+
+export type FolderRecord = {
+  id: string;
+  path: string;
+};
+
+export type LinkIndex = {
+  schemaVersion: number;
+  notesById: Record<string, NoteRecord>;
+  foldersById: Record<string, FolderRecord>;
+  pathToId: Record<string, string>;
+  outbound: Record<string, LinkRef[]>;
+  inbound: Record<string, LinkRef[]>;
+};
+
 export type WorkspaceMetadata = {
   folderOrder: Record<string, string[]>;
   noteOrder: Record<string, string[]>;

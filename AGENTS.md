@@ -42,10 +42,13 @@ Notebook/
   Note.md
   Folder/
     Another Note.md
+    .lumen/
+      folder.json
   .assets/
     pasted-image.png
   .lumen/
     metadata.json
+    index.json
 ```
 
 Durable content:
@@ -54,11 +57,35 @@ Durable content:
 - Folders: hierarchy
 - Attachments: `.assets/`
 - App metadata: `.lumen/metadata.json`
+- Link index cache: `.lumen/index.json`
+- Per-folder identity: `<folder>/.lumen/folder.json` (non-root folders only)
 
 Hidden app folders are excluded from note/folder scans:
 
 - `.lumen`
 - `.assets`
+
+## Stable identity and link index
+
+Every note and folder has a UUID that travels with it so links survive moves
+and renames.
+
+- **Notes** carry `id: <uuid>` in YAML frontmatter at the top of the file.
+  Minted on workspace open if missing.
+- **Folders** carry a sidecar `<folder>/.lumen/folder.json` with `{ id }`.
+- `.lumen/index.json` is the authoritative link cache: `notesById`,
+  `foldersById`, `pathToId`, `outbound`, `inbound`. It is rebuildable from
+  the frontmatter/sidecar ids and the markdown contents.
+
+`move_note`, `rename_note`, `move_folder`, and `rename_folder` rewrite every
+inbound link occurrence to the moved target (or its descendants, for folder
+moves) and update the path snapshots in the index. Source notes are picked
+up via `inbound[targetId]`, so the rewrite cost is O(backlinks), not
+O(workspace).
+
+Link hrefs on disk stay path-based (`[Title](Folder/Note.md)`) so notes
+remain readable outside the app — the id is only used at runtime to identify
+which target a link points at.
 
 ## Metadata
 

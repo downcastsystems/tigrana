@@ -1,6 +1,6 @@
 import { open } from "@tauri-apps/plugin-dialog";
 import { listen } from "@tauri-apps/api/event";
-import { getCurrentWindow, LogicalPosition, LogicalSize } from "@tauri-apps/api/window";
+import { availableMonitors, getCurrentWindow, LogicalPosition, LogicalSize, PhysicalPosition, PhysicalSize, type Monitor } from "@tauri-apps/api/window";
 import { WebviewWindow } from "@tauri-apps/api/webviewWindow";
 import {
   BookOpen,
@@ -53,6 +53,7 @@ import {
   moveNote,
   purgeTrash,
   purgeTrashAll,
+  readLinkIndex,
   readNote,
   restoreTrash,
   revealPath,
@@ -72,7 +73,7 @@ import {
 import type { TrashEntry } from "./lib/notesApi";
 import { normalizeMarkdownImageLines } from "./lib/markdown";
 import { searchNotes } from "./lib/search";
-import type { BookmarkEntry, FolderEntry, NavigationStyle, NotebookThemeColors, NoteEntry, NotePositionMetadata, SearchResult, WorkspaceMetadata } from "./types";
+import type { BookmarkEntry, FolderEntry, LinkIndex, NavigationStyle, NotebookThemeColors, NoteEntry, NotePositionMetadata, SearchResult, WorkspaceMetadata } from "./types";
 
 function stopChromeMouseDown(event: React.MouseEvent) {
   event.stopPropagation();
@@ -90,6 +91,7 @@ const recentNotebooksKey = "lumen-notes-recent-notebooks";
 const lastPathKey = "lumen-notes-last-path";
 const accentTitlebarKey = "lumen-notes-accent-titlebar";
 const windowSizeKey = "lumen-notes-window-size";
+const windowPositionKey = "lumen-notes-window-position";
 const sessionKeyPrefix = "lumen-notes-session:";
 const notePositionFreshMs = 24 * 60 * 60 * 1000;
 const defaultLightAccent = "#666666";
@@ -191,7 +193,7 @@ type NoteDragPreview = {
 
 type ColorScheme = "system" | "light" | "dark";
 type ThemePresetId = "default" | "atom" | "solarized" | "dracula" | "nord" | "gruvbox";
-type RightSidebarMode = "outline" | "frontmatter" | "properties";
+type RightSidebarMode = "outline" | "frontmatter" | "properties" | "backlinks";
 type NoteTab = {
   id: string;
   path: string | null;
@@ -337,13 +339,14 @@ export default function App() {
   const [leftVisible, setLeftVisible] = useState(true);
   const [outlineVisible, setOutlineVisible] = useState(true);
   const [rightSidebarMode, setRightSidebarMode] = useState<RightSidebarMode>("outline");
+  const [linkIndex, setLinkIndex] = useState<LinkIndex | null>(null);
   const [rawMarkdownVisible, setRawMarkdownVisible] = useState(false);
   const [fullWidth, setFullWidth] = useState(() => localStorage.getItem(fullWidthKey) === "true");
   const [openTabs, setOpenTabs] = useState<NoteTab[]>([]);
   const [activeTabId, setActiveTabId] = useState<string | null>(null);
   const [folderPaneWidth, setFolderPaneWidth] = useState(() => readStoredNumber(folderPaneWidthKey, 292));
   const [notesPaneWidth, setNotesPaneWidth] = useState(() => readStoredNumber(notesPaneWidthKey, 268));
-  const [rightPaneWidth, setRightPaneWidth] = useState(() => readStoredNumber(rightPaneWidthKey, 260));
+  const [rightPaneWidth, setRightPaneWidth] = useState(() => readStoredNumber(rightPaneWidthKey, 300));
   const [contextMenu, setContextMenu] = useState<ContextMenuState | null>(null);
   const [tabContextMenu, setTabContextMenu] = useState<TabContextMenuState | null>(null);
   const [folderDialogParent, setFolderDialogParent] = useState<string | null>(null);
@@ -358,6 +361,7 @@ export default function App() {
   const [noteDragPreview, setNoteDragPreview] = useState<NoteDragPreview | null>(null);
   const [editorFocusRequest, setEditorFocusRequest] = useState(0);
   const [editorFocusAtEndRequest, setEditorFocusAtEndRequest] = useState(0);
+  const [editorReloadRequest, setEditorReloadRequest] = useState(0);
   const [titleFocusRequest, setTitleFocusRequest] = useState(0);
   const noteSurfaceRef = useRef<HTMLElement | null>(null);
   const titleInputRef = useRef<HTMLTextAreaElement | null>(null);
@@ -373,6 +377,7 @@ export default function App() {
   const activeTabIdRef = useRef<string | null>(null);
   const workspaceRef = useRef<string | null>(null);
   const externalNoteChangeRef = useRef<(path: string) => void>(() => {});
+  const selfWriteRef = useRef<Map<string, { content: string; at: number }>>(new Map());
   const keyboardActionsRef = useRef<{
     addEmptyTab: () => void;
     chooseWorkspace: (intent: "open" | "new") => void;
@@ -661,30 +666,68 @@ export default function App() {
       .finally(() => setMetadataLoaded(true));
   }, [workspace]);
 
-  // Restore the saved window size from localStorage on first launch (app-wide,
-  // not tied to a specific notebook). Clamped to available screen area.
+  // Place the hidden native window before first show so restore does not visibly
+  // jump from the config default to the user's last screen position.
   useEffect(() => {
     if (!isTauri()) return;
-    const saved = readStoredWindowSize();
-    if (!saved) return;
-    const clampedW = Math.max(600, Math.min(Math.round(saved.width), window.screen.availWidth - 40));
-    const clampedH = Math.max(400, Math.min(Math.round(saved.height), window.screen.availHeight - 60));
-    void getCurrentWindow().setSize(new LogicalSize(clampedW, clampedH));
+    let disposed = false;
+    const win = getCurrentWindow();
+
+    const restoreWindowGeometry = async () => {
+      try {
+        const savedSize = readStoredWindowSize();
+        if (savedSize) {
+          const clampedW = Math.max(600, Math.min(Math.round(savedSize.width), window.screen.availWidth - 40));
+          const clampedH = Math.max(400, Math.min(Math.round(savedSize.height), window.screen.availHeight - 60));
+          await win.setSize(new LogicalSize(clampedW, clampedH));
+        }
+
+        const savedPosition = readStoredWindowPosition();
+        const monitors = await availableMonitors();
+        if (savedPosition && monitors.length) {
+          let outerSize = await win.outerSize();
+          const fitted = fitWindowToMonitors(savedPosition, outerSize, monitors);
+          if (fitted.size.width !== outerSize.width || fitted.size.height !== outerSize.height) {
+            await win.setSize(fitted.size);
+            outerSize = await win.outerSize();
+          }
+          const finalPosition = fitWindowToMonitors(savedPosition, outerSize, monitors).position;
+          await win.setPosition(finalPosition);
+        }
+      } catch (error) {
+        console.warn("Failed to restore window geometry", error);
+      } finally {
+        if (!disposed) {
+          await win.show().catch((error) => console.warn("Failed to show app window", error));
+        }
+      }
+    };
+
+    void restoreWindowGeometry();
+    return () => {
+      disposed = true;
+    };
   }, []);
 
-  // Persist window size to localStorage as the user resizes. localStorage is
+  // Persist window geometry to localStorage as the user resizes or moves it. localStorage is
   // synchronous, so the latest value is on disk immediately — no flush needed
   // on close, and no race with concurrent workspace-metadata writes.
   useEffect(() => {
     if (!isTauri()) return;
+    const win = getCurrentWindow();
+    let unlistenMoved: (() => void) | undefined;
     const handleResize = () => {
       if (windowResizeTimerRef.current) window.clearTimeout(windowResizeTimerRef.current);
       windowResizeTimerRef.current = window.setTimeout(() => {
         writeStoredWindowSize({ width: window.innerWidth, height: window.innerHeight });
       }, 200);
     };
+    void win.onMoved(({ payload }) => writeStoredWindowPosition(payload)).then((unlisten) => {
+      unlistenMoved = unlisten;
+    });
     window.addEventListener("resize", handleResize);
     return () => {
+      unlistenMoved?.();
       window.removeEventListener("resize", handleResize);
       if (windowResizeTimerRef.current) {
         window.clearTimeout(windowResizeTimerRef.current);
@@ -769,6 +812,9 @@ export default function App() {
     setContents(nextContents);
 
     setSelectedFolder((current) => (nextFolders.some((folder) => folder.path === current) ? current : ""));
+
+    const nextIndex = await readLinkIndex(nextWorkspace);
+    setLinkIndex(nextIndex);
   }, [workspace]);
 
   useEffect(() => {
@@ -1095,9 +1141,25 @@ export default function App() {
     if (!workspace) return;
     try {
       const nextContent = await readNote(workspace, path);
+
+      // The filesystem watcher fires for our own writes too. If the disk
+      // matches what we last persisted for this path (within a short window),
+      // it's an echo of our own save — skip it. Otherwise rapid typing during
+      // an auto-save flashes "this note changed on disk" because the editor
+      // snapshot has moved past the just-written content.
+      const selfWrite = selfWriteRef.current.get(path);
+      if (selfWrite && Date.now() - selfWrite.at < 10_000 && selfWrite.content === nextContent) {
+        return;
+      }
+
+      // For the active note, the editor's snapshot — not the contents cache — is the
+      // source of truth. A move that rewrote inbound links on disk also calls
+      // refreshWorkspace, which has already updated the contents map; without this
+      // check we'd short-circuit and the editor would keep showing the stale link.
+      const sameAsEditor = activePath === path && nextContent === currentMarkdownSnapshot();
       const currentContent = contents.get(path);
-      if (currentContent === nextContent) return;
-      if (activePath === path && nextContent === currentMarkdownSnapshot()) {
+      if (activePath !== path && currentContent === nextContent) return;
+      if (sameAsEditor) {
         setContents((current) => {
           const next = new Map(current);
           next.set(path, nextContent);
@@ -1131,6 +1193,8 @@ export default function App() {
         selectionTo: metadataRef.current.notePositions[path]?.selectionTo,
       };
       loadContentIntoEditor(note, nextContent, restorePosition);
+      // Force the editor to actually reload, since notePath is unchanged.
+      setEditorReloadRequest((value) => value + 1);
       recordNotePosition(path, nextContent, restorePosition);
     } catch {
       await refreshWorkspace(workspace);
@@ -1177,6 +1241,7 @@ export default function App() {
       if (!nextPath) return;
 
       await saveNote(workspace, nextPath, markdown);
+      selfWriteRef.current.set(nextPath, { content: markdown, at: Date.now() });
       recordNotePosition(nextPath, markdown);
       setSavedTitle(titleDraft.trim());
       setSavedDraft(draft);
@@ -2484,6 +2549,7 @@ export default function App() {
                   focusRequest={editorFocusRequest}
                   focusAtEndRequest={editorFocusAtEndRequest}
                   findRequest={noteFindRequest}
+                  reloadRequest={editorReloadRequest}
                   notePath={activePath}
                   restorePosition={editorRestorePosition}
                   workspace={workspace}
@@ -2522,9 +2588,16 @@ export default function App() {
           outline={noteOpen ? outline : []}
           pendingNote={pendingNote}
           workspace={workspace}
+          linkIndex={linkIndex}
+          activePath={activePath}
+          selectedFolder={selectedFolder}
+          folders={folders}
+          notes={notes}
+          metadata={metadata}
           onFrontmatterChange={handleFrontmatterChange}
           onModeChange={setRightSidebarMode}
           onSelectOutline={handleOutlineSelect}
+          onSelectBacklink={(path) => { void selectNote(path); }}
         />
       ) : null}
 
@@ -4538,9 +4611,16 @@ function RightSidebar({
   outline,
   pendingNote,
   workspace,
+  linkIndex,
+  activePath,
+  selectedFolder,
+  folders,
+  notes,
+  metadata,
   onFrontmatterChange,
   onModeChange,
   onSelectOutline,
+  onSelectBacklink,
 }: {
   activeNote: NoteEntry | null;
   frontmatter: string;
@@ -4549,11 +4629,25 @@ function RightSidebar({
   outline: Array<{ id: string; text: string; level: number }>;
   pendingNote: DraftNote | null;
   workspace: string;
+  linkIndex: LinkIndex | null;
+  activePath: string | null;
+  selectedFolder: string;
+  folders: FolderEntry[];
+  notes: NoteEntry[];
+  metadata: WorkspaceMetadata;
   onFrontmatterChange: (frontmatter: string) => void;
   onModeChange: (mode: RightSidebarMode) => void;
   onSelectOutline: (id: string) => void;
+  onSelectBacklink: (path: string) => void;
 }) {
-  const title = mode === "outline" ? "Outline" : mode === "frontmatter" ? "Frontmatter" : "Properties";
+  const title =
+    mode === "outline"
+      ? "Outline"
+      : mode === "frontmatter"
+      ? "Frontmatter"
+      : mode === "backlinks"
+      ? "Backlinks"
+      : "Properties";
   return (
     <aside className="right-sidebar">
       <div className="pane-header">
@@ -4561,6 +4655,9 @@ function RightSidebar({
         <div className="sidebar-tabs">
           <button className={`icon-button ${mode === "outline" ? "is-active" : ""}`} type="button" title="Outline" onClick={() => onModeChange("outline")}>
             <LayoutList size={16} />
+          </button>
+          <button className={`icon-button ${mode === "backlinks" ? "is-active" : ""}`} type="button" title="Backlinks" onClick={() => onModeChange("backlinks")}>
+            <Link2 size={16} />
           </button>
           <button className={`icon-button ${mode === "frontmatter" ? "is-active" : ""}`} type="button" title="Frontmatter" onClick={() => onModeChange("frontmatter")}>
             <Braces size={16} />
@@ -4586,10 +4683,93 @@ function RightSidebar({
           frontmatterError={frontmatterError}
           onChange={onFrontmatterChange}
         />
+      ) : mode === "backlinks" ? (
+        <BacklinksPane
+          linkIndex={linkIndex}
+          activePath={activePath}
+          selectedFolder={selectedFolder}
+          folders={folders}
+          notes={notes}
+          metadata={metadata}
+          onSelectBacklink={onSelectBacklink}
+        />
       ) : (
         <PropertiesPane activeNote={activeNote} pendingNote={pendingNote} workspace={workspace} />
       )}
     </aside>
+  );
+}
+
+function BacklinksPane({
+  linkIndex,
+  activePath,
+  selectedFolder,
+  folders,
+  notes,
+  metadata,
+  onSelectBacklink,
+}: {
+  linkIndex: LinkIndex | null;
+  activePath: string | null;
+  selectedFolder: string;
+  folders: FolderEntry[];
+  notes: NoteEntry[];
+  metadata: WorkspaceMetadata;
+  onSelectBacklink: (path: string) => void;
+}) {
+  if (!linkIndex) {
+    return <p className="empty-sidebar-note">Indexing links…</p>;
+  }
+  // Prefer the open note; fall back to the selected folder (single-pane / section view).
+  const targetPath = activePath ?? (selectedFolder || null);
+  if (!targetPath) {
+    return <p className="empty-sidebar-note">Select a note or folder to see what links to it.</p>;
+  }
+  const targetIsFolder = !activePath;
+  const targetName = targetIsFolder
+    ? folders.find((f) => f.path === targetPath)?.name ?? targetPath
+    : notes.find((n) => n.path === targetPath)?.title ?? targetPath;
+  const id = linkIndex.pathToId[targetPath];
+  if (!id) {
+    return (
+      <p className="empty-sidebar-note">
+        No incoming links to <strong>{targetName}</strong> yet.
+      </p>
+    );
+  }
+  const inbound = linkIndex.inbound[id] ?? [];
+  const seen = new Set<string>();
+  const rows = inbound.flatMap((ref) => {
+    if (seen.has(ref.sourceId)) return [];
+    seen.add(ref.sourceId);
+    const source = linkIndex.notesById[ref.sourceId];
+    if (!source) return [];
+    const title = notes.find((n) => n.path === source.path)?.title ?? source.title;
+    const icon = metadata.noteIcons[source.path];
+    return [{ sourceId: ref.sourceId, path: source.path, title, icon }];
+  });
+  if (!rows.length) {
+    return (
+      <p className="empty-sidebar-note">
+        No incoming links to <strong>{targetName}</strong> yet.
+      </p>
+    );
+  }
+  return (
+    <div className="backlinks-list">
+      {rows.map((row) => (
+        <button
+          className="backlinks-item"
+          key={row.sourceId}
+          type="button"
+          title={row.path}
+          onClick={() => onSelectBacklink(row.path)}
+        >
+          <IconMark value={row.icon} fallback={FileText} size={14} />
+          <span className="backlinks-item-title">{row.title}</span>
+        </button>
+      ))}
+    </div>
   );
 }
 
@@ -5190,6 +5370,9 @@ function IconBrowserModal({
             value={query}
             onChange={(event) => setQuery(event.target.value)}
             placeholder="Search icons"
+            autoCapitalize="off"
+            autoCorrect="off"
+            spellCheck={false}
             autoFocus
           />
           <button className="toolbar-button" type="button" onClick={() => onSelect("")}>
@@ -5605,6 +5788,9 @@ function MoveDialog({
           placeholder="Search folders…"
           value={query}
           onChange={(event) => setQuery(event.target.value)}
+          autoCapitalize="off"
+          autoCorrect="off"
+          spellCheck={false}
           autoFocus
         />
         <div className="move-target-list" role="listbox">
@@ -5757,6 +5943,9 @@ function LinkPicker({
           placeholder="Paste link or search pages"
           value={query}
           onChange={(event) => setQuery(event.target.value)}
+          autoCapitalize="off"
+          autoCorrect="off"
+          spellCheck={false}
           onKeyDown={(event) => {
             if (event.key === "ArrowDown") {
               event.preventDefault();
@@ -6232,12 +6421,65 @@ function readStoredWindowSize(): { width: number; height: number } | null {
   }
 }
 
+function readStoredWindowPosition(): { x: number; y: number } | null {
+  try {
+    const raw = localStorage.getItem(windowPositionKey);
+    if (!raw) return null;
+    const parsed = JSON.parse(raw) as { x?: unknown; y?: unknown };
+    const x = Number(parsed.x);
+    const y = Number(parsed.y);
+    if (!Number.isFinite(x) || !Number.isFinite(y)) return null;
+    return { x, y };
+  } catch {
+    return null;
+  }
+}
+
 function writeStoredWindowSize(size: { width: number; height: number }) {
   try {
     localStorage.setItem(windowSizeKey, JSON.stringify(size));
   } catch {
     // localStorage may be unavailable (private mode quota); ignore.
   }
+}
+
+function writeStoredWindowPosition(position: { x: number; y: number }) {
+  try {
+    localStorage.setItem(windowPositionKey, JSON.stringify(position));
+  } catch {
+    // localStorage may be unavailable (private mode quota); ignore.
+  }
+}
+
+function fitWindowToMonitors(
+  position: { x: number; y: number },
+  size: { width: number; height: number },
+  monitors: Monitor[],
+) {
+  const target = monitors.reduce((nearest, monitor) => {
+    return monitorDistance(position, monitor) < monitorDistance(position, nearest) ? monitor : nearest;
+  });
+  const { workArea } = target;
+  const fittedSize = new PhysicalSize(
+    Math.min(size.width, workArea.size.width),
+    Math.min(size.height, workArea.size.height),
+  );
+  const maxX = workArea.position.x + Math.max(workArea.size.width - fittedSize.width, 0);
+  const maxY = workArea.position.y + Math.max(workArea.size.height - fittedSize.height, 0);
+  return {
+    position: new PhysicalPosition(
+      clamp(position.x, workArea.position.x, maxX),
+      clamp(position.y, workArea.position.y, maxY),
+    ),
+    size: fittedSize,
+  };
+}
+
+function monitorDistance(position: { x: number; y: number }, monitor: Monitor) {
+  const { workArea } = monitor;
+  const x = clamp(position.x, workArea.position.x, workArea.position.x + workArea.size.width);
+  const y = clamp(position.y, workArea.position.y, workArea.position.y + workArea.size.height);
+  return (position.x - x) ** 2 + (position.y - y) ** 2;
 }
 
 type StoredSession = { openTabs: string[]; activeTab: string | null };

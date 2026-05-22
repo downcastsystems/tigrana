@@ -337,13 +337,13 @@ html[data-tauri="true"][data-platform="mac"] .titlebar-traffic-padding {
 
 .app-frame {
   display: grid;
-  grid-template-columns: calc(var(--folder-pane-width, 292px) + 6px + var(--notes-pane-width, 268px)) 6px minmax(0, 1fr) 6px var(--right-pane-width, 260px);
+  grid-template-columns: calc(var(--folder-pane-width, 292px) + 6px + var(--notes-pane-width, 268px)) 6px minmax(0, 1fr) 6px var(--right-pane-width, 300px);
   flex: 1;
   min-height: 0;
 }
 
 .app-frame.is-left-hidden {
-  grid-template-columns: minmax(0, 1fr) 6px var(--right-pane-width, 260px);
+  grid-template-columns: minmax(0, 1fr) 6px var(--right-pane-width, 300px);
 }
 
 .app-frame.is-outline-hidden {
@@ -355,11 +355,11 @@ html[data-tauri="true"][data-platform="mac"] .titlebar-traffic-padding {
 }
 
 .app-frame.is-single-col {
-  grid-template-columns: var(--notes-pane-width, 268px) 6px minmax(0, 1fr) 6px var(--right-pane-width, 260px);
+  grid-template-columns: var(--notes-pane-width, 268px) 6px minmax(0, 1fr) 6px var(--right-pane-width, 300px);
 }
 
 .app-frame.is-single-col.is-left-hidden {
-  grid-template-columns: minmax(0, 1fr) 6px var(--right-pane-width, 260px);
+  grid-template-columns: minmax(0, 1fr) 6px var(--right-pane-width, 300px);
 }
 
 .app-frame.is-single-col.is-outline-hidden {
@@ -1348,6 +1348,41 @@ body.is-dragging-note.is-over-drop-target * {
   font-size: 13px;
 }
 
+.backlinks-list {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  padding: 4px;
+  overflow-y: auto;
+}
+
+.backlinks-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  padding: 6px 8px;
+  border: 0;
+  border-radius: 6px;
+  color: inherit;
+  font: inherit;
+  background: transparent;
+  text-align: left;
+  cursor: pointer;
+}
+
+.backlinks-item:hover {
+  background: rgba(52, 48, 43, 0.08);
+}
+
+.backlinks-item-title {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .outline-item.level-5 {
   padding-left: 54px;
   font-size: 12px;
@@ -2245,6 +2280,7 @@ html[data-theme="dark"] .tab-list-separator {
 }
 
 .ProseMirror pre {
+  position: relative;
   overflow: auto;
   padding: 16px;
   border-radius: 8px;
@@ -2261,9 +2297,141 @@ html[data-theme="dark"] .tab-list-separator {
   font-size: 0.9em;
 }
 
-.ProseMirror pre code {
+.ProseMirror pre code,
+.ProseMirror pre code * {
   padding: 0;
   background: transparent;
+}
+
+.ProseMirror pre.code-block .code-block-controls {
+  position: absolute;
+  top: 6px;
+  right: 6px;
+  display: flex;
+  gap: 4px;
+  align-items: center;
+  opacity: 0;
+  transition: opacity 120ms ease;
+  pointer-events: none;
+  z-index: 2;
+}
+
+.ProseMirror pre.code-block:hover .code-block-controls,
+.ProseMirror pre.code-block:focus-within .code-block-controls {
+  opacity: 1;
+  pointer-events: auto;
+}
+
+.code-block-language {
+  appearance: none;
+  -webkit-appearance: none;
+  height: 24px;
+  padding: 0 22px 0 8px;
+  border: 1px solid rgba(245, 239, 231, 0.18);
+  border-radius: 4px;
+  background-color: rgba(245, 239, 231, 0.08);
+  background-image: linear-gradient(45deg, transparent 50%, rgba(245, 239, 231, 0.65) 50%),
+    linear-gradient(135deg, rgba(245, 239, 231, 0.65) 50%, transparent 50%);
+  background-position: calc(100% - 12px) 11px, calc(100% - 8px) 11px;
+  background-size: 4px 4px, 4px 4px;
+  background-repeat: no-repeat;
+  color: #f5efe7;
+  font-size: 11px;
+  font-family: inherit;
+  cursor: pointer;
+}
+
+.code-block-language:focus {
+  outline: none;
+  border-color: var(--accent);
+}
+
+.code-block-language option {
+  color: #1a1a1a;
+  background: #ffffff;
+}
+
+.code-block-copy {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 24px;
+  padding: 0;
+  border: 1px solid rgba(245, 239, 231, 0.18);
+  border-radius: 4px;
+  background: rgba(245, 239, 231, 0.08);
+  color: #f5efe7;
+  cursor: pointer;
+  transition: background 120ms ease;
+}
+
+.code-block-copy:hover {
+  background: rgba(245, 239, 231, 0.16);
+}
+
+/* Syntax highlighting (highlight.js / lowlight tokens) */
+.ProseMirror pre .hljs-comment,
+.ProseMirror pre .hljs-quote {
+  color: #94a3a0;
+  font-style: italic;
+}
+
+.ProseMirror pre .hljs-keyword,
+.ProseMirror pre .hljs-selector-tag,
+.ProseMirror pre .hljs-literal,
+.ProseMirror pre .hljs-section,
+.ProseMirror pre .hljs-link {
+  color: #c792ea;
+}
+
+.ProseMirror pre .hljs-string,
+.ProseMirror pre .hljs-regexp,
+.ProseMirror pre .hljs-attr,
+.ProseMirror pre .hljs-template-tag,
+.ProseMirror pre .hljs-template-variable,
+.ProseMirror pre .hljs-addition {
+  color: #c3e88d;
+}
+
+.ProseMirror pre .hljs-number,
+.ProseMirror pre .hljs-symbol,
+.ProseMirror pre .hljs-bullet,
+.ProseMirror pre .hljs-meta {
+  color: #f78c6c;
+}
+
+.ProseMirror pre .hljs-title,
+.ProseMirror pre .hljs-name,
+.ProseMirror pre .hljs-selector-id,
+.ProseMirror pre .hljs-selector-class,
+.ProseMirror pre .hljs-function .hljs-title {
+  color: #82aaff;
+}
+
+.ProseMirror pre .hljs-type,
+.ProseMirror pre .hljs-built_in,
+.ProseMirror pre .hljs-class .hljs-title,
+.ProseMirror pre .hljs-params {
+  color: #ffcb6b;
+}
+
+.ProseMirror pre .hljs-tag,
+.ProseMirror pre .hljs-deletion {
+  color: #f07178;
+}
+
+.ProseMirror pre .hljs-variable,
+.ProseMirror pre .hljs-attribute {
+  color: #eeffff;
+}
+
+.ProseMirror pre .hljs-emphasis {
+  font-style: italic;
+}
+
+.ProseMirror pre .hljs-strong {
+  font-weight: 600;
 }
 
 .ProseMirror img {
@@ -3289,6 +3457,7 @@ html[data-theme="dark"] .note-tab-add:hover,
 html[data-theme="dark"] .context-menu button:hover,
 html[data-theme="dark"] .note-find-bar button:hover:not(:disabled),
 html[data-theme="dark"] .outline-item:hover,
+html[data-theme="dark"] .backlinks-item:hover,
 html[data-theme="dark"] .secondary-link:hover,
 html[data-theme="dark"] .folder-search-results button:hover,
 html[data-theme="dark"] .icon-choice:hover,
@@ -3445,6 +3614,12 @@ html[data-theme="dark"] .ProseMirror code {
   color: #eee8df;
   border-color: rgba(238, 232, 223, 0.12);
   background: rgba(238, 232, 223, 0.08);
+}
+
+html[data-theme="dark"] .ProseMirror pre code,
+html[data-theme="dark"] .ProseMirror pre code * {
+  background: transparent;
+  border-color: transparent;
 }
 
 html[data-theme="dark"] .ProseMirror .search-match {

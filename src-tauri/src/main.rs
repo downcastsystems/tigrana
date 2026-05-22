@@ -1,7 +1,7 @@
 use base64::{engine::general_purpose, Engine as _};
 use serde::{Deserialize, Serialize};
 use notify::{Config, EventKind, RecommendedWatcher, RecursiveMode, Watcher};
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::Command;
@@ -10,6 +10,7 @@ use tauri::menu::{Menu, MenuItem, PredefinedMenuItem, Submenu};
 use tauri::{AppHandle, Emitter, Manager};
 use time::macros::format_description;
 use time::OffsetDateTime;
+use uuid::Uuid;
 use walkdir::WalkDir;
 
 #[derive(Debug, Serialize)]
@@ -261,11 +262,16 @@ fn read_note(workspace: String, path: String) -> Result<String, String> {
 
 #[tauri::command]
 fn save_note(payload: SaveNotePayload) -> Result<(), String> {
+    let root = safe_workspace(&payload.workspace)?;
     let note_path = safe_note_path(&payload.workspace, &payload.path)?;
     if let Some(parent) = note_path.parent() {
         fs::create_dir_all(parent).map_err(|error| error.to_string())?;
     }
-    fs::write(note_path, payload.content).map_err(|error| error.to_string())
+    // Make sure the note carries an id in its frontmatter.
+    let (_id, content_with_id, _mutated) = ensure_note_id_in_content(&payload.content);
+    fs::write(&note_path, &content_with_id).map_err(|error| error.to_string())?;
+    let _ = reindex_note_after_save(&root, &payload.path);
+    Ok(())
 }
 
 #[tauri::command]
@@ -289,9 +295,22 @@ fn create_note(payload: CreateNotePayload) -> Result<NoteEntry, String> {
         return Err("A note with that title already exists in this folder.".to_string());
     }
 
-    fs::write(&absolute, "").map_err(|error| error.to_string())?;
+    // New notes are born with a stable id in their frontmatter.
+    let new_id = Uuid::new_v4().to_string();
+    let initial_content = format!("---\nid: {new_id}\n---\n\n");
+    fs::write(&absolute, &initial_content).map_err(|error| error.to_string())?;
 
     let path = relative.to_string_lossy().replace('\\', "/");
+    // Register the note in the link index.
+    let mut index = read_link_index_file(&root);
+    index.notes_by_id.insert(new_id.clone(), NoteRecord {
+        id: new_id.clone(),
+        path: path.clone(),
+        title: note_title_from_path(&path),
+    });
+    index.path_to_id.insert(path.clone(), new_id);
+    let _ = write_link_index_file(&root, &index);
+
     Ok(NoteEntry {
         path: path.clone(),
         title: payload.title,
@@ -319,14 +338,25 @@ fn rename_note(payload: RenameNotePayload) -> Result<NoteEntry, String> {
     };
     let new_path = root.join(&new_relative);
 
+    let new_rel_str = new_relative.to_string_lossy().replace('\\', "/");
+    let old_rel_str = payload.path.clone();
+
     if old_path != new_path {
         if new_path.exists() {
             return Err("A note with that title already exists in this folder.".to_string());
         }
         fs::rename(&old_path, &new_path).map_err(|error| error.to_string())?;
+
+        // Repair inbound links and update the index.
+        let mut index = read_link_index_file(&root);
+        if let Some(id) = index.path_to_id.get(&old_rel_str).cloned() {
+            move_index_path(&mut index, &old_rel_str, &new_rel_str, &id, "note");
+            let _ = repair_inbound_links(&root, &mut index, &id, &old_rel_str, &new_rel_str);
+            let _ = write_link_index_file(&root, &index);
+        }
     }
 
-    let path = new_relative.to_string_lossy().replace('\\', "/");
+    let path = new_rel_str;
     Ok(NoteEntry {
         path: path.clone(),
         title: payload.title.trim().to_string(),
@@ -354,6 +384,15 @@ fn create_folder(payload: FolderPayload) -> Result<FolderEntry, String> {
     }
     fs::create_dir_all(&absolute).map_err(|error| error.to_string())?;
     let path = relative.to_string_lossy().replace('\\', "/");
+
+    // Mint folder id, write sidecar, register in index.
+    let folder_id = Uuid::new_v4().to_string();
+    let _ = write_folder_sidecar(&root, &path, &FolderSidecar { id: folder_id.clone() });
+    let mut index = read_link_index_file(&root);
+    index.folders_by_id.insert(folder_id.clone(), FolderRecord { id: folder_id.clone(), path: path.clone() });
+    index.path_to_id.insert(path.clone(), folder_id);
+    let _ = write_link_index_file(&root, &index);
+
     Ok(FolderEntry {
         path: path.clone(),
         name: payload.name.trim().to_string(),
@@ -385,14 +424,22 @@ fn rename_folder(payload: RenameFolderPayload) -> Result<FolderEntry, String> {
     let old_path = root.join(&old_relative);
     let new_path = root.join(&new_relative);
 
+    let old_rel_str = payload.path.clone();
+    let new_rel_str = new_relative.to_string_lossy().replace('\\', "/");
+
     if old_path != new_path {
         if new_path.exists() {
             return Err("A folder with that name already exists here.".to_string());
         }
         fs::rename(&old_path, &new_path).map_err(|error| error.to_string())?;
+
+        // Folder rename moves every contained note and subfolder transitively.
+        let mut index = read_link_index_file(&root);
+        repair_subtree_paths(&root, &mut index, &old_rel_str, &new_rel_str)?;
+        let _ = write_link_index_file(&root, &index);
     }
 
-    let path = new_relative.to_string_lossy().replace('\\', "/");
+    let path = new_rel_str;
     Ok(FolderEntry {
         path: path.clone(),
         name: payload.name.trim().to_string(),
@@ -419,6 +466,9 @@ fn move_note(payload: MovePathPayload) -> Result<NoteEntry, String> {
     let old_path = root.join(&old_relative);
     let new_path = root.join(&new_relative);
 
+    let old_rel_str = payload.path.clone();
+    let new_rel_str = new_relative.to_string_lossy().replace('\\', "/");
+
     if old_path != new_path {
         if new_path.exists() {
             return Err("A note with that title already exists in the target folder.".to_string());
@@ -427,9 +477,16 @@ fn move_note(payload: MovePathPayload) -> Result<NoteEntry, String> {
             fs::create_dir_all(parent).map_err(|error| error.to_string())?;
         }
         fs::rename(&old_path, &new_path).map_err(|error| error.to_string())?;
+
+        let mut index = read_link_index_file(&root);
+        if let Some(id) = index.path_to_id.get(&old_rel_str).cloned() {
+            move_index_path(&mut index, &old_rel_str, &new_rel_str, &id, "note");
+            let _ = repair_inbound_links(&root, &mut index, &id, &old_rel_str, &new_rel_str);
+            let _ = write_link_index_file(&root, &index);
+        }
     }
 
-    let path = new_relative.to_string_lossy().replace('\\', "/");
+    let path = new_rel_str;
     let title = Path::new(&path)
         .file_stem()
         .and_then(|name| name.to_str())
@@ -469,6 +526,9 @@ fn move_folder(payload: MovePathPayload) -> Result<FolderEntry, String> {
     let old_path = root.join(&old_relative);
     let new_path = root.join(&new_relative);
 
+    let old_rel_str = payload.path.clone();
+    let new_rel_str = new_relative.to_string_lossy().replace('\\', "/");
+
     if old_path != new_path {
         if new_path.exists() {
             return Err("A folder with that name already exists in the target folder.".to_string());
@@ -477,9 +537,13 @@ fn move_folder(payload: MovePathPayload) -> Result<FolderEntry, String> {
             fs::create_dir_all(parent).map_err(|error| error.to_string())?;
         }
         fs::rename(&old_path, &new_path).map_err(|error| error.to_string())?;
+
+        let mut index = read_link_index_file(&root);
+        repair_subtree_paths(&root, &mut index, &old_rel_str, &new_rel_str)?;
+        let _ = write_link_index_file(&root, &index);
     }
 
-    let path = new_relative.to_string_lossy().replace('\\', "/");
+    let path = new_rel_str;
     Ok(FolderEntry {
         path: path.clone(),
         name: name.to_string_lossy().to_string(),
@@ -492,10 +556,14 @@ fn move_folder(payload: MovePathPayload) -> Result<FolderEntry, String> {
 
 #[tauri::command]
 fn delete_note(payload: DeletePathPayload) -> Result<(), String> {
+    let root = safe_workspace(&payload.workspace)?;
     let path = safe_note_path(&payload.workspace, &payload.path)?;
     if path.exists() {
         fs::remove_file(path).map_err(|error| error.to_string())?;
     }
+    let mut index = read_link_index_file(&root);
+    forget_path_from_index(&mut index, &payload.path);
+    let _ = write_link_index_file(&root, &index);
     Ok(())
 }
 
@@ -510,7 +578,799 @@ fn delete_folder(payload: DeletePathPayload) -> Result<(), String> {
     if path.exists() {
         fs::remove_dir_all(path).map_err(|error| error.to_string())?;
     }
+    let mut index = read_link_index_file(&root);
+    forget_subtree_from_index(&mut index, &payload.path);
+    let _ = write_link_index_file(&root, &index);
     Ok(())
+}
+
+// ---------- Identity + link index ----------
+
+const INDEX_SCHEMA_VERSION: u32 = 1;
+
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+#[serde(rename_all = "camelCase")]
+struct NoteRecord {
+    id: String,
+    path: String,
+    title: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+#[serde(rename_all = "camelCase")]
+struct FolderRecord {
+    id: String,
+    path: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+#[serde(rename_all = "camelCase")]
+struct LinkRef {
+    source_id: String,
+    target_id: Option<String>,
+    target_kind: String,  // "note" | "folder" | "unknown"
+    target_path: String,  // workspace-relative, no anchor
+    display_text: String,
+    anchor: Option<String>,
+    occurrence: u32,
+    broken: bool,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct LinkIndex {
+    schema_version: u32,
+    notes_by_id: HashMap<String, NoteRecord>,
+    folders_by_id: HashMap<String, FolderRecord>,
+    path_to_id: HashMap<String, String>,
+    outbound: HashMap<String, Vec<LinkRef>>,
+    inbound: HashMap<String, Vec<LinkRef>>,
+}
+
+impl Default for LinkIndex {
+    fn default() -> Self {
+        Self {
+            schema_version: INDEX_SCHEMA_VERSION,
+            notes_by_id: HashMap::new(),
+            folders_by_id: HashMap::new(),
+            path_to_id: HashMap::new(),
+            outbound: HashMap::new(),
+            inbound: HashMap::new(),
+        }
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+struct FolderSidecar {
+    id: String,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct EnsureIdentityPayload {
+    workspace: String,
+}
+
+fn link_index_path(root: &Path) -> PathBuf {
+    root.join(".lumen").join("index.json")
+}
+
+fn folder_sidecar_dir(root: &Path, relative: &str) -> Option<PathBuf> {
+    if relative.is_empty() {
+        return None;
+    }
+    Some(root.join(relative).join(".lumen"))
+}
+
+fn folder_sidecar_path(root: &Path, relative: &str) -> Option<PathBuf> {
+    folder_sidecar_dir(root, relative).map(|dir| dir.join("folder.json"))
+}
+
+fn read_link_index_file(root: &Path) -> LinkIndex {
+    let path = link_index_path(root);
+    if !path.exists() {
+        return LinkIndex::default();
+    }
+    let Ok(contents) = fs::read_to_string(&path) else {
+        return LinkIndex::default();
+    };
+    serde_json::from_str(&contents).unwrap_or_default()
+}
+
+fn write_link_index_file(root: &Path, index: &LinkIndex) -> Result<(), String> {
+    let lumen_dir = root.join(".lumen");
+    fs::create_dir_all(&lumen_dir).map_err(|error| error.to_string())?;
+    let json = serde_json::to_string_pretty(index).map_err(|error| error.to_string())?;
+    fs::write(link_index_path(root), format!("{json}\n")).map_err(|error| error.to_string())
+}
+
+fn read_folder_sidecar(root: &Path, relative: &str) -> Option<FolderSidecar> {
+    let path = folder_sidecar_path(root, relative)?;
+    if !path.exists() {
+        return None;
+    }
+    let contents = fs::read_to_string(&path).ok()?;
+    serde_json::from_str::<FolderSidecar>(&contents).ok()
+}
+
+fn write_folder_sidecar(root: &Path, relative: &str, sidecar: &FolderSidecar) -> Result<(), String> {
+    let Some(dir) = folder_sidecar_dir(root, relative) else { return Ok(()) };
+    let Some(file) = folder_sidecar_path(root, relative) else { return Ok(()) };
+    fs::create_dir_all(&dir).map_err(|error| error.to_string())?;
+    let json = serde_json::to_string_pretty(sidecar).map_err(|error| error.to_string())?;
+    fs::write(file, format!("{json}\n")).map_err(|error| error.to_string())
+}
+
+// Returns (id, mutated_content). If the note has no frontmatter `id`, one is minted
+// and inserted; otherwise the existing id is returned and the content is unchanged.
+fn ensure_note_id_in_content(content: &str) -> (String, String, bool) {
+    let normalized = content.replace("\r\n", "\n");
+    let (frontmatter, body, has_frontmatter) = split_frontmatter(&normalized);
+
+    if has_frontmatter {
+        if let Some(id) = read_frontmatter_field(&frontmatter, "id") {
+            if !id.is_empty() {
+                return (id, content.to_string(), false);
+            }
+        }
+        let new_id = Uuid::new_v4().to_string();
+        let new_frontmatter = insert_frontmatter_field(&frontmatter, "id", &new_id);
+        let recombined = format!("---\n{new_frontmatter}\n---\n\n{}", body.trim_start_matches('\n'));
+        (new_id, recombined, true)
+    } else {
+        let new_id = Uuid::new_v4().to_string();
+        let recombined = format!("---\nid: {new_id}\n---\n\n{}", normalized.trim_start_matches('\n'));
+        (new_id, recombined, true)
+    }
+}
+
+fn split_frontmatter(content: &str) -> (String, String, bool) {
+    let lines: Vec<&str> = content.split('\n').collect();
+    if lines.is_empty() || lines[0].trim() != "---" {
+        return (String::new(), content.to_string(), false);
+    }
+    let closing = lines.iter().enumerate().skip(1).find(|(_, line)| line.trim() == "---");
+    let Some((closing_index, _)) = closing else {
+        return (String::new(), content.to_string(), false);
+    };
+    let frontmatter = lines[1..closing_index].join("\n");
+    let body = lines[(closing_index + 1)..].join("\n");
+    (frontmatter, body, true)
+}
+
+fn read_frontmatter_field(frontmatter: &str, key: &str) -> Option<String> {
+    for line in frontmatter.split('\n') {
+        let trimmed = line.trim_start();
+        if trimmed.starts_with('#') {
+            continue;
+        }
+        if let Some((k, v)) = trimmed.split_once(':') {
+            if k.trim() == key {
+                return Some(v.trim().to_string());
+            }
+        }
+    }
+    None
+}
+
+fn insert_frontmatter_field(frontmatter: &str, key: &str, value: &str) -> String {
+    // Prepend the field; the writer side will keep this stable.
+    let trimmed = frontmatter.trim_end();
+    if trimmed.is_empty() {
+        format!("{key}: {value}")
+    } else {
+        format!("{key}: {value}\n{trimmed}")
+    }
+}
+
+// --- Markdown link extraction (simple scanner, no regex) ---
+
+#[derive(Debug, Clone)]
+struct MdLink {
+    text: String,
+    href: String,
+    href_start: usize,
+    href_end: usize,
+    is_image: bool,
+}
+
+fn extract_md_links(text: &str) -> Vec<MdLink> {
+    let bytes = text.as_bytes();
+    let len = bytes.len();
+    let mut links = Vec::new();
+    let mut i = 0usize;
+    let mut in_code_block = false;
+
+    while i < len {
+        if i == 0 || bytes[i - 1] == b'\n' {
+            // detect fenced code block
+            let rest = &bytes[i..];
+            if rest.starts_with(b"```") || rest.starts_with(b"~~~") {
+                in_code_block = !in_code_block;
+                while i < len && bytes[i] != b'\n' {
+                    i += 1;
+                }
+                continue;
+            }
+        }
+        if in_code_block {
+            i += 1;
+            continue;
+        }
+        // inline code: skip backtick-delimited spans
+        if bytes[i] == b'`' {
+            // count backticks
+            let mut run = 0;
+            while i + run < len && bytes[i + run] == b'`' {
+                run += 1;
+            }
+            let close_pat = vec![b'`'; run];
+            let after = i + run;
+            // find matching closing run
+            let mut j = after;
+            while j + run <= len {
+                if &bytes[j..j + run] == close_pat.as_slice() {
+                    // ensure no longer backtick run
+                    if j + run == len || bytes[j + run] != b'`' {
+                        break;
+                    }
+                }
+                j += 1;
+            }
+            if j + run > len {
+                // no close, treat the rest as not code
+                i += run;
+                continue;
+            }
+            i = j + run;
+            continue;
+        }
+
+        if bytes[i] == b'\\' && i + 1 < len {
+            i += 2;
+            continue;
+        }
+
+        if bytes[i] == b'[' {
+            let is_image = i > 0 && bytes[i - 1] == b'!';
+            let text_start = i + 1;
+            let mut depth = 1usize;
+            let mut j = text_start;
+            while j < len {
+                match bytes[j] {
+                    b'\\' if j + 1 < len => {
+                        j += 2;
+                        continue;
+                    }
+                    b'[' => depth += 1,
+                    b']' => {
+                        depth -= 1;
+                        if depth == 0 {
+                            break;
+                        }
+                    }
+                    b'\n' => break,
+                    _ => {}
+                }
+                j += 1;
+            }
+            if j >= len || bytes[j] != b']' {
+                i += 1;
+                continue;
+            }
+            let text_end = j;
+            if bytes.get(text_end + 1) != Some(&b'(') {
+                i = text_end + 1;
+                continue;
+            }
+            let href_start = text_end + 2;
+            let mut k = href_start;
+            let mut paren_depth = 1usize;
+            while k < len {
+                match bytes[k] {
+                    b'\\' if k + 1 < len => {
+                        k += 2;
+                        continue;
+                    }
+                    b'(' => paren_depth += 1,
+                    b')' => {
+                        paren_depth -= 1;
+                        if paren_depth == 0 {
+                            break;
+                        }
+                    }
+                    b'\n' => break,
+                    _ => {}
+                }
+                k += 1;
+            }
+            if k >= len || bytes[k] != b')' {
+                i = text_end + 1;
+                continue;
+            }
+            let href_end = k;
+            let text_str = std::str::from_utf8(&bytes[text_start..text_end]).unwrap_or("").to_string();
+            let href_str_raw = std::str::from_utf8(&bytes[href_start..href_end]).unwrap_or("").to_string();
+            // Markdown links sometimes have title: (href "title"). Strip trailing title.
+            let href_str = strip_link_title(&href_str_raw);
+            links.push(MdLink {
+                text: text_str,
+                href: href_str,
+                href_start,
+                href_end,
+                is_image,
+            });
+            i = href_end + 1;
+        } else {
+            i += 1;
+        }
+    }
+
+    links
+}
+
+fn strip_link_title(raw: &str) -> String {
+    // CommonMark allows an optional title after the href: (url "title") or (url 'title').
+    // The title is delimited by quotes preceded by whitespace. Plain unquoted spaces in
+    // the href are not legal CommonMark, but the editor emits them for paths like
+    // "Folder/My Note.md" — we keep those intact.
+    let trimmed = raw.trim();
+    let bytes = trimmed.as_bytes();
+    let mut last_quote_start: Option<usize> = None;
+    let mut i = 0;
+    while i < bytes.len() {
+        if (bytes[i] == b'"' || bytes[i] == b'\'') && i > 0 && bytes[i - 1].is_ascii_whitespace() {
+            // Look for matching closing quote that takes us to end of trimmed.
+            let quote = bytes[i];
+            let mut j = i + 1;
+            while j < bytes.len() && bytes[j] != quote {
+                j += 1;
+            }
+            if j < bytes.len() && bytes[j] == quote {
+                // Title must end at the end of the trimmed input.
+                if trimmed[j + 1..].trim().is_empty() {
+                    last_quote_start = Some(i);
+                    break;
+                }
+            }
+        }
+        i += 1;
+    }
+    if let Some(start) = last_quote_start {
+        return trimmed[..start].trim_end().to_string();
+    }
+    trimmed.to_string()
+}
+
+fn is_internal_href(href: &str) -> bool {
+    if href.is_empty() {
+        return false;
+    }
+    if href.starts_with("//") || href.starts_with('#') {
+        return false;
+    }
+    // detect scheme: letter followed by alnum/+/./- then ':'
+    let bytes = href.as_bytes();
+    if !bytes.is_empty() && (bytes[0].is_ascii_alphabetic()) {
+        let mut i: usize = 1;
+        while i < bytes.len() {
+            let b = bytes[i];
+            if b.is_ascii_alphanumeric() || b == b'+' || b == b'.' || b == b'-' {
+                i += 1;
+            } else {
+                break;
+            }
+        }
+        if i < bytes.len() && bytes[i] == b':' {
+            return false;
+        }
+    }
+    true
+}
+
+fn split_href_anchor(href: &str) -> (String, Option<String>) {
+    if let Some(idx) = href.find('#') {
+        return (href[..idx].to_string(), Some(href[idx + 1..].to_string()));
+    }
+    (href.to_string(), None)
+}
+
+fn decode_uri(input: &str) -> String {
+    let bytes = input.as_bytes();
+    let mut out: Vec<u8> = Vec::with_capacity(bytes.len());
+    let mut i = 0;
+    while i < bytes.len() {
+        if bytes[i] == b'%' && i + 2 < bytes.len() {
+            let h1 = (bytes[i + 1] as char).to_digit(16);
+            let h2 = (bytes[i + 2] as char).to_digit(16);
+            if let (Some(a), Some(b)) = (h1, h2) {
+                out.push(((a << 4) | b) as u8);
+                i += 3;
+                continue;
+            }
+        }
+        out.push(bytes[i]);
+        i += 1;
+    }
+    String::from_utf8(out).unwrap_or_else(|_| input.to_string())
+}
+
+fn normalize_internal_path(href_path: &str) -> String {
+    let decoded = decode_uri(href_path);
+    let stripped = decoded.trim_start_matches("./");
+    stripped.replace('\\', "/")
+}
+
+// --- Identity + index lifecycle ---
+
+fn enumerate_workspace(root: &Path) -> Result<(Vec<PathBuf>, Vec<PathBuf>), String> {
+    let mut notes = Vec::new();
+    let mut folders = Vec::new();
+    for entry in WalkDir::new(root)
+        .into_iter()
+        .filter_entry(|entry| !is_hidden_entry(entry.path()))
+    {
+        let entry = entry.map_err(|error| error.to_string())?;
+        let path = entry.path();
+        if path == root {
+            continue;
+        }
+        if path.is_dir() {
+            folders.push(path.to_path_buf());
+        } else if path.extension().and_then(|ext| ext.to_str()) == Some("md") {
+            notes.push(path.to_path_buf());
+        }
+    }
+    Ok((notes, folders))
+}
+
+fn relative_path(root: &Path, path: &Path) -> Result<String, String> {
+    Ok(path
+        .strip_prefix(root)
+        .map_err(|error| error.to_string())?
+        .to_string_lossy()
+        .replace('\\', "/"))
+}
+
+fn note_title_from_path(rel: &str) -> String {
+    Path::new(rel)
+        .file_stem()
+        .and_then(|s| s.to_str())
+        .unwrap_or("Untitled")
+        .to_string()
+}
+
+fn rebuild_index_for_root(root: &Path) -> Result<LinkIndex, String> {
+    let (notes, folders) = enumerate_workspace(root)?;
+    let mut index = LinkIndex::default();
+
+    // Folders first so we can resolve folder targets.
+    for folder_abs in &folders {
+        let rel = relative_path(root, folder_abs)?;
+        let sidecar_id = read_folder_sidecar(root, &rel).map(|s| s.id);
+        let id = sidecar_id.unwrap_or_else(|| Uuid::new_v4().to_string());
+        // Always ensure sidecar exists for non-root folders.
+        let _ = write_folder_sidecar(root, &rel, &FolderSidecar { id: id.clone() });
+        index.folders_by_id.insert(id.clone(), FolderRecord { id: id.clone(), path: rel.clone() });
+        index.path_to_id.insert(rel, id);
+    }
+
+    // Notes: assign id via frontmatter.
+    for note_abs in &notes {
+        let rel = relative_path(root, note_abs)?;
+        let raw = fs::read_to_string(note_abs).unwrap_or_default();
+        let (id, new_content, mutated) = ensure_note_id_in_content(&raw);
+        if mutated {
+            if let Err(error) = fs::write(note_abs, &new_content) {
+                return Err(format!("Failed to write id into {rel}: {error}"));
+            }
+        }
+        index.notes_by_id.insert(id.clone(), NoteRecord {
+            id: id.clone(),
+            path: rel.clone(),
+            title: note_title_from_path(&rel),
+        });
+        index.path_to_id.insert(rel, id);
+    }
+
+    // Now parse links for each note.
+    let note_ids: Vec<String> = index.notes_by_id.keys().cloned().collect();
+    for note_id in note_ids {
+        let path = index.notes_by_id.get(&note_id).map(|r| r.path.clone());
+        let Some(rel) = path else { continue };
+        let abs = root.join(&rel);
+        let raw = fs::read_to_string(&abs).unwrap_or_default();
+        let refs = parse_links_for_note(&note_id, &raw, &index);
+        update_index_links_for_source(&mut index, &note_id, refs);
+    }
+
+    write_link_index_file(root, &index)?;
+    Ok(index)
+}
+
+fn parse_links_for_note(source_id: &str, content: &str, index: &LinkIndex) -> Vec<LinkRef> {
+    let (_, body, _) = split_frontmatter(content);
+    let scan_text = if body.is_empty() { content.to_string() } else { body };
+    let raw = extract_md_links(&scan_text);
+    let mut out = Vec::new();
+    let mut occurrence = 0u32;
+    for link in raw {
+        if link.is_image {
+            continue;
+        }
+        if !is_internal_href(&link.href) {
+            continue;
+        }
+        let (raw_path, anchor) = split_href_anchor(&link.href);
+        let normalized = normalize_internal_path(&raw_path);
+        if normalized.is_empty() {
+            continue;
+        }
+        let resolved_id = index.path_to_id.get(&normalized).cloned();
+        let (target_kind, broken) = match &resolved_id {
+            Some(id) => {
+                if index.notes_by_id.contains_key(id) {
+                    ("note".to_string(), false)
+                } else if index.folders_by_id.contains_key(id) {
+                    ("folder".to_string(), false)
+                } else {
+                    ("unknown".to_string(), true)
+                }
+            }
+            None => ("unknown".to_string(), true),
+        };
+        out.push(LinkRef {
+            source_id: source_id.to_string(),
+            target_id: resolved_id,
+            target_kind,
+            target_path: normalized,
+            display_text: link.text.clone(),
+            anchor,
+            occurrence,
+            broken,
+        });
+        occurrence += 1;
+    }
+    out
+}
+
+fn update_index_links_for_source(index: &mut LinkIndex, source_id: &str, new_refs: Vec<LinkRef>) {
+    // Remove existing inbound entries that came from this source.
+    if let Some(prev) = index.outbound.get(source_id).cloned() {
+        for entry in prev {
+            if let Some(target_id) = entry.target_id {
+                if let Some(list) = index.inbound.get_mut(&target_id) {
+                    list.retain(|r| r.source_id != source_id);
+                }
+            }
+        }
+    }
+    // Insert new ones.
+    for r in &new_refs {
+        if let Some(target_id) = &r.target_id {
+            index.inbound.entry(target_id.clone()).or_default().push(r.clone());
+        }
+    }
+    if new_refs.is_empty() {
+        index.outbound.remove(source_id);
+    } else {
+        index.outbound.insert(source_id.to_string(), new_refs);
+    }
+}
+
+// Called whenever a note file's content is written.
+fn reindex_note_after_save(root: &Path, rel: &str) -> Result<(), String> {
+    let mut index = read_link_index_file(root);
+    let abs = root.join(rel);
+    let content = fs::read_to_string(&abs).unwrap_or_default();
+    // Make sure note has an id, and pick it up.
+    let id_in_file = read_frontmatter_field(&split_frontmatter(&content).0, "id");
+    let Some(id) = id_in_file else { return Ok(()) };
+    index.notes_by_id.insert(id.clone(), NoteRecord {
+        id: id.clone(),
+        path: rel.to_string(),
+        title: note_title_from_path(rel),
+    });
+    index.path_to_id.insert(rel.to_string(), id.clone());
+    let refs = parse_links_for_note(&id, &content, &index);
+    update_index_links_for_source(&mut index, &id, refs);
+    write_link_index_file(root, &index)
+}
+
+// Rewrites ALL link occurrences whose normalized path equals `old_path` to `new_path`.
+// Returns the number of links rewritten.
+fn rewrite_links_in_content(content: &str, old_path: &str, new_path: &str) -> (String, u32) {
+    let (frontmatter, body, has_frontmatter) = split_frontmatter(content);
+    let body_for_scan = if has_frontmatter { body } else { content.to_string() };
+    let links = extract_md_links(&body_for_scan);
+    let mut new_body = body_for_scan.clone();
+    let mut mutations: Vec<(usize, usize, String)> = Vec::new();
+    let mut count = 0u32;
+    for link in &links {
+        if link.is_image {
+            continue;
+        }
+        if !is_internal_href(&link.href) {
+            continue;
+        }
+        let (raw_path, anchor) = split_href_anchor(&link.href);
+        let normalized = normalize_internal_path(&raw_path);
+        if normalized == old_path {
+            let new_href = match anchor {
+                Some(a) => format!("{}#{}", new_path, a),
+                None => new_path.to_string(),
+            };
+            mutations.push((link.href_start, link.href_end, new_href));
+            count += 1;
+        }
+    }
+    mutations.sort_by(|a, b| b.0.cmp(&a.0));
+    for (start, end, replacement) in mutations {
+        new_body.replace_range(start..end, &replacement);
+    }
+    let final_content = if has_frontmatter {
+        format!("---\n{frontmatter}\n---\n{new_body}")
+    } else {
+        new_body
+    };
+    (final_content, count)
+}
+
+// Repairs inbound links to a single id whose path changed from old_path -> new_path.
+// Rewrites the affected source files and updates path snapshots in the index.
+fn repair_inbound_links(root: &Path, index: &mut LinkIndex, target_id: &str, old_path: &str, new_path: &str) -> Result<u32, String> {
+    let mut rewritten = 0u32;
+    let sources: HashSet<String> = index
+        .inbound
+        .get(target_id)
+        .map(|list| list.iter().map(|r| r.source_id.clone()).collect())
+        .unwrap_or_default();
+    for source_id in sources {
+        let Some(source_record) = index.notes_by_id.get(&source_id).cloned() else { continue };
+        let source_abs = root.join(&source_record.path);
+        let original = match fs::read_to_string(&source_abs) {
+            Ok(s) => s,
+            Err(_) => continue,
+        };
+        let (new_content, count) = rewrite_links_in_content(&original, old_path, new_path);
+        if count > 0 {
+            fs::write(&source_abs, &new_content).map_err(|error| error.to_string())?;
+            rewritten += count;
+            // Reparse this source's links to refresh outbound/inbound cleanly.
+            let refs = parse_links_for_note(&source_id, &new_content, index);
+            update_index_links_for_source(index, &source_id, refs);
+        }
+    }
+    Ok(rewritten)
+}
+
+fn move_index_path(index: &mut LinkIndex, old_path: &str, new_path: &str, id: &str, kind: &str) {
+    index.path_to_id.remove(old_path);
+    index.path_to_id.insert(new_path.to_string(), id.to_string());
+    match kind {
+        "note" => {
+            if let Some(rec) = index.notes_by_id.get_mut(id) {
+                rec.path = new_path.to_string();
+                rec.title = note_title_from_path(new_path);
+            }
+        }
+        "folder" => {
+            if let Some(rec) = index.folders_by_id.get_mut(id) {
+                rec.path = new_path.to_string();
+            }
+        }
+        _ => {}
+    }
+}
+
+// Updates path mappings for a folder and everything it contains after a rename/move,
+// and rewrites inbound links to every affected target. Caller must pass paths that
+// have already moved on disk.
+fn repair_subtree_paths(root: &Path, index: &mut LinkIndex, old_folder_path: &str, new_folder_path: &str) -> Result<(), String> {
+    if old_folder_path == new_folder_path {
+        return Ok(());
+    }
+    // Snapshot ids that live under the old folder, plus the folder itself.
+    let mut affected: Vec<(String, String, String, String)> = Vec::new(); // (id, kind, old_path, new_path)
+    if let Some(id) = index.path_to_id.get(old_folder_path).cloned() {
+        affected.push((id, "folder".to_string(), old_folder_path.to_string(), new_folder_path.to_string()));
+    }
+    let prefix = format!("{old_folder_path}/");
+    let descendants: Vec<(String, String)> = index
+        .path_to_id
+        .iter()
+        .filter(|(p, _)| p.starts_with(&prefix))
+        .map(|(p, id)| (p.clone(), id.clone()))
+        .collect();
+    for (old_path, id) in descendants {
+        let new_path = format!("{new_folder_path}{}", &old_path[old_folder_path.len()..]);
+        let kind = if index.notes_by_id.contains_key(&id) {
+            "note".to_string()
+        } else if index.folders_by_id.contains_key(&id) {
+            "folder".to_string()
+        } else {
+            continue;
+        };
+        affected.push((id, kind, old_path, new_path));
+    }
+
+    // Update path snapshots first so we can read source files at their CURRENT
+    // on-disk locations (some sources may themselves live inside the moved subtree).
+    for (id, kind, old_path, new_path) in &affected {
+        move_index_path(index, old_path, new_path, id, kind);
+    }
+
+    // Now rewrite inbound link occurrences for each affected target.
+    for (id, _kind, old_path, new_path) in &affected {
+        let _ = repair_inbound_links(root, index, id, old_path, new_path);
+    }
+    Ok(())
+}
+
+fn forget_path_from_index(index: &mut LinkIndex, path: &str) {
+    let Some(id) = index.path_to_id.remove(path) else { return };
+    index.notes_by_id.remove(&id);
+    index.folders_by_id.remove(&id);
+    // Drop any outbound originating from this id.
+    if let Some(refs) = index.outbound.remove(&id) {
+        for r in refs {
+            if let Some(target_id) = r.target_id {
+                if let Some(list) = index.inbound.get_mut(&target_id) {
+                    list.retain(|x| x.source_id != id);
+                }
+            }
+        }
+    }
+    // Drop inbound entries pointing at this id (they become broken).
+    if let Some(refs) = index.inbound.remove(&id) {
+        for r in &refs {
+            if let Some(list) = index.outbound.get_mut(&r.source_id) {
+                for x in list.iter_mut() {
+                    if x.target_id.as_deref() == Some(id.as_str()) {
+                        x.target_id = None;
+                        x.target_kind = "unknown".to_string();
+                        x.broken = true;
+                    }
+                }
+            }
+        }
+    }
+}
+
+fn forget_subtree_from_index(index: &mut LinkIndex, folder_path: &str) {
+    let to_remove: Vec<String> = index
+        .path_to_id
+        .keys()
+        .filter(|p| p.as_str() == folder_path || p.starts_with(&format!("{folder_path}/")))
+        .cloned()
+        .collect();
+    for p in to_remove {
+        forget_path_from_index(index, &p);
+    }
+}
+
+#[tauri::command]
+fn ensure_workspace_identity(payload: EnsureIdentityPayload) -> Result<(), String> {
+    let root = safe_workspace(&payload.workspace)?;
+    fs::create_dir_all(root.join(".lumen")).map_err(|error| error.to_string())?;
+    let _ = rebuild_index_for_root(&root)?;
+    Ok(())
+}
+
+#[tauri::command]
+fn read_link_index(workspace: String) -> Result<LinkIndex, String> {
+    let root = safe_workspace(&workspace)?;
+    let path = link_index_path(&root);
+    if !path.exists() {
+        return rebuild_index_for_root(&root);
+    }
+    Ok(read_link_index_file(&root))
+}
+
+#[tauri::command]
+fn rebuild_link_index(workspace: String) -> Result<LinkIndex, String> {
+    let root = safe_workspace(&workspace)?;
+    rebuild_index_for_root(&root)
 }
 
 // ---------- Recently Deleted (trash) ----------
@@ -1367,6 +2227,9 @@ pub fn run() {
             cleanup_trash,
             read_workspace_metadata,
             write_workspace_metadata,
+            ensure_workspace_identity,
+            read_link_index,
+            rebuild_link_index,
             save_asset,
             save_clipboard_image_asset,
             read_asset_data_url,

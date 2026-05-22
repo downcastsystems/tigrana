@@ -1,5 +1,6 @@
 import CodeBlockLowlight from "@tiptap/extension-code-block-lowlight";
 import { Extension } from "@tiptap/core";
+import Emoji, { gitHubEmojis } from "@tiptap/extension-emoji";
 import Highlight from "@tiptap/extension-highlight";
 import Image from "@tiptap/extension-image";
 import Link from "@tiptap/extension-link";
@@ -13,15 +14,17 @@ import TaskList from "@tiptap/extension-task-list";
 import type { Fragment as ProseMirrorFragment, Node as ProseMirrorNode, ResolvedPos } from "@tiptap/pm/model";
 import { NodeSelection, Plugin, PluginKey, Selection, TextSelection } from "@tiptap/pm/state";
 import { Decoration, DecorationSet, type EditorView } from "@tiptap/pm/view";
-import { EditorContent, NodeViewWrapper, Range, ReactNodeViewRenderer, useEditor, type Editor } from "@tiptap/react";
+import { EditorContent, NodeViewContent, NodeViewWrapper, Range, ReactNodeViewRenderer, useEditor, type Editor } from "@tiptap/react";
 import StarterKit from "@tiptap/starter-kit";
 import { convertFileSrc } from "@tauri-apps/api/core";
 import {
   Bold,
+  Check,
   ChevronDown,
   ChevronUp,
   CheckSquare,
   Code,
+  Copy,
   Heading1,
   Heading2,
   Heading3,
@@ -49,6 +52,7 @@ type NotesEditorProps = {
   focusRequest: number;
   focusAtEndRequest: number;
   findRequest: number;
+  reloadRequest?: number;
   notePath: string | null;
   restorePosition: NotePositionMetadata | null;
   workspace: string;
@@ -227,6 +231,75 @@ function ResizableImageNodeView({
   );
 }
 
+function CodeBlockNodeView({
+  node,
+  updateAttributes,
+}: {
+  node: ProseMirrorNode;
+  updateAttributes: (attrs: Record<string, unknown>) => void;
+}) {
+  const [copied, setCopied] = useState(false);
+  const language = (node.attrs.language as string | null) ?? "";
+
+  const handleCopy = (event: React.MouseEvent) => {
+    event.preventDefault();
+    const text = node.textContent;
+    void navigator.clipboard.writeText(text).then(() => {
+      setCopied(true);
+      window.setTimeout(() => setCopied(false), 1200);
+    }).catch((error) => {
+      console.error("Failed to copy code", error);
+    });
+  };
+
+  return (
+    <NodeViewWrapper as="pre" className="code-block">
+      <div className="code-block-controls" contentEditable={false}>
+        <select
+          className="code-block-language"
+          value={language}
+          onChange={(event) => {
+            const value = event.target.value;
+            updateAttributes({ language: value || null });
+          }}
+          onMouseDown={(event) => event.stopPropagation()}
+          aria-label="Code language"
+        >
+          <option value="">Plain text</option>
+          {CODE_LANGUAGES.map((lang) => (
+            <option key={lang} value={lang}>{lang}</option>
+          ))}
+        </select>
+        <button
+          type="button"
+          className="code-block-copy"
+          title={copied ? "Copied" : "Copy code"}
+          onMouseDown={(event) => event.preventDefault()}
+          onClick={handleCopy}
+        >
+          {copied ? <Check size={14} /> : <Copy size={14} />}
+        </button>
+      </div>
+      <NodeViewContent as="code" className={language ? `language-${language}` : undefined} />
+    </NodeViewWrapper>
+  );
+}
+
+const CODE_LANGUAGES: string[] = (() => {
+  try {
+    const list = lowlight.listLanguages();
+    return Array.from(new Set(list)).sort((a, b) => a.localeCompare(b));
+  } catch {
+    return [];
+  }
+})();
+
+const CodeBlockWithControls = CodeBlockLowlight.extend({
+  addNodeView() {
+    return ReactNodeViewRenderer(CodeBlockNodeView);
+  },
+});
+
 const MarkdownImage = Image.extend({
   addAttributes() {
     return {
@@ -251,7 +324,7 @@ const MarkdownImage = Image.extend({
   },
 });
 
-export function NotesEditor({ content, focusRequest, focusAtEndRequest, findRequest, notePath, restorePosition, workspace, onChange, onLoadError, onPositionChange, onInternalLinkClick, onRequestLink }: NotesEditorProps) {
+export function NotesEditor({ content, focusRequest, focusAtEndRequest, findRequest, reloadRequest, notePath, restorePosition, workspace, onChange, onLoadError, onPositionChange, onInternalLinkClick, onRequestLink }: NotesEditorProps) {
   const [slash, setSlash] = useState<SlashState | null>(null);
   const [findOpen, setFindOpen] = useState(false);
   const [findQuery, setFindQuery] = useState("");
@@ -261,6 +334,7 @@ export function NotesEditor({ content, focusRequest, focusAtEndRequest, findRequ
   const findInputRef = useRef<HTMLInputElement | null>(null);
   const handledFindRequest = useRef(findRequest);
   const lastLoadedNote = useRef<string | null>(null);
+  const handledReloadRequest = useRef(reloadRequest ?? 0);
 
   const initialContent = useMemo((): { error: unknown; html: string } => {
     try {
@@ -285,7 +359,10 @@ export function NotesEditor({ content, focusRequest, focusAtEndRequest, findRequ
           levels: [1, 2, 3, 4, 5, 6],
         },
       }),
-      CodeBlockLowlight.configure({ lowlight }),
+      CodeBlockWithControls.configure({ lowlight }),
+      Emoji.configure({
+        emojis: gitHubEmojis,
+      }),
       Highlight,
       SearchHighlight,
       EmSpaceIndent,
@@ -453,7 +530,8 @@ export function NotesEditor({ content, focusRequest, focusAtEndRequest, findRequ
 
   useEffect(() => {
     if (!editor) return;
-    if (lastLoadedNote.current === notePath) return;
+    const requestedReload = (reloadRequest ?? 0) !== handledReloadRequest.current;
+    if (lastLoadedNote.current === notePath && !requestedReload) return;
     let next = "";
     try {
       next = markdownToHtml(content, { resolveImageSrc: (src) => resolveNotebookImageSrc(workspace, src) });
@@ -491,11 +569,12 @@ export function NotesEditor({ content, focusRequest, focusAtEndRequest, findRequ
         })
         .run();
       lastLoadedNote.current = notePath;
+      handledReloadRequest.current = reloadRequest ?? 0;
       void hydrateNotebookImageNodes(editor, workspace);
     } catch (error) {
       onLoadError(error);
     }
-  }, [content, editor, notePath, onLoadError, restorePosition, workspace]);
+  }, [content, editor, notePath, onLoadError, reloadRequest, restorePosition, workspace]);
 
   useEffect(() => {
     if (!editor || !focusRequest) return;
@@ -1122,7 +1201,10 @@ function serializeClipboardNode(node: ProseMirrorNode, depth: number): string {
       .map((line) => `> ${line}`)
       .join("\n");
   }
-  if (name === "codeBlock") return `\`\`\`\n${node.textContent}\n\`\`\``;
+  if (name === "codeBlock") {
+    const language = typeof node.attrs.language === "string" ? node.attrs.language : "";
+    return `\`\`\`${language}\n${node.textContent}\n\`\`\``;
+  }
   if (name === "horizontalRule") return "---";
   if (name === "bulletList" || name === "orderedList" || name === "taskList") return serializeClipboardList(node, depth);
   if (name === "listItem" || name === "taskItem") return serializeBlockContent(node, depth);

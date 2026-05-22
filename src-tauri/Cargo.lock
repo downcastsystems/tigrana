@@ -1880,6 +1880,7 @@ dependencies = [
  "tauri-plugin-fs",
  "tauri-plugin-shell",
  "time",
+ "uuid",
  "walkdir",
 ]
 

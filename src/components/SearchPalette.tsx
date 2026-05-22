@@ -34,6 +34,9 @@ export function SearchPalette({ open, query, results, onQueryChange, onClose, on
               if (event.key === "Enter" && results[0]) onSelect(results[0].path);
             }}
             placeholder="Find a note..."
+            autoCapitalize="off"
+            autoCorrect="off"
+            spellCheck={false}
           />
           <button className="icon-button" type="button" onClick={onClose} title="Close">
             <X size={17} />

@@ -1,5 +1,5 @@
 import { invoke } from "@tauri-apps/api/core";
-import type { FolderEntry, NoteEntry, WorkspaceMetadata } from "../types";
+import type { FolderEntry, LinkIndex, NoteEntry, WorkspaceMetadata } from "../types";
 
 const SAMPLE_WORKSPACE = "/demo/Lumen Notes";
 const storageKey = "lumen-notes-demo-v5";
@@ -46,6 +46,32 @@ function writeDemoStore(store: DemoStore) {
 export async function ensureWorkspace(workspace: string) {
   if (!isTauri()) return;
   await invoke("ensure_workspace", { workspace });
+  // Mint stable ids and build the link index. Safe to call on every open.
+  try {
+    await invoke("ensure_workspace_identity", { payload: { workspace } });
+  } catch (error) {
+    console.warn("ensure_workspace_identity failed", error);
+  }
+}
+
+export async function readLinkIndex(workspace: string): Promise<LinkIndex | null> {
+  if (!isTauri()) return null;
+  try {
+    return await invoke<LinkIndex>("read_link_index", { workspace });
+  } catch (error) {
+    console.warn("read_link_index failed", error);
+    return null;
+  }
+}
+
+export async function rebuildLinkIndex(workspace: string): Promise<LinkIndex | null> {
+  if (!isTauri()) return null;
+  try {
+    return await invoke<LinkIndex>("rebuild_link_index", { workspace });
+  } catch (error) {
+    console.warn("rebuild_link_index failed", error);
+    return null;
+  }
 }
 
 export async function watchWorkspace(workspace: string) {

@@ -139,8 +139,8 @@ export const slashCommands: SlashCommand[] = [
   },
   {
     id: "link",
-    title: "Link to note",
-    hint: "Link to another note or folder",
+    title: "Link to note, folder, or URL",
+    hint: "Link inside this notebook or out to the web",
     icon: Link2,
     keywords: ["link", "note", "internal", "wiki", "reference"],
     run: (editor, range, context) => {

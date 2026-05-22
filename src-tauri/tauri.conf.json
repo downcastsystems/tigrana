@@ -15,6 +15,7 @@
         "title": "Lumen Notes",
         "width": 1280,
         "height": 860,
+        "visible": false,
         "minWidth": 920,
         "minHeight": 620,
         "decorations": true,

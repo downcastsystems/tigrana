@@ -21,3 +21,4 @@ notify = "6"
 pulldown-cmark = "0.10"
 rusqlite = { version = "0.31", features = ["bundled"] }
 time = { version = "0.3", features = ["formatting", "macros"] }
+uuid = { version = "1", features = ["v4"] }

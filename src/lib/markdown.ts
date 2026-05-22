@@ -1,3 +1,5 @@
+import { gitHubEmojis, shortcodeToEmoji } from "@tiptap/extension-emoji";
+
 const escapeHtml = (value: string) =>
   value
     .replace(/&/g, "&amp;")
@@ -17,6 +19,11 @@ export const HARD_BREAK_PLACEHOLDER = "";
 const inlineMarkdownToHtml = (value: string, options: MarkdownOptions = {}) => {
   let html = escapeHtml(value);
   html = html.replace(new RegExp(HARD_BREAK_PLACEHOLDER, "g"), "<br>");
+  html = html.replace(/:([a-zA-Z0-9_+-]+):/g, (match, shortcode: string) => {
+    const emoji = shortcodeToEmoji(shortcode, gitHubEmojis);
+    if (!emoji) return match;
+    return `<span data-type="emoji" data-name="${escapeHtml(emoji.name)}"></span>`;
+  });
   html = html.replace(/!\[([^\]]*)\]\(([^)]+)\)/g, (_match, alt: string, src: string) => {
     const resolvedSrc = options.resolveImageSrc?.(src) ?? src;
     return `<img src="${escapeHtml(resolvedSrc)}" alt="${escapeHtml(alt)}" data-markdown-src="${escapeHtml(src)}" />`;
@@ -69,6 +76,7 @@ export function markdownToHtml(markdown: string, options: MarkdownOptions = {}) 
   const listStack: ListLevel[] = [];
   let inCode = false;
   let codeLines: string[] = [];
+  let codeLanguage = "";
   let tableRows: string[][] = [];
   let inTable = false;
   let blankLineRun = 0;
@@ -253,13 +261,16 @@ export function markdownToHtml(markdown: string, options: MarkdownOptions = {}) 
 
     if (line.startsWith("```")) {
       if (inCode) {
-        html.push(`<pre><code>${escapeHtml(codeLines.join("\n"))}</code></pre>`);
+        const langAttr = codeLanguage ? ` class="language-${escapeHtml(codeLanguage)}"` : "";
+        html.push(`<pre><code${langAttr}>${escapeHtml(codeLines.join("\n"))}</code></pre>`);
         codeLines = [];
+        codeLanguage = "";
         inCode = false;
       } else {
         closeList();
         closeTable();
         inCode = true;
+        codeLanguage = line.slice(3).trim();
       }
       i += 1;
       continue;
@@ -416,7 +427,8 @@ export function markdownToHtml(markdown: string, options: MarkdownOptions = {}) 
   closeList();
   closeTable();
   if (inCode) {
-    html.push(`<pre><code>${escapeHtml(codeLines.join("\n"))}</code></pre>`);
+    const langAttr = codeLanguage ? ` class="language-${escapeHtml(codeLanguage)}"` : "";
+    html.push(`<pre><code${langAttr}>${escapeHtml(codeLines.join("\n"))}</code></pre>`);
   }
   return html.join("\n");
 }
@@ -436,6 +448,11 @@ function inlineHtmlToMarkdown(element: Element): string {
     if (tag === "ul" || tag === "ol") return;
     if (tag === "br") {
       value += HARD_BREAK_PLACEHOLDER;
+      return;
+    }
+    if (tag === "span" && node.getAttribute("data-type") === "emoji") {
+      const name = node.getAttribute("data-name");
+      value += name ? `:${name}:` : node.textContent ?? "";
       return;
     }
     const content = inlineHtmlToMarkdown(node);
@@ -517,7 +534,11 @@ export function htmlToMarkdown(html: string) {
       const text = inlineHtmlToMarkdown(block);
       markdown.push(text.split("\n").map((line) => `> ${line}`).join("\n"));
     } else if (tag === "pre") {
-      markdown.push(`\`\`\`\n${block.textContent ?? ""}\n\`\`\``);
+      const codeEl = block.querySelector("code");
+      const className = codeEl?.getAttribute("class") ?? "";
+      const langMatch = /language-([\w+#.-]+)/.exec(className);
+      const language = langMatch ? langMatch[1] : "";
+      markdown.push(`\`\`\`${language}\n${block.textContent ?? ""}\n\`\`\``);
     } else if (tag === "hr") {
       markdown.push("---");
     } else if (tag === "ul" || tag === "ol") {
