@@ -686,6 +686,12 @@ body.is-dragging-note.is-over-drop-target * {
   border-radius: inherit;
 }
 
+body.is-dragging-section,
+body.is-dragging-section * {
+  cursor: grabbing !important;
+  user-select: none;
+}
+
 .section-view-folder-pane .folder-select svg,
 .section-view-folder-pane .folder-select .custom-icon,
 .unified-folder-name > svg,
@@ -717,6 +723,32 @@ body.is-dragging-note.is-over-drop-target * {
 .left-panes:not(.is-single-col) .unified-folder-row:hover .unified-folder-name,
 .left-panes:not(.is-single-col) .unified-folder-row.is-active .unified-folder-name {
   color: inherit !important;
+}
+
+.section-view-folder-pane .folder-row.is-reorder-before,
+.section-view-folder-pane .folder-row.is-reorder-after {
+  position: relative;
+}
+
+.section-view-folder-pane .folder-row.is-reorder-before::after,
+.section-view-folder-pane .folder-row.is-reorder-after::after {
+  content: "";
+  position: absolute;
+  left: 8px;
+  right: 8px;
+  height: 2px;
+  background: var(--accent);
+  border-radius: 2px;
+  pointer-events: none;
+  z-index: 1;
+}
+
+.section-view-folder-pane .folder-row.is-reorder-before::after {
+  top: -1px;
+}
+
+.section-view-folder-pane .folder-row.is-reorder-after::after {
+  bottom: -1px;
 }
 
 /* ---------- End Unified Tree Pane ---------- */

@@ -362,6 +362,7 @@ export default function App() {
   const [draggingItem, setDraggingItem] = useState<DragItem>(null);
   const [dropTargetFolder, setDropTargetFolder] = useState<string | null>(null);
   const [noteDragPreview, setNoteDragPreview] = useState<NoteDragPreview | null>(null);
+  const [sectionReorderHover, setSectionReorderHover] = useState<{ path: string; placement: DropPlacement } | null>(null);
   const [editorFocusRequest, setEditorFocusRequest] = useState(0);
   const [editorFocusAtEndRequest, setEditorFocusAtEndRequest] = useState(0);
   const [editorReloadRequest, setEditorReloadRequest] = useState(0);
@@ -370,7 +371,9 @@ export default function App() {
   const titleInputRef = useRef<HTMLTextAreaElement | null>(null);
   const draggingItemRef = useRef<DragItem>(null);
   const notePointerDragRef = useRef<NotePointerDrag | null>(null);
+  const sectionPointerDragRef = useRef<NotePointerDrag | null>(null);
   const suppressNextNoteClickRef = useRef(false);
+  const suppressNextSectionClickRef = useRef(false);
   const autoSelectedWorkspaceRef = useRef<string | null>(null);
   const metadataRef = useRef(metadata);
   const positionWriteTimerRef = useRef<number | null>(null);
@@ -2023,6 +2026,86 @@ export default function App() {
     window.addEventListener("pointercancel", handlePointerCancel, { once: true });
   }
 
+  function sectionDropTargetAtPoint(clientX: number, clientY: number): { path: string; placement: DropPlacement } | null {
+    const row = document.elementFromPoint(clientX, clientY)?.closest<HTMLElement>(".section-view-folder-pane [data-folder-path]");
+    if (!row) return null;
+    const path = row.dataset.folderPath ?? "";
+    if (!path) return null; // skip Uncategorized
+    const bounds = row.getBoundingClientRect();
+    return {
+      path,
+      placement: clientY > bounds.top + bounds.height / 2 ? "after" : "before",
+    };
+  }
+
+  function beginSectionPointerDrag(path: string, event: React.PointerEvent<HTMLElement>) {
+    if (event.button !== 0) return;
+    const folder = folders.find((entry) => entry.path === path);
+    if (!folder || folder.parent_path !== "") return;
+
+    sectionPointerDragRef.current = {
+      dragging: false,
+      path,
+      startX: event.clientX,
+      startY: event.clientY,
+    };
+
+    const handlePointerMove = (moveEvent: PointerEvent) => {
+      const drag = sectionPointerDragRef.current;
+      if (!drag) return;
+
+      const distance = Math.hypot(moveEvent.clientX - drag.startX, moveEvent.clientY - drag.startY);
+      if (!drag.dragging && distance < 5) return;
+
+      if (!drag.dragging) {
+        drag.dragging = true;
+        suppressNextSectionClickRef.current = true;
+        document.body.classList.add("is-dragging-section");
+        setCurrentDragItem({ kind: "folder", path: drag.path });
+      }
+
+      moveEvent.preventDefault();
+      const target = sectionDropTargetAtPoint(moveEvent.clientX, moveEvent.clientY);
+      setSectionReorderHover(target && target.path !== drag.path ? target : null);
+    };
+
+    const cleanupPointerDrag = () => {
+      window.removeEventListener("pointermove", handlePointerMove);
+      window.removeEventListener("pointerup", handlePointerUp);
+      window.removeEventListener("pointercancel", handlePointerCancel);
+      document.body.classList.remove("is-dragging-section");
+      setSectionReorderHover(null);
+      sectionPointerDragRef.current = null;
+    };
+
+    const handlePointerCancel = () => {
+      cleanupPointerDrag();
+      setCurrentDragItem(null);
+    };
+
+    const handlePointerUp = (upEvent: PointerEvent) => {
+      const drag = sectionPointerDragRef.current;
+      cleanupPointerDrag();
+
+      if (drag?.dragging) {
+        const target = sectionDropTargetAtPoint(upEvent.clientX, upEvent.clientY);
+        if (target && target.path !== drag.path) {
+          handleFolderReorder(target.path, { kind: "folder", path: drag.path }, target.placement);
+        } else {
+          setCurrentDragItem(null);
+        }
+      }
+      // The browser doesn't fire `click` after a real drag, so any synthetic-click suppression
+      // from this gesture would linger and block the next unrelated click. Clear on next tick —
+      // after the immediate post-mouseup click (if any) has had a chance to run.
+      setTimeout(() => { suppressNextSectionClickRef.current = false; }, 0);
+    };
+
+    window.addEventListener("pointermove", handlePointerMove);
+    window.addEventListener("pointerup", handlePointerUp, { once: true });
+    window.addEventListener("pointercancel", handlePointerCancel, { once: true });
+  }
+
   function handleNoteSelectFromCard(path: string, options: { preserveSelectedFolder?: boolean } = {}) {
     if (suppressNextNoteClickRef.current) {
       suppressNextNoteClickRef.current = false;
@@ -2320,16 +2403,17 @@ export default function App() {
                 workspace={workspace}
                 menuOpen={appMenuOpen}
                 recentNotebooks={recentNotebooks}
+                reorderHover={sectionReorderHover}
                 searchOpen={searchOpen}
                 searchFocusRequest={searchFocusRequest}
                 searchQuery={searchQuery}
                 searchResults={results}
                 onContextMenu={openContextMenu}
                 onCreateFolder={requestCreateFolder}
-                onDragStart={setCurrentDragItem}
                 onDropOnFolder={(path, item) => void handleDropOnFolder(path, item)}
                 onDropTargetChange={setDropTargetFolder}
-                onFolderReorder={handleFolderReorder}
+                onSectionPointerDragStart={beginSectionPointerDrag}
+                suppressClickRef={suppressNextSectionClickRef}
                 onManageNotebooks={() => { setNotebooksManageOpen(true); setAppMenuOpen(false); }}
                 onNewNotebook={() => void chooseWorkspace("new", true)}
                 onOpenWorkspace={() => void chooseWorkspace("open", true)}
@@ -3365,23 +3449,24 @@ function SectionViewFolderPane({
   menuOpen,
   metadata,
   recentNotebooks,
+  reorderHover,
   searchOpen,
   searchFocusRequest,
   searchQuery,
   searchResults,
   selectedFolder,
+  suppressClickRef,
   workspace,
   onContextMenu,
   onCreateFolder,
-  onDragStart,
   onDropOnFolder,
   onDropTargetChange,
-  onFolderReorder,
   onManageNotebooks,
   onNewNotebook,
   onOpenWorkspace,
   onRemoveBookmark,
   onSearchQueryChange,
+  onSectionPointerDragStart,
   onSelectBookmark,
   onSelectFolder,
   onSelectNotebook,
@@ -3398,23 +3483,24 @@ function SectionViewFolderPane({
   menuOpen: boolean;
   metadata: WorkspaceMetadata;
   recentNotebooks: RecentNotebook[];
+  reorderHover: { path: string; placement: DropPlacement } | null;
   searchOpen: boolean;
   searchFocusRequest: number;
   searchQuery: string;
   searchResults: SearchResult[];
   selectedFolder: string;
+  suppressClickRef: React.MutableRefObject<boolean>;
   workspace: string;
   onContextMenu: (event: React.MouseEvent, state: ContextMenuTarget) => void;
   onCreateFolder: (parentPath?: string) => void;
-  onDragStart: (item: DragItem) => void;
   onDropOnFolder?: (path: string, item?: Exclude<DragItem, null>) => void;
   onDropTargetChange?: (path: string | null) => void;
-  onFolderReorder: (targetPath: string, item: Exclude<DragItem, null> | null, placement?: DropPlacement) => void;
   onManageNotebooks: () => void;
   onNewNotebook: () => void;
   onOpenWorkspace: () => void;
   onRemoveBookmark: (id: string) => void;
   onSearchQueryChange: (query: string) => void;
+  onSectionPointerDragStart: (path: string, event: React.PointerEvent<HTMLElement>) => void;
   onSelectBookmark: (bookmark: BookmarkEntry) => void;
   onSelectFolder: (path: string) => void;
   onSelectNotebook: (path: string) => void;
@@ -3424,16 +3510,13 @@ function SectionViewFolderPane({
   onToggleSearch: () => void;
 }) {
   const rootSectionColor = metadata.folderColors[""];
+  // Note-into-section and nested-folder-into-section drops still use HTML5 drag (the source notes/folders fire native drag).
   const folderDragItemFromEvent = (event: React.DragEvent): Exclude<DragItem, null> | null => {
     const folderPath = event.dataTransfer.getData("application/lumen-folder-path");
     if (folderPath) return { kind: "folder", path: folderPath };
     const notePath = event.dataTransfer.getData("application/lumen-note-path") || event.dataTransfer.getData("text/plain");
     if (notePath) return { kind: "note", path: notePath };
     return draggingItem ?? null;
-  };
-  const folderDropPlacement = (event: React.DragEvent<HTMLElement>): DropPlacement => {
-    const bounds = event.currentTarget.getBoundingClientRect();
-    return event.clientY > bounds.top + bounds.height / 2 ? "after" : "before";
   };
 
   return (
@@ -3508,28 +3591,38 @@ function SectionViewFolderPane({
         {folders.map((folder) => {
           const folderColor = metadata.folderColors[folder.path];
           const customIcon = metadata.folderIcons[folder.path];
+          const indicatorPlacement = reorderHover?.path === folder.path ? reorderHover.placement : null;
+          const rowClass = [
+            "folder-row",
+            selectedFolder === folder.path ? "is-active" : "",
+            dropTargetFolder === folder.path && !indicatorPlacement ? "is-drop-target" : "",
+            indicatorPlacement === "before" ? "is-reorder-before" : "",
+            indicatorPlacement === "after" ? "is-reorder-after" : "",
+          ].filter(Boolean).join(" ");
+          const handleSelectClick = () => {
+            if (suppressClickRef.current) {
+              suppressClickRef.current = false;
+              return;
+            }
+            onSelectFolder(folder.path);
+          };
           return (
             <div
               key={folder.path}
-              className={`folder-row${selectedFolder === folder.path ? " is-active" : ""}${dropTargetFolder === folder.path ? " is-drop-target" : ""}`}
+              className={rowClass}
               style={folderColor ? { "--section-color": folderColor } as React.CSSProperties : undefined}
               data-has-section-color={folderColor ? "true" : "false"}
               data-folder-path={folder.path}
-              draggable
-              onClick={() => onSelectFolder(folder.path)}
+              onClick={handleSelectClick}
               onContextMenu={(event) => onContextMenu(event, { kind: "folder", path: folder.path })}
-              onDragStart={(event) => {
-                event.dataTransfer.setData("application/lumen-folder-path", folder.path);
-                event.dataTransfer.effectAllowed = "move";
-                onDragStart({ kind: "folder", path: folder.path });
-              }}
-              onDragEnd={() => onDragStart(null)}
+              onPointerDown={(event) => onSectionPointerDragStart(folder.path, event)}
+              // Still accept HTML5 drops from notes / nested folders (those sources use HTML5 drag).
               onDragOver={(event) => {
-                if (folderDragItemFromEvent(event)) {
-                  event.preventDefault();
-                  event.dataTransfer.dropEffect = "move";
-                  onDropTargetChange?.(folder.path);
-                }
+                const item = folderDragItemFromEvent(event);
+                if (!item) return;
+                event.preventDefault();
+                event.dataTransfer.dropEffect = "move";
+                onDropTargetChange?.(folder.path);
               }}
               onDragLeave={(event) => {
                 if (event.currentTarget.contains(event.relatedTarget as Node | null)) return;
@@ -3540,18 +3633,7 @@ function SectionViewFolderPane({
                 if (!item) return;
                 event.preventDefault();
                 onDropTargetChange?.(null);
-                // Notes always move into the section.
-                if (item.kind === "note") {
-                  onDropOnFolder?.(folder.path, item);
-                  return;
-                }
-                // Folders: sibling reorder when same parent, otherwise move into.
-                const sourceFolder = folders.find((entry) => entry.path === item.path);
-                if (sourceFolder && sourceFolder.parent_path === folder.parent_path && item.path !== folder.path) {
-                  onFolderReorder(folder.path, item, folderDropPlacement(event));
-                } else {
-                  onDropOnFolder?.(folder.path, item);
-                }
+                onDropOnFolder?.(folder.path, item);
               }}
             >
               <span className="section-color-chip" aria-hidden="true" />
@@ -3559,7 +3641,7 @@ function SectionViewFolderPane({
               <button
                 className="folder-select"
                 type="button"
-                onClick={(event) => { event.stopPropagation(); onSelectFolder(folder.path); }}
+                onClick={(event) => { event.stopPropagation(); handleSelectClick(); }}
               >
                 <span>
                   <IconMark value={customIcon} fallback={Folder} size={15} />
