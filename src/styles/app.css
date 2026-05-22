@@ -539,6 +539,17 @@ body.is-dragging-note.is-over-drop-target * {
   background: transparent;
 }
 
+.unified-folder-row.is-drop-target {
+  outline: 1px dashed var(--accent);
+  outline-offset: -2px;
+  color: var(--accent-strong);
+}
+
+.unified-folder-row.is-drop-target::before {
+  background: var(--accent-soft);
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--accent) 45%, transparent);
+}
+
 .unified-folder-name {
   display: inline-flex;
   align-items: center;
@@ -2760,6 +2771,14 @@ html[data-theme="dark"] .ProseMirror th {
 
 .link-picker {
   width: min(560px, calc(100vw - 48px));
+}
+
+.link-picker-section-label {
+  padding: 8px 12px 4px;
+  color: var(--muted);
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
 }
 
 .link-picker-row {

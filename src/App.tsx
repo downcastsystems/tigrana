@@ -731,13 +731,19 @@ export default function App() {
   }, []);
 
   useEffect(() => {
-    const onClick = () => {
+    const onClick = (event: MouseEvent) => {
+      const target = event.target as Element | null;
+      // Don't dismiss when clicking inside a context menu, app menu, or any
+      // dialog — those popovers handle their own lifecycle.
+      if (target?.closest(".context-menu, .app-menu, .dialog, .dialog-backdrop")) return;
       setAppMenuOpen(false);
       setContextMenu(null);
       setTabContextMenu(null);
     };
-    window.addEventListener("click", onClick);
-    return () => window.removeEventListener("click", onClick);
+    // Capture phase so descendants that call stopPropagation (e.g. section
+    // rows) still trigger menu dismissal.
+    window.addEventListener("click", onClick, true);
+    return () => window.removeEventListener("click", onClick, true);
   }, []);
 
   const refreshWorkspace = useCallback(async (nextWorkspace = workspace) => {
@@ -2189,11 +2195,13 @@ export default function App() {
               showSearch
               title={getNotebookName(workspace)}
               workspace={workspace}
+              dropTargetFolder={dropTargetFolder}
               onContextMenu={openContextMenu}
               onCreateFolder={requestCreateFolder}
               onCreateNote={requestCreateNote}
               onDragStart={setCurrentDragItem}
               onDropOnFolder={(path, item) => void handleDropOnFolder(path, item)}
+              onDropTargetChange={setDropTargetFolder}
               onFolderReorder={handleFolderReorder}
               onManageNotebooks={() => {
                 setNotebooksManageOpen(true);
@@ -2230,6 +2238,7 @@ export default function App() {
                 bookmarks={bookmarks}
                 bookmarksExpanded={metadata.bookmarksExpanded}
                 draggingItem={draggingItem}
+                dropTargetFolder={dropTargetFolder}
                 folders={folderTree[0]?.children ?? []}
                 metadata={metadata}
                 selectedFolder={selectedSection}
@@ -2244,6 +2253,7 @@ export default function App() {
                 onCreateFolder={requestCreateFolder}
                 onDragStart={setCurrentDragItem}
                 onDropOnFolder={(path, item) => void handleDropOnFolder(path, item)}
+                onDropTargetChange={setDropTargetFolder}
                 onFolderReorder={handleFolderReorder}
                 onManageNotebooks={() => { setNotebooksManageOpen(true); setAppMenuOpen(false); }}
                 onNewNotebook={() => void chooseWorkspace("new", true)}
@@ -2277,11 +2287,13 @@ export default function App() {
                 showPins
                 title={selectedSectionTitle}
                 workspace={workspace}
+                dropTargetFolder={dropTargetFolder}
                 onContextMenu={openContextMenu}
                 onCreateFolder={requestCreateFolder}
                 onCreateNote={requestCreateNote}
                 onDragStart={setCurrentDragItem}
                 onDropOnFolder={(path, item) => void handleDropOnFolder(path, item)}
+                onDropTargetChange={setDropTargetFolder}
                 onFolderReorder={handleFolderReorder}
                 onOpenNoteIcon={(path) => openIconBrowser("note", path)}
                 onPin={(path) => updateMetadata((current) => ({ ...current, pinnedNotes: { ...current.pinnedNotes, [path]: !current.pinnedNotes[path] } }))}
@@ -2523,8 +2535,11 @@ export default function App() {
           state={contextMenu}
           folderColorSubject={isSectionContextTarget(contextMenu, navigationStyle, folders) ? "section" : "folder"}
           createFolderParentName={displayFolderName(contextMenu.kind === "folder" ? contextMenu.path : selectedFolder, folders, workspace)}
+          createNoteParentName={displayFolderName(contextMenu.kind === "folder" ? contextMenu.path : selectedFolder, folders, workspace)}
+          showCreateSection={navigationStyle === "section-view"}
           onCreateFolder={() => requestCreateFolder(contextMenu.kind === "folder" ? contextMenu.path : selectedFolder)}
           onCreateNote={() => requestCreateNote(contextMenu.kind === "folder" ? contextMenu.path : selectedFolder)}
+          onCreateSection={() => requestCreateFolder("")}
           onDelete={() => {
             if (contextMenu.kind === "note") void handleDeleteNote(contextMenu.path);
             if (contextMenu.kind === "folder") void handleDeleteFolder(contextMenu.path);
@@ -3246,6 +3261,7 @@ function SectionViewFolderPane({
   bookmarks,
   bookmarksExpanded,
   draggingItem,
+  dropTargetFolder,
   folders,
   menuOpen,
   metadata,
@@ -3260,6 +3276,7 @@ function SectionViewFolderPane({
   onCreateFolder,
   onDragStart,
   onDropOnFolder,
+  onDropTargetChange,
   onFolderReorder,
   onManageNotebooks,
   onNewNotebook,
@@ -3277,6 +3294,7 @@ function SectionViewFolderPane({
   bookmarks: BookmarkView[];
   bookmarksExpanded: boolean;
   draggingItem: DragItem;
+  dropTargetFolder: string | null;
   folders: FolderNode[];
   menuOpen: boolean;
   metadata: WorkspaceMetadata;
@@ -3291,6 +3309,7 @@ function SectionViewFolderPane({
   onCreateFolder: (parentPath?: string) => void;
   onDragStart: (item: DragItem) => void;
   onDropOnFolder?: (path: string, item?: Exclude<DragItem, null>) => void;
+  onDropTargetChange?: (path: string | null) => void;
   onFolderReorder: (targetPath: string, item: Exclude<DragItem, null> | null, placement?: DropPlacement) => void;
   onManageNotebooks: () => void;
   onNewNotebook: () => void;
@@ -3349,7 +3368,7 @@ function SectionViewFolderPane({
       />
       <div className="folder-tree">
         <div
-          className={`folder-row${selectedFolder === "" ? " is-active" : ""}`}
+          className={`folder-row${selectedFolder === "" ? " is-active" : ""}${dropTargetFolder === "" ? " is-drop-target" : ""}`}
           style={rootSectionColor ? { "--section-color": rootSectionColor } as React.CSSProperties : undefined}
           data-has-section-color={rootSectionColor ? "true" : "false"}
           data-folder-path=""
@@ -3360,11 +3379,17 @@ function SectionViewFolderPane({
             if (!item) return;
             event.preventDefault();
             event.dataTransfer.dropEffect = "move";
+            onDropTargetChange?.("");
+          }}
+          onDragLeave={(event) => {
+            if (event.currentTarget.contains(event.relatedTarget as Node | null)) return;
+            onDropTargetChange?.(null);
           }}
           onDrop={(event) => {
             const item = folderDragItemFromEvent(event);
             if (!item) return;
             event.preventDefault();
+            onDropTargetChange?.(null);
             onDropOnFolder?.("", item);
           }}
         >
@@ -3387,7 +3412,7 @@ function SectionViewFolderPane({
           return (
             <div
               key={folder.path}
-              className={`folder-row${selectedFolder === folder.path ? " is-active" : ""}`}
+              className={`folder-row${selectedFolder === folder.path ? " is-active" : ""}${dropTargetFolder === folder.path ? " is-drop-target" : ""}`}
               style={folderColor ? { "--section-color": folderColor } as React.CSSProperties : undefined}
               data-has-section-color={folderColor ? "true" : "false"}
               data-folder-path={folder.path}
@@ -3404,12 +3429,18 @@ function SectionViewFolderPane({
                 if (folderDragItemFromEvent(event)) {
                   event.preventDefault();
                   event.dataTransfer.dropEffect = "move";
+                  onDropTargetChange?.(folder.path);
                 }
+              }}
+              onDragLeave={(event) => {
+                if (event.currentTarget.contains(event.relatedTarget as Node | null)) return;
+                onDropTargetChange?.(null);
               }}
               onDrop={(event) => {
                 const item = folderDragItemFromEvent(event);
                 if (!item) return;
                 event.preventDefault();
+                onDropTargetChange?.(null);
                 // Notes always move into the section.
                 if (item.kind === "note") {
                   onDropOnFolder?.(folder.path, item);
@@ -3460,6 +3491,7 @@ function UnifiedNode({
   activePath,
   contents,
   depth,
+  dropTargetFolder,
   folders,
   hiddenFolderParentPath,
   metadata,
@@ -3471,6 +3503,7 @@ function UnifiedNode({
   onContextMenu,
   onDragStart,
   onDropOnFolder,
+  onDropTargetChange,
   onFolderReorder,
   onOpenNoteIcon,
   onPin,
@@ -3482,6 +3515,7 @@ function UnifiedNode({
   activePath: string | null;
   contents: Map<string, string>;
   depth: number;
+  dropTargetFolder?: string | null;
   folders: FolderEntry[];
   hiddenFolderParentPath?: string;
   metadata: WorkspaceMetadata;
@@ -3493,6 +3527,7 @@ function UnifiedNode({
   onContextMenu: (event: React.MouseEvent, state: ContextMenuTarget) => void;
   onDragStart?: (item: DragItem) => void;
   onDropOnFolder?: (path: string, item?: Exclude<DragItem, null>) => void;
+  onDropTargetChange?: (path: string | null) => void;
   onFolderReorder?: (targetPath: string, item: Exclude<DragItem, null> | null, placement?: DropPlacement) => void;
   onOpenNoteIcon: (path: string) => void;
   onPin: (path: string) => void;
@@ -3528,6 +3563,7 @@ function UnifiedNode({
           activePath={activePath}
           contents={contents}
           depth={depth}
+          dropTargetFolder={dropTargetFolder}
           folder={folder}
           folders={folders}
           hiddenFolderParentPath={hiddenFolderParentPath}
@@ -3539,6 +3575,7 @@ function UnifiedNode({
           onContextMenu={onContextMenu}
           onDragStart={onDragStart}
           onDropOnFolder={onDropOnFolder}
+          onDropTargetChange={onDropTargetChange}
           onFolderReorder={onFolderReorder}
           onOpenNoteIcon={onOpenNoteIcon}
           onPin={onPin}
@@ -3588,6 +3625,7 @@ function UnifiedFolderRow({
   activePath,
   contents,
   depth,
+  dropTargetFolder,
   folder,
   folders,
   hiddenFolderParentPath,
@@ -3599,6 +3637,7 @@ function UnifiedFolderRow({
   onContextMenu,
   onDragStart,
   onDropOnFolder,
+  onDropTargetChange,
   onFolderReorder,
   onOpenNoteIcon,
   onPin,
@@ -3610,6 +3649,7 @@ function UnifiedFolderRow({
   activePath: string | null;
   contents: Map<string, string>;
   depth: number;
+  dropTargetFolder?: string | null;
   folder: FolderEntry;
   folders: FolderEntry[];
   hiddenFolderParentPath?: string;
@@ -3621,6 +3661,7 @@ function UnifiedFolderRow({
   onContextMenu: (event: React.MouseEvent, state: ContextMenuTarget) => void;
   onDragStart?: (item: DragItem) => void;
   onDropOnFolder?: (path: string, item?: Exclude<DragItem, null>) => void;
+  onDropTargetChange?: (path: string | null) => void;
   onFolderReorder?: (targetPath: string, item: Exclude<DragItem, null> | null, placement?: DropPlacement) => void;
   onOpenNoteIcon: (path: string) => void;
   onPin: (path: string) => void;
@@ -3650,7 +3691,7 @@ function UnifiedFolderRow({
   return (
     <div className="unified-folder-node">
       <div
-        className={`unified-folder-row${selectedFolderPath === folder.path ? " is-active" : ""}`}
+        className={`unified-folder-row${selectedFolderPath === folder.path ? " is-active" : ""}${dropTargetFolder === folder.path ? " is-drop-target" : ""}`}
         style={{ "--row-indent": `${depth * 16}px` } as React.CSSProperties}
         data-folder-path={folder.path}
         draggable={Boolean(onDragStart && onFolderReorder)}
@@ -3669,11 +3710,17 @@ function UnifiedFolderRow({
           if (item.kind === "folder" && (item.path === folder.path || folder.path.startsWith(`${item.path}/`))) return;
           event.preventDefault();
           event.dataTransfer.dropEffect = "move";
+          onDropTargetChange?.(folder.path);
+        }}
+        onDragLeave={(event) => {
+          if (event.currentTarget.contains(event.relatedTarget as Node | null)) return;
+          onDropTargetChange?.(null);
         }}
         onDrop={(event) => {
           const item = getDraggedItem(event);
           if (!item) return;
           event.preventDefault();
+          onDropTargetChange?.(null);
           if (item.kind === "note") {
             onDropOnFolder?.(folder.path, item);
             return;
@@ -3707,6 +3754,7 @@ function UnifiedFolderRow({
           activePath={activePath}
           contents={contents}
           depth={depth + 1}
+          dropTargetFolder={dropTargetFolder}
           folders={folders}
           hiddenFolderParentPath={hiddenFolderParentPath}
           metadata={metadata}
@@ -3718,6 +3766,7 @@ function UnifiedFolderRow({
           onContextMenu={onContextMenu}
           onDragStart={onDragStart}
           onDropOnFolder={onDropOnFolder}
+          onDropTargetChange={onDropTargetChange}
           onFolderReorder={onFolderReorder}
           onOpenNoteIcon={onOpenNoteIcon}
           onPin={onPin}
@@ -3755,11 +3804,13 @@ function UnifiedTreePane({
   showSearch = false,
   title,
   workspace,
+  dropTargetFolder,
   onContextMenu,
   onCreateFolder,
   onCreateNote,
   onDragStart,
   onDropOnFolder,
+  onDropTargetChange,
   onFolderReorder,
   onManageNotebooks,
   onNewNotebook,
@@ -3784,6 +3835,7 @@ function UnifiedTreePane({
   bookmarksExpanded?: boolean;
   createParentPath?: string;
   contents: Map<string, string>;
+  dropTargetFolder?: string | null;
   folders: FolderEntry[];
   hiddenFolderParentPath?: string;
   menuOpen?: boolean;
@@ -3807,6 +3859,7 @@ function UnifiedTreePane({
   onCreateNote?: (parentPath?: string) => void;
   onDragStart?: (item: DragItem) => void;
   onDropOnFolder?: (path: string, item?: Exclude<DragItem, null>) => void;
+  onDropTargetChange?: (path: string | null) => void;
   onFolderReorder?: (targetPath: string, item: Exclude<DragItem, null> | null, placement?: DropPlacement) => void;
   onManageNotebooks?: () => void;
   onNewNotebook?: () => void;
@@ -3873,6 +3926,7 @@ function UnifiedTreePane({
           activePath={activePath}
           contents={contents}
           depth={0}
+          dropTargetFolder={dropTargetFolder}
           folders={folders}
           hiddenFolderParentPath={hiddenFolderParentPath}
           metadata={metadata}
@@ -3884,6 +3938,7 @@ function UnifiedTreePane({
           onContextMenu={onContextMenu}
           onDragStart={onDragStart}
           onDropOnFolder={onDropOnFolder}
+          onDropTargetChange={onDropTargetChange}
           onFolderReorder={onFolderReorder}
           onOpenNoteIcon={onOpenNoteIcon}
           onPin={onPin}
@@ -5199,11 +5254,14 @@ function TabContextMenu({
 
 function ContextMenu({
   createFolderParentName,
+  createNoteParentName,
   folderColorSubject,
   isBookmarked,
+  showCreateSection,
   state,
   onCreateFolder,
   onCreateNote,
+  onCreateSection,
   onDelete,
   onMoveTo,
   onOpenInNewWindow,
@@ -5216,11 +5274,14 @@ function ContextMenu({
   onClose,
 }: {
   createFolderParentName: string;
+  createNoteParentName: string;
   folderColorSubject: "folder" | "section";
   isBookmarked: boolean;
+  showCreateSection: boolean;
   state: ContextMenuState;
   onCreateFolder: () => void;
   onCreateNote: () => void;
+  onCreateSection: () => void;
   onDelete: () => void;
   onMoveTo: () => void;
   onOpenInNewWindow: () => void;
@@ -5236,12 +5297,18 @@ function ContextMenu({
     <div className="context-menu" style={{ left: state.x, top: state.y }} onClick={onClose}>
       <button type="button" onClick={onCreateNote}>
         <FileText size={14} />
-        <span>New Note</span>
+        <span>New Note in {createNoteParentName}</span>
       </button>
       <button type="button" onClick={onCreateFolder}>
         <Folder size={14} />
         <span>New Folder in {createFolderParentName}</span>
       </button>
+      {showCreateSection ? (
+        <button type="button" onClick={onCreateSection}>
+          <LayoutList size={14} />
+          <span>New Section</span>
+        </button>
+      ) : null}
       {state.kind === "folder" ? (
         <>
           <button type="button" onClick={onOpenInNewWindow}>

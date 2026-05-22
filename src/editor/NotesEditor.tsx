@@ -297,6 +297,19 @@ export function NotesEditor({ content, focusRequest, focusAtEndRequest, findRequ
       Link.configure({
         autolink: true,
         openOnClick: false,
+        // Don't render target="_blank" on links. In Tauri the webview's
+        // new-window flow can intercept those clicks before our JS handler
+        // gets a chance to route internal notebook hrefs to onInternalLinkClick.
+        // Routing for both internal and external happens via the React onClick
+        // on the editor-shell.
+        HTMLAttributes: { target: null, rel: null, class: null },
+        // The default isAllowedUri's regex treats `[.-:]` as a character range
+        // (including `/`), which causes it to reject bare relative paths like
+        // `Folder/Note.md` and strip their href at render time. We accept
+        // anything that doesn't use a dangerous scheme so internal notebook
+        // links survive round-tripping.
+        isAllowedUri: (href) =>
+          !href || !/^\s*(javascript|data|vbscript|file|about):/i.test(href),
       }),
       Placeholder.configure({
         placeholder: "Start writing, or type / for blocks...",
@@ -379,21 +392,6 @@ export function NotesEditor({ content, focusRequest, focusAtEndRequest, findRequ
           event.preventDefault();
           view.focus();
           view.dispatch(view.state.tr.setSelection(TextSelection.atEnd(view.state.doc)));
-          return true;
-        },
-        click(_view, event) {
-          const link = (event.target as HTMLElement | null)?.closest("a");
-          if (!link) return false;
-          event.preventDefault();
-          const href = link.getAttribute("href") ?? "";
-          if (!href) return true;
-          if (isInternalNotebookHref(href)) {
-            if (onInternalLinkClick) onInternalLinkClick(decodeInternalHref(href));
-          } else {
-            void openExternal(href).catch((error) => {
-              console.error("Failed to open external link", error);
-            });
-          }
           return true;
         },
         copy(view, event) {
@@ -581,10 +579,27 @@ export function NotesEditor({ content, focusRequest, focusAtEndRequest, findRequ
       onMouseDown={(e) => {
         if (!editor || e.button !== 0) return;
         if ((e.target as HTMLElement | null)?.closest(".note-find-bar")) return;
+        if ((e.target as HTMLElement | null)?.closest(".format-bubble")) return;
         const pm = editor.view.dom;
         if (pm.contains(e.target as Node)) return;
         e.preventDefault();
         editor.chain().focus().setTextSelection(editor.state.doc.content.size).run();
+      }}
+      onClick={(e) => {
+        const target = e.target;
+        if (!(target instanceof Element)) return;
+        const link = target.closest("a");
+        if (!link) return;
+        const href = link.getAttribute("href") ?? "";
+        if (!href) return;
+        e.preventDefault();
+        if (isInternalNotebookHref(href)) {
+          onInternalLinkClick?.(decodeInternalHref(href));
+        } else {
+          void openExternal(href).catch((error) => {
+            console.error("Failed to open external link", error);
+          });
+        }
       }}
     >
       {editor ? <FormattingBubbleMenu editor={editor} onRequestLink={onRequestLink} /> : null}
@@ -708,13 +723,19 @@ function FormattingBubbleMenu({
       shift = false;
       sync();
     };
+    const isFromBubble = (event: MouseEvent) =>
+      (event.target as HTMLElement | null)?.closest(".format-bubble") != null;
     const handleMouseDown = (event: MouseEvent) => {
       if (event.button !== 0 || mouse) return;
+      // Clicks on the bubble itself are button presses, not new selections —
+      // don't suppress (which would unmount the bubble mid-click).
+      if (isFromBubble(event)) return;
       mouse = true;
       sync();
     };
     const handleMouseUp = (event: MouseEvent) => {
       if (event.button !== 0 || !mouse) return;
+      if (isFromBubble(event)) return;
       mouse = false;
       sync();
     };
@@ -749,13 +770,14 @@ function FormattingBubbleMenu({
         editor
           .chain()
           .focus()
-          .insertContent({
-            type: "text",
-            text: pick.title,
-            marks: [{ type: "link", attrs: { href: pick.href } }],
-          })
-          .unsetMark("link")
-          .insertContent(" ")
+          .insertContent([
+            {
+              type: "text",
+              text: pick.title,
+              marks: [{ type: "link", attrs: { href: pick.href } }],
+            },
+            { type: "text", text: " " },
+          ])
           .run();
       } else {
         // Apply the link mark to the existing selection.

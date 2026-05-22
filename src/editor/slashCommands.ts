@@ -154,15 +154,15 @@ export const slashCommands: SlashCommand[] = [
           .chain()
           .focus()
           .deleteRange(range)
-          .insertContent({
-            type: "text",
-            text: pick.title,
-            marks: [{ type: "link", attrs: { href: pick.href } }],
-          })
-          // Drop the link mark and add a trailing space so subsequent typing
-          // is not part of the link.
-          .unsetMark("link")
-          .insertContent(" ")
+          .insertContent([
+            {
+              type: "text",
+              text: pick.title,
+              marks: [{ type: "link", attrs: { href: pick.href } }],
+            },
+            // Trailing plain-text space so subsequent typing is not part of the link.
+            { type: "text", text: " " },
+          ])
           .run();
       });
     },
