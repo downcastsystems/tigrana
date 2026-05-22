@@ -2884,7 +2884,8 @@ html[data-theme="dark"] .ProseMirror th {
 }
 
 .move-target-list,
-.link-picker-list {
+.link-picker-list,
+.emoji-picker-list {
   margin-top: 8px;
   max-height: 320px;
   overflow-y: auto;
@@ -2939,6 +2940,99 @@ html[data-theme="dark"] .ProseMirror th {
 
 .link-picker {
   width: min(560px, calc(100vw - 48px));
+}
+
+.emoji-picker {
+  width: min(560px, calc(100vw - 48px));
+}
+
+.emoji-picker-section {
+  padding: 12px 12px 4px;
+}
+
+.emoji-picker-section + .emoji-picker-section {
+  padding-top: 16px;
+}
+
+.emoji-picker-section h3 {
+  margin: 0 0 8px;
+  color: var(--text);
+  font-size: 14px;
+  letter-spacing: 0;
+}
+
+.emoji-picker-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(38px, 1fr));
+  gap: 4px;
+}
+
+.emoji-picker-tile {
+  display: grid;
+  place-items: center;
+  width: 100%;
+  aspect-ratio: 1;
+  border: none;
+  border-radius: 6px;
+  background: transparent;
+  color: inherit;
+  font-size: 26px;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.emoji-picker-tile:hover {
+  background: var(--accent-soft);
+}
+
+.emoji-picker-tile.is-selected {
+  background: var(--accent-active);
+}
+
+.emoji-picker-row {
+  display: grid;
+  grid-template-columns: 30px minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  min-height: 42px;
+  padding: 6px 12px;
+  border: none;
+  background: transparent;
+  color: var(--text);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.emoji-picker-row:hover {
+  background: var(--accent-soft);
+}
+
+.emoji-picker-row.is-selected {
+  background: var(--accent-active);
+  color: var(--accent-strong);
+}
+
+.emoji-picker-glyph {
+  width: 30px;
+  overflow: hidden;
+  font-size: 22px;
+  line-height: 1;
+  text-align: center;
+}
+
+.emoji-picker-title,
+.emoji-picker-shortcode {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.emoji-picker-shortcode {
+  max-width: 190px;
+  color: var(--muted);
+  font-size: 12px;
 }
 
 .link-picker-section-label {

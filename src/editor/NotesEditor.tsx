@@ -60,6 +60,7 @@ type NotesEditorProps = {
   onLoadError: (error: unknown) => void;
   onPositionChange: (position: { selectedText: string; selectionFrom: number; selectionTo: number }) => void;
   onInternalLinkClick?: (href: string) => void;
+  onRequestEmoji?: () => Promise<string | null>;
   onRequestLink?: () => Promise<{ href: string; title: string } | null>;
 };
 
@@ -324,7 +325,7 @@ const MarkdownImage = Image.extend({
   },
 });
 
-export function NotesEditor({ content, focusRequest, focusAtEndRequest, findRequest, reloadRequest, notePath, restorePosition, workspace, onChange, onLoadError, onPositionChange, onInternalLinkClick, onRequestLink }: NotesEditorProps) {
+export function NotesEditor({ content, focusRequest, focusAtEndRequest, findRequest, reloadRequest, notePath, restorePosition, workspace, onChange, onLoadError, onPositionChange, onInternalLinkClick, onRequestEmoji, onRequestLink }: NotesEditorProps) {
   const [slash, setSlash] = useState<SlashState | null>(null);
   const [findOpen, setFindOpen] = useState(false);
   const [findQuery, setFindQuery] = useState("");
@@ -433,7 +434,7 @@ export function NotesEditor({ content, focusRequest, focusAtEndRequest, findRequ
       const command = currentCommands[currentState.selected] ?? currentCommands[0];
       if (!command) return false;
       event.preventDefault();
-      command.run(currentEditor, currentSlash.range, { requestLink: onRequestLink });
+      command.run(currentEditor, currentSlash.range, { requestEmoji: onRequestEmoji, requestLink: onRequestLink });
       slashRef.current = null;
       setSlash(null);
       return true;
@@ -446,7 +447,7 @@ export function NotesEditor({ content, focusRequest, focusAtEndRequest, findRequ
       return true;
     }
     return false;
-  }, [onRequestLink]);
+  }, [onRequestEmoji, onRequestLink]);
 
   const editor = useEditor({
     extensions,
@@ -733,7 +734,7 @@ export function NotesEditor({ content, focusRequest, focusAtEndRequest, findRequ
                   event.preventDefault();
                   if (!editor) return;
                   const currentSlash = findSlashQuery(editor) ?? slash;
-                  command.run(editor, currentSlash.range, { requestLink: onRequestLink });
+                  command.run(editor, currentSlash.range, { requestEmoji: onRequestEmoji, requestLink: onRequestLink });
                   slashRef.current = null;
                   setSlash(null);
                 }}

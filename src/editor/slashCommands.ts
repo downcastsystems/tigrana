@@ -9,6 +9,7 @@ import {
   Heading5,
   Heading6,
   Image,
+  Laugh,
   Link2,
   List,
   ListOrdered,
@@ -20,6 +21,7 @@ import {
 } from "lucide-react";
 
 export type SlashCommandContext = {
+  requestEmoji?: () => Promise<string | null>;
   requestLink?: () => Promise<{ href: string; title: string } | null>;
 };
 
@@ -136,6 +138,23 @@ export const slashCommands: SlashCommand[] = [
     icon: Minus,
     keywords: ["hr", "divider", "line"],
     run: (editor, range) => editor.chain().focus().deleteRange(range).setHorizontalRule().run(),
+  },
+  {
+    id: "emoji",
+    title: "Emoji",
+    hint: "Search and insert an emoji",
+    icon: Laugh,
+    keywords: ["emoji", "emote", "smile", "icon", "shortcode"],
+    run: (editor, range, context) => {
+      if (!context.requestEmoji) return;
+      void context.requestEmoji().then((shortcode) => {
+        if (!shortcode) {
+          editor.chain().focus().deleteRange(range).run();
+          return;
+        }
+        editor.chain().focus().deleteRange(range).setEmoji(shortcode).run();
+      });
+    },
   },
   {
     id: "link",
