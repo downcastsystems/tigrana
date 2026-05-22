@@ -363,6 +363,7 @@ export default function App() {
   const [dropTargetFolder, setDropTargetFolder] = useState<string | null>(null);
   const [noteDragPreview, setNoteDragPreview] = useState<NoteDragPreview | null>(null);
   const [sectionReorderHover, setSectionReorderHover] = useState<{ path: string; placement: DropPlacement } | null>(null);
+  const [noteDropIndicator, setNoteDropIndicator] = useState<{ path: string; placement: DropPlacement } | null>(null);
   const [editorFocusRequest, setEditorFocusRequest] = useState(0);
   const [editorFocusAtEndRequest, setEditorFocusAtEndRequest] = useState(0);
   const [editorReloadRequest, setEditorReloadRequest] = useState(0);
@@ -1977,14 +1978,46 @@ export default function App() {
       moveEvent.preventDefault();
       const targetFolder = folderPathAtPoint(moveEvent.clientX, moveEvent.clientY);
       const draggedNote = notes.find((note) => note.path === drag.path);
-      document.body.classList.toggle("is-over-drop-target", targetFolder !== null);
-      setDropTargetFolder(targetFolder);
+      const sourceParent = draggedNote?.parent_path;
+
+      let overTarget = targetFolder !== null;
+      if (targetFolder !== null) {
+        setDropTargetFolder(targetFolder);
+        setNoteDropIndicator(null);
+      } else {
+        // No folder under cursor — check for a sibling note (reorder).
+        const candidate = noteDropTargetAtPoint(moveEvent.clientX, moveEvent.clientY);
+        const targetParent = candidate ? notes.find((entry) => entry.path === candidate.path)?.parent_path : undefined;
+        if (candidate && candidate.path !== drag.path && sourceParent !== undefined && sourceParent === targetParent) {
+          setNoteDropIndicator(candidate);
+          setDropTargetFolder(null);
+          overTarget = true;
+        } else if (!candidate) {
+          // Empty pane area — fall back to the pane's root folder so notes can be lifted
+          // out of a subfolder by dropping into blank space.
+          const paneRoot = document.elementFromPoint(moveEvent.clientX, moveEvent.clientY)?.closest<HTMLElement>("[data-pane-root-path]");
+          const paneRootPath = paneRoot?.dataset.paneRootPath;
+          setNoteDropIndicator(null);
+          if (paneRootPath !== undefined && paneRootPath !== sourceParent) {
+            setDropTargetFolder(paneRootPath);
+            overTarget = true;
+          } else {
+            setDropTargetFolder(null);
+          }
+        } else {
+          // Cursor is over a cross-folder note row — no visual feedback.
+          setNoteDropIndicator(null);
+          setDropTargetFolder(null);
+        }
+      }
+      document.body.classList.toggle("is-over-drop-target", overTarget);
+
       setNoteDragPreview({
         path: drag.path,
         title: draggedNote?.title || decodeTitleFromFilename(drag.path.split("/").at(-1)?.replace(/\.md$/, "") || "") || "Untitled",
         x: moveEvent.clientX,
         y: moveEvent.clientY,
-        overTarget: targetFolder !== null,
+        overTarget,
       });
     };
 
@@ -1995,6 +2028,7 @@ export default function App() {
       document.body.classList.remove("is-dragging-note");
       document.body.classList.remove("is-over-drop-target");
       setNoteDragPreview(null);
+      setNoteDropIndicator(null);
       notePointerDragRef.current = null;
     };
 
@@ -2016,7 +2050,14 @@ export default function App() {
         } else if (targetNote && targetNote.path !== drag.path) {
           handleNoteDrop(targetNote.path, targetNote.placement);
         } else {
-          setCurrentDragItem(null);
+          const paneRoot = document.elementFromPoint(upEvent.clientX, upEvent.clientY)?.closest<HTMLElement>("[data-pane-root-path]");
+          const paneRootPath = paneRoot?.dataset.paneRootPath;
+          const sourceNote = notes.find((entry) => entry.path === drag.path);
+          if (paneRootPath !== undefined && paneRootPath !== sourceNote?.parent_path) {
+            void handleDropOnFolder(paneRootPath, { kind: "note", path: drag.path });
+          } else {
+            setCurrentDragItem(null);
+          }
         }
       }
     };
@@ -2130,6 +2171,17 @@ export default function App() {
       matches.forEach((el) => el.classList.remove("is-context-target"));
     };
   }, [contextMenu]);
+
+  useEffect(() => {
+    if (!noteDropIndicator) return;
+    const escaped = (window.CSS && CSS.escape) ? CSS.escape(noteDropIndicator.path) : noteDropIndicator.path.replace(/"/g, '\\"');
+    const matches = document.querySelectorAll(`[data-note-path="${escaped}"]`);
+    const cls = noteDropIndicator.placement === "before" ? "is-reorder-before" : "is-reorder-after";
+    matches.forEach((el) => el.classList.add(cls));
+    return () => {
+      matches.forEach((el) => el.classList.remove(cls));
+    };
+  }, [noteDropIndicator]);
 
   function openTargetInNewWindow(target: OpenTarget) {
     setContextMenu(null);
@@ -4102,7 +4154,7 @@ function UnifiedTreePane({
           onToggle={onToggleBookmarksExpanded}
         />
       ) : null}
-      <div className="unified-tree-scroll">
+      <div className="unified-tree-scroll" data-pane-root-path={rootPath}>
         <UnifiedNode
           activePath={activePath}
           contents={contents}

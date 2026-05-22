@@ -751,6 +751,37 @@ body.is-dragging-section * {
   bottom: -1px;
 }
 
+/* Note row reorder indicator (unified tree + legacy notes pane) */
+.unified-note-row,
+.note-card {
+  position: relative;
+}
+
+.unified-note-row.is-reorder-before::after,
+.unified-note-row.is-reorder-after::after,
+.note-card.is-reorder-before::after,
+.note-card.is-reorder-after::after {
+  content: "";
+  position: absolute;
+  left: 8px;
+  right: 8px;
+  height: 2px;
+  background: var(--accent);
+  border-radius: 2px;
+  pointer-events: none;
+  z-index: 2;
+}
+
+.unified-note-row.is-reorder-before::after,
+.note-card.is-reorder-before::after {
+  top: -1px;
+}
+
+.unified-note-row.is-reorder-after::after,
+.note-card.is-reorder-after::after {
+  bottom: -1px;
+}
+
 /* ---------- End Unified Tree Pane ---------- */
 
 .right-sidebar {
