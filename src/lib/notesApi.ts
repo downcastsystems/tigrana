@@ -1,8 +1,8 @@
 import { invoke } from "@tauri-apps/api/core";
 import type { FolderEntry, LinkIndex, NoteEntry, WorkspaceMetadata } from "../types";
 
-const SAMPLE_WORKSPACE = "/demo/Lumen Notes";
-const storageKey = "lumen-notes-demo-v5";
+const SAMPLE_WORKSPACE = "/demo/Tigrana";
+const storageKey = "tigrana-demo-v5";
 
 type DemoStore = {
   notes: Record<string, string>;
@@ -13,7 +13,7 @@ const initialDemo: DemoStore = {
   notes: {
     "Welcome.md": "# Welcome\n\nThis is a local-first notes app prototype.\n\nUse `/` to open the command menu.\n\n- Notes are Markdown files\n- Folders are hierarchy\n- Search is instant\n",
     "Ideas/Design Principles.md": "# Design Principles\n\nSimple, beautiful, file-native.\n\n> Your notes are just files.\n",
-    "Projects/Lumen Notes.md": "# Lumen Notes\n\n- [ ] Wire durable desktop file access\n- [x] Build the core writing surface\n- [ ] Add SQLite FTS indexing in the Tauri backend\n",
+    "Projects/Tigrana.md": "# Tigrana\n\n- [ ] Wire durable desktop file access\n- [x] Build the core writing surface\n- [ ] Add SQLite FTS indexing in the Tauri backend\n",
   },
   folders: ["Ideas", "Projects"],
 };
@@ -485,7 +485,7 @@ export const defaultWorkspaceMetadata = (): WorkspaceMetadata => ({
   expandedFolders: {},
 });
 
-const demoMetadataKey = (workspace: string) => `lumen-notes-meta:${workspace}`;
+const demoMetadataKey = (workspace: string) => `tigrana-meta:${workspace}`;
 
 export async function readWorkspaceMetadata(workspace: string): Promise<WorkspaceMetadata> {
   if (isTauri()) {

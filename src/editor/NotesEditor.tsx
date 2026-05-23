@@ -453,6 +453,12 @@ export function NotesEditor({ content, focusRequest, focusAtEndRequest, findRequ
     extensions,
     content: initialContent.html,
     editorProps: {
+      attributes: {
+        autocapitalize: "off",
+        autocomplete: "off",
+        autocorrect: "off",
+        spellcheck: "false",
+      },
       handleDOMEvents: {
         keydown(_view, event) {
           if (handleEmptyTaskItemBackspace(_view, event)) return true;
@@ -1313,7 +1319,7 @@ function escapeMarkdownAttribute(value: string) {
 
 export function isInternalNotebookHref(href: string) {
   if (!href) return false;
-  if (/^(?:[a-z][a-z0-9+.-]*:)/i.test(href)) return false; // any scheme: http, mailto, lumen-note, etc.
+  if (/^(?:[a-z][a-z0-9+.-]*:)/i.test(href)) return false; // any scheme: http, mailto, tigrana-note, etc.
   if (href.startsWith("//")) return false;
   if (href.startsWith("#")) return false;
   return true;

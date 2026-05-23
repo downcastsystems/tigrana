@@ -1,8 +1,8 @@
 [package]
-name = "lumen-notes"
+name = "tigrana"
 version = "0.1.0"
 description = "A simple, beautiful, file-native desktop notes app."
-authors = ["Lumen Notes contributors"]
+authors = ["Tigrana contributors"]
 edition = "2021"
 
 [build-dependencies]

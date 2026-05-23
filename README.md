@@ -1,8 +1,8 @@
-# Lumen Notes
+# Tigrana
 
 A simple, beautiful, file-native desktop notes app.
 
-Lumen Notes is a Notion-inspired note-taking app with a deliberately small scope:
+Tigrana is a Notion-inspired note-taking app with a deliberately small scope:
 write notes, organize them in a hierarchy, search them quickly, and keep the data as
 ordinary folders and Markdown files.
 
@@ -32,15 +32,15 @@ ordinary folders and Markdown files.
 My Notes/
   Inbox.md
   Projects/
-    Lumen Notes.md
+    Tigrana.md
   .assets/
     pasted-image.png
-  .lumen/
+  .tigrana/
     settings.json
     search.sqlite
 ```
 
-Markdown files are the durable data. The `.lumen` directory is reserved for local
+Markdown files are the durable data. The `.tigrana` directory is reserved for local
 indexes and UI state. The `.assets` directory stores pasted images and other binary
 attachments.
 

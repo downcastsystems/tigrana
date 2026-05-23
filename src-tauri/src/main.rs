@@ -654,15 +654,21 @@ struct EnsureIdentityPayload {
     workspace: String,
 }
 
+const APP_DIR: &str = ".tigrana";
+
+fn app_dir(root: &Path) -> PathBuf {
+    root.join(APP_DIR)
+}
+
 fn link_index_path(root: &Path) -> PathBuf {
-    root.join(".lumen").join("index.json")
+    app_dir(root).join("index.json")
 }
 
 fn folder_sidecar_dir(root: &Path, relative: &str) -> Option<PathBuf> {
     if relative.is_empty() {
         return None;
     }
-    Some(root.join(relative).join(".lumen"))
+    Some(root.join(relative).join(APP_DIR))
 }
 
 fn folder_sidecar_path(root: &Path, relative: &str) -> Option<PathBuf> {
@@ -681,8 +687,8 @@ fn read_link_index_file(root: &Path) -> LinkIndex {
 }
 
 fn write_link_index_file(root: &Path, index: &LinkIndex) -> Result<(), String> {
-    let lumen_dir = root.join(".lumen");
-    fs::create_dir_all(&lumen_dir).map_err(|error| error.to_string())?;
+    let app_metadata_dir = app_dir(root);
+    fs::create_dir_all(&app_metadata_dir).map_err(|error| error.to_string())?;
     let json = serde_json::to_string_pretty(index).map_err(|error| error.to_string())?;
     fs::write(link_index_path(root), format!("{json}\n")).map_err(|error| error.to_string())
 }
@@ -1355,7 +1361,7 @@ fn forget_subtree_from_index(index: &mut LinkIndex, folder_path: &str) {
 #[tauri::command]
 fn ensure_workspace_identity(payload: EnsureIdentityPayload) -> Result<(), String> {
     let root = safe_workspace(&payload.workspace)?;
-    fs::create_dir_all(root.join(".lumen")).map_err(|error| error.to_string())?;
+    fs::create_dir_all(app_dir(&root)).map_err(|error| error.to_string())?;
     let _ = rebuild_index_for_root(&root)?;
     Ok(())
 }
@@ -1381,7 +1387,7 @@ fn rebuild_link_index(workspace: String) -> Result<LinkIndex, String> {
 const TRASH_RETENTION_DAYS: u64 = 30;
 
 fn trash_root(workspace: &Path) -> PathBuf {
-    workspace.join(".lumen").join("trash")
+    app_dir(workspace).join("trash")
 }
 
 fn trash_items_dir(workspace: &Path) -> PathBuf {
@@ -1734,7 +1740,7 @@ fn reveal_path(payload: RevealPathPayload) -> Result<(), String> {
 #[tauri::command]
 fn ensure_workspace(workspace: String) -> Result<(), String> {
     let root = safe_workspace(&workspace)?;
-    fs::create_dir_all(root.join(".lumen")).map_err(|error| error.to_string())
+    fs::create_dir_all(app_dir(&root)).map_err(|error| error.to_string())
 }
 
 #[tauri::command]
@@ -1799,10 +1805,10 @@ fn read_workspace_metadata(workspace: String) -> Result<WorkspaceMetadata, Strin
 #[tauri::command]
 fn write_workspace_metadata(workspace: String, metadata: WorkspaceMetadata) -> Result<(), String> {
     let root = safe_workspace(&workspace)?;
-    let lumen_dir = root.join(".lumen");
-    fs::create_dir_all(&lumen_dir).map_err(|error| error.to_string())?;
+    let app_metadata_dir = app_dir(&root);
+    fs::create_dir_all(&app_metadata_dir).map_err(|error| error.to_string())?;
     let contents = serde_json::to_string_pretty(&metadata).map_err(|error| error.to_string())?;
-    fs::write(lumen_dir.join("metadata.json"), format!("{contents}\n")).map_err(|error| error.to_string())
+    fs::write(app_metadata_dir.join("metadata.json"), format!("{contents}\n")).map_err(|error| error.to_string())
 }
 
 fn safe_workspace(workspace: &str) -> Result<PathBuf, String> {
@@ -1814,7 +1820,7 @@ fn safe_workspace(workspace: &str) -> Result<PathBuf, String> {
 }
 
 fn metadata_path(root: &Path) -> PathBuf {
-    root.join(".lumen").join("metadata.json")
+    app_dir(root).join("metadata.json")
 }
 
 fn default_workspace_metadata() -> WorkspaceMetadata {
@@ -2140,14 +2146,14 @@ pub fn run() {
             // Custom Quit so Cmd+Q closes the window (firing CloseRequested in JS)
             // instead of calling app.exit() directly, which would skip the
             // frontend's metadata-flush handler.
-            let quit_item = MenuItem::with_id(handle, "request_quit", "Quit Lumen Notes", true, Some("Cmd+Q"))?;
+            let quit_item = MenuItem::with_id(handle, "request_quit", "Quit Tigrana", true, Some("Cmd+Q"))?;
             let recently_deleted = MenuItem::with_id(handle, "open_recently_deleted", "Recently Deleted", true, None::<&str>)?;
             Menu::with_items(
                 handle,
                 &[
                     &Submenu::with_items(
                         handle,
-                        "Lumen Notes",
+                        "Tigrana",
                         true,
                         &[
                             &PredefinedMenuItem::about(handle, None, None)?,

@@ -1,6 +1,6 @@
 # Architecture
 
-Lumen Notes is local-first and file-native. The source of truth is a user-selected
+Tigrana is local-first and file-native. The source of truth is a user-selected
 folder containing Markdown files. The app may cache indexes or UI state, but it
 must be able to rebuild those artifacts from the folder.
 
@@ -18,7 +18,7 @@ slash menu, and editor interactions.
 
 - Tauri 2
 - Rust commands for trusted filesystem access
-- Future SQLite FTS5 index under `.lumen/search.sqlite`
+- Future SQLite FTS5 index under `.tigrana/search.sqlite`
 
 The backend owns file reads and writes, workspace validation, asset writes, native
 folder picking, file watching, and packaging.
@@ -29,9 +29,9 @@ The app should only write:
 
 - Markdown note files selected or created by the user
 - Attachment files under `.assets`
-- Disposable app state under `.lumen`
+- Disposable app state under `.tigrana`
 
-The hidden `.lumen` directory must never become the canonical note store.
+The hidden `.tigrana` directory must never become the canonical note store.
 
 ## Editor Contract
 

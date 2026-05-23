@@ -26,12 +26,11 @@ import {
   PanelRightOpen,
   Pencil,
   Pin,
-  Maximize2,
-  Minimize2,
   Plus,
   Save,
   Search,
   Settings,
+  StretchHorizontal,
   Sun,
   Trash2,
   X,
@@ -80,26 +79,33 @@ function stopChromeMouseDown(event: React.MouseEvent) {
   event.stopPropagation();
 }
 
-const workspaceKey = "lumen-notes-workspace";
-const themeKey = "lumen-notes-theme";
-const accentKey = "lumen-notes-accent";
-const themePresetKey = "lumen-notes-theme-preset";
-const fullWidthKey = "lumen-notes-full-width";
-const folderPaneWidthKey = "lumen-notes-folder-pane-width";
-const notesPaneWidthKey = "lumen-notes-notes-pane-width";
-const rightPaneWidthKey = "lumen-notes-right-pane-width";
-const recentNotebooksKey = "lumen-notes-recent-notebooks";
-const lastPathKey = "lumen-notes-last-path";
-const accentTitlebarKey = "lumen-notes-accent-titlebar";
-const windowSizeKey = "lumen-notes-window-size";
-const windowPositionKey = "lumen-notes-window-position";
-const sessionKeyPrefix = "lumen-notes-session:";
+const workspaceKey = "tigrana-workspace";
+const themeKey = "tigrana-theme";
+const accentKey = "tigrana-accent";
+const themePresetKey = "tigrana-theme-preset";
+const widthModeKey = "tigrana-width-mode";
+const legacyFullWidthKey = "tigrana-full-width";
+const folderPaneWidthKey = "tigrana-folder-pane-width";
+const notesPaneWidthKey = "tigrana-notes-pane-width";
+const rightPaneWidthKey = "tigrana-right-pane-width";
+const recentNotebooksKey = "tigrana-recent-notebooks";
+const lastPathKey = "tigrana-last-path";
+const accentTitlebarKey = "tigrana-accent-titlebar";
+const windowSizeKey = "tigrana-window-size";
+const windowPositionKey = "tigrana-window-position";
+const sessionKeyPrefix = "tigrana-session:";
 const notePositionFreshMs = 24 * 60 * 60 * 1000;
 const defaultLightAccent = "#666666";
 const defaultAppFontFamily = 'Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif';
 const defaultEditorFontFamily = defaultAppFontFamily;
 const defaultAppFontSize = 14;
 const defaultEditorFontSize = 17;
+type EditorWidthMode = "comfortable" | "narrow" | "full";
+const editorWidthOptions: { value: EditorWidthMode; label: string }[] = [
+  { value: "comfortable", label: "Comfortable Width" },
+  { value: "narrow", label: "Narrow Width" },
+  { value: "full", label: "Full Width" },
+];
 
 class EditorErrorBoundary extends Component<
   { children: ReactNode; onError: (error: unknown) => void; resetKey: string },
@@ -342,7 +348,7 @@ export default function App() {
   const [rightSidebarMode, setRightSidebarMode] = useState<RightSidebarMode>("outline");
   const [linkIndex, setLinkIndex] = useState<LinkIndex | null>(null);
   const [rawMarkdownVisible, setRawMarkdownVisible] = useState(false);
-  const [fullWidth, setFullWidth] = useState(() => localStorage.getItem(fullWidthKey) === "true");
+  const [editorWidthMode, setEditorWidthMode] = useState<EditorWidthMode>(() => readStoredEditorWidthMode());
   const [openTabs, setOpenTabs] = useState<NoteTab[]>([]);
   const [activeTabId, setActiveTabId] = useState<string | null>(null);
   const [folderPaneWidth, setFolderPaneWidth] = useState(() => readStoredNumber(folderPaneWidthKey, 292));
@@ -565,8 +571,8 @@ export default function App() {
   }, [colorScheme, themePreset.id, themeColors, accentTitlebar, navigationStyle, appFontFamily, appFontSize, editorFontFamily, editorFontSize, metadataLoaded, workspace]);
 
   useEffect(() => {
-    localStorage.setItem(fullWidthKey, String(fullWidth));
-  }, [fullWidth]);
+    localStorage.setItem(widthModeKey, editorWidthMode);
+  }, [editorWidthMode]);
 
   useEffect(() => {
     localStorage.setItem(folderPaneWidthKey, String(folderPaneWidth));
@@ -1598,10 +1604,10 @@ export default function App() {
     }
 
     const params = new URLSearchParams({ workspace: path });
-    const label = `lumen-notebook-${Date.now()}`;
+    const label = `tigrana-notebook-${Date.now()}`;
     const webview = new WebviewWindow(label, {
       url: `/?${params.toString()}`,
-      title: path.split("/").filter(Boolean).at(-1) || "Lumen Notes",
+      title: path.split("/").filter(Boolean).at(-1) || "Tigrana",
       width: 1280,
       height: 860,
       minWidth: 920,
@@ -2255,10 +2261,10 @@ export default function App() {
       openKind: target.kind,
       openPath: target.path,
     });
-    const label = `lumen-${target.kind}-${Date.now()}`;
+    const label = `tigrana-${target.kind}-${Date.now()}`;
     const webview = new WebviewWindow(label, {
       url: `/?${params.toString()}`,
-      title: "Lumen Notes",
+      title: "Tigrana",
       width: 1280,
       height: 860,
       minWidth: 920,
@@ -2471,7 +2477,6 @@ export default function App() {
                 setAppMenuOpen(false);
               }}
               onNewNotebook={() => void chooseWorkspace("new", true)}
-              onOpenNoteIcon={(path) => openIconBrowser("note", path)}
               onOpenWorkspace={() => void chooseWorkspace("open", true)}
               onPin={(path) => updateMetadata((current) => ({ ...current, pinnedNotes: { ...current.pinnedNotes, [path]: !current.pinnedNotes[path] } }))}
               onPointerDragStart={beginNotePointerDrag}
@@ -2559,7 +2564,6 @@ export default function App() {
                 onDropOnFolder={(path, item) => void handleDropOnFolder(path, item)}
                 onDropTargetChange={setDropTargetFolder}
                 onFolderReorder={handleFolderReorder}
-                onOpenNoteIcon={(path) => openIconBrowser("note", path)}
                 onPin={(path) => updateMetadata((current) => ({ ...current, pinnedNotes: { ...current.pinnedNotes, [path]: !current.pinnedNotes[path] } }))}
                 onPointerDragStart={beginNotePointerDrag}
                 onSelectFolder={(path) => void selectFolderForNewNote(path)}
@@ -2594,7 +2598,6 @@ export default function App() {
                 onDropTargetChange={setDropTargetFolder}
                 onDropOnFolderFallback={(path, item) => void handleDropOnFolder(path, item)}
                 onDropOnFolder={(path, item) => void handleDropOnFolder(path, item)}
-                onOpenIcon={(path) => openIconBrowser("folder", path)}
                 onManageNotebooks={() => {
                   setNotebooksManageOpen(true);
                   setAppMenuOpen(false);
@@ -2631,7 +2634,6 @@ export default function App() {
                 selectedFolder={selectedFolder}
                 onCreateNote={requestCreateNote}
                 onContextMenu={openContextMenu}
-                onOpenIcon={(path) => openIconBrowser("note", path)}
                 onPin={(path) =>
                   updateMetadata((current) => ({
                     ...current,
@@ -2676,20 +2678,27 @@ export default function App() {
             >
               <FileCode2 size={17} />
             </button>
-            <button
-              className={`icon-button ${fullWidth ? "is-active" : ""}`}
-              type="button"
-              title={fullWidth ? "Restore reading width" : "Expand to full width"}
-              onClick={() => setFullWidth((value) => !value)}
-            >
-              {fullWidth ? <Minimize2 size={17} /> : <Maximize2 size={17} />}
-            </button>
+            <label className="width-mode-control" title="Editor width">
+              <StretchHorizontal size={17} />
+              <select
+                aria-label="Editor width"
+                value={editorWidthMode}
+                onChange={(event) => setEditorWidthMode(event.target.value as EditorWidthMode)}
+              >
+                {editorWidthOptions.map((option) => (
+                  <option key={option.value} value={option.value}>
+                    {option.label}
+                  </option>
+                ))}
+              </select>
+              <ChevronDown size={14} />
+            </label>
           </header>
         ) : null}
 
         {noteOpen ? (
           <section
-            className={`note-surface${fullWidth ? " is-full-width" : ""}`}
+            className={`note-surface is-${editorWidthMode}-width`}
             ref={noteSurfaceRef}
             onScroll={handleNoteSurfaceScroll}
             onMouseDown={(event) => {
@@ -3063,7 +3072,6 @@ function FolderPane({
   onDropTargetChange,
   onDropOnFolder,
   onDropOnFolderFallback,
-  onOpenIcon,
   onManageNotebooks,
   onNewNotebook,
   onOpenWorkspace,
@@ -3099,7 +3107,6 @@ function FolderPane({
   onDropTargetChange: (path: string | null) => void;
   onDropOnFolder: (path: string, item?: Exclude<DragItem, null>) => void;
   onDropOnFolderFallback: (path: string, item?: Exclude<DragItem, null>) => void;
-  onOpenIcon: (path: string) => void;
   onManageNotebooks: () => void;
   onNewNotebook: () => void;
   onOpenWorkspace: () => void;
@@ -3115,9 +3122,9 @@ function FolderPane({
   onToggleMenu: (event: React.MouseEvent) => void;
 }) {
   const getDropItem = (event: React.DragEvent): Exclude<DragItem, null> | undefined => {
-    const notePath = event.dataTransfer.getData("application/lumen-note-path") || event.dataTransfer.getData("text/plain");
+    const notePath = event.dataTransfer.getData("application/tigrana-note-path") || event.dataTransfer.getData("text/plain");
     if (notePath) return { kind: "note", path: notePath };
-    const folderPath = event.dataTransfer.getData("application/lumen-folder-path");
+    const folderPath = event.dataTransfer.getData("application/tigrana-folder-path");
     if (folderPath) return { kind: "folder", path: folderPath };
     return draggingItem ?? undefined;
   };
@@ -3186,7 +3193,6 @@ function FolderPane({
             onDragStart={onDragStart}
             onDropTargetChange={onDropTargetChange}
             onDropOnFolder={onDropOnFolder}
-            onOpenIcon={onOpenIcon}
             onSelectFolder={onSelectFolder}
             onSetFolderExpanded={onSetFolderExpanded}
           />
@@ -3413,7 +3419,6 @@ function FolderRow({
   onDragStart,
   onDropTargetChange,
   onDropOnFolder,
-  onOpenIcon,
   onSelectFolder,
   onSetFolderExpanded,
 }: {
@@ -3427,7 +3432,6 @@ function FolderRow({
   onDragStart: (item: DragItem) => void;
   onDropTargetChange: (path: string | null) => void;
   onDropOnFolder: (path: string, item?: Exclude<DragItem, null>) => void;
-  onOpenIcon: (path: string) => void;
   onSelectFolder: (path: string) => void;
   onSetFolderExpanded: (path: string, expanded: boolean) => void;
 }) {
@@ -3440,9 +3444,9 @@ function FolderRow({
     (draggingItem?.kind === "note" || (draggingItem?.kind === "folder" && draggingItem.path !== folder.path && !folder.path.startsWith(`${draggingItem.path}/`)));
 
   const getDraggedItem = (event: React.DragEvent): Exclude<DragItem, null> | null => {
-    const notePath = event.dataTransfer.getData("application/lumen-note-path") || event.dataTransfer.getData("text/plain");
+    const notePath = event.dataTransfer.getData("application/tigrana-note-path") || event.dataTransfer.getData("text/plain");
     if (notePath) return { kind: "note", path: notePath };
-    const folderPath = event.dataTransfer.getData("application/lumen-folder-path");
+    const folderPath = event.dataTransfer.getData("application/tigrana-folder-path");
     if (folderPath) return { kind: "folder", path: folderPath };
     return draggingItem;
   };
@@ -3456,7 +3460,7 @@ function FolderRow({
 
   const hasDropPayload = (event: React.DragEvent) => {
     const types = Array.from(event.dataTransfer.types);
-    return types.includes("application/lumen-note-path") || types.includes("application/lumen-folder-path") || types.includes("text/plain");
+    return types.includes("application/tigrana-note-path") || types.includes("application/tigrana-folder-path") || types.includes("text/plain");
   };
 
   return (
@@ -3470,7 +3474,7 @@ function FolderRow({
         onContextMenu={(event) => onContextMenu(event, { kind: "folder", path: folder.path })}
         onDragStart={(event) => {
           if (isRoot) return;
-          event.dataTransfer.setData("application/lumen-folder-path", folder.path);
+          event.dataTransfer.setData("application/tigrana-folder-path", folder.path);
           event.dataTransfer.effectAllowed = "move";
           onDragStart({ kind: "folder", path: folder.path });
         }}
@@ -3507,23 +3511,7 @@ function FolderRow({
           {folder.children.length ? open ? <ChevronDown size={15} /> : <ChevronRight size={15} /> : <span />}
         </button>
         <button className="folder-select" style={folderColor ? { color: folderColor } : undefined} type="button" onClick={(event) => { event.stopPropagation(); onSelectFolder(folder.path); }}>
-          <span
-            className="inline-icon-button"
-            role="button"
-            tabIndex={0}
-            title="Set folder icon"
-            onClick={(event) => {
-              event.stopPropagation();
-              onOpenIcon(folder.path);
-            }}
-            onKeyDown={(event) => {
-              if (event.key === "Enter" || event.key === " ") {
-                event.preventDefault();
-                event.stopPropagation();
-                onOpenIcon(folder.path);
-              }
-            }}
-          >
+          <span>
             <IconMark value={customIcon} fallback={Folder} size={15} />
           </span>
           <span>{folder.name}</span>
@@ -3544,7 +3532,6 @@ function FolderRow({
               onDragStart={onDragStart}
               onDropTargetChange={onDropTargetChange}
               onDropOnFolder={onDropOnFolder}
-              onOpenIcon={onOpenIcon}
               onSelectFolder={onSelectFolder}
               onSetFolderExpanded={onSetFolderExpanded}
             />
@@ -3629,9 +3616,9 @@ function SectionViewFolderPane({
   const rootSectionColor = metadata.folderColors[""];
   // Note-into-section and nested-folder-into-section drops still use HTML5 drag (the source notes/folders fire native drag).
   const folderDragItemFromEvent = (event: React.DragEvent): Exclude<DragItem, null> | null => {
-    const folderPath = event.dataTransfer.getData("application/lumen-folder-path");
+    const folderPath = event.dataTransfer.getData("application/tigrana-folder-path");
     if (folderPath) return { kind: "folder", path: folderPath };
-    const notePath = event.dataTransfer.getData("application/lumen-note-path") || event.dataTransfer.getData("text/plain");
+    const notePath = event.dataTransfer.getData("application/tigrana-note-path") || event.dataTransfer.getData("text/plain");
     if (notePath) return { kind: "note", path: notePath };
     return draggingItem ?? null;
   };
@@ -3809,7 +3796,6 @@ function UnifiedNode({
   onDropOnFolder,
   onDropTargetChange,
   onFolderReorder,
-  onOpenNoteIcon,
   onPin,
   onPointerDragStart,
   onSelectFolder,
@@ -3833,7 +3819,6 @@ function UnifiedNode({
   onDropOnFolder?: (path: string, item?: Exclude<DragItem, null>) => void;
   onDropTargetChange?: (path: string | null) => void;
   onFolderReorder?: (targetPath: string, item: Exclude<DragItem, null> | null, placement?: DropPlacement) => void;
-  onOpenNoteIcon: (path: string) => void;
   onPin: (path: string) => void;
   onPointerDragStart: (path: string, event: React.PointerEvent<HTMLElement>) => void;
   onSelectFolder?: (path: string) => void;
@@ -3881,7 +3866,6 @@ function UnifiedNode({
           onDropOnFolder={onDropOnFolder}
           onDropTargetChange={onDropTargetChange}
           onFolderReorder={onFolderReorder}
-          onOpenNoteIcon={onOpenNoteIcon}
           onPin={onPin}
           onPointerDragStart={onPointerDragStart}
           onSelectFolder={onSelectFolder}
@@ -3903,17 +3887,7 @@ function UnifiedNode({
             onContextMenu={(event) => onContextMenu(event, { kind: "note", path: note.path })}
             onPointerDown={(event) => onPointerDragStart(note.path, event)}
           >
-            <span
-              className="inline-icon-button"
-              data-no-note-drag
-              role="button"
-              tabIndex={0}
-              title="Set note icon"
-              onClick={(event) => { event.stopPropagation(); onOpenNoteIcon(note.path); }}
-              onKeyDown={(event) => {
-                if (event.key === "Enter" || event.key === " ") { event.preventDefault(); event.stopPropagation(); onOpenNoteIcon(note.path); }
-              }}
-            >
+            <span data-no-note-drag>
               <IconMark value={customIcon} fallback={FileText} size={14} />
             </span>
             <span className="unified-note-title">{note.title}</span>
@@ -3943,7 +3917,6 @@ function UnifiedFolderRow({
   onDropOnFolder,
   onDropTargetChange,
   onFolderReorder,
-  onOpenNoteIcon,
   onPin,
   onPointerDragStart,
   onSelectFolder,
@@ -3967,7 +3940,6 @@ function UnifiedFolderRow({
   onDropOnFolder?: (path: string, item?: Exclude<DragItem, null>) => void;
   onDropTargetChange?: (path: string | null) => void;
   onFolderReorder?: (targetPath: string, item: Exclude<DragItem, null> | null, placement?: DropPlacement) => void;
-  onOpenNoteIcon: (path: string) => void;
   onPin: (path: string) => void;
   onPointerDragStart: (path: string, event: React.PointerEvent<HTMLElement>) => void;
   onSelectFolder?: (path: string) => void;
@@ -3985,9 +3957,9 @@ function UnifiedFolderRow({
     return event.clientY > bounds.top + bounds.height / 2 ? "after" : "before";
   };
   const getDraggedItem = (event: React.DragEvent): Exclude<DragItem, null> | null => {
-    const folderPath = event.dataTransfer.getData("application/lumen-folder-path");
+    const folderPath = event.dataTransfer.getData("application/tigrana-folder-path");
     if (folderPath) return { kind: "folder", path: folderPath };
-    const notePath = event.dataTransfer.getData("application/lumen-note-path") || event.dataTransfer.getData("text/plain");
+    const notePath = event.dataTransfer.getData("application/tigrana-note-path") || event.dataTransfer.getData("text/plain");
     if (notePath) return { kind: "note", path: notePath };
     return null;
   };
@@ -4003,7 +3975,7 @@ function UnifiedFolderRow({
         onContextMenu={(event) => onContextMenu(event, { kind: "folder", path: folder.path })}
         onDragStart={(event) => {
           if (!onDragStart || !onFolderReorder) return;
-          event.dataTransfer.setData("application/lumen-folder-path", folder.path);
+          event.dataTransfer.setData("application/tigrana-folder-path", folder.path);
           event.dataTransfer.effectAllowed = "move";
           onDragStart({ kind: "folder", path: folder.path });
         }}
@@ -4072,7 +4044,6 @@ function UnifiedFolderRow({
           onDropOnFolder={onDropOnFolder}
           onDropTargetChange={onDropTargetChange}
           onFolderReorder={onFolderReorder}
-          onOpenNoteIcon={onOpenNoteIcon}
           onPin={onPin}
           onPointerDragStart={onPointerDragStart}
           onSelectFolder={onSelectFolder}
@@ -4118,7 +4089,6 @@ function UnifiedTreePane({
   onFolderReorder,
   onManageNotebooks,
   onNewNotebook,
-  onOpenNoteIcon,
   onOpenWorkspace,
   onPin,
   onPointerDragStart,
@@ -4167,7 +4137,6 @@ function UnifiedTreePane({
   onFolderReorder?: (targetPath: string, item: Exclude<DragItem, null> | null, placement?: DropPlacement) => void;
   onManageNotebooks?: () => void;
   onNewNotebook?: () => void;
-  onOpenNoteIcon: (path: string) => void;
   onOpenWorkspace?: () => void;
   onPin: (path: string) => void;
   onPointerDragStart: (path: string, event: React.PointerEvent<HTMLElement>) => void;
@@ -4251,7 +4220,6 @@ function UnifiedTreePane({
           onDropOnFolder={onDropOnFolder}
           onDropTargetChange={onDropTargetChange}
           onFolderReorder={onFolderReorder}
-          onOpenNoteIcon={onOpenNoteIcon}
           onPin={onPin}
           onPointerDragStart={onPointerDragStart}
           onSelectFolder={onSelectFolder}
@@ -4287,7 +4255,6 @@ function NotesPane({
   selectedFolder,
   onCreateNote,
   onContextMenu,
-  onOpenIcon,
   onPin,
   onPointerDragStart,
   onSelect,
@@ -4301,7 +4268,6 @@ function NotesPane({
   selectedFolder: string;
   onCreateNote: (parentPath?: string) => void;
   onContextMenu: (event: React.MouseEvent, state: ContextMenuTarget) => void;
-  onOpenIcon: (path: string) => void;
   onPin: (path: string) => void;
   onPointerDragStart: (path: string, event: React.PointerEvent<HTMLElement>) => void;
   onSelect: (path: string) => void;
@@ -4331,7 +4297,6 @@ function NotesPane({
             pinned
             preview={previewNote(contents.get(note.path) ?? "")}
             onContextMenu={onContextMenu}
-            onOpenIcon={onOpenIcon}
             onPin={onPin}
             onPointerDragStart={onPointerDragStart}
             onSelect={onSelect}
@@ -4348,7 +4313,6 @@ function NotesPane({
             pinned={false}
             preview={previewNote(contents.get(note.path) ?? "")}
             onContextMenu={onContextMenu}
-            onOpenIcon={onOpenIcon}
             onPin={onPin}
             onPointerDragStart={onPointerDragStart}
             onSelect={onSelect}
@@ -4687,7 +4651,7 @@ function EmptyNoteSurface({
   return (
     <section className="welcome-surface">
       <BookOpen size={32} />
-      <h1>{hasWorkspace ? "No note selected" : "Lumen Notes"}</h1>
+      <h1>{hasWorkspace ? "No note selected" : "Tigrana"}</h1>
       <p>{hasWorkspace ? "Pick a note from the sidebar or create a new one." : "Choose a folder to use as your notebook storage."}</p>
       <button className="primary-button" type="button" onClick={hasWorkspace ? onCreateNote : onOpenWorkspace}>
         {hasWorkspace ? null : <FolderOpen size={17} />}
@@ -4706,7 +4670,6 @@ function NoteCard({
   pinned,
   preview,
   onContextMenu,
-  onOpenIcon,
   onPin,
   onPointerDragStart,
   onSelect,
@@ -4718,7 +4681,6 @@ function NoteCard({
   pinned: boolean;
   preview: string;
   onContextMenu: (event: React.MouseEvent, state: ContextMenuTarget) => void;
-  onOpenIcon: (path: string) => void;
   onPin: (path: string) => void;
   onPointerDragStart: (path: string, event: React.PointerEvent<HTMLElement>) => void;
   onSelect: (path: string) => void;
@@ -4735,24 +4697,7 @@ function NoteCard({
       onPointerDown={(event) => onPointerDragStart(note.path, event)}
     >
       <span className="note-card-main">
-        <span
-          className="note-card-icon inline-icon-button"
-          data-no-note-drag
-          role="button"
-          tabIndex={0}
-          title="Set note icon"
-          onClick={(event) => {
-            event.stopPropagation();
-            onOpenIcon(note.path);
-          }}
-          onKeyDown={(event) => {
-            if (event.key === "Enter" || event.key === " ") {
-              event.preventDefault();
-              event.stopPropagation();
-              onOpenIcon(note.path);
-            }
-          }}
-        >
+        <span className="note-card-icon" data-no-note-drag>
           <IconMark value={customIcon} fallback={FileText} size={16} />
         </span>
         <span className="note-card-text">
@@ -5764,11 +5709,11 @@ function ContextMenu({
           ) : null}
           <button type="button" onClick={onSetFolderIcon}>
             <FileText size={14} />
-            <span>Set Folder Icon</span>
+            <span>Change Folder Icon</span>
           </button>
           <button type="button" onClick={onSetFolderColor}>
             <Palette size={14} />
-            <span>Set {folderColorSubject === "section" ? "Section" : "Folder"} Color</span>
+            <span>Change {folderColorSubject === "section" ? "Section" : "Folder"} Color</span>
           </button>
         </>
       ) : null}
@@ -5796,7 +5741,7 @@ function ContextMenu({
           </button>
           <button type="button" onClick={onSetNoteIcon}>
             <FileText size={14} />
-            <span>Set Note Icon</span>
+            <span>Change Note Icon</span>
           </button>
         </>
       ) : null}
@@ -6848,6 +6793,12 @@ function readStoredNumber(key: string, fallback: number) {
   if (rawValue === null) return fallback;
   const value = Number(rawValue);
   return Number.isFinite(value) && value > 0 ? value : fallback;
+}
+
+function readStoredEditorWidthMode(): EditorWidthMode {
+  const value = localStorage.getItem(widthModeKey);
+  if (value === "comfortable" || value === "narrow" || value === "full") return value;
+  return localStorage.getItem(legacyFullWidthKey) === "true" ? "full" : "comfortable";
 }
 
 function readAppearanceFontSize(value: number | undefined, fallback: number) {

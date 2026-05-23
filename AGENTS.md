@@ -4,7 +4,7 @@ Guidance for AI agents working on this project.
 
 ## Project Summary
 
-Lumen Notes is a local-first, file-native desktop notes app inspired by Notion, but intentionally limited to note-taking. The core promise is:
+Tigrana is a local-first, file-native desktop notes app inspired by Notion, but intentionally limited to note-taking. The core promise is:
 
 - Notes are ordinary Markdown files.
 - Folders on disk are the note hierarchy.
@@ -42,11 +42,11 @@ Notebook/
   Note.md
   Folder/
     Another Note.md
-    .lumen/
+    .tigrana/
       folder.json
   .assets/
     pasted-image.png
-  .lumen/
+  .tigrana/
     metadata.json
     index.json
 ```
@@ -56,13 +56,13 @@ Durable content:
 - Markdown notes: `*.md`
 - Folders: hierarchy
 - Attachments: `.assets/`
-- App metadata: `.lumen/metadata.json`
-- Link index cache: `.lumen/index.json`
-- Per-folder identity: `<folder>/.lumen/folder.json` (non-root folders only)
+- App metadata: `.tigrana/metadata.json`
+- Link index cache: `.tigrana/index.json`
+- Per-folder identity: `<folder>/.tigrana/folder.json` (non-root folders only)
 
 Hidden app folders are excluded from note/folder scans:
 
-- `.lumen`
+- `.tigrana`
 - `.assets`
 
 ## Stable identity and link index
@@ -72,8 +72,8 @@ and renames.
 
 - **Notes** carry `id: <uuid>` in YAML frontmatter at the top of the file.
   Minted on workspace open if missing.
-- **Folders** carry a sidecar `<folder>/.lumen/folder.json` with `{ id }`.
-- `.lumen/index.json` is the authoritative link cache: `notesById`,
+- **Folders** carry a sidecar `<folder>/.tigrana/folder.json` with `{ id }`.
+- `.tigrana/index.json` is the authoritative link cache: `notesById`,
   `foldersById`, `pathToId`, `outbound`, `inbound`. It is rebuildable from
   the frontmatter/sidecar ids and the markdown contents.
 
@@ -89,7 +89,7 @@ which target a link points at.
 
 ## Metadata
 
-Workspace metadata is stored in `.lumen/metadata.json` via Tauri commands:
+Workspace metadata is stored in `.tigrana/metadata.json` via Tauri commands:
 
 - `read_workspace_metadata`
 - `write_workspace_metadata`
@@ -214,7 +214,7 @@ npm run tauri -- build --bundles app
 The `.app` bundle is produced at:
 
 ```text
-src-tauri/target/release/bundle/macos/Lumen Notes.app
+src-tauri/target/release/bundle/macos/Tigrana.app
 ```
 
 ## Verification Expectations
