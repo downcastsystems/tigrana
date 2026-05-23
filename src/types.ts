@@ -104,5 +104,6 @@ export type WorkspaceMetadata = {
   bookmarks: BookmarkEntry[];
   bookmarksExpanded: boolean;
   expandedFolders: Record<string, boolean>;
+  welcomeNoteAdded: boolean;
   appearance?: NotebookAppearance;
 };

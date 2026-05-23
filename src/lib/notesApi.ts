@@ -3,6 +3,12 @@ import type { FolderEntry, LinkIndex, NoteEntry, WorkspaceMetadata } from "../ty
 
 const SAMPLE_WORKSPACE = "/demo/Tigrana";
 const storageKey = "tigrana-demo-v5";
+const WELCOME_NOTE_PATH = "Welcome.md";
+const WELCOME_NOTE_CONTENT =
+  "tih-GRAH-nuh or tee-GRAH-nah\n\n" +
+  "**Tigrana** is named after an ancient archaeological site where a seal bearing early script was found - a reminder that humans have always needed simple ways to preserve thought.\n\n" +
+  "It may or may not also stand for that Time I Got Reincarnated As a Notes App.\n\n" +
+  "Use the + icon to add a note.\n";
 
 type DemoStore = {
   notes: Record<string, string>;
@@ -11,7 +17,7 @@ type DemoStore = {
 
 const initialDemo: DemoStore = {
   notes: {
-    "Welcome.md": "# Welcome\n\nThis is a local-first notes app prototype.\n\nUse `/` to open the command menu.\n\n- Notes are Markdown files\n- Folders are hierarchy\n- Search is instant\n",
+    [WELCOME_NOTE_PATH]: WELCOME_NOTE_CONTENT,
     "Ideas/Design Principles.md": "# Design Principles\n\nSimple, beautiful, file-native.\n\n> Your notes are just files.\n",
     "Projects/Tigrana.md": "# Tigrana\n\n- [ ] Wire durable desktop file access\n- [x] Build the core writing surface\n- [ ] Add SQLite FTS indexing in the Tauri backend\n",
   },
@@ -483,6 +489,7 @@ export const defaultWorkspaceMetadata = (): WorkspaceMetadata => ({
   bookmarks: [],
   bookmarksExpanded: true,
   expandedFolders: {},
+  welcomeNoteAdded: false,
 });
 
 const demoMetadataKey = (workspace: string) => `tigrana-meta:${workspace}`;
@@ -506,6 +513,29 @@ export async function writeWorkspaceMetadata(workspace: string, metadata: Worksp
   }
 
   localStorage.setItem(demoMetadataKey(workspace), JSON.stringify(metadata));
+}
+
+export async function ensureWelcomeNote(workspace: string, metadata: WorkspaceMetadata): Promise<{ metadata: WorkspaceMetadata; created: boolean }> {
+  if (metadata.welcomeNoteAdded) return { metadata, created: false };
+
+  const hasWelcomeNote = (await listNotes(workspace)).some((note) => note.path === WELCOME_NOTE_PATH);
+  if (!hasWelcomeNote) {
+    await saveNote(workspace, WELCOME_NOTE_PATH, WELCOME_NOTE_CONTENT);
+  }
+
+  const nextMetadata = { ...metadata, welcomeNoteAdded: true };
+  await writeWorkspaceMetadata(workspace, nextMetadata);
+  return { metadata: nextMetadata, created: !hasWelcomeNote };
+}
+
+export async function registerNotebookWindow(label: string, workspace: string) {
+  if (!isTauri()) return;
+  await invoke("register_notebook_window", { label, workspace });
+}
+
+export async function unregisterNotebookWindow(label: string) {
+  if (!isTauri()) return;
+  await invoke("unregister_notebook_window", { label });
 }
 
 function normalizeWorkspaceMetadata(metadata: Partial<WorkspaceMetadata>): WorkspaceMetadata {

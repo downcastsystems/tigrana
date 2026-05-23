@@ -1,13 +1,13 @@
 use base64::{engine::general_purpose, Engine as _};
-use serde::{Deserialize, Serialize};
 use notify::{Config, EventKind, RecommendedWatcher, RecursiveMode, Watcher};
+use serde::{Deserialize, Serialize};
 use std::collections::{HashMap, HashSet};
 use std::fs;
 use std::path::{Component, Path, PathBuf};
 use std::process::Command;
 use std::sync::Mutex;
-use tauri::menu::{Menu, MenuItem, PredefinedMenuItem, Submenu};
-use tauri::{AppHandle, Emitter, Manager};
+use tauri::menu::{AboutMetadataBuilder, Menu, MenuItem, PredefinedMenuItem, Submenu};
+use tauri::{AppHandle, Emitter, Manager, WindowEvent};
 use time::macros::format_description;
 use time::OffsetDateTime;
 use uuid::Uuid;
@@ -125,6 +125,18 @@ struct WatchState {
     watchers: Mutex<HashMap<String, RecommendedWatcher>>,
 }
 
+#[derive(Debug, Clone)]
+struct NotebookWindow {
+    label: String,
+    workspace: String,
+    name: String,
+}
+
+#[derive(Default)]
+struct NotebookWindowState {
+    windows: Mutex<HashMap<String, NotebookWindow>>,
+}
+
 #[derive(Debug, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct WorkspaceMetadata {
@@ -148,6 +160,8 @@ struct WorkspaceMetadata {
     bookmarks_expanded: bool,
     #[serde(default)]
     expanded_folders: serde_json::Map<String, serde_json::Value>,
+    #[serde(default)]
+    welcome_note_added: bool,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     appearance: Option<serde_json::Value>,
 }
@@ -306,11 +320,14 @@ fn create_note(payload: CreateNotePayload) -> Result<NoteEntry, String> {
     let path = relative.to_string_lossy().replace('\\', "/");
     // Register the note in the link index.
     let mut index = read_link_index_file(&root);
-    index.notes_by_id.insert(new_id.clone(), NoteRecord {
-        id: new_id.clone(),
-        path: path.clone(),
-        title: note_title_from_path(&path),
-    });
+    index.notes_by_id.insert(
+        new_id.clone(),
+        NoteRecord {
+            id: new_id.clone(),
+            path: path.clone(),
+            title: note_title_from_path(&path),
+        },
+    );
     index.path_to_id.insert(path.clone(), new_id);
     let _ = write_link_index_file(&root, &index);
 
@@ -390,9 +407,21 @@ fn create_folder(payload: FolderPayload) -> Result<FolderEntry, String> {
 
     // Mint folder id, write sidecar, register in index.
     let folder_id = Uuid::new_v4().to_string();
-    let _ = write_folder_sidecar(&root, &path, &FolderSidecar { id: folder_id.clone() });
+    let _ = write_folder_sidecar(
+        &root,
+        &path,
+        &FolderSidecar {
+            id: folder_id.clone(),
+        },
+    );
     let mut index = read_link_index_file(&root);
-    index.folders_by_id.insert(folder_id.clone(), FolderRecord { id: folder_id.clone(), path: path.clone() });
+    index.folders_by_id.insert(
+        folder_id.clone(),
+        FolderRecord {
+            id: folder_id.clone(),
+            path: path.clone(),
+        },
+    );
     index.path_to_id.insert(path.clone(), folder_id);
     let _ = write_link_index_file(&root, &index);
 
@@ -611,8 +640,8 @@ struct FolderRecord {
 struct LinkRef {
     source_id: String,
     target_id: Option<String>,
-    target_kind: String,  // "note" | "folder" | "unknown"
-    target_path: String,  // workspace-relative, no anchor
+    target_kind: String, // "note" | "folder" | "unknown"
+    target_path: String, // workspace-relative, no anchor
     display_text: String,
     anchor: Option<String>,
     occurrence: u32,
@@ -702,9 +731,17 @@ fn read_folder_sidecar(root: &Path, relative: &str) -> Option<FolderSidecar> {
     serde_json::from_str::<FolderSidecar>(&contents).ok()
 }
 
-fn write_folder_sidecar(root: &Path, relative: &str, sidecar: &FolderSidecar) -> Result<(), String> {
-    let Some(dir) = folder_sidecar_dir(root, relative) else { return Ok(()) };
-    let Some(file) = folder_sidecar_path(root, relative) else { return Ok(()) };
+fn write_folder_sidecar(
+    root: &Path,
+    relative: &str,
+    sidecar: &FolderSidecar,
+) -> Result<(), String> {
+    let Some(dir) = folder_sidecar_dir(root, relative) else {
+        return Ok(());
+    };
+    let Some(file) = folder_sidecar_path(root, relative) else {
+        return Ok(());
+    };
     fs::create_dir_all(&dir).map_err(|error| error.to_string())?;
     let json = serde_json::to_string_pretty(sidecar).map_err(|error| error.to_string())?;
     fs::write(file, format!("{json}\n")).map_err(|error| error.to_string())
@@ -724,11 +761,17 @@ fn ensure_note_id_in_content(content: &str) -> (String, String, bool) {
         }
         let new_id = Uuid::new_v4().to_string();
         let new_frontmatter = insert_frontmatter_field(&frontmatter, "id", &new_id);
-        let recombined = format!("---\n{new_frontmatter}\n---\n\n{}", body.trim_start_matches('\n'));
+        let recombined = format!(
+            "---\n{new_frontmatter}\n---\n\n{}",
+            body.trim_start_matches('\n')
+        );
         (new_id, recombined, true)
     } else {
         let new_id = Uuid::new_v4().to_string();
-        let recombined = format!("---\nid: {new_id}\n---\n\n{}", normalized.trim_start_matches('\n'));
+        let recombined = format!(
+            "---\nid: {new_id}\n---\n\n{}",
+            normalized.trim_start_matches('\n')
+        );
         (new_id, recombined, true)
     }
 }
@@ -738,7 +781,11 @@ fn split_frontmatter(content: &str) -> (String, String, bool) {
     if lines.is_empty() || lines[0].trim() != "---" {
         return (String::new(), content.to_string(), false);
     }
-    let closing = lines.iter().enumerate().skip(1).find(|(_, line)| line.trim() == "---");
+    let closing = lines
+        .iter()
+        .enumerate()
+        .skip(1)
+        .find(|(_, line)| line.trim() == "---");
     let Some((closing_index, _)) = closing else {
         return (String::new(), content.to_string(), false);
     };
@@ -898,8 +945,12 @@ fn extract_md_links(text: &str) -> Vec<MdLink> {
                 continue;
             }
             let href_end = k;
-            let text_str = std::str::from_utf8(&bytes[text_start..text_end]).unwrap_or("").to_string();
-            let href_str_raw = std::str::from_utf8(&bytes[href_start..href_end]).unwrap_or("").to_string();
+            let text_str = std::str::from_utf8(&bytes[text_start..text_end])
+                .unwrap_or("")
+                .to_string();
+            let href_str_raw = std::str::from_utf8(&bytes[href_start..href_end])
+                .unwrap_or("")
+                .to_string();
             // Markdown links sometimes have title: (href "title"). Strip trailing title.
             let href_str = strip_link_title(&href_str_raw);
             links.push(MdLink {
@@ -1060,7 +1111,13 @@ fn rebuild_index_for_root(root: &Path) -> Result<LinkIndex, String> {
         let id = sidecar_id.unwrap_or_else(|| Uuid::new_v4().to_string());
         // Always ensure sidecar exists for non-root folders.
         let _ = write_folder_sidecar(root, &rel, &FolderSidecar { id: id.clone() });
-        index.folders_by_id.insert(id.clone(), FolderRecord { id: id.clone(), path: rel.clone() });
+        index.folders_by_id.insert(
+            id.clone(),
+            FolderRecord {
+                id: id.clone(),
+                path: rel.clone(),
+            },
+        );
         index.path_to_id.insert(rel, id);
     }
 
@@ -1074,11 +1131,14 @@ fn rebuild_index_for_root(root: &Path) -> Result<LinkIndex, String> {
                 return Err(format!("Failed to write id into {rel}: {error}"));
             }
         }
-        index.notes_by_id.insert(id.clone(), NoteRecord {
-            id: id.clone(),
-            path: rel.clone(),
-            title: note_title_from_path(&rel),
-        });
+        index.notes_by_id.insert(
+            id.clone(),
+            NoteRecord {
+                id: id.clone(),
+                path: rel.clone(),
+                title: note_title_from_path(&rel),
+            },
+        );
         index.path_to_id.insert(rel, id);
     }
 
@@ -1099,7 +1159,11 @@ fn rebuild_index_for_root(root: &Path) -> Result<LinkIndex, String> {
 
 fn parse_links_for_note(source_id: &str, content: &str, index: &LinkIndex) -> Vec<LinkRef> {
     let (_, body, _) = split_frontmatter(content);
-    let scan_text = if body.is_empty() { content.to_string() } else { body };
+    let scan_text = if body.is_empty() {
+        content.to_string()
+    } else {
+        body
+    };
     let raw = extract_md_links(&scan_text);
     let mut out = Vec::new();
     let mut occurrence = 0u32;
@@ -1157,7 +1221,11 @@ fn update_index_links_for_source(index: &mut LinkIndex, source_id: &str, new_ref
     // Insert new ones.
     for r in &new_refs {
         if let Some(target_id) = &r.target_id {
-            index.inbound.entry(target_id.clone()).or_default().push(r.clone());
+            index
+                .inbound
+                .entry(target_id.clone())
+                .or_default()
+                .push(r.clone());
         }
     }
     if new_refs.is_empty() {
@@ -1175,11 +1243,14 @@ fn reindex_note_after_save(root: &Path, rel: &str) -> Result<(), String> {
     // Make sure note has an id, and pick it up.
     let id_in_file = read_frontmatter_field(&split_frontmatter(&content).0, "id");
     let Some(id) = id_in_file else { return Ok(()) };
-    index.notes_by_id.insert(id.clone(), NoteRecord {
-        id: id.clone(),
-        path: rel.to_string(),
-        title: note_title_from_path(rel),
-    });
+    index.notes_by_id.insert(
+        id.clone(),
+        NoteRecord {
+            id: id.clone(),
+            path: rel.to_string(),
+            title: note_title_from_path(rel),
+        },
+    );
     index.path_to_id.insert(rel.to_string(), id.clone());
     let refs = parse_links_for_note(&id, &content, &index);
     update_index_links_for_source(&mut index, &id, refs);
@@ -1190,7 +1261,11 @@ fn reindex_note_after_save(root: &Path, rel: &str) -> Result<(), String> {
 // Returns the number of links rewritten.
 fn rewrite_links_in_content(content: &str, old_path: &str, new_path: &str) -> (String, u32) {
     let (frontmatter, body, has_frontmatter) = split_frontmatter(content);
-    let body_for_scan = if has_frontmatter { body } else { content.to_string() };
+    let body_for_scan = if has_frontmatter {
+        body
+    } else {
+        content.to_string()
+    };
     let links = extract_md_links(&body_for_scan);
     let mut new_body = body_for_scan.clone();
     let mut mutations: Vec<(usize, usize, String)> = Vec::new();
@@ -1227,7 +1302,13 @@ fn rewrite_links_in_content(content: &str, old_path: &str, new_path: &str) -> (S
 
 // Repairs inbound links to a single id whose path changed from old_path -> new_path.
 // Rewrites the affected source files and updates path snapshots in the index.
-fn repair_inbound_links(root: &Path, index: &mut LinkIndex, target_id: &str, old_path: &str, new_path: &str) -> Result<u32, String> {
+fn repair_inbound_links(
+    root: &Path,
+    index: &mut LinkIndex,
+    target_id: &str,
+    old_path: &str,
+    new_path: &str,
+) -> Result<u32, String> {
     let mut rewritten = 0u32;
     let sources: HashSet<String> = index
         .inbound
@@ -1235,7 +1316,9 @@ fn repair_inbound_links(root: &Path, index: &mut LinkIndex, target_id: &str, old
         .map(|list| list.iter().map(|r| r.source_id.clone()).collect())
         .unwrap_or_default();
     for source_id in sources {
-        let Some(source_record) = index.notes_by_id.get(&source_id).cloned() else { continue };
+        let Some(source_record) = index.notes_by_id.get(&source_id).cloned() else {
+            continue;
+        };
         let source_abs = root.join(&source_record.path);
         let original = match fs::read_to_string(&source_abs) {
             Ok(s) => s,
@@ -1255,7 +1338,9 @@ fn repair_inbound_links(root: &Path, index: &mut LinkIndex, target_id: &str, old
 
 fn move_index_path(index: &mut LinkIndex, old_path: &str, new_path: &str, id: &str, kind: &str) {
     index.path_to_id.remove(old_path);
-    index.path_to_id.insert(new_path.to_string(), id.to_string());
+    index
+        .path_to_id
+        .insert(new_path.to_string(), id.to_string());
     match kind {
         "note" => {
             if let Some(rec) = index.notes_by_id.get_mut(id) {
@@ -1275,14 +1360,24 @@ fn move_index_path(index: &mut LinkIndex, old_path: &str, new_path: &str, id: &s
 // Updates path mappings for a folder and everything it contains after a rename/move,
 // and rewrites inbound links to every affected target. Caller must pass paths that
 // have already moved on disk.
-fn repair_subtree_paths(root: &Path, index: &mut LinkIndex, old_folder_path: &str, new_folder_path: &str) -> Result<(), String> {
+fn repair_subtree_paths(
+    root: &Path,
+    index: &mut LinkIndex,
+    old_folder_path: &str,
+    new_folder_path: &str,
+) -> Result<(), String> {
     if old_folder_path == new_folder_path {
         return Ok(());
     }
     // Snapshot ids that live under the old folder, plus the folder itself.
     let mut affected: Vec<(String, String, String, String)> = Vec::new(); // (id, kind, old_path, new_path)
     if let Some(id) = index.path_to_id.get(old_folder_path).cloned() {
-        affected.push((id, "folder".to_string(), old_folder_path.to_string(), new_folder_path.to_string()));
+        affected.push((
+            id,
+            "folder".to_string(),
+            old_folder_path.to_string(),
+            new_folder_path.to_string(),
+        ));
     }
     let prefix = format!("{old_folder_path}/");
     let descendants: Vec<(String, String)> = index
@@ -1317,7 +1412,9 @@ fn repair_subtree_paths(root: &Path, index: &mut LinkIndex, old_folder_path: &st
 }
 
 fn forget_path_from_index(index: &mut LinkIndex, path: &str) {
-    let Some(id) = index.path_to_id.remove(path) else { return };
+    let Some(id) = index.path_to_id.remove(path) else {
+        return;
+    };
     index.notes_by_id.remove(&id);
     index.folders_by_id.remove(&id);
     // Drop any outbound originating from this id.
@@ -1428,7 +1525,9 @@ fn date_suffix_from_millis(millis: u64) -> String {
     let secs = (millis / 1000) as i64;
     let datetime = OffsetDateTime::from_unix_timestamp(secs).unwrap_or(OffsetDateTime::UNIX_EPOCH);
     let fmt = format_description!("[year]-[month]-[day]");
-    datetime.format(&fmt).unwrap_or_else(|_| "unknown-date".to_string())
+    datetime
+        .format(&fmt)
+        .unwrap_or_else(|_| "unknown-date".to_string())
 }
 
 fn generate_trash_id() -> String {
@@ -1648,7 +1747,11 @@ fn save_asset(payload: SaveAssetPayload) -> Result<String, String> {
         return save_tiff_asset_as_png(&root, &assets_dir, &payload);
     }
 
-    let clean_name = unique_asset_name(&assets_dir, &payload.file_name, payload.mime_type.as_deref());
+    let clean_name = unique_asset_name(
+        &assets_dir,
+        &payload.file_name,
+        payload.mime_type.as_deref(),
+    );
     let path = assets_dir.join(clean_name);
     fs::write(&path, payload.bytes).map_err(|error| error.to_string())?;
     relative_asset_path(&root, &path)
@@ -1660,7 +1763,8 @@ fn save_clipboard_image_asset(workspace: String) -> Result<String, String> {
     let assets_dir = root.join(".assets");
     fs::create_dir_all(&assets_dir).map_err(|error| error.to_string())?;
 
-    save_macos_clipboard_png(&root, &assets_dir).or_else(|_| save_macos_clipboard_tiff(&root, &assets_dir))
+    save_macos_clipboard_png(&root, &assets_dir)
+        .or_else(|_| save_macos_clipboard_tiff(&root, &assets_dir))
 }
 
 #[tauri::command]
@@ -1676,7 +1780,10 @@ fn read_asset_data_url(workspace: String, path: String) -> Result<String, String
     }
     let bytes = fs::read(&asset_path).map_err(|error| error.to_string())?;
     let mime = mime_type_for_asset(&asset_path);
-    Ok(format!("data:{mime};base64,{}", general_purpose::STANDARD.encode(bytes)))
+    Ok(format!(
+        "data:{mime};base64,{}",
+        general_purpose::STANDARD.encode(bytes)
+    ))
 }
 
 #[tauri::command]
@@ -1685,7 +1792,9 @@ fn open_external(url: String) -> Result<(), String> {
         return Err("URL is empty.".to_string());
     }
     let lower = url.to_lowercase();
-    let allowed = ["http://", "https://", "mailto:", "tel:", "ftp://", "ftps://"];
+    let allowed = [
+        "http://", "https://", "mailto:", "tel:", "ftp://", "ftps://",
+    ];
     if !allowed.iter().any(|prefix| lower.starts_with(prefix)) {
         return Err("Unsupported URL scheme.".to_string());
     }
@@ -1744,7 +1853,11 @@ fn ensure_workspace(workspace: String) -> Result<(), String> {
 }
 
 #[tauri::command]
-fn watch_workspace(app: AppHandle, state: tauri::State<WatchState>, workspace: String) -> Result<(), String> {
+fn watch_workspace(
+    app: AppHandle,
+    state: tauri::State<WatchState>,
+    workspace: String,
+) -> Result<(), String> {
     let root = safe_workspace(&workspace)?;
     fs::create_dir_all(&root).map_err(|error| error.to_string())?;
 
@@ -1758,8 +1871,13 @@ fn watch_workspace(app: AppHandle, state: tauri::State<WatchState>, workspace: S
     let event_app = app.clone();
     let mut watcher = RecommendedWatcher::new(
         move |result: notify::Result<notify::Event>| {
-            let Ok(event) = result else { return; };
-            if !matches!(event.kind, EventKind::Create(_) | EventKind::Modify(_) | EventKind::Remove(_)) {
+            let Ok(event) = result else {
+                return;
+            };
+            if !matches!(
+                event.kind,
+                EventKind::Create(_) | EventKind::Modify(_) | EventKind::Remove(_)
+            ) {
                 return;
             }
             for path in event.paths {
@@ -1808,7 +1926,50 @@ fn write_workspace_metadata(workspace: String, metadata: WorkspaceMetadata) -> R
     let app_metadata_dir = app_dir(&root);
     fs::create_dir_all(&app_metadata_dir).map_err(|error| error.to_string())?;
     let contents = serde_json::to_string_pretty(&metadata).map_err(|error| error.to_string())?;
-    fs::write(app_metadata_dir.join("metadata.json"), format!("{contents}\n")).map_err(|error| error.to_string())
+    fs::write(
+        app_metadata_dir.join("metadata.json"),
+        format!("{contents}\n"),
+    )
+    .map_err(|error| error.to_string())
+}
+
+#[tauri::command]
+fn register_notebook_window(
+    app: AppHandle,
+    state: tauri::State<NotebookWindowState>,
+    label: String,
+    workspace: String,
+) -> Result<(), String> {
+    let name = Path::new(&workspace)
+        .file_name()
+        .and_then(|value| value.to_str())
+        .unwrap_or("Notebook")
+        .to_string();
+    {
+        let mut windows = state.windows.lock().map_err(|error| error.to_string())?;
+        windows.insert(
+            label.clone(),
+            NotebookWindow {
+                label,
+                workspace,
+                name,
+            },
+        );
+    }
+    rebuild_app_menu(&app, &state)
+}
+
+#[tauri::command]
+fn unregister_notebook_window(
+    app: AppHandle,
+    state: tauri::State<NotebookWindowState>,
+    label: String,
+) -> Result<(), String> {
+    {
+        let mut windows = state.windows.lock().map_err(|error| error.to_string())?;
+        windows.remove(&label);
+    }
+    rebuild_app_menu(&app, &state)
 }
 
 fn safe_workspace(workspace: &str) -> Result<PathBuf, String> {
@@ -1835,6 +1996,7 @@ fn default_workspace_metadata() -> WorkspaceMetadata {
         bookmarks: Vec::new(),
         bookmarks_expanded: true,
         expanded_folders: serde_json::Map::new(),
+        welcome_note_added: false,
         appearance: None,
     }
 }
@@ -1860,7 +2022,10 @@ fn normalize_relative(value: &str) -> Result<PathBuf, String> {
     }
 
     for component in path.components() {
-        if matches!(component, Component::ParentDir | Component::CurDir | Component::RootDir | Component::Prefix(_)) {
+        if matches!(
+            component,
+            Component::ParentDir | Component::CurDir | Component::RootDir | Component::Prefix(_)
+        ) {
             return Err("Only relative paths inside the workspace are allowed.".to_string());
         }
     }
@@ -1957,7 +2122,11 @@ fn should_convert_tiff_asset(file_name: &str, mime_type: Option<&str>) -> bool {
     cfg!(target_os = "macos") && (has_tiff_mime || has_tiff_extension)
 }
 
-fn save_tiff_asset_as_png(root: &Path, assets_dir: &Path, payload: &SaveAssetPayload) -> Result<String, String> {
+fn save_tiff_asset_as_png(
+    root: &Path,
+    assets_dir: &Path,
+    payload: &SaveAssetPayload,
+) -> Result<String, String> {
     let temp_name = unique_asset_name(assets_dir, &payload.file_name, payload.mime_type.as_deref());
     let temp_path = assets_dir.join(temp_name);
     fs::write(&temp_path, &payload.bytes).map_err(|error| error.to_string())?;
@@ -2017,7 +2186,11 @@ end run"#;
     convert_tiff_file_to_png(root, assets_dir, &temp_path)
 }
 
-fn convert_tiff_file_to_png(root: &Path, assets_dir: &Path, temp_path: &Path) -> Result<String, String> {
+fn convert_tiff_file_to_png(
+    root: &Path,
+    assets_dir: &Path,
+    temp_path: &Path,
+) -> Result<String, String> {
     let png_name = unique_asset_name(assets_dir, "pasted-image.png", Some("image/png"));
     let png_path = assets_dir.join(png_name);
     let output = Command::new("sips")
@@ -2081,6 +2254,145 @@ fn mime_type_for_asset(path: &Path) -> &'static str {
     }
 }
 
+fn build_app_menu(
+    handle: &AppHandle,
+    notebook_windows: &[NotebookWindow],
+) -> tauri::Result<Menu<tauri::Wry>> {
+    let about = PredefinedMenuItem::about(
+        handle,
+        Some("About Tigrana"),
+        Some(
+            AboutMetadataBuilder::new()
+                .name(Some("Tigrana"))
+                .version(Some(handle.package_info().version.to_string()))
+                .comments(Some("A simple, beautiful, file-native desktop notes app."))
+                .build(),
+        ),
+    )?;
+    let settings = MenuItem::with_id(handle, "open_settings", "Settings...", true, Some("Cmd+,"))?;
+    // Custom Quit so Cmd+Q closes the window (firing CloseRequested in JS)
+    // instead of calling app.exit() directly, which would skip the
+    // frontend's metadata-flush handler.
+    let quit_item = MenuItem::with_id(handle, "request_quit", "Quit Tigrana", true, Some("Cmd+Q"))?;
+    let recently_deleted = MenuItem::with_id(
+        handle,
+        "open_recently_deleted",
+        "Recently Deleted",
+        true,
+        None::<&str>,
+    )?;
+
+    let open_notebooks = Submenu::new(handle, "Open Notebooks", true)?;
+    if notebook_windows.is_empty() {
+        let empty = MenuItem::with_id(
+            handle,
+            "open_notebooks_empty",
+            "No Open Notebooks",
+            false,
+            None::<&str>,
+        )?;
+        open_notebooks.append(&empty)?;
+    } else {
+        for notebook in notebook_windows {
+            let title = format!("{} ({})", notebook.name, notebook.workspace);
+            let item = MenuItem::with_id(
+                handle,
+                format!("focus_notebook_window:{}", notebook.label),
+                title,
+                true,
+                None::<&str>,
+            )?;
+            open_notebooks.append(&item)?;
+        }
+    }
+
+    let tigrana_menu = Submenu::with_items(
+        handle,
+        "Tigrana",
+        true,
+        &[
+            &about,
+            &PredefinedMenuItem::separator(handle)?,
+            &settings,
+            &PredefinedMenuItem::separator(handle)?,
+            &PredefinedMenuItem::services(handle, None)?,
+            &PredefinedMenuItem::separator(handle)?,
+            &PredefinedMenuItem::hide(handle, None)?,
+            &PredefinedMenuItem::hide_others(handle, None)?,
+            &PredefinedMenuItem::separator(handle)?,
+            &quit_item,
+        ],
+    )?;
+    let file_menu = Submenu::with_items(
+        handle,
+        "File",
+        true,
+        &[&PredefinedMenuItem::close_window(handle, None)?],
+    )?;
+    let edit_menu = Submenu::with_items(
+        handle,
+        "Edit",
+        true,
+        &[
+            &PredefinedMenuItem::undo(handle, None)?,
+            &PredefinedMenuItem::redo(handle, None)?,
+            &PredefinedMenuItem::separator(handle)?,
+            &PredefinedMenuItem::cut(handle, None)?,
+            &PredefinedMenuItem::copy(handle, None)?,
+            &PredefinedMenuItem::paste(handle, None)?,
+            &PredefinedMenuItem::select_all(handle, None)?,
+        ],
+    )?;
+    let view_menu = Submenu::with_items(
+        handle,
+        "View",
+        true,
+        &[
+            &PredefinedMenuItem::fullscreen(handle, None)?,
+            &PredefinedMenuItem::separator(handle)?,
+            &recently_deleted,
+        ],
+    )?;
+    let window_menu = Submenu::with_items(
+        handle,
+        "Window",
+        true,
+        &[
+            &PredefinedMenuItem::minimize(handle, None)?,
+            &PredefinedMenuItem::maximize(handle, None)?,
+            &PredefinedMenuItem::separator(handle)?,
+            &PredefinedMenuItem::close_window(handle, None)?,
+            &PredefinedMenuItem::separator(handle)?,
+            &open_notebooks,
+        ],
+    )?;
+
+    Menu::with_items(
+        handle,
+        &[
+            &tigrana_menu,
+            &file_menu,
+            &edit_menu,
+            &view_menu,
+            &window_menu,
+        ],
+    )
+}
+
+fn rebuild_app_menu(app: &AppHandle, state: &NotebookWindowState) -> Result<(), String> {
+    let live_labels: HashSet<String> = app.webview_windows().keys().cloned().collect();
+    let mut notebooks = {
+        let mut windows = state.windows.lock().map_err(|error| error.to_string())?;
+        windows.retain(|label, _| live_labels.contains(label));
+        windows.values().cloned().collect::<Vec<_>>()
+    };
+    notebooks.sort_by(|a, b| a.name.cmp(&b.name).then(a.workspace.cmp(&b.workspace)));
+    let menu = build_app_menu(app, &notebooks).map_err(|error| error.to_string())?;
+    app.set_menu(menu)
+        .map(|_| ())
+        .map_err(|error| error.to_string())
+}
+
 fn reveal_in_file_manager(path: &Path) -> Result<(), String> {
     #[cfg(target_os = "macos")]
     {
@@ -2138,90 +2450,42 @@ fn reveal_in_file_manager(path: &Path) -> Result<(), String> {
 pub fn run() {
     tauri::Builder::default()
         .manage(WatchState::default())
+        .manage(NotebookWindowState::default())
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_fs::init())
         .plugin(tauri_plugin_shell::init())
-        .menu(|handle| {
-            let settings = MenuItem::with_id(handle, "open_settings", "Settings...", true, Some("Cmd+,"))?;
-            // Custom Quit so Cmd+Q closes the window (firing CloseRequested in JS)
-            // instead of calling app.exit() directly, which would skip the
-            // frontend's metadata-flush handler.
-            let quit_item = MenuItem::with_id(handle, "request_quit", "Quit Tigrana", true, Some("Cmd+Q"))?;
-            let recently_deleted = MenuItem::with_id(handle, "open_recently_deleted", "Recently Deleted", true, None::<&str>)?;
-            Menu::with_items(
-                handle,
-                &[
-                    &Submenu::with_items(
-                        handle,
-                        "Tigrana",
-                        true,
-                        &[
-                            &PredefinedMenuItem::about(handle, None, None)?,
-                            &PredefinedMenuItem::separator(handle)?,
-                            &settings,
-                            &PredefinedMenuItem::separator(handle)?,
-                            &PredefinedMenuItem::services(handle, None)?,
-                            &PredefinedMenuItem::separator(handle)?,
-                            &PredefinedMenuItem::hide(handle, None)?,
-                            &PredefinedMenuItem::hide_others(handle, None)?,
-                            &PredefinedMenuItem::separator(handle)?,
-                            &quit_item,
-                        ],
-                    )?,
-                    &Submenu::with_items(handle, "File", true, &[&PredefinedMenuItem::close_window(handle, None)?])?,
-                    &Submenu::with_items(
-                        handle,
-                        "Edit",
-                        true,
-                        &[
-                            &PredefinedMenuItem::undo(handle, None)?,
-                            &PredefinedMenuItem::redo(handle, None)?,
-                            &PredefinedMenuItem::separator(handle)?,
-                            &PredefinedMenuItem::cut(handle, None)?,
-                            &PredefinedMenuItem::copy(handle, None)?,
-                            &PredefinedMenuItem::paste(handle, None)?,
-                            &PredefinedMenuItem::select_all(handle, None)?,
-                        ],
-                    )?,
-                    &Submenu::with_items(
-                        handle,
-                        "View",
-                        true,
-                        &[
-                            &PredefinedMenuItem::fullscreen(handle, None)?,
-                            &PredefinedMenuItem::separator(handle)?,
-                            &recently_deleted,
-                        ],
-                    )?,
-                    &Submenu::with_items(
-                        handle,
-                        "Window",
-                        true,
-                        &[
-                            &PredefinedMenuItem::minimize(handle, None)?,
-                            &PredefinedMenuItem::maximize(handle, None)?,
-                            &PredefinedMenuItem::separator(handle)?,
-                            &PredefinedMenuItem::close_window(handle, None)?,
-                        ],
-                    )?,
-                ],
-            )
-        })
-        .on_menu_event(|app, event| {
-            match event.id().as_ref() {
-                "open_settings" => {
-                    let _ = app.emit("open-settings", ());
-                }
-                "open_recently_deleted" => {
-                    let _ = app.emit("open-recently-deleted", ());
-                }
-                "request_quit" => {
-                    if let Some(win) = app.get_webview_window("main") {
-                        let _ = win.close();
-                    }
-                }
-                _ => {}
+        .menu(|handle| build_app_menu(handle, &[]))
+        .on_window_event(|window, event| {
+            if !matches!(event, WindowEvent::Destroyed) {
+                return;
             }
+            let app = window.app_handle();
+            let state = app.state::<NotebookWindowState>();
+            if let Ok(mut windows) = state.windows.lock() {
+                windows.remove(window.label());
+            }
+            let _ = rebuild_app_menu(app, &state);
+        })
+        .on_menu_event(|app, event| match event.id().as_ref() {
+            "open_settings" => {
+                let _ = app.emit("open-settings", ());
+            }
+            "open_recently_deleted" => {
+                let _ = app.emit("open-recently-deleted", ());
+            }
+            "request_quit" => {
+                if let Some(win) = app.get_webview_window("main") {
+                    let _ = win.close();
+                }
+            }
+            id if id.starts_with("focus_notebook_window:") => {
+                let label = id.trim_start_matches("focus_notebook_window:");
+                if let Some(win) = app.get_webview_window(label) {
+                    let _ = win.show();
+                    let _ = win.set_focus();
+                }
+            }
+            _ => {}
         })
         .invoke_handler(tauri::generate_handler![
             ensure_workspace,
@@ -2247,6 +2511,8 @@ pub fn run() {
             cleanup_trash,
             read_workspace_metadata,
             write_workspace_metadata,
+            register_notebook_window,
+            unregister_notebook_window,
             ensure_workspace_identity,
             read_link_index,
             rebuild_link_index,

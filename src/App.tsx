@@ -44,6 +44,7 @@ import {
   cleanupTrash,
   createFolder,
   createNote,
+  ensureWelcomeNote,
   ensureWorkspace,
   isTauri,
   listFolders,
@@ -58,6 +59,7 @@ import {
   restoreTrash,
   revealPath,
   readWorkspaceMetadata,
+  registerNotebookWindow,
   renameFolder,
   renameNote,
   SAMPLE_WORKSPACE,
@@ -65,6 +67,7 @@ import {
   decodeTitleFromFilename,
   trashFolder,
   trashNote,
+  unregisterNotebookWindow,
   validateNoteTitle,
   watchWorkspace,
   writeWorkspaceMetadata,
@@ -648,11 +651,15 @@ export default function App() {
   useEffect(() => {
     if (!workspace) return;
     setMetadataLoaded(false);
+    let disposed = false;
     void readWorkspaceMetadata(workspace)
-      .then((nextMetadata) => {
-        metadataRef.current = nextMetadata;
-        setMetadata(nextMetadata);
-        const a = nextMetadata.appearance;
+      .then(async (nextMetadata) => {
+        const ensured = await ensureWelcomeNote(workspace, nextMetadata);
+        if (disposed) return;
+        metadataRef.current = ensured.metadata;
+        setMetadata(ensured.metadata);
+        if (ensured.created) void refreshWorkspace(workspace);
+        const a = ensured.metadata.appearance;
         if (a) {
           if (a.colorScheme) setColorScheme(a.colorScheme);
           if (a.themePresetId && themePresets.some((p) => p.id === a.themePresetId)) setThemePresetId(a.themePresetId as ThemePresetId);
@@ -676,12 +683,30 @@ export default function App() {
         }
       })
       .catch((error) => {
+        if (disposed) return;
         setAppError(error instanceof Error ? error.message : String(error));
         const fallback = defaultWorkspaceMetadata();
         metadataRef.current = fallback;
         setMetadata(fallback);
       })
-      .finally(() => setMetadataLoaded(true));
+      .finally(() => {
+        if (!disposed) setMetadataLoaded(true);
+      });
+    return () => {
+      disposed = true;
+    };
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [workspace]);
+
+  useEffect(() => {
+    if (!workspace || !isTauri()) return;
+    const label = getCurrentWindow().label;
+    void registerNotebookWindow(label, workspace).catch((error) => {
+      console.warn("register_notebook_window failed", error);
+    });
+    return () => {
+      void unregisterNotebookWindow(label).catch(() => {});
+    };
   }, [workspace]);
 
   // Place the hidden native window before first show so restore does not visibly
