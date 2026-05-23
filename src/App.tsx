@@ -385,6 +385,11 @@ export default function App() {
   const workspaceRef = useRef<string | null>(null);
   const externalNoteChangeRef = useRef<(path: string) => void>(() => {});
   const selfWriteRef = useRef<Map<string, { content: string; at: number }>>(new Map());
+  // Guards against concurrent persistDraft calls. The Enter handler and the
+  // title's onBlur can both fire at the same moment (Enter shifts focus to
+  // the editor, which blurs the title), and two simultaneous createNote
+  // calls race each other — the second one errors with "already exists".
+  const persistingRef = useRef(false);
   const keyboardActionsRef = useRef<{
     addEmptyTab: () => void;
     chooseWorkspace: (intent: "open" | "new") => void;
@@ -1149,13 +1154,20 @@ export default function App() {
     try {
       const nextContent = await readNote(workspace, path);
 
+      // iCloud Drive (and other sync clients) routinely re-touch files without
+      // changing meaningful content — they may normalize line endings, strip
+      // or add a trailing newline, or just bump mtime. Compare on a normalized
+      // form so those harmless re-writes don't look like real edits.
+      const normalize = (value: string) => value.replace(/\r\n/g, "\n").replace(/\s+$/, "");
+      const nextNormalized = normalize(nextContent);
+
       // The filesystem watcher fires for our own writes too. If the disk
       // matches what we last persisted for this path (within a short window),
       // it's an echo of our own save — skip it. Otherwise rapid typing during
       // an auto-save flashes "this note changed on disk" because the editor
       // snapshot has moved past the just-written content.
       const selfWrite = selfWriteRef.current.get(path);
-      if (selfWrite && Date.now() - selfWrite.at < 10_000 && selfWrite.content === nextContent) {
+      if (selfWrite && Date.now() - selfWrite.at < 10_000 && normalize(selfWrite.content) === nextNormalized) {
         return;
       }
 
@@ -1163,9 +1175,9 @@ export default function App() {
       // source of truth. A move that rewrote inbound links on disk also calls
       // refreshWorkspace, which has already updated the contents map; without this
       // check we'd short-circuit and the editor would keep showing the stale link.
-      const sameAsEditor = activePath === path && nextContent === currentMarkdownSnapshot();
+      const sameAsEditor = activePath === path && nextNormalized === normalize(currentMarkdownSnapshot());
       const currentContent = contents.get(path);
-      if (activePath !== path && currentContent === nextContent) return;
+      if (activePath !== path && currentContent !== undefined && normalize(currentContent) === nextNormalized) return;
       if (sameAsEditor) {
         setContents((current) => {
           const next = new Map(current);
@@ -1212,6 +1224,11 @@ export default function App() {
   externalNoteChangeRef.current = (path: string) => void handleExternalNoteChange(path);
 
   const persistDraft = useCallback(async () => {
+    // Re-entry guard. The Enter handler on the title input synchronously
+    // moves focus to the editor, which fires the title's onBlur, which also
+    // wants to persist. Without this guard, two createNote/saveNote pairs
+    // race and the second errors with "already exists".
+    if (persistingRef.current) return;
     setAppError(null);
     if (!workspace || !noteOpen) return;
 
@@ -1222,6 +1239,7 @@ export default function App() {
       return;
     }
 
+    persistingRef.current = true;
     setIsSaving(true);
 
     try {
@@ -1231,6 +1249,16 @@ export default function App() {
       if (pendingNote) {
         const note = await createNote(workspace, pendingNote.parentPath, titleDraft.trim());
         nextPath = note.path;
+        // createNote writes initial scaffolding to disk (frontmatter id +
+        // blank body) which produces a file-watcher echo. Pre-seed
+        // selfWriteRef with what's on disk so that echo doesn't fire the
+        // "changed on disk" warning before our own saveNote runs.
+        try {
+          const initial = await readNote(workspace, note.path);
+          selfWriteRef.current.set(note.path, { content: initial, at: Date.now() });
+        } catch {
+          // Best-effort; the saveNote below will overwrite the entry anyway.
+        }
         setNotes((current) => current.some((entry) => entry.path === note.path) ? current : [...current, note]);
         setActivePath(note.path);
         setPendingNote(null);
@@ -1247,8 +1275,12 @@ export default function App() {
 
       if (!nextPath) return;
 
-      await saveNote(workspace, nextPath, markdown);
-      selfWriteRef.current.set(nextPath, { content: markdown, at: Date.now() });
+      const written = await saveNote(workspace, nextPath, markdown);
+      // Record the on-disk bytes (which may differ from `markdown` — Rust may
+      // have added an id frontmatter or normalized line endings) so the
+      // file-watcher echo of our own write doesn't trip the "changed on disk"
+      // warning on the next keystroke.
+      selfWriteRef.current.set(nextPath, { content: written, at: Date.now() });
       recordNotePosition(nextPath, markdown);
       setSavedTitle(titleDraft.trim());
       setSavedDraft(draft);
@@ -1264,6 +1296,7 @@ export default function App() {
       setAppError(error instanceof Error ? error.message : String(error));
     } finally {
       setIsSaving(false);
+      persistingRef.current = false;
     }
   }, [activePath, draft, frontmatterDraft, frontmatterError, navigationStyle, noteOpen, pendingNote, placePathInActiveTab, recordNotePosition, refreshWorkspace, savedTitle, titleDraft, updateMetadata, workspace]);
 
@@ -2680,11 +2713,12 @@ export default function App() {
                 onKeyDown={(event) => {
                   if (event.key === "Enter" || event.key === "Tab") {
                     event.preventDefault();
-                    const focusEditor = () => setEditorFocusRequest((value) => value + 1);
+                    // Focus the editor first so it has focus before persistDraft's
+                    // content reload (triggered by activePath changing for a new
+                    // note) runs and could otherwise blur it away.
+                    setEditorFocusRequest((value) => value + 1);
                     if (hasUnsavedChanges && titleDraft.trim()) {
-                      void persistDraft().then(focusEditor);
-                    } else {
-                      focusEditor();
+                      void persistDraft();
                     }
                   }
                 }}

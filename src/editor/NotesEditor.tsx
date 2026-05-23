@@ -549,9 +549,16 @@ export function NotesEditor({ content, focusRequest, focusAtEndRequest, findRequ
       typeof selectionTo === "number" &&
       selectionFrom >= 0 &&
       selectionTo >= selectionFrom;
-    // Blur first so the browser removes the cursor before new content is painted,
-    // preventing a ghost caret from the previous note appearing briefly.
-    editor.commands.blur();
+    // If the editor isn't focused, blur first so the browser removes any cached
+    // cursor before new content is painted, preventing a ghost caret from the
+    // previous note appearing briefly. If it IS focused (e.g. user just pressed
+    // Enter on a new note's title and we just routed focus to the editor),
+    // skip the blur — Tiptap's blur defers via rAF and would land AFTER any
+    // refocus we attempt, dropping focus back to BODY.
+    const wasFocused = editor.isFocused || editor.view.dom === document.activeElement;
+    if (!wasFocused) {
+      editor.commands.blur();
+    }
     setFindOpen(false);
     try {
       editor
@@ -571,6 +578,9 @@ export function NotesEditor({ content, focusRequest, focusAtEndRequest, findRequ
         .run();
       lastLoadedNote.current = notePath;
       handledReloadRequest.current = reloadRequest ?? 0;
+      if (wasFocused) {
+        editor.view.dom.focus({ preventScroll: true });
+      }
       void hydrateNotebookImageNodes(editor, workspace);
     } catch (error) {
       onLoadError(error);
@@ -579,12 +589,16 @@ export function NotesEditor({ content, focusRequest, focusAtEndRequest, findRequ
 
   useEffect(() => {
     if (!editor || !focusRequest) return;
-    const chain = editor.chain().focus("start");
+    // Force a synchronous DOM focus first — Tiptap's chain().focus() defers
+    // the actual view.focus() to rAF, which races with later effects (e.g. a
+    // content reload that blurs+refocuses) and can drop us back to BODY.
+    editor.view.dom.focus({ preventScroll: true });
+    const chain = editor.chain().focus("start", { scrollIntoView: false });
     if (!editor.state.doc.textContent.trim()) {
       chain.setParagraph().run();
-      return;
+    } else {
+      chain.run();
     }
-    chain.run();
   }, [editor, focusRequest]);
 
   useEffect(() => {

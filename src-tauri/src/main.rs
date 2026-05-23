@@ -3,7 +3,7 @@ use serde::{Deserialize, Serialize};
 use notify::{Config, EventKind, RecommendedWatcher, RecursiveMode, Watcher};
 use std::collections::{HashMap, HashSet};
 use std::fs;
-use std::path::{Path, PathBuf};
+use std::path::{Component, Path, PathBuf};
 use std::process::Command;
 use std::sync::Mutex;
 use tauri::menu::{Menu, MenuItem, PredefinedMenuItem, Submenu};
@@ -261,7 +261,7 @@ fn read_note(workspace: String, path: String) -> Result<String, String> {
 }
 
 #[tauri::command]
-fn save_note(payload: SaveNotePayload) -> Result<(), String> {
+fn save_note(payload: SaveNotePayload) -> Result<String, String> {
     let root = safe_workspace(&payload.workspace)?;
     let note_path = safe_note_path(&payload.workspace, &payload.path)?;
     if let Some(parent) = note_path.parent() {
@@ -271,7 +271,10 @@ fn save_note(payload: SaveNotePayload) -> Result<(), String> {
     let (_id, content_with_id, _mutated) = ensure_note_id_in_content(&payload.content);
     fs::write(&note_path, &content_with_id).map_err(|error| error.to_string())?;
     let _ = reindex_note_after_save(&root, &payload.path);
-    Ok(())
+    // Return what was actually written so the frontend can tell its own write
+    // apart from genuine external changes (Rust may have normalized line
+    // endings or added an id frontmatter).
+    Ok(content_with_id)
 }
 
 #[tauri::command]
@@ -1846,9 +1849,16 @@ fn safe_note_path(workspace: &str, relative: &str) -> Result<PathBuf, String> {
 
 fn normalize_relative(value: &str) -> Result<PathBuf, String> {
     let path = PathBuf::from(value);
-    if path.is_absolute() || value.contains("..") {
+    if path.is_absolute() {
         return Err("Only relative paths inside the workspace are allowed.".to_string());
     }
+
+    for component in path.components() {
+        if matches!(component, Component::ParentDir | Component::CurDir | Component::RootDir | Component::Prefix(_)) {
+            return Err("Only relative paths inside the workspace are allowed.".to_string());
+        }
+    }
+
     Ok(path)
 }
 
@@ -1891,6 +1901,10 @@ fn validate_note_title(title: &str) -> Result<(), String> {
     let invalid = ['/', '\\', ':', '*', '?', '"', '<', '>', '|'];
     if trimmed.contains(invalid) {
         return Err("Note titles cannot contain / \\ : * ? \" < > |".to_string());
+    }
+
+    if trimmed.chars().any(|ch| ch.is_control()) {
+        return Err("Note titles cannot contain line breaks or control characters.".to_string());
     }
 
     if trimmed == "." || trimmed == ".." {

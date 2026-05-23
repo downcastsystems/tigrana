@@ -129,14 +129,18 @@ export async function readNote(workspace: string, path: string) {
   return readDemoStore().notes[path] ?? "";
 }
 
-export async function saveNote(workspace: string, path: string, content: string) {
+// Returns the actual on-disk content after the save. Rust normalizes line
+// endings and adds an id frontmatter when missing, so the returned string can
+// differ from `content` — callers that need to recognize their own writes
+// later (e.g. file-watcher echoes) should use the returned value.
+export async function saveNote(workspace: string, path: string, content: string): Promise<string> {
   if (isTauri()) {
-    await invoke("save_note", { payload: { workspace, path, content } });
-    return;
+    return invoke<string>("save_note", { payload: { workspace, path, content } });
   }
   const store = readDemoStore();
   store.notes[path] = content;
   writeDemoStore(store);
+  return content;
 }
 
 export async function createNote(workspace: string, parentPath: string, title: string): Promise<NoteEntry> {
@@ -427,13 +431,20 @@ export async function openExternal(url: string) {
 }
 
 const FILENAME_SLASH = "／"; // FULLWIDTH SOLIDUS
+const FILENAME_LEADING_DOT = "．"; // FULLWIDTH FULL STOP
+const FILENAME_HASH = "＃"; // FULLWIDTH NUMBER SIGN
+const FILENAME_PERCENT = "％"; // FULLWIDTH PERCENT SIGN
 
 export function encodeTitleForFilename(title: string): string {
-  return title.replace(/\//g, FILENAME_SLASH);
+  return title
+    .replace(/\//g, FILENAME_SLASH)
+    .replace(/#/g, FILENAME_HASH)
+    .replace(/%/g, FILENAME_PERCENT)
+    .replace(/^\.+/, (dots) => FILENAME_LEADING_DOT.repeat(dots.length));
 }
 
 export function decodeTitleFromFilename(name: string): string {
-  return name.replace(/／/g, "/");
+  return name.replace(/／/g, "/").replace(/．/g, ".").replace(/＃/g, "#").replace(/％/g, "%");
 }
 
 function decodeNoteEntry(entry: NoteEntry): NoteEntry {
@@ -449,6 +460,12 @@ export function validateNoteTitle(title: string) {
   if (!trimmed) throw new Error("Add a title before saving this note.");
   if (/[\\:*?"<>|]/.test(trimmed)) {
     throw new Error('Note titles cannot contain \\ : * ? " < > |');
+  }
+  if (Array.from(trimmed).some((char) => {
+    const code = char.charCodeAt(0);
+    return code >= 0 && code <= 31;
+  })) {
+    throw new Error("Note titles cannot contain line breaks or control characters.");
   }
   if (trimmed === "." || trimmed === "..") {
     throw new Error("That title is reserved by the filesystem.");
