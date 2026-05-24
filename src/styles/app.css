@@ -2135,34 +2135,75 @@ html[data-theme="dark"] .tab-list-separator {
   font-size: 13px;
 }
 
-.width-mode-control {
+.note-view-control {
   position: relative;
   display: inline-flex;
   align-items: center;
-  gap: 6px;
-  min-height: 30px;
-  padding: 0 8px;
-  border: 1px solid rgba(52, 48, 43, 0.12);
-  border-radius: 7px;
-  color: #6f675e;
-  background: rgba(255, 252, 247, 0.7);
 }
 
-.width-mode-control select {
-  min-width: 148px;
+.note-view-dropdown {
+  position: absolute;
+  top: calc(100% + 8px);
+  right: 0;
+  z-index: 80;
+  display: grid;
+  gap: 4px;
+  width: 240px;
+  padding: 8px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  color: var(--text);
+  background: var(--surface-strong);
+  box-shadow: var(--shadow-popover);
+}
+
+.note-view-dropdown button {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 18px;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  min-height: 42px;
+  padding: 7px 9px;
   border: 0;
-  outline: 0;
+  border-radius: 6px;
   color: inherit;
   background: transparent;
-  font: inherit;
-  font-size: 12px;
-  appearance: none;
+  text-align: left;
   cursor: pointer;
 }
 
-.width-mode-control > svg {
-  flex: 0 0 auto;
-  pointer-events: none;
+.note-view-dropdown button:hover,
+.note-view-dropdown button.is-active {
+  color: var(--accent-strong);
+  background: var(--accent-active);
+}
+
+.note-view-dropdown span {
+  min-width: 0;
+}
+
+.note-view-dropdown strong,
+.note-view-dropdown small {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.note-view-dropdown strong {
+  font-size: 13px;
+  font-weight: 650;
+}
+
+.note-view-dropdown small {
+  margin-top: 2px;
+  color: var(--text-muted);
+  font-size: 11px;
+}
+
+.note-view-dropdown svg {
+  justify-self: center;
 }
 
 .note-surface {
@@ -2233,6 +2274,14 @@ html[data-theme="dark"] .tab-list-separator {
   width: min(880px, calc(100% - 72px));
   margin: 0 auto;
   padding: 28px 0 140px;
+}
+
+.note-surface.is-left-aligned .title-shell,
+.note-surface.is-left-aligned .editor-shell,
+.note-surface.is-left-aligned .raw-markdown-shell,
+.note-surface.is-left-aligned .note-meta {
+  margin-left: 36px;
+  margin-right: auto;
 }
 
 .note-find-bar {
@@ -2313,6 +2362,13 @@ html[data-theme="dark"] .tab-list-separator {
 .note-surface.is-full-width .note-meta {
   width: calc(100% - 48px);
   max-width: none;
+}
+
+.note-surface.is-left-aligned.is-full-width .title-shell,
+.note-surface.is-left-aligned.is-full-width .editor-shell,
+.note-surface.is-left-aligned.is-full-width .raw-markdown-shell,
+.note-surface.is-left-aligned.is-full-width .note-meta {
+  margin-left: 24px;
 }
 
 .raw-markdown-input {
@@ -3648,12 +3704,6 @@ html[data-theme="dark"] .settings-select {
   background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%23eee8df' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'><polyline points='6 9 12 15 18 9'/></svg>");
 }
 
-html[data-theme="dark"] .width-mode-control {
-  color: #eee8df;
-  border-color: rgba(238, 232, 223, 0.12);
-  background: rgba(31, 34, 35, 0.7);
-}
-
 html[data-theme="dark"] .settings-select:hover {
   background-color: rgba(48, 52, 54, 0.96);
 }
@@ -3888,6 +3938,17 @@ html[data-theme="dark"] .ProseMirror pre {
   .raw-markdown-shell,
   .title-shell {
     width: min(760px, calc(100% - 40px));
+  }
+
+  .note-surface.is-left-aligned .title-shell,
+  .note-surface.is-left-aligned .editor-shell,
+  .note-surface.is-left-aligned .raw-markdown-shell,
+  .note-surface.is-left-aligned .note-meta,
+  .note-surface.is-left-aligned.is-full-width .title-shell,
+  .note-surface.is-left-aligned.is-full-width .editor-shell,
+  .note-surface.is-left-aligned.is-full-width .raw-markdown-shell,
+  .note-surface.is-left-aligned.is-full-width .note-meta {
+    margin-left: 20px;
   }
 
 }

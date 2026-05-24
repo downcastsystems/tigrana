@@ -4,6 +4,8 @@ import { availableMonitors, getCurrentWindow, LogicalPosition, LogicalSize, Phys
 import { WebviewWindow } from "@tauri-apps/api/webviewWindow";
 import { gitHubEmojis, type EmojiItem } from "@tiptap/extension-emoji";
 import {
+  AlignCenter,
+  AlignLeft,
   BookOpen,
   Bookmark,
   Braces,
@@ -87,6 +89,7 @@ const themeKey = "tigrana-theme";
 const accentKey = "tigrana-accent";
 const themePresetKey = "tigrana-theme-preset";
 const widthModeKey = "tigrana-width-mode";
+const alignmentKey = "tigrana-note-alignment";
 const legacyFullWidthKey = "tigrana-full-width";
 const folderPaneWidthKey = "tigrana-folder-pane-width";
 const notesPaneWidthKey = "tigrana-notes-pane-width";
@@ -104,9 +107,10 @@ const defaultEditorFontFamily = defaultAppFontFamily;
 const defaultAppFontSize = 14;
 const defaultEditorFontSize = 17;
 type EditorWidthMode = "comfortable" | "narrow" | "full";
-const editorWidthOptions: { value: EditorWidthMode; label: string }[] = [
-  { value: "comfortable", label: "Comfortable Width" },
-  { value: "narrow", label: "Narrow Width" },
+type NoteAlignment = "left" | "center";
+const editorWidthOptions: { value: EditorWidthMode; label: string; hint?: string }[] = [
+  { value: "comfortable", label: "Comfortable Width", hint: "Default" },
+  { value: "narrow", label: "Narrow Width", hint: "Best for writing stories" },
   { value: "full", label: "Full Width" },
 ];
 
@@ -352,6 +356,8 @@ export default function App() {
   const [linkIndex, setLinkIndex] = useState<LinkIndex | null>(null);
   const [rawMarkdownVisible, setRawMarkdownVisible] = useState(false);
   const [editorWidthMode, setEditorWidthMode] = useState<EditorWidthMode>(() => readStoredEditorWidthMode());
+  const [noteAlignment, setNoteAlignment] = useState<NoteAlignment>(() => readStoredNoteAlignment());
+  const [widthMenuOpen, setWidthMenuOpen] = useState(false);
   const [openTabs, setOpenTabs] = useState<NoteTab[]>([]);
   const [activeTabId, setActiveTabId] = useState<string | null>(null);
   const [folderPaneWidth, setFolderPaneWidth] = useState(() => readStoredNumber(folderPaneWidthKey, 292));
@@ -576,6 +582,10 @@ export default function App() {
   useEffect(() => {
     localStorage.setItem(widthModeKey, editorWidthMode);
   }, [editorWidthMode]);
+
+  useEffect(() => {
+    localStorage.setItem(alignmentKey, noteAlignment);
+  }, [noteAlignment]);
 
   useEffect(() => {
     localStorage.setItem(folderPaneWidthKey, String(folderPaneWidth));
@@ -821,8 +831,9 @@ export default function App() {
       const target = event.target as Element | null;
       // Don't dismiss when clicking inside a context menu, app menu, or any
       // dialog — those popovers handle their own lifecycle.
-      if (target?.closest(".context-menu, .app-menu, .dialog, .dialog-backdrop")) return;
+      if (target?.closest(".context-menu, .app-menu, .note-view-menu, .dialog, .dialog-backdrop")) return;
       setAppMenuOpen(false);
+      setWidthMenuOpen(false);
       setContextMenu(null);
       setTabContextMenu(null);
     };
@@ -1349,6 +1360,7 @@ export default function App() {
         setSettingsOpen(false);
         setNotebooksManageOpen(false);
         setAppMenuOpen(false);
+        setWidthMenuOpen(false);
         setContextMenu(null);
         setTabContextMenu(null);
       }
@@ -2410,6 +2422,9 @@ export default function App() {
     if (isTauri()) void getCurrentWindow().toggleMaximize();
   }
 
+  const selectedWidthOption = editorWidthOptions.find((option) => option.value === editorWidthMode) ?? editorWidthOptions[0];
+  const AlignmentIcon = noteAlignment === "left" ? AlignLeft : AlignCenter;
+
   return (
     <div className="app-shell">
       <header
@@ -2703,27 +2718,60 @@ export default function App() {
             >
               <FileCode2 size={17} />
             </button>
-            <label className="width-mode-control" title="Editor width">
-              <StretchHorizontal size={17} />
-              <select
+            <div className="note-view-control note-view-menu">
+              <button
+                className={`icon-button ${widthMenuOpen ? "is-active" : ""}`}
+                type="button"
+                title={`Width: ${selectedWidthOption.label}`}
                 aria-label="Editor width"
-                value={editorWidthMode}
-                onChange={(event) => setEditorWidthMode(event.target.value as EditorWidthMode)}
+                aria-haspopup="menu"
+                aria-expanded={widthMenuOpen}
+                onClick={(event) => {
+                  event.stopPropagation();
+                  setWidthMenuOpen((value) => !value);
+                }}
               >
-                {editorWidthOptions.map((option) => (
-                  <option key={option.value} value={option.value}>
-                    {option.label}
-                  </option>
-                ))}
-              </select>
-              <ChevronDown size={14} />
-            </label>
+                <StretchHorizontal size={17} />
+              </button>
+              {widthMenuOpen ? (
+                <div className="note-view-dropdown" role="menu" aria-label="Editor width">
+                  {editorWidthOptions.map((option) => (
+                    <button
+                      key={option.value}
+                      type="button"
+                      className={option.value === editorWidthMode ? "is-active" : ""}
+                      role="menuitemradio"
+                      aria-checked={option.value === editorWidthMode}
+                      onClick={() => {
+                        setEditorWidthMode(option.value);
+                        setWidthMenuOpen(false);
+                      }}
+                    >
+                      <span>
+                        <strong>{option.label}</strong>
+                        {option.hint ? <small>{option.hint}</small> : null}
+                      </span>
+                      {option.value === editorWidthMode ? <Check size={15} /> : null}
+                    </button>
+                  ))}
+                </div>
+              ) : null}
+            </div>
+            <button
+              className="icon-button"
+              type="button"
+              title={noteAlignment === "left" ? "Align center" : "Align left"}
+              aria-label={noteAlignment === "left" ? "Align center" : "Align left"}
+              onClick={() => setNoteAlignment((value) => (value === "left" ? "center" : "left"))}
+            >
+              <AlignmentIcon size={17} />
+            </button>
           </header>
         ) : null}
 
         {noteOpen ? (
           <section
-            className={`note-surface is-${editorWidthMode}-width`}
+            className={`note-surface is-${editorWidthMode}-width is-${noteAlignment}-aligned`}
             ref={noteSurfaceRef}
             onScroll={handleNoteSurfaceScroll}
             onMouseDown={(event) => {
@@ -6824,6 +6872,11 @@ function readStoredEditorWidthMode(): EditorWidthMode {
   const value = localStorage.getItem(widthModeKey);
   if (value === "comfortable" || value === "narrow" || value === "full") return value;
   return localStorage.getItem(legacyFullWidthKey) === "true" ? "full" : "comfortable";
+}
+
+function readStoredNoteAlignment(): NoteAlignment {
+  const value = localStorage.getItem(alignmentKey);
+  return value === "left" || value === "center" ? value : "center";
 }
 
 function readAppearanceFontSize(value: number | undefined, fallback: number) {
