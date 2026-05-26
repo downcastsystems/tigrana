@@ -72,6 +72,7 @@ type SlashState = {
 
 const lowlight = createLowlight(common);
 const searchHighlightKey = new PluginKey<SearchHighlightState>("searchHighlight");
+const notebookImagePreviewCache = new Map<string, string>();
 
 type SearchHighlightState = {
   activeIndex: number;
@@ -1444,7 +1445,16 @@ function insertSavedImage(view: EditorView, previewSrc: string, markdownSrc: str
 
 async function previewSrcForNotebookImage(workspace: string, src: string) {
   if (!workspace || !isTauri() || isExternalImageSrc(src) || src.startsWith("data:")) return src;
-  return readAssetDataUrl(workspace, src);
+  const cacheKey = `${workspace}\0${src}`;
+  const cached = notebookImagePreviewCache.get(cacheKey);
+  if (cached) return cached;
+
+  const dataUrl = await readAssetDataUrl(workspace, src);
+  const file = dataUrlToFile(dataUrl);
+  if (!file) return dataUrl;
+  const objectUrl = URL.createObjectURL(file);
+  notebookImagePreviewCache.set(cacheKey, objectUrl);
+  return objectUrl;
 }
 
 async function hydrateNotebookImageNodes(editor: Editor, workspace: string) {
@@ -1473,6 +1483,7 @@ async function hydrateNotebookImageNodes(editor: Editor, workspace: string) {
     if (!item.previewSrc) continue;
     const node = tr.doc.nodeAt(item.pos);
     if (!node || node.type.name !== "image") continue;
+    if (node.attrs.src === item.previewSrc && node.attrs.markdownSrc === item.src) continue;
     tr.setNodeMarkup(item.pos, undefined, { ...item.attrs, src: item.previewSrc, markdownSrc: item.src });
     changed = true;
   }
