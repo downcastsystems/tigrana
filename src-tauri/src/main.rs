@@ -1972,6 +1972,33 @@ fn unregister_notebook_window(
     rebuild_app_menu(&app, &state)
 }
 
+#[tauri::command]
+fn focus_notebook_window(
+    app: AppHandle,
+    state: tauri::State<NotebookWindowState>,
+    workspace: String,
+) -> Result<bool, String> {
+    let label = {
+        let windows = state.windows.lock().map_err(|error| error.to_string())?;
+        windows
+            .values()
+            .find(|window| window.workspace == workspace)
+            .map(|window| window.label.clone())
+    };
+
+    let Some(label) = label else {
+        return Ok(false);
+    };
+
+    let Some(win) = app.get_webview_window(&label) else {
+        return Ok(false);
+    };
+
+    win.show().map_err(|error| error.to_string())?;
+    win.set_focus().map_err(|error| error.to_string())?;
+    Ok(true)
+}
+
 fn safe_workspace(workspace: &str) -> Result<PathBuf, String> {
     let path = PathBuf::from(workspace);
     if !path.is_absolute() {
@@ -2474,8 +2501,11 @@ pub fn run() {
                 let _ = app.emit("open-recently-deleted", ());
             }
             "request_quit" => {
-                if let Some(win) = app.get_webview_window("main") {
-                    let _ = win.close();
+                let labels: Vec<String> = app.webview_windows().keys().cloned().collect();
+                for label in labels {
+                    if let Some(win) = app.get_webview_window(&label) {
+                        let _ = win.close();
+                    }
                 }
             }
             id if id.starts_with("focus_notebook_window:") => {
@@ -2513,6 +2543,7 @@ pub fn run() {
             write_workspace_metadata,
             register_notebook_window,
             unregister_notebook_window,
+            focus_notebook_window,
             ensure_workspace_identity,
             read_link_index,
             rebuild_link_index,

@@ -48,6 +48,7 @@ import {
   createNote,
   ensureWelcomeNote,
   ensureWorkspace,
+  focusNotebookWindow,
   isTauri,
   listFolders,
   listNotes,
@@ -1629,7 +1630,7 @@ export default function App() {
     void refreshWorkspace(path);
   }
 
-  function openNotebookInNewWindow(path: string) {
+  async function openNotebookInNewWindow(path: string) {
     setAppMenuOpen(false);
     setNotebooksManageOpen(false);
     if (path === workspace) return;
@@ -1638,6 +1639,12 @@ export default function App() {
     if (!isTauri()) {
       switchNotebook(path);
       return;
+    }
+
+    try {
+      if (await focusNotebookWindow(path)) return;
+    } catch (error) {
+      console.warn("focus_notebook_window failed", error);
     }
 
     const params = new URLSearchParams({ workspace: path });
@@ -1668,7 +1675,7 @@ export default function App() {
         title: intent === "new" ? "Choose notebook folder" : "Open notebook",
       });
       if (typeof selected !== "string") return;
-      if (openInNewWindow) openNotebookInNewWindow(selected);
+      if (openInNewWindow) await openNotebookInNewWindow(selected);
       else switchNotebook(selected);
     } catch (error) {
       setAppError(error instanceof Error ? error.message : String(error));

@@ -538,6 +538,11 @@ export async function unregisterNotebookWindow(label: string) {
   await invoke("unregister_notebook_window", { label });
 }
 
+export async function focusNotebookWindow(workspace: string) {
+  if (!isTauri()) return false;
+  return await invoke<boolean>("focus_notebook_window", { workspace });
+}
+
 function normalizeWorkspaceMetadata(metadata: Partial<WorkspaceMetadata>): WorkspaceMetadata {
   return {
     ...defaultWorkspaceMetadata(),
