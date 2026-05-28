@@ -15,6 +15,10 @@ type DemoStore = {
   folders: string[];
 };
 
+export type AppPreferences = {
+  lastWorkspace?: string | null;
+};
+
 const initialDemo: DemoStore = {
   notes: {
     [WELCOME_NOTE_PATH]: WELCOME_NOTE_CONTENT,
@@ -513,6 +517,16 @@ export async function writeWorkspaceMetadata(workspace: string, metadata: Worksp
   }
 
   localStorage.setItem(demoMetadataKey(workspace), JSON.stringify(metadata));
+}
+
+export async function readAppPreferences(): Promise<AppPreferences> {
+  if (!isTauri()) return {};
+  return invoke("read_app_preferences");
+}
+
+export async function writeAppPreferences(preferences: AppPreferences) {
+  if (!isTauri()) return;
+  await invoke("write_app_preferences", { preferences });
 }
 
 export async function ensureWelcomeNote(workspace: string, metadata: WorkspaceMetadata): Promise<{ metadata: WorkspaceMetadata; created: boolean }> {

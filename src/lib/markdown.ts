@@ -269,6 +269,7 @@ export function markdownToHtml(markdown: string, options: MarkdownOptions = {}) 
       } else {
         closeList();
         closeTable();
+        flushBlankParagraphs();
         inCode = true;
         codeLanguage = line.slice(3).trim();
       }
@@ -516,7 +517,7 @@ export function htmlToMarkdown(html: string) {
   const blocks = Array.from(doc.body.firstElementChild?.children ?? []);
   const markdown: string[] = [];
 
-  for (const block of blocks) {
+  blocks.forEach((block, index) => {
     const tag = block.tagName.toLowerCase();
 
     if (/^h[1-6]$/.test(tag)) {
@@ -524,6 +525,9 @@ export function htmlToMarkdown(html: string) {
       markdown.push(`${"#".repeat(level)} ${inlineHtmlToMarkdown(block)}`);
     } else if (tag === "p") {
       const inline = inlineHtmlToMarkdown(block);
+      if (!inline.trim() && isCodeBlockNeighbor(blocks, index)) {
+        return;
+      }
       const segments = inline.split(HARD_BREAK_PLACEHOLDER).map(paragraphIndentToMarkdown);
       const lastIndex = segments.length - 1;
       const joined = segments.map((segment, idx) => (idx < lastIndex ? `${segment}  ` : segment)).join("\n");
@@ -569,9 +573,15 @@ export function htmlToMarkdown(html: string) {
         markdown.push(tableLines.join("\n"));
       }
     }
-  }
+  });
 
   return `${normalizeMarkdownImageLines(joinMarkdownBlocks(markdown)).trim()}\n`;
+}
+
+function isCodeBlockNeighbor(blocks: Element[], index: number) {
+  const previous = blocks[index - 1]?.tagName.toLowerCase();
+  const next = blocks[index + 1]?.tagName.toLowerCase();
+  return previous === "pre" || next === "pre";
 }
 
 // Join blocks with paragraph breaks, but let empty entries (from empty

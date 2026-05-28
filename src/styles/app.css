@@ -2414,7 +2414,7 @@ html[data-theme="dark"] .tab-list-separator {
 }
 
 .ProseMirror h1 {
-  margin-top: 0.25em;
+  margin-top: 0.5em;
   margin-bottom: 0.45em;
   font-size: calc(var(--editor-font-size) * 2.12);
 }
@@ -2444,8 +2444,24 @@ html[data-theme="dark"] .tab-list-separator {
   font-size: calc(var(--editor-font-size) * 1.06);
 }
 
+.ProseMirror h1 + h2 {
+  margin-top: 0.65em;
+}
+
+.ProseMirror h2 + h3 {
+  margin-top: 1.05em;
+}
+
 .ProseMirror p {
   margin: 0;
+}
+
+.ProseMirror > p + p,
+.ProseMirror > p + pre,
+.ProseMirror > pre + p,
+.ProseMirror > p + .node-codeBlock,
+.ProseMirror > .node-codeBlock + p {
+  margin-top: 0.95em;
 }
 
 .ProseMirror blockquote {
@@ -2458,6 +2474,7 @@ html[data-theme="dark"] .tab-list-separator {
 .ProseMirror pre {
   position: relative;
   overflow: auto;
+  margin: 0;
   padding: 16px;
   border-radius: 8px;
   color: #f5efe7;

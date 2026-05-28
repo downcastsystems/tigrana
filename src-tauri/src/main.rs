@@ -7,7 +7,8 @@ use std::path::{Component, Path, PathBuf};
 use std::process::Command;
 use std::sync::Mutex;
 use tauri::menu::{AboutMetadataBuilder, Menu, MenuItem, PredefinedMenuItem, Submenu};
-use tauri::{AppHandle, Emitter, Manager, WindowEvent};
+use tauri::{AppHandle, Emitter, Manager, WebviewWindow, WindowEvent, Wry};
+use tauri_plugin_dialog::DialogExt;
 use time::macros::format_description;
 use time::OffsetDateTime;
 use uuid::Uuid;
@@ -97,6 +98,12 @@ struct TrashEntry {
 struct TrashIndex {
     #[serde(default)]
     entries: Vec<TrashEntry>,
+}
+
+#[derive(Debug, Serialize, Deserialize, Default)]
+#[serde(rename_all = "camelCase")]
+struct AppPreferences {
+    last_workspace: Option<String>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -1933,6 +1940,35 @@ fn write_workspace_metadata(workspace: String, metadata: WorkspaceMetadata) -> R
     .map_err(|error| error.to_string())
 }
 
+fn app_preferences_path(app: &AppHandle) -> Result<PathBuf, String> {
+    let config_dir = app
+        .path()
+        .app_config_dir()
+        .map_err(|error| error.to_string())?;
+    Ok(config_dir.join("preferences.json"))
+}
+
+#[tauri::command]
+fn read_app_preferences(app: AppHandle) -> Result<AppPreferences, String> {
+    let path = app_preferences_path(&app)?;
+    if !path.exists() {
+        return Ok(AppPreferences::default());
+    }
+
+    let contents = fs::read_to_string(path).map_err(|error| error.to_string())?;
+    serde_json::from_str(&contents).map_err(|error| error.to_string())
+}
+
+#[tauri::command]
+fn write_app_preferences(app: AppHandle, preferences: AppPreferences) -> Result<(), String> {
+    let path = app_preferences_path(&app)?;
+    if let Some(parent) = path.parent() {
+        fs::create_dir_all(parent).map_err(|error| error.to_string())?;
+    }
+    let contents = serde_json::to_string_pretty(&preferences).map_err(|error| error.to_string())?;
+    fs::write(path, format!("{contents}\n")).map_err(|error| error.to_string())
+}
+
 #[tauri::command]
 fn register_notebook_window(
     app: AppHandle,
@@ -2308,6 +2344,20 @@ fn build_app_menu(
         true,
         None::<&str>,
     )?;
+    let open_notebook = MenuItem::with_id(
+        handle,
+        "open_notebook",
+        "Open Notebook...",
+        true,
+        Some("Cmd+O"),
+    )?;
+    let manage_notebooks = MenuItem::with_id(
+        handle,
+        "manage_notebooks",
+        "Manage Notebooks...",
+        true,
+        None::<&str>,
+    )?;
 
     let open_notebooks = Submenu::new(handle, "Open Notebooks", true)?;
     if notebook_windows.is_empty() {
@@ -2354,7 +2404,12 @@ fn build_app_menu(
         handle,
         "File",
         true,
-        &[&PredefinedMenuItem::close_window(handle, None)?],
+        &[
+            &open_notebook,
+            &manage_notebooks,
+            &PredefinedMenuItem::separator(handle)?,
+            &PredefinedMenuItem::close_window(handle, None)?,
+        ],
     )?;
     let edit_menu = Submenu::with_items(
         handle,
@@ -2418,6 +2473,67 @@ fn rebuild_app_menu(app: &AppHandle, state: &NotebookWindowState) -> Result<(), 
     app.set_menu(menu)
         .map(|_| ())
         .map_err(|error| error.to_string())
+}
+
+fn emit_menu_action(app: &AppHandle, event: &str) {
+    if let Some(window) = active_menu_window(app) {
+        let _ = window.emit(event, ());
+        return;
+    }
+    let _ = app.emit(event, ());
+}
+
+fn active_menu_window(app: &AppHandle) -> Option<WebviewWindow<Wry>> {
+    let windows = app.webview_windows();
+    windows
+        .values()
+        .find(|window| window.is_focused().unwrap_or(false))
+        .cloned()
+        .or_else(|| windows.values().next().cloned())
+}
+
+fn dispatch_frontend_menu_action(
+    window: &WebviewWindow<Wry>,
+    event: &str,
+    detail: serde_json::Value,
+) {
+    let event_json =
+        serde_json::to_string(event).unwrap_or_else(|_| "\"tigrana-menu-action\"".to_string());
+    let detail_json = serde_json::to_string(&detail).unwrap_or_else(|_| "null".to_string());
+    let script = format!(
+        "window.dispatchEvent(new CustomEvent({event_json}, {{ detail: {detail_json} }}));"
+    );
+    let _ = window.eval(script);
+}
+
+fn open_notebook_from_menu(app: &AppHandle) {
+    let Some(window) = active_menu_window(app) else {
+        return;
+    };
+    let dialog_window = window.clone();
+    app.dialog()
+        .file()
+        .set_parent(&dialog_window)
+        .set_title("Open notebook")
+        .pick_folder(move |folder| {
+            let Some(folder) = folder else {
+                return;
+            };
+            let Ok(path) = folder.into_path() else {
+                return;
+            };
+            dispatch_frontend_menu_action(
+                &window,
+                "tigrana-open-notebook",
+                serde_json::Value::String(path.to_string_lossy().to_string()),
+            );
+        });
+}
+
+fn manage_notebooks_from_menu(app: &AppHandle) {
+    if let Some(window) = active_menu_window(app) {
+        dispatch_frontend_menu_action(&window, "tigrana-manage-notebooks", serde_json::Value::Null);
+    }
 }
 
 fn reveal_in_file_manager(path: &Path) -> Result<(), String> {
@@ -2495,10 +2611,16 @@ pub fn run() {
         })
         .on_menu_event(|app, event| match event.id().as_ref() {
             "open_settings" => {
-                let _ = app.emit("open-settings", ());
+                emit_menu_action(app, "open-settings");
+            }
+            "open_notebook" => {
+                open_notebook_from_menu(app);
+            }
+            "manage_notebooks" => {
+                manage_notebooks_from_menu(app);
             }
             "open_recently_deleted" => {
-                let _ = app.emit("open-recently-deleted", ());
+                emit_menu_action(app, "open-recently-deleted");
             }
             "request_quit" => {
                 let labels: Vec<String> = app.webview_windows().keys().cloned().collect();
@@ -2544,6 +2666,8 @@ pub fn run() {
             register_notebook_window,
             unregister_notebook_window,
             focus_notebook_window,
+            read_app_preferences,
+            write_app_preferences,
             ensure_workspace_identity,
             read_link_index,
             rebuild_link_index,

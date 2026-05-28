@@ -57,6 +57,7 @@ import {
   moveNote,
   purgeTrash,
   purgeTrashAll,
+  readAppPreferences,
   readLinkIndex,
   readNote,
   restoreTrash,
@@ -73,6 +74,7 @@ import {
   unregisterNotebookWindow,
   validateNoteTitle,
   watchWorkspace,
+  writeAppPreferences,
   writeWorkspaceMetadata,
   defaultWorkspaceMetadata,
 } from "./lib/notesApi";
@@ -399,6 +401,7 @@ export default function App() {
   const openTabsRef = useRef<NoteTab[]>([]);
   const activeTabIdRef = useRef<string | null>(null);
   const workspaceRef = useRef<string | null>(null);
+  const chooseWorkspaceRef = useRef<(intent: "open" | "new", openInNewWindow?: boolean) => void>(() => {});
   const externalNoteChangeRef = useRef<(path: string) => void>(() => {});
   const selfWriteRef = useRef<Map<string, { content: string; at: number }>>(new Map());
   // Guards against concurrent persistDraft calls. The Enter handler and the
@@ -492,6 +495,27 @@ export default function App() {
   useEffect(() => {
     if (!workspace) return;
     setRecentNotebooks((current) => writeRecentNotebooks(touchRecentNotebook(current, workspace)));
+    void writeAppPreferences({ lastWorkspace: workspace }).catch((error) => {
+      console.warn("write_app_preferences failed", error);
+    });
+  }, [workspace]);
+
+  useEffect(() => {
+    if (workspace || !isTauri()) return;
+    let disposed = false;
+    void readAppPreferences()
+      .then((preferences) => {
+        const lastWorkspace = preferences.lastWorkspace;
+        if (disposed || !lastWorkspace) return;
+        localStorage.setItem(workspaceKey, lastWorkspace);
+        setWorkspace(lastWorkspace);
+      })
+      .catch((error) => {
+        console.warn("read_app_preferences failed", error);
+      });
+    return () => {
+      disposed = true;
+    };
   }, [workspace]);
 
   // Keep a per-workspace "last opened note" in localStorage so the location can
@@ -608,6 +632,41 @@ export default function App() {
     });
     return () => unlisten?.();
   }, []);
+
+  useEffect(() => {
+    if (!isTauri()) return;
+    let unlistenOpen: (() => void) | undefined;
+    let unlistenManage: (() => void) | undefined;
+    void listen("open-notebook", () => {
+      chooseWorkspaceRef.current("open");
+    }).then((callback) => {
+      unlistenOpen = callback;
+    });
+    void listen("manage-notebooks", () => {
+      setNotebooksManageOpen(true);
+    }).then((callback) => {
+      unlistenManage = callback;
+    });
+    return () => {
+      unlistenOpen?.();
+      unlistenManage?.();
+    };
+  }, []);
+
+  useEffect(() => {
+    if (!isTauri()) return;
+    const openNotebook = (event: Event) => {
+      const path = (event as CustomEvent<unknown>).detail;
+      if (typeof path === "string" && path) switchNotebook(path);
+    };
+    const manageNotebooks = () => setNotebooksManageOpen(true);
+    window.addEventListener("tigrana-open-notebook", openNotebook);
+    window.addEventListener("tigrana-manage-notebooks", manageNotebooks);
+    return () => {
+      window.removeEventListener("tigrana-open-notebook", openNotebook);
+      window.removeEventListener("tigrana-manage-notebooks", manageNotebooks);
+    };
+  });
 
   const refreshTrash = useCallback(async () => {
     if (!workspace) {
@@ -794,6 +853,9 @@ export default function App() {
   useEffect(() => { openTabsRef.current = openTabs; }, [openTabs]);
   useEffect(() => { activeTabIdRef.current = activeTabId; }, [activeTabId]);
   useEffect(() => { workspaceRef.current = workspace; }, [workspace]);
+  useEffect(() => {
+    chooseWorkspaceRef.current = (intent, openInNewWindow) => void chooseWorkspace(intent, openInNewWindow);
+  });
 
   // Window size and session tabs live in localStorage (sync writes), so the
   // only debounced write left is recordNotePosition. Flush it on close so the
