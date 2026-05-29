@@ -11,9 +11,10 @@ import { TableHeader } from "@tiptap/extension-table-header";
 import { TableRow } from "@tiptap/extension-table-row";
 import TaskItem from "@tiptap/extension-task-item";
 import TaskList from "@tiptap/extension-task-list";
-import type { Fragment as ProseMirrorFragment, Node as ProseMirrorNode, ResolvedPos } from "@tiptap/pm/model";
+import { DOMSerializer, type Fragment as ProseMirrorFragment, type Node as ProseMirrorNode, type ResolvedPos } from "@tiptap/pm/model";
 import { NodeSelection, Plugin, PluginKey, Selection, TextSelection } from "@tiptap/pm/state";
-import { Decoration, DecorationSet, type EditorView } from "@tiptap/pm/view";
+import { addColumnAfter, addRowAfter, TableMap } from "@tiptap/pm/tables";
+import { Decoration, DecorationSet, type EditorView, type NodeView, type ViewMutationRecord } from "@tiptap/pm/view";
 import { EditorContent, NodeViewContent, NodeViewWrapper, Range, ReactNodeViewRenderer, useEditor, type Editor } from "@tiptap/react";
 import StarterKit from "@tiptap/starter-kit";
 import { convertFileSrc } from "@tauri-apps/api/core";
@@ -303,6 +304,393 @@ const CodeBlockWithControls = CodeBlockLowlight.extend({
   },
 });
 
+type NodeViewGetPos = (() => number | undefined) | boolean;
+
+class TableControlsNodeView implements NodeView {
+  node: ProseMirrorNode;
+  cellMinWidth: number;
+  view: EditorView;
+  getPos: NodeViewGetPos;
+  dom: HTMLDivElement;
+  table: HTMLTableElement;
+  colgroup: HTMLTableColElement;
+  contentDOM: HTMLTableSectionElement;
+  tools: HTMLDivElement;
+  handleButton: HTMLButtonElement;
+  menu: HTMLDivElement | null = null;
+  copiedTimer: number | null = null;
+  selectionActive = false;
+
+  constructor(node: ProseMirrorNode, cellMinWidth: number, view: EditorView, getPos: NodeViewGetPos) {
+    this.node = node;
+    this.cellMinWidth = cellMinWidth;
+    this.view = view;
+    this.getPos = getPos;
+    this.dom = document.createElement("div");
+    this.dom.className = "tableWrapper table-node-view";
+
+    this.tools = this.dom.appendChild(document.createElement("div"));
+    this.tools.className = "table-block-tools";
+    this.tools.contentEditable = "false";
+    this.tools.addEventListener("mousedown", this.stopToolEvent);
+
+    const menuWrap = this.tools.appendChild(document.createElement("div"));
+    menuWrap.className = "table-menu-wrap";
+    this.handleButton = menuWrap.appendChild(createTableToolButton("Table options", tableIconSvg("grip", 16)));
+    this.handleButton.classList.add("table-handle-button");
+    this.handleButton.setAttribute("aria-expanded", "false");
+    this.handleButton.addEventListener("click", () => {
+      this.selectTable();
+      this.setMenuOpen(!this.menu);
+    });
+
+    this.table = this.dom.appendChild(document.createElement("table"));
+    if (node.attrs.style) {
+      this.table.style.cssText = String(node.attrs.style);
+    }
+    this.colgroup = this.table.appendChild(document.createElement("colgroup"));
+    updateTableColumns(node, this.colgroup, this.table, cellMinWidth);
+    this.contentDOM = this.table.appendChild(document.createElement("tbody"));
+    this.view.dom.addEventListener("keyup", this.refreshSelectionActive);
+    this.view.dom.addEventListener("mouseup", this.refreshSelectionActive);
+    this.view.dom.addEventListener("mousedown", this.refreshSelectionActive);
+    window.addEventListener("selectionchange", this.refreshSelectionActive);
+    window.setTimeout(this.refreshSelectionActive);
+  }
+
+  update(node: ProseMirrorNode) {
+    if (node.type !== this.node.type) return false;
+    this.node = node;
+    updateTableColumns(node, this.colgroup, this.table, this.cellMinWidth);
+    this.refreshSelectionActive();
+    return true;
+  }
+
+  selectNode() {
+    this.dom.classList.add("is-active");
+  }
+
+  deselectNode() {
+    if (!this.menu) this.dom.classList.remove("is-active");
+  }
+
+  destroy() {
+    this.tools.removeEventListener("mousedown", this.stopToolEvent);
+    this.view.dom.removeEventListener("keyup", this.refreshSelectionActive);
+    this.view.dom.removeEventListener("mouseup", this.refreshSelectionActive);
+    this.view.dom.removeEventListener("mousedown", this.refreshSelectionActive);
+    window.removeEventListener("selectionchange", this.refreshSelectionActive);
+    this.removeOutsideListeners();
+    if (this.copiedTimer !== null) window.clearTimeout(this.copiedTimer);
+  }
+
+  ignoreMutation(mutation: ViewMutationRecord) {
+    const target = mutation.target as Node;
+    const isInsideWrapper = this.dom.contains(target);
+    const isInsideContent = this.contentDOM.contains(target);
+
+    if (isInsideWrapper && !isInsideContent) {
+      return mutation.type === "attributes" || mutation.type === "childList" || mutation.type === "characterData";
+    }
+
+    return false;
+  }
+
+  stopToolEvent = (event: MouseEvent) => {
+    event.preventDefault();
+    event.stopPropagation();
+  };
+
+  handleOutsideMouseDown = (event: MouseEvent) => {
+    if (this.tools.contains(event.target as Node)) return;
+    this.setMenuOpen(false);
+  };
+
+  handleOutsideKeyDown = (event: KeyboardEvent) => {
+    if (event.key === "Escape") this.setMenuOpen(false);
+  };
+
+  refreshSelectionActive = () => {
+    const pos = this.resolvePos();
+    if (pos == null) {
+      this.selectionActive = false;
+      if (!this.menu) this.dom.classList.remove("is-active");
+      return;
+    }
+
+    const { from, to } = this.view.state.selection;
+    this.selectionActive = from >= pos && to <= pos + this.node.nodeSize;
+    if (this.selectionActive || this.menu) {
+      this.dom.classList.add("is-active");
+    } else {
+      this.dom.classList.remove("is-active");
+    }
+  };
+
+  resolvePos() {
+    if (typeof this.getPos !== "function") return null;
+    const pos = this.getPos();
+    return typeof pos === "number" ? pos : null;
+  }
+
+  selectTable() {
+    const pos = this.resolvePos();
+    if (pos == null) return;
+    const { state } = this.view;
+    this.view.dispatch(state.tr.setSelection(NodeSelection.create(state.doc, pos)).scrollIntoView());
+    this.refreshSelectionActive();
+    this.view.focus();
+  }
+
+  insertParagraphAfterTable() {
+    const pos = this.resolvePos();
+    const paragraph = this.view.state.schema.nodes.paragraph;
+    if (pos == null || !paragraph) return;
+
+    const { state } = this.view;
+    const afterTable = pos + this.node.nodeSize;
+    const nextNode = state.doc.nodeAt(afterTable);
+    let tr = state.tr;
+    let cursorPos = afterTable + 1;
+
+    if (nextNode) {
+      const nextCursorPos = nextNode.isTextblock ? afterTable + 1 : Selection.near(state.doc.resolve(afterTable), 1).from;
+      cursorPos = Math.min(nextCursorPos, tr.doc.content.size);
+    } else {
+      tr = tr.insert(afterTable, paragraph.create());
+      cursorPos = afterTable + 1;
+    }
+
+    cursorPos = Math.min(cursorPos, tr.doc.content.size);
+    tr = tr.setSelection(TextSelection.create(tr.doc, cursorPos));
+    this.view.dispatch(tr.scrollIntoView());
+    this.refreshSelectionActive();
+    this.view.focus();
+    this.setMenuOpen(false);
+  }
+
+  addRowToBottom() {
+    const map = TableMap.get(this.node);
+    this.runTableCommandAt(map.height - 1, 0, addRowAfter);
+  }
+
+  addColumnToEnd() {
+    const map = TableMap.get(this.node);
+    this.runTableCommandAt(0, map.width - 1, addColumnAfter);
+  }
+
+  runTableCommandAt(row: number, col: number, command: typeof addRowAfter) {
+    const pos = this.resolvePos();
+    if (pos == null || row < 0 || col < 0) return;
+
+    const map = TableMap.get(this.node);
+    const cellPos = map.positionAt(row, col, this.node);
+    const absoluteCellPos = pos + 1 + cellPos;
+    const { state } = this.view;
+    const selection = Selection.near(state.doc.resolve(Math.min(absoluteCellPos + 1, state.doc.content.size)));
+
+    this.view.dispatch(state.tr.setSelection(selection));
+    command(this.view.state, (tr) => this.view.dispatch(tr));
+    this.refreshSelectionActive();
+    this.view.focus();
+    this.setMenuOpen(false);
+  }
+
+  copyTable(label: HTMLSpanElement, iconSlot: HTMLSpanElement) {
+    const serialized = DOMSerializer.fromSchema(this.view.state.schema).serializeNode(this.node);
+    const container = document.createElement("div");
+    container.appendChild(serialized);
+    const html = normalizeTableClipboardHtml(container.innerHTML);
+    const markdown = htmlToMarkdown(html);
+    void writeRichClipboard(html, markdown).then(() => {
+      iconSlot.innerHTML = tableIconSvg("check", 14);
+      label.textContent = "Copied";
+      if (this.copiedTimer !== null) window.clearTimeout(this.copiedTimer);
+      this.copiedTimer = window.setTimeout(() => {
+        iconSlot.innerHTML = tableIconSvg("copy", 14);
+        label.textContent = "Copy table";
+      }, 1200);
+    }).catch((error) => {
+      console.error("Failed to copy table", error);
+    });
+  }
+
+  deleteTable() {
+    const pos = this.resolvePos();
+    const paragraph = this.view.state.schema.nodes.paragraph;
+    if (pos == null || !paragraph) return;
+
+    const { state } = this.view;
+    const tableTo = pos + this.node.nodeSize;
+    let tr = state.tr;
+
+    if (state.doc.childCount === 1) {
+      tr = tr.replaceWith(pos, tableTo, paragraph.create());
+      tr = tr.setSelection(TextSelection.create(tr.doc, Math.min(pos + 1, tr.doc.content.size)));
+    } else {
+      tr = tr.delete(pos, tableTo);
+      const selectionPos = Math.min(pos, tr.doc.content.size);
+      tr = tr.setSelection(Selection.near(tr.doc.resolve(selectionPos), -1));
+    }
+
+    this.view.dispatch(tr.scrollIntoView());
+    this.refreshSelectionActive();
+    this.view.focus();
+    this.setMenuOpen(false);
+  }
+
+  setMenuOpen(open: boolean) {
+    if (!open) {
+      this.menu?.remove();
+      this.menu = null;
+      this.handleButton.setAttribute("aria-expanded", "false");
+      if (!this.selectionActive) this.dom.classList.remove("is-active");
+      this.removeOutsideListeners();
+      return;
+    }
+
+    if (this.menu) return;
+    this.menu = document.createElement("div");
+    this.menu.className = "table-context-menu";
+
+    const copyButton = this.menu.appendChild(createTableMenuButton(tableIconSvg("copy", 14), "Copy table"));
+    const copyIcon = copyButton.querySelector(".table-menu-icon") as HTMLSpanElement;
+    const copyLabel = copyButton.querySelector("span:last-child") as HTMLSpanElement;
+    copyButton.addEventListener("click", () => this.copyTable(copyLabel, copyIcon));
+
+    const addButton = this.menu.appendChild(createTableMenuButton(tableIconSvg("plus", 14), "Add line after"));
+    addButton.addEventListener("click", () => this.insertParagraphAfterTable());
+
+    const rowButton = this.menu.appendChild(createTableMenuButton(tableIconSvg("plus", 14), "Add row"));
+    rowButton.addEventListener("click", () => this.addRowToBottom());
+
+    const columnButton = this.menu.appendChild(createTableMenuButton(tableIconSvg("plus", 14), "Add column"));
+    columnButton.addEventListener("click", () => this.addColumnToEnd());
+
+    const deleteButton = this.menu.appendChild(createTableMenuButton(tableIconSvg("trash", 14), "Delete table"));
+    deleteButton.classList.add("danger-item");
+    deleteButton.addEventListener("click", () => this.deleteTable());
+
+    this.handleButton.parentElement?.appendChild(this.menu);
+    this.handleButton.setAttribute("aria-expanded", "true");
+    this.dom.classList.add("is-active");
+    window.addEventListener("mousedown", this.handleOutsideMouseDown, true);
+    window.addEventListener("keydown", this.handleOutsideKeyDown, true);
+  }
+
+  removeOutsideListeners() {
+    window.removeEventListener("mousedown", this.handleOutsideMouseDown, true);
+    window.removeEventListener("keydown", this.handleOutsideKeyDown, true);
+  }
+}
+
+const TableWithControls = Table.extend({
+  addNodeView() {
+    return ({ node, view, getPos }) => new TableControlsNodeView(node, this.options.cellMinWidth, view, getPos);
+  },
+});
+
+type TableIconName = "check" | "copy" | "grip" | "plus" | "trash";
+
+const TABLE_ICON_PATHS: Record<TableIconName, string[]> = {
+  check: ['<path d="M20 6 9 17l-5-5"></path>'],
+  copy: [
+    '<rect width="14" height="14" x="8" y="8" rx="2" ry="2"></rect>',
+    '<path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2"></path>',
+  ],
+  grip: [
+    '<circle cx="9" cy="12" r="1"></circle>',
+    '<circle cx="9" cy="5" r="1"></circle>',
+    '<circle cx="9" cy="19" r="1"></circle>',
+    '<circle cx="15" cy="12" r="1"></circle>',
+    '<circle cx="15" cy="5" r="1"></circle>',
+    '<circle cx="15" cy="19" r="1"></circle>',
+  ],
+  plus: ['<path d="M5 12h14"></path>', '<path d="M12 5v14"></path>'],
+  trash: [
+    '<path d="M3 6h18"></path>',
+    '<path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6"></path>',
+    '<path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2"></path>',
+    '<line x1="10" x2="10" y1="11" y2="17"></line>',
+    '<line x1="14" x2="14" y1="11" y2="17"></line>',
+  ],
+};
+
+function tableIconSvg(name: TableIconName, size: number) {
+  return `<svg xmlns="http://www.w3.org/2000/svg" width="${size}" height="${size}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${TABLE_ICON_PATHS[name].join("")}</svg>`;
+}
+
+function createTableToolButton(title: string, iconMarkup: string) {
+  const button = document.createElement("button");
+  button.type = "button";
+  button.className = "table-tool-button";
+  button.title = title;
+  button.innerHTML = iconMarkup;
+  return button;
+}
+
+function createTableMenuButton(iconMarkup: string, label: string) {
+  const button = document.createElement("button");
+  button.type = "button";
+  const icon = button.appendChild(document.createElement("span"));
+  icon.className = "table-menu-icon";
+  icon.innerHTML = iconMarkup;
+  const text = button.appendChild(document.createElement("span"));
+  text.textContent = label;
+  return button;
+}
+
+function updateTableColumns(
+  node: ProseMirrorNode,
+  colgroup: HTMLTableColElement,
+  table: HTMLTableElement,
+  cellMinWidth: number,
+) {
+  let totalWidth = 0;
+  let fixedWidth = true;
+  let nextDOM = colgroup.firstChild as HTMLTableColElement | null;
+  const firstRow = node.firstChild;
+
+  if (firstRow) {
+    for (let cellIndex = 0, col = 0; cellIndex < firstRow.childCount; cellIndex += 1) {
+      const cell = firstRow.child(cellIndex);
+      const colspan = Number(cell.attrs.colspan ?? 1);
+      const colwidth = Array.isArray(cell.attrs.colwidth) ? cell.attrs.colwidth as unknown[] : null;
+      for (let span = 0; span < colspan; span += 1, col += 1) {
+        const widthValue = colwidth?.[span];
+        const width = typeof widthValue === "number" && Number.isFinite(widthValue) ? widthValue : null;
+        totalWidth += width ?? cellMinWidth;
+        if (!width) fixedWidth = false;
+
+        if (!nextDOM) {
+          nextDOM = document.createElement("col");
+          colgroup.appendChild(nextDOM);
+        }
+
+        nextDOM.style.width = width ? `${Math.max(width, cellMinWidth)}px` : "";
+        nextDOM.style.minWidth = width ? "" : `${cellMinWidth}px`;
+        nextDOM = nextDOM.nextSibling as HTMLTableColElement | null;
+      }
+    }
+  }
+
+  while (nextDOM) {
+    const after = nextDOM.nextSibling as HTMLTableColElement | null;
+    nextDOM.parentNode?.removeChild(nextDOM);
+    nextDOM = after;
+  }
+
+  const styleAttr = typeof node.attrs.style === "string" ? node.attrs.style : "";
+  const hasUserWidth = /\bwidth\s*:/i.test(styleAttr);
+  if (fixedWidth && !hasUserWidth) {
+    table.style.width = `${totalWidth}px`;
+    table.style.minWidth = "";
+  } else {
+    table.style.width = "";
+    table.style.minWidth = `${totalWidth}px`;
+  }
+}
+
 const MarkdownImage = Image.extend({
   addAttributes() {
     return {
@@ -338,6 +726,11 @@ export function NotesEditor({ content, focusRequest, focusAtEndRequest, findRequ
   const handledFindRequest = useRef(findRequest);
   const lastLoadedNote = useRef<string | null>(null);
   const handledReloadRequest = useRef(reloadRequest ?? 0);
+  const notePathRef = useRef(notePath);
+
+  useEffect(() => {
+    notePathRef.current = notePath;
+  }, [notePath]);
 
   const initialContent = useMemo((): { error: unknown; html: string } => {
     try {
@@ -398,7 +791,7 @@ export function NotesEditor({ content, focusRequest, focusAtEndRequest, findRequ
       TaskItem.configure({
         nested: true,
       }),
-      Table.configure({ resizable: false }),
+      TableWithControls.configure({ resizable: false, allowTableNodeSelection: true }),
       TableRow,
       TableHeader,
       TableCell,
@@ -497,10 +890,12 @@ export function NotesEditor({ content, focusRequest, focusAtEndRequest, findRequ
         if (!file && !htmlFile && !mayContainAsyncClipboardImage(event.clipboardData)) return false;
 
         event.preventDefault();
+        const pasteNotePath = notePathRef.current;
         void getBestClipboardImageFile(file ?? htmlFile)
           .then((imageFile) => {
-            if (imageFile) return insertImageFile(view, workspace, imageFile);
-            return insertNativeClipboardImage(view, workspace);
+            if (notePathRef.current !== pasteNotePath) return undefined;
+            if (imageFile) return insertImageFile(view, workspace, imageFile, pasteNotePath, () => notePathRef.current);
+            return insertNativeClipboardImage(view, workspace, pasteNotePath, () => notePathRef.current);
           })
           .catch((error) => {
             console.error("Failed to paste image", error);
@@ -543,8 +938,8 @@ export function NotesEditor({ content, focusRequest, focusAtEndRequest, findRequ
 
   useEffect(() => {
     if (!editor) return;
-    void hydrateNotebookImageNodes(editor, workspace);
-  }, [content, editor, workspace]);
+    void hydrateNotebookImageNodes(editor, workspace, notePath, () => notePathRef.current);
+  }, [content, editor, notePath, workspace]);
 
   useEffect(() => {
     if (!editor) return;
@@ -598,7 +993,7 @@ export function NotesEditor({ content, focusRequest, focusAtEndRequest, findRequ
       if (wasFocused) {
         editor.view.dom.focus({ preventScroll: true });
       }
-      void hydrateNotebookImageNodes(editor, workspace);
+      void hydrateNotebookImageNodes(editor, workspace, notePath, () => notePathRef.current);
     } catch (error) {
       onLoadError(error);
     }
@@ -986,6 +1381,7 @@ function FormattingBubbleMenu({
     if (activeElement instanceof HTMLElement && activeElement.closest(".note-find-bar")) return false;
     const { selection } = editor.state;
     if (selection instanceof NodeSelection && selection.node.type.name === "image") return false;
+    if (selection instanceof NodeSelection && selection.node.type.name === "table") return false;
     if (editor.isActive("image")) return false;
     return !selection.empty && editor.isEditable && editor.isFocused;
   })();
@@ -1259,13 +1655,48 @@ function writeEditorSelectionToClipboard(view: EditorView, event: ClipboardEvent
   if (view.state.selection.empty || !event.clipboardData) return false;
   const slice = view.state.selection.content();
   const markdown = serializeClipboardFragment(slice.content).trimEnd();
-  if (!markdown) return false;
-  const html = markdownToHtml(markdown);
+  const html = serializeClipboardHtmlFragment(view, slice.content);
+  if (!markdown && !html) return false;
 
   event.preventDefault();
   event.clipboardData.setData("text/plain", markdown);
-  event.clipboardData.setData("text/html", html);
+  event.clipboardData.setData("text/html", html || markdownToHtml(markdown));
   return true;
+}
+
+function serializeClipboardHtmlFragment(view: EditorView, fragment: ProseMirrorFragment) {
+  const container = document.createElement("div");
+  container.appendChild(DOMSerializer.fromSchema(view.state.schema).serializeFragment(fragment));
+  return normalizeTableClipboardHtml(container.innerHTML).trim();
+}
+
+function normalizeTableClipboardHtml(html: string) {
+  const container = document.createElement("div");
+  container.innerHTML = html;
+  container.querySelectorAll("colgroup").forEach((colgroup) => colgroup.remove());
+  container.querySelectorAll<HTMLElement>("[data-node-view-wrapper], [data-node-view-content], [data-node-view-content-react]").forEach((element) => {
+    element.removeAttribute("data-node-view-wrapper");
+    element.removeAttribute("data-node-view-content");
+    element.removeAttribute("data-node-view-content-react");
+  });
+  container.querySelectorAll<HTMLElement>("table").forEach((table) => {
+    table.removeAttribute("style");
+    table.removeAttribute("data-node-view-wrapper");
+  });
+  return container.innerHTML;
+}
+
+async function writeRichClipboard(html: string, plainText: string) {
+  if (navigator.clipboard.write && typeof ClipboardItem !== "undefined") {
+    await navigator.clipboard.write([
+      new ClipboardItem({
+        "text/html": new Blob([html], { type: "text/html" }),
+        "text/plain": new Blob([plainText], { type: "text/plain" }),
+      }),
+    ]);
+    return;
+  }
+  await navigator.clipboard.writeText(plainText);
 }
 
 function serializeClipboardFragment(fragment: ProseMirrorFragment) {
@@ -1294,9 +1725,32 @@ function serializeClipboardNode(node: ProseMirrorNode, depth: number): string {
     return `\`\`\`${language}\n${node.textContent}\n\`\`\``;
   }
   if (name === "horizontalRule") return "---";
+  if (name === "table") return serializeClipboardTable(node);
   if (name === "bulletList" || name === "orderedList" || name === "taskList") return serializeClipboardList(node, depth);
   if (name === "listItem" || name === "taskItem") return serializeBlockContent(node, depth);
   return serializeBlockContent(node, depth);
+}
+
+function serializeClipboardTable(table: ProseMirrorNode) {
+  const rows: string[][] = [];
+  table.forEach((row) => {
+    const cells: string[] = [];
+    row.forEach((cell) => {
+      cells.push(serializeBlockContent(cell, 0).replace(/\n+/g, "<br>").trim());
+    });
+    rows.push(cells);
+  });
+
+  if (!rows.length) return "";
+  const columnCount = rows.reduce((max, row) => Math.max(max, row.length), 0);
+  const normalizeRow = (row: string[]) => Array.from({ length: columnCount }, (_value, index) => row[index] ?? "");
+  const [firstRow = [], ...bodyRows] = rows.map(normalizeRow);
+  const lines = [
+    `| ${firstRow.join(" | ")} |`,
+    `| ${firstRow.map(() => "---").join(" | ")} |`,
+    ...bodyRows.map((row) => `| ${row.join(" | ")} |`),
+  ];
+  return lines.join("\n");
 }
 
 function serializeClipboardList(list: ProseMirrorNode, depth: number) {
@@ -1485,15 +1939,28 @@ function extensionForImageType(type: string) {
   return type.split("/").at(1)?.replace(/\W+/g, "-") || "png";
 }
 
-async function insertImageFile(view: EditorView, workspace: string, file: File) {
+async function insertImageFile(
+  view: EditorView,
+  workspace: string,
+  file: File,
+  expectedNotePath: string | null,
+  getCurrentNotePath: () => string | null,
+) {
   const src = await saveAsset(workspace, file);
   const previewSrc = await previewSrcForNotebookImage(workspace, src);
+  if (getCurrentNotePath() !== expectedNotePath) return;
   insertSavedImage(view, previewSrc, src, file.name || "Pasted image");
 }
 
-async function insertNativeClipboardImage(view: EditorView, workspace: string) {
+async function insertNativeClipboardImage(
+  view: EditorView,
+  workspace: string,
+  expectedNotePath: string | null,
+  getCurrentNotePath: () => string | null,
+) {
   const src = await saveClipboardImageAsset(workspace);
   const previewSrc = await previewSrcForNotebookImage(workspace, src);
+  if (getCurrentNotePath() !== expectedNotePath) return;
   insertSavedImage(view, previewSrc, src, "Pasted image");
 }
 
@@ -1523,7 +1990,12 @@ async function previewSrcForNotebookImage(workspace: string, src: string) {
   return objectUrl;
 }
 
-async function hydrateNotebookImageNodes(editor: Editor, workspace: string) {
+async function hydrateNotebookImageNodes(
+  editor: Editor,
+  workspace: string,
+  expectedNotePath: string | null,
+  getCurrentNotePath: () => string | null,
+) {
   if (!workspace || !isTauri()) return;
   const pending: Array<{ attrs: Record<string, unknown>; pos: number; src: string }> = [];
   editor.state.doc.descendants((node, pos) => {
@@ -1543,9 +2015,11 @@ async function hydrateNotebookImageNodes(editor: Editor, workspace: string) {
     })),
   );
 
+  if (getCurrentNotePath() !== expectedNotePath) return;
   const tr = editor.state.tr;
   let changed = false;
   for (const item of resolved) {
+    if (getCurrentNotePath() !== expectedNotePath) return;
     if (!item.previewSrc) continue;
     const node = tr.doc.nodeAt(item.pos);
     if (!node || node.type.name !== "image") continue;

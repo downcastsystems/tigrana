@@ -2924,12 +2924,106 @@ html[data-theme="dark"] .tab-list-separator {
   text-decoration: line-through;
 }
 
+.ProseMirror .table-node-view {
+  position: relative;
+  margin: 18px 0;
+}
+
+.ProseMirror .table-node-view table,
 .ProseMirror table {
   width: 100%;
   margin: 18px 0;
   border-collapse: collapse;
   table-layout: fixed;
   overflow: hidden;
+}
+
+.ProseMirror .table-node-view table {
+  margin: 0;
+}
+
+.table-block-tools {
+  position: absolute;
+  top: 0;
+  left: -32px;
+  z-index: 5;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding-right: 8px;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 120ms ease;
+}
+
+.table-node-view:hover .table-block-tools,
+.table-node-view:focus-within .table-block-tools,
+.table-node-view.is-active .table-block-tools {
+  opacity: 1;
+  pointer-events: auto;
+}
+
+.table-tool-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  padding: 0;
+  border: 0;
+  border-radius: 6px;
+  color: #817a70;
+  background: transparent;
+  cursor: pointer;
+}
+
+.table-tool-button:hover,
+.table-tool-button[aria-expanded="true"] {
+  color: #302b25;
+  background: rgba(52, 48, 43, 0.08);
+}
+
+.table-menu-wrap {
+  position: relative;
+}
+
+.table-context-menu {
+  position: absolute;
+  top: 28px;
+  left: 0;
+  z-index: 60;
+  display: flex;
+  flex-direction: column;
+  min-width: 158px;
+  padding: 5px;
+  border: 1px solid rgba(52, 48, 43, 0.12);
+  border-radius: 8px;
+  background: rgba(255, 252, 247, 0.96);
+  box-shadow: var(--shadow-popover);
+}
+
+.table-context-menu button {
+  display: grid;
+  grid-template-columns: 16px minmax(0, 1fr);
+  align-items: center;
+  gap: 8px;
+  min-height: 30px;
+  padding: 5px 8px;
+  border: 0;
+  border-radius: 6px;
+  color: #302b25;
+  background: transparent;
+  font-size: 13px;
+  text-align: left;
+  cursor: pointer;
+}
+
+.table-context-menu button:hover {
+  background: rgba(52, 48, 43, 0.08);
+}
+
+.table-context-menu .danger-item {
+  color: #b64a3d;
 }
 
 .ProseMirror td,
@@ -3852,6 +3946,7 @@ html[data-theme="dark"] .note-status-bar,
 html[data-theme="dark"] .dialog-input,
 html[data-theme="dark"] .segmented-button,
 html[data-theme="dark"] .context-menu,
+html[data-theme="dark"] .table-context-menu,
 html[data-theme="dark"] .icon-choice,
 html[data-theme="dark"] .folder-search-input,
 html[data-theme="dark"] .format-bubble,
@@ -3900,6 +3995,9 @@ html[data-theme="dark"] .note-tab:hover,
 html[data-theme="dark"] .note-tab-add:hover,
 html[data-theme="dark"] .context-menu button:hover,
 html[data-theme="dark"] .note-find-bar button:hover:not(:disabled),
+html[data-theme="dark"] .table-tool-button:hover,
+html[data-theme="dark"] .table-tool-button[aria-expanded="true"],
+html[data-theme="dark"] .table-context-menu button:hover,
 html[data-theme="dark"] .outline-item:hover,
 html[data-theme="dark"] .backlinks-item:hover,
 html[data-theme="dark"] .secondary-link:hover,
@@ -3910,6 +4008,20 @@ html[data-theme="dark"] .icon-choice.is-selected {
 }
 
 html[data-theme="dark"] .context-menu .danger-item {
+  color: #f08a7f;
+}
+
+html[data-theme="dark"] .table-tool-button {
+  color: #a9a096;
+}
+
+html[data-theme="dark"] .table-tool-button:hover,
+html[data-theme="dark"] .table-tool-button[aria-expanded="true"],
+html[data-theme="dark"] .table-context-menu button {
+  color: #eee8df;
+}
+
+html[data-theme="dark"] .table-context-menu .danger-item {
   color: #f08a7f;
 }
 

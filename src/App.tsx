@@ -355,7 +355,7 @@ export default function App() {
   const [noteLockMessage, setNoteLockMessage] = useState<string | null>(null);
   const [selectedEditorText, setSelectedEditorText] = useState("");
   const [editorRestorePosition, setEditorRestorePosition] = useState<NotePositionMetadata | null>(null);
-  const [isSaving, setIsSaving] = useState(false);
+  const [savingPaths, setSavingPaths] = useState<Set<string>>(() => new Set());
   const [searchOpen, setSearchOpen] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
   const [searchFocusRequest, setSearchFocusRequest] = useState(0);
@@ -422,11 +422,17 @@ export default function App() {
   const acceptedDiskContentRef = useRef<Map<string, string>>(new Map());
   const activeNoteLockRef = useRef<{ workspace: string; path: string; windowLabel: string } | null>(null);
   const noteLoadTokenRef = useRef(0);
-  // Guards against concurrent persistDraft calls. The Enter handler and the
-  // title's onBlur can both fire at the same moment (Enter shifts focus to
-  // the editor, which blurs the title), and two simultaneous createNote
-  // calls race each other — the second one errors with "already exists".
-  const persistingRef = useRef(false);
+  const noteSaveQueuesRef = useRef<Map<string, Promise<void>>>(new Map());
+  const activeDraftStateRef = useRef({
+    activePath: null as string | null,
+    draft: "",
+    frontmatterDraft: "",
+    titleDraft: "",
+  });
+  const flushPendingSavesRef = useRef<() => Promise<void>>(async () => {});
+  // Guards path-changing creates/renames. Plain body saves are queued per note,
+  // but creates and renames still need a single owner because they change identity.
+  const pathChangePersistRef = useRef<Promise<void> | null>(null);
   const keyboardActionsRef = useRef<{
     addEmptyTab: () => void;
     chooseWorkspace: (intent: "open" | "new") => void;
@@ -460,6 +466,7 @@ export default function App() {
   const hasUnsavedBody = Boolean(noteOpen) && (draft !== savedDraft || frontmatterDraft !== savedFrontmatter);
   const hasUnsavedChanges = Boolean(noteOpen) && (hasUnsavedBody || titleDraft !== savedTitle);
   const activeNoteEditable = activeNoteAccess === "editable";
+  const isSaving = savingPaths.size > 0;
   const resolvedTheme = colorScheme === "system" ? (prefersDark ? "dark" : "light") : colorScheme;
   const themePreset = getThemePreset(themePresetId);
   const activeThemeColors = themeColors[resolvedTheme];
@@ -510,6 +517,15 @@ export default function App() {
   useEffect(() => {
     metadataRef.current = metadata;
   }, [metadata]);
+
+  useEffect(() => {
+    activeDraftStateRef.current = {
+      activePath,
+      draft,
+      frontmatterDraft,
+      titleDraft,
+    };
+  }, [activePath, draft, frontmatterDraft, titleDraft]);
 
   useEffect(() => {
     if (!workspace) return;
@@ -890,15 +906,14 @@ export default function App() {
     void win
       .onCloseRequested(async (event) => {
         const workspacePath = workspaceRef.current;
-        if (!workspacePath || positionWriteTimerRef.current === null) return;
         event.preventDefault();
-        window.clearTimeout(positionWriteTimerRef.current);
-        positionWriteTimerRef.current = null;
-        try {
+        const flushPosition = async () => {
+          if (!workspacePath || positionWriteTimerRef.current === null) return;
+          window.clearTimeout(positionWriteTimerRef.current);
+          positionWriteTimerRef.current = null;
           await writeWorkspaceMetadata(workspacePath, metadataRef.current);
-        } catch {
-          // Best-effort; we're closing regardless.
-        }
+        };
+        await Promise.allSettled([flushPendingSavesRef.current(), flushPosition()]);
         if (!disposed) void win.destroy();
       })
       .then((fn) => {
@@ -1037,6 +1052,36 @@ export default function App() {
   const finishNoteLoad = useCallback((token: number) => {
     if (noteLoadTokenRef.current === token) {
       noteLoadTokenRef.current = 0;
+    }
+  }, []);
+
+  const enqueueNoteSave = useCallback((path: string, work: () => Promise<void>) => {
+    const previous = noteSaveQueuesRef.current.get(path) ?? Promise.resolve();
+    const next = previous
+      .catch(() => undefined)
+      .then(work)
+      .catch((error) => {
+        setAppError(error instanceof Error ? error.message : String(error));
+      })
+      .finally(() => {
+        if (noteSaveQueuesRef.current.get(path) !== next) return;
+        noteSaveQueuesRef.current.delete(path);
+        setSavingPaths((current) => {
+          if (!current.has(path)) return current;
+          const updated = new Set(current);
+          updated.delete(path);
+          return updated;
+        });
+      });
+
+    noteSaveQueuesRef.current.set(path, next);
+    setSavingPaths((current) => (current.has(path) ? current : new Set([...current, path])));
+    return next;
+  }, []);
+
+  const waitForPendingNoteSaves = useCallback(async () => {
+    while (noteSaveQueuesRef.current.size > 0) {
+      await Promise.allSettled(Array.from(noteSaveQueuesRef.current.values()));
     }
   }, []);
 
@@ -1309,7 +1354,7 @@ export default function App() {
 
   async function selectNote(path: string, options: { preserveSelectedFolder?: boolean; skipPersist?: boolean } = {}) {
     if (hasUnsavedChanges && !options.skipPersist) {
-      await persistDraft();
+      await persistDraftForNavigation();
     }
     placePathInActiveTab(path);
     await loadExistingNoteIntoEditor(path, options);
@@ -1334,7 +1379,7 @@ export default function App() {
 
   async function selectSection(sectionPath: string) {
     if (hasUnsavedChanges) {
-      await persistDraft();
+      await persistDraftForNavigation();
     }
 
     setSelectedFolder(sectionPath);
@@ -1349,7 +1394,7 @@ export default function App() {
 
   async function selectFolderForNewNote(folderPath: string) {
     if (hasUnsavedChanges) {
-      await persistDraft();
+      await persistDraftForNavigation();
     }
     setSelectedFolder(folderPath);
     clearCurrentNote();
@@ -1429,16 +1474,12 @@ export default function App() {
   externalNoteChangeRef.current = (path: string) => void handleExternalNoteChange(path);
 
   const persistDraft = useCallback(async () => {
-    // Re-entry guard. The Enter handler on the title input synchronously
-    // moves focus to the editor, which fires the title's onBlur, which also
-    // wants to persist. Without this guard, two createNote/saveNote pairs
-    // race and the second errors with "already exists".
-    if (persistingRef.current) return;
     setAppError(null);
     if (!workspace || !noteOpen) return;
     if (noteLoadTokenRef.current !== 0) return;
     if (!activeNoteEditable) return;
 
+    const title = titleDraft.trim();
     try {
       validateNoteTitle(titleDraft);
     } catch (error) {
@@ -1446,73 +1487,154 @@ export default function App() {
       return;
     }
 
-    persistingRef.current = true;
-    setIsSaving(true);
+    const snapshot = {
+      workspace,
+      path: activePath,
+      pendingNote,
+      title,
+      savedTitle,
+      body: draft,
+      frontmatter: frontmatterDraft,
+      markdown: composeMarkdown(frontmatterDraft, draft, Boolean(frontmatterError && !frontmatterDraft)),
+    };
 
-    try {
-      let nextPath = activePath;
-      const markdown = composeMarkdown(frontmatterDraft, draft, Boolean(frontmatterError && !frontmatterDraft));
+    const pathWillChange = Boolean(snapshot.pendingNote || (snapshot.path && snapshot.title !== snapshot.savedTitle));
 
-      if (pendingNote) {
-        const note = await createNote(workspace, pendingNote.parentPath, titleDraft.trim());
-        nextPath = note.path;
-        // createNote writes initial scaffolding to disk (frontmatter id +
-        // blank body) which produces a file-watcher echo. Pre-seed the
-        // accepted disk baseline so that echo doesn't fire the "changed on
-        // disk" warning before our own saveNote runs.
-        try {
-          const initial = await readNote(workspace, note.path);
-          acceptedDiskContentRef.current.set(note.path, normalizeNoteContentForWatcher(initial));
-        } catch {
-          // Best-effort; the saveNote below will overwrite the entry anyway.
-        }
-        setNotes((current) => current.some((entry) => entry.path === note.path) ? current : [...current, note]);
-        setActivePath(note.path);
-        setPendingNote(null);
-        const createdAccess = await acquireActiveNoteLock(note.path);
-        applyNoteAccess(createdAccess);
-        if (createdAccess !== "editable") return;
-        setSelectedFolder(navigationStyle === "section-view" ? getTopLevelFolderPath(note.parent_path) : note.parent_path);
-        placePathInActiveTab(note.path);
-        updateMetadata((current) => addToOrder(current, note.parent_path, note.path));
-      } else if (activePath && titleDraft.trim() !== savedTitle) {
-        const renamed = await renameNote(workspace, activePath, titleDraft.trim());
-        nextPath = renamed.path;
-        setActivePath(renamed.path);
-        if (activeNoteLockRef.current?.path === activePath) {
-          activeNoteLockRef.current = { ...activeNoteLockRef.current, path: renamed.path };
-        }
-        replaceOpenTabPath(activePath, renamed.path);
-        updateMetadata((current) => replaceOrderedPath(current, activePath, renamed.path));
+    if (pathWillChange) {
+      if (pathChangePersistRef.current) {
+        await pathChangePersistRef.current;
+        return;
       }
 
-      if (!nextPath) return;
+      const savingKey = snapshot.path ?? `pending:${snapshot.pendingNote?.parentPath ?? ""}:${snapshot.title}`;
+      setSavingPaths((current) => (current.has(savingKey) ? current : new Set([...current, savingKey])));
+      const pathChangeSave = (async () => {
+        let nextPath = snapshot.path;
+        try {
+          if (snapshot.pendingNote) {
+            const note = await createNote(snapshot.workspace, snapshot.pendingNote.parentPath, snapshot.title);
+            nextPath = note.path;
+            // createNote writes initial scaffolding to disk (frontmatter id +
+            // blank body) which produces a file-watcher echo. Pre-seed the
+            // accepted disk baseline so that echo doesn't fire the "changed on
+            // disk" warning before our own saveNote runs.
+            try {
+              const initial = await readNote(snapshot.workspace, note.path);
+              acceptedDiskContentRef.current.set(note.path, normalizeNoteContentForWatcher(initial));
+            } catch {
+              // Best-effort; the saveNote below will overwrite the entry anyway.
+            }
+            setNotes((current) => current.some((entry) => entry.path === note.path) ? current : [...current, note]);
+            setActivePath(note.path);
+            setPendingNote(null);
+            const createdAccess = await acquireActiveNoteLock(note.path);
+            applyNoteAccess(createdAccess);
+            if (createdAccess !== "editable") return;
+            setSelectedFolder(navigationStyle === "section-view" ? getTopLevelFolderPath(note.parent_path) : note.parent_path);
+            placePathInActiveTab(note.path);
+            updateMetadata((current) => addToOrder(current, note.parent_path, note.path));
+          } else if (snapshot.path && snapshot.title !== snapshot.savedTitle) {
+            const renamed = await renameNote(snapshot.workspace, snapshot.path, snapshot.title);
+            nextPath = renamed.path;
+            setActivePath(renamed.path);
+            if (activeNoteLockRef.current?.path === snapshot.path) {
+              activeNoteLockRef.current = { ...activeNoteLockRef.current, path: renamed.path };
+            }
+            replaceOpenTabPath(snapshot.path, renamed.path);
+            updateMetadata((current) => replaceOrderedPath(current, snapshot.path as string, renamed.path));
+          }
 
-      const written = await saveNote(workspace, nextPath, markdown);
-      // Record the on-disk bytes (which may differ from `markdown` — Rust may
-      // have added an id frontmatter or normalized line endings) so the
-      // file-watcher echo of our own write doesn't trip the "changed on disk"
-      // warning on the next keystroke.
-      if (activePath && activePath !== nextPath) acceptedDiskContentRef.current.delete(activePath);
-      acceptedDiskContentRef.current.set(nextPath, normalizeNoteContentForWatcher(written));
-      recordNotePosition(nextPath, markdown);
-      setSavedTitle(titleDraft.trim());
-      setSavedDraft(draft);
-      setSavedFrontmatter(frontmatterDraft);
+          if (!nextPath) return;
+
+          const savedPath = nextPath;
+          const written = await saveNote(snapshot.workspace, savedPath, snapshot.markdown);
+          if (snapshot.path && snapshot.path !== savedPath) acceptedDiskContentRef.current.delete(snapshot.path);
+          acceptedDiskContentRef.current.set(savedPath, normalizeNoteContentForWatcher(written));
+          recordNotePosition(savedPath, written);
+          setSavedTitle(snapshot.title);
+          setSavedDraft(snapshot.body);
+          setSavedFrontmatter(snapshot.frontmatter);
+          setContents((current) => {
+            const next = new Map(current);
+            if (snapshot.path && snapshot.path !== savedPath) next.delete(snapshot.path);
+            next.set(savedPath, written);
+            return next;
+          });
+          await refreshWorkspace(snapshot.workspace);
+        } catch (error) {
+          setAppError(error instanceof Error ? error.message : String(error));
+        } finally {
+          setSavingPaths((current) => {
+            if (!current.has(savingKey)) return current;
+            const updated = new Set(current);
+            updated.delete(savingKey);
+            return updated;
+          });
+          pathChangePersistRef.current = null;
+        }
+      })();
+
+      pathChangePersistRef.current = pathChangeSave;
+      await pathChangeSave;
+      return;
+    }
+
+    if (!snapshot.path || !hasUnsavedBody) return;
+
+    // Keep the in-memory cache ahead of disk so a quick switch away and back
+    // reopens the latest draft while the path-bound save finishes.
+    setContents((current) => {
+      const next = new Map(current);
+      next.set(snapshot.path as string, snapshot.markdown);
+      return next;
+    });
+
+    enqueueNoteSave(snapshot.path, async () => {
+      const written = await saveNote(snapshot.workspace, snapshot.path as string, snapshot.markdown);
+      acceptedDiskContentRef.current.set(snapshot.path as string, normalizeNoteContentForWatcher(written));
+      recordNotePosition(snapshot.path as string, written);
       setContents((current) => {
         const next = new Map(current);
-        if (activePath && activePath !== nextPath) next.delete(activePath);
-        next.set(nextPath, markdown);
+        next.set(snapshot.path as string, written);
         return next;
       });
-      await refreshWorkspace(workspace);
-    } catch (error) {
-      setAppError(error instanceof Error ? error.message : String(error));
-    } finally {
-      setIsSaving(false);
-      persistingRef.current = false;
-    }
-  }, [acquireActiveNoteLock, activeNoteEditable, activePath, applyNoteAccess, draft, frontmatterDraft, frontmatterError, navigationStyle, noteOpen, pendingNote, placePathInActiveTab, recordNotePosition, refreshWorkspace, savedTitle, titleDraft, updateMetadata, workspace]);
+      setNotes((current) =>
+        current.map((note) =>
+          note.path === snapshot.path
+            ? { ...note, updated_at: Date.now() / 1000 }
+            : note,
+        ),
+      );
+      const currentDraft = activeDraftStateRef.current;
+      if (
+        currentDraft.activePath === snapshot.path &&
+        currentDraft.draft === snapshot.body &&
+        currentDraft.frontmatterDraft === snapshot.frontmatter &&
+        currentDraft.titleDraft.trim() === snapshot.title
+      ) {
+        setSavedTitle(snapshot.title);
+        setSavedDraft(snapshot.body);
+        setSavedFrontmatter(snapshot.frontmatter);
+      }
+      const nextIndex = await readLinkIndex(snapshot.workspace);
+      setLinkIndex(nextIndex);
+    });
+  }, [acquireActiveNoteLock, activeNoteEditable, activePath, applyNoteAccess, draft, enqueueNoteSave, frontmatterDraft, frontmatterError, hasUnsavedBody, navigationStyle, noteOpen, pendingNote, placePathInActiveTab, recordNotePosition, refreshWorkspace, savedTitle, titleDraft, updateMetadata, workspace]);
+
+  async function persistDraftForNavigation() {
+    if (!hasUnsavedChanges) return;
+    const waitForPathChange = Boolean(pendingNote || titleDraft.trim() !== savedTitle);
+    const save = persistDraft();
+    if (waitForPathChange) await save;
+  }
+
+  useEffect(() => {
+    flushPendingSavesRef.current = async () => {
+      if (hasUnsavedChanges) await persistDraft();
+      if (pathChangePersistRef.current) await pathChangePersistRef.current;
+      await waitForPendingNoteSaves();
+    };
+  }, [hasUnsavedChanges, persistDraft, waitForPendingNoteSaves]);
 
   keyboardActionsRef.current = {
     addEmptyTab: () => void addEmptyTab(),
@@ -1665,7 +1787,7 @@ export default function App() {
 
   async function addEmptyTab() {
     if (hasUnsavedChanges) {
-      await persistDraft();
+      await persistDraftForNavigation();
     }
     const tabId = createTabId();
     setOpenTabs((current) => [...current, { id: tabId, path: null }]);
@@ -1678,7 +1800,7 @@ export default function App() {
     if (!tab) return;
 
     if (hasUnsavedChanges) {
-      await persistDraft();
+      await persistDraftForNavigation();
     }
 
     setActiveTabId(tab.id);
@@ -1692,7 +1814,7 @@ export default function App() {
 
   async function openNoteInNewTab(path: string) {
     if (hasUnsavedChanges) {
-      await persistDraft();
+      await persistDraftForNavigation();
     }
     const tabId = createTabId();
     setOpenTabs((current) => [...current, { id: tabId, path }]);
@@ -1709,7 +1831,7 @@ export default function App() {
     if (activeTabId !== tabId && activePath !== tab?.path) return;
 
     if (hasUnsavedChanges) {
-      await persistDraft();
+      await persistDraftForNavigation();
     }
 
     const nextTab = nextTabs.at(-1);
@@ -1729,7 +1851,7 @@ export default function App() {
 
   async function closeAllTabs() {
     if (hasUnsavedChanges) {
-      await persistDraft();
+      await persistDraftForNavigation();
     }
     setOpenTabs([]);
     setActiveTabId(null);
@@ -1745,7 +1867,7 @@ export default function App() {
   async function submitFolder() {
     if (!workspace || folderDialogParent === null) return;
     if (hasUnsavedChanges) {
-      await persistDraft();
+      await persistDraftForNavigation();
     }
     try {
       const folder = await createFolder(workspace, folderDialogParent, folderName);
@@ -1892,6 +2014,7 @@ export default function App() {
     try {
       if (activePath === path && hasUnsavedChanges) {
         await persistDraft();
+        await waitForPendingNoteSaves();
       }
       const restored = await restoreNoteVersion(workspace, path, id);
       acceptedDiskContentRef.current.set(path, normalizeNoteContentForWatcher(restored));
