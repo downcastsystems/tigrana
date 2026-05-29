@@ -13,7 +13,6 @@ import {
   ChevronDown,
   ChevronRight,
   ChevronUp,
-  Copy,
   FileCode2,
   FileText,
   Folder,
@@ -5995,14 +5994,8 @@ function VersionHistoryDialog({
           <p className="note-lock-warning version-history-warning">This note is read-only in this window. You can preview versions, but restore is disabled until editing is available.</p>
         ) : null}
         <div className="dialog-footer">
-          <button
-            type="button"
-            className="secondary-button"
-            disabled={!preview}
-            onClick={() => void navigator.clipboard.writeText(preview)}
-          >
-            <Copy size={15} />
-            Copy Markdown
+          <button type="button" className="secondary-button" onClick={onClose}>
+            Cancel
           </button>
           <button
             type="button"
