@@ -465,7 +465,10 @@ export function NotesEditor({ content, focusRequest, focusAtEndRequest, findRequ
           if (handleEmptyTaskItemBackspace(_view, event)) return true;
           if (handleEmptyTaskItemForwardDelete(_view, event)) return true;
           if (handleEmptyListItemDelete(_view, event)) return true;
-          return handleSlashKeyDown(event);
+          if (handleSlashKeyDown(event)) return true;
+          const currentEditor = editorRef.current;
+          if (currentEditor && handleEditorTabKeyDown(currentEditor, event)) return true;
+          return false;
         },
         mousedown(view, event) {
           if (event.button !== 0) return false;
@@ -774,6 +777,62 @@ export function NotesEditor({ content, focusRequest, focusAtEndRequest, findRequ
       ) : null}
     </div>
   );
+}
+
+function handleEditorTabKeyDown(editor: Editor, event: KeyboardEvent) {
+  if (event.key !== "Tab" || event.metaKey || event.ctrlKey || event.altKey) return false;
+  if (editor.isActive("table")) {
+    event.preventDefault();
+    if (event.shiftKey) {
+      editor.commands.goToPreviousCell();
+      return true;
+    }
+    if (editor.commands.goToNextCell()) return true;
+    if (editor.can().addRowAfter()) {
+      editor.chain().addRowAfter().goToNextCell().run();
+    }
+    return true;
+  }
+
+  const listItemName = editor.isActive("taskItem") ? "taskItem" : editor.isActive("listItem") ? "listItem" : null;
+  if (listItemName) {
+    event.preventDefault();
+    if (event.shiftKey) {
+      editor.commands.liftListItem(listItemName);
+    } else {
+      editor.commands.sinkListItem(listItemName);
+    }
+    return true;
+  }
+
+  event.preventDefault();
+  if (editor.isActive("codeBlock")) {
+    if (!event.shiftKey) editor.commands.insertContent("  ");
+    return true;
+  }
+
+  if (event.shiftKey) {
+    removeTextblockIndent(editor);
+  } else {
+    insertTextblockIndent(editor);
+  }
+  return true;
+}
+
+function insertTextblockIndent(editor: Editor) {
+  const { state, view } = editor;
+  const { $from } = state.selection;
+  if (!$from.parent.isTextblock) return;
+  view.dispatch(state.tr.insertText(EM_SPACE, $from.start()).scrollIntoView());
+}
+
+function removeTextblockIndent(editor: Editor) {
+  const { state, view } = editor;
+  const { $from } = state.selection;
+  if (!$from.parent.isTextblock) return;
+  const start = $from.start();
+  if (state.doc.textBetween(start, start + 1) !== EM_SPACE) return;
+  view.dispatch(state.tr.delete(start, start + 1).scrollIntoView());
 }
 
 function FormattingBubbleMenu({
