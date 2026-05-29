@@ -347,9 +347,11 @@ export default function App() {
   const [titleDraft, setTitleDraft] = useState("");
   const [savedTitle, setSavedTitle] = useState("");
   const [draft, setDraft] = useState("");
-  const [savedDraft, setSavedDraft] = useState("");
+  const [, setSavedDraft] = useState("");
   const [frontmatterDraft, setFrontmatterDraft] = useState("");
-  const [savedFrontmatter, setSavedFrontmatter] = useState("");
+  const [, setSavedFrontmatter] = useState("");
+  const [rawMarkdownText, setRawMarkdownText] = useState("");
+  const [savedRawMarkdownText, setSavedRawMarkdownText] = useState("");
   const [frontmatterError, setFrontmatterError] = useState<string | null>(null);
   const [activeNoteAccess, setActiveNoteAccess] = useState<ActiveNoteAccess>("editable");
   const [noteLockMessage, setNoteLockMessage] = useState<string | null>(null);
@@ -427,9 +429,18 @@ export default function App() {
     activePath: null as string | null,
     draft: "",
     frontmatterDraft: "",
+    rawMarkdownText: "",
     titleDraft: "",
   });
   const flushPendingSavesRef = useRef<() => Promise<void>>(async () => {});
+  const rawMarkdownInputRef = useRef<HTMLTextAreaElement | null>(null);
+  const rawMarkdownSelectionRef = useRef<{
+    start: number;
+    end: number;
+    direction: "forward" | "backward" | "none";
+    scrollTop: number;
+    scrollLeft: number;
+  } | null>(null);
   // Guards path-changing creates/renames. Plain body saves are queued per note,
   // but creates and renames still need a single owner because they change identity.
   const pathChangePersistRef = useRef<Promise<void> | null>(null);
@@ -460,10 +471,22 @@ export default function App() {
   const outline = useMemo(() => extractOutline(titleDraft, draft), [draft, titleDraft]);
   const noteStats = useMemo(() => getTextStats(selectedEditorText || draft), [draft, selectedEditorText]);
   const rawMarkdownDraft = useMemo(
-    () => composeMarkdown(frontmatterDraft, draft, Boolean(frontmatterError && !frontmatterDraft)),
-    [draft, frontmatterDraft, frontmatterError],
+    () => (rawMarkdownVisible || frontmatterError ? rawMarkdownText : composeMarkdown(frontmatterDraft, draft)),
+    [draft, frontmatterDraft, frontmatterError, rawMarkdownText, rawMarkdownVisible],
   );
-  const hasUnsavedBody = Boolean(noteOpen) && (draft !== savedDraft || frontmatterDraft !== savedFrontmatter);
+  useLayoutEffect(() => {
+    if (!rawMarkdownVisible && !frontmatterError) return;
+    const input = rawMarkdownInputRef.current;
+    const selection = rawMarkdownSelectionRef.current;
+    if (!input || !selection || document.activeElement !== input) return;
+    rawMarkdownSelectionRef.current = null;
+    const start = Math.min(selection.start, input.value.length);
+    const end = Math.min(selection.end, input.value.length);
+    input.setSelectionRange(start, end, selection.direction);
+    input.scrollTop = selection.scrollTop;
+    input.scrollLeft = selection.scrollLeft;
+  }, [frontmatterError, rawMarkdownDraft, rawMarkdownVisible]);
+  const hasUnsavedBody = Boolean(noteOpen) && rawMarkdownDraft !== savedRawMarkdownText;
   const hasUnsavedChanges = Boolean(noteOpen) && (hasUnsavedBody || titleDraft !== savedTitle);
   const activeNoteEditable = activeNoteAccess === "editable";
   const isSaving = savingPaths.size > 0;
@@ -523,9 +546,10 @@ export default function App() {
       activePath,
       draft,
       frontmatterDraft,
+      rawMarkdownText,
       titleDraft,
     };
-  }, [activePath, draft, frontmatterDraft, titleDraft]);
+  }, [activePath, draft, frontmatterDraft, rawMarkdownText, titleDraft]);
 
   useEffect(() => {
     if (!workspace) return;
@@ -1125,6 +1149,8 @@ export default function App() {
     setSavedDraft("");
     setFrontmatterDraft("");
     setSavedFrontmatter("");
+    setRawMarkdownText("");
+    setSavedRawMarkdownText("");
     setFrontmatterError(null);
     setSelectedEditorText("");
   }, [applyNoteAccess, releaseActiveNoteLock]);
@@ -1495,7 +1521,8 @@ export default function App() {
       savedTitle,
       body: draft,
       frontmatter: frontmatterDraft,
-      markdown: composeMarkdown(frontmatterDraft, draft, Boolean(frontmatterError && !frontmatterDraft)),
+      rawMode: rawMarkdownVisible || Boolean(frontmatterError),
+      markdown: rawMarkdownDraft,
     };
 
     const pathWillChange = Boolean(snapshot.pendingNote || (snapshot.path && snapshot.title !== snapshot.savedTitle));
@@ -1554,6 +1581,8 @@ export default function App() {
           setSavedTitle(snapshot.title);
           setSavedDraft(snapshot.body);
           setSavedFrontmatter(snapshot.frontmatter);
+          setRawMarkdownText(written);
+          setSavedRawMarkdownText(written);
           setContents((current) => {
             const next = new Map(current);
             if (snapshot.path && snapshot.path !== savedPath) next.delete(snapshot.path);
@@ -1593,6 +1622,7 @@ export default function App() {
       const written = await saveNote(snapshot.workspace, snapshot.path as string, snapshot.markdown);
       acceptedDiskContentRef.current.set(snapshot.path as string, normalizeNoteContentForWatcher(written));
       recordNotePosition(snapshot.path as string, written);
+      setSavedRawMarkdownText(written);
       setContents((current) => {
         const next = new Map(current);
         next.set(snapshot.path as string, written);
@@ -1610,16 +1640,20 @@ export default function App() {
         currentDraft.activePath === snapshot.path &&
         currentDraft.draft === snapshot.body &&
         currentDraft.frontmatterDraft === snapshot.frontmatter &&
+        (!snapshot.rawMode || currentDraft.rawMarkdownText === snapshot.markdown) &&
         currentDraft.titleDraft.trim() === snapshot.title
       ) {
         setSavedTitle(snapshot.title);
         setSavedDraft(snapshot.body);
         setSavedFrontmatter(snapshot.frontmatter);
+        if (!snapshot.rawMode || currentDraft.rawMarkdownText === snapshot.markdown) {
+          setRawMarkdownText(written);
+        }
       }
       const nextIndex = await readLinkIndex(snapshot.workspace);
       setLinkIndex(nextIndex);
     });
-  }, [acquireActiveNoteLock, activeNoteEditable, activePath, applyNoteAccess, draft, enqueueNoteSave, frontmatterDraft, frontmatterError, hasUnsavedBody, navigationStyle, noteOpen, pendingNote, placePathInActiveTab, recordNotePosition, refreshWorkspace, savedTitle, titleDraft, updateMetadata, workspace]);
+  }, [acquireActiveNoteLock, activeNoteEditable, activePath, applyNoteAccess, draft, enqueueNoteSave, frontmatterDraft, frontmatterError, hasUnsavedBody, navigationStyle, noteOpen, pendingNote, placePathInActiveTab, rawMarkdownDraft, rawMarkdownVisible, recordNotePosition, refreshWorkspace, savedTitle, titleDraft, updateMetadata, workspace]);
 
   async function persistDraftForNavigation() {
     if (!hasUnsavedChanges) return;
@@ -1759,6 +1793,8 @@ export default function App() {
     setSavedDraft("");
     setFrontmatterDraft("");
     setSavedFrontmatter("");
+    setRawMarkdownText("");
+    setSavedRawMarkdownText("");
     setFrontmatterError(null);
     setAppError(null);
   }
@@ -2244,6 +2280,7 @@ export default function App() {
   function loadContentIntoEditor(note: NoteEntry | null, markdown: string, restorePosition: NotePositionMetadata | null = null) {
     const parsed = splitMarkdownTitle(markdown, note?.title ?? "");
     const noteMarkdown = parseNoteMarkdown(parsed.body);
+    const rawMarkdown = composeMarkdown(noteMarkdown.frontmatter, noteMarkdown.body, Boolean(noteMarkdown.frontmatterError && !noteMarkdown.frontmatter));
     setEditorRestorePosition(restorePosition);
     setTitleDraft(parsed.title);
     setSavedTitle(parsed.title);
@@ -2251,6 +2288,8 @@ export default function App() {
     setSavedDraft(noteMarkdown.body);
     setFrontmatterDraft(noteMarkdown.frontmatter);
     setSavedFrontmatter(noteMarkdown.frontmatter);
+    setRawMarkdownText(rawMarkdown);
+    setSavedRawMarkdownText(rawMarkdown);
     setFrontmatterError(noteMarkdown.frontmatterError);
     setSelectedEditorText("");
     if (noteMarkdown.frontmatterError) {
@@ -2264,6 +2303,7 @@ export default function App() {
   }
 
   function handleRawMarkdownChange(markdown: string) {
+    setRawMarkdownText(markdown);
     const parsed = parseNoteMarkdown(markdown);
     setDraft(normalizeMarkdownImageLines(parsed.body));
     setFrontmatterDraft(parsed.frontmatter);
@@ -2274,6 +2314,7 @@ export default function App() {
 
   function handleFrontmatterChange(frontmatter: string) {
     setFrontmatterDraft(frontmatter);
+    setRawMarkdownText(composeMarkdown(frontmatter, draft));
     const error = validateFrontmatter(frontmatter);
     setFrontmatterError(error ? `This note has malformed frontmatter: ${error}.` : null);
     if (error) setAppError(`This note has malformed frontmatter: ${error}.`);
@@ -3089,6 +3130,7 @@ export default function App() {
                   setAppError(frontmatterError);
                   return;
                 }
+                if (!rawMarkdownVisible) setRawMarkdownText(composeMarkdown(frontmatterDraft, draft));
                 setRawMarkdownVisible((value) => !value);
               }}
             >
@@ -3202,19 +3244,29 @@ export default function App() {
             {rawMarkdownVisible || frontmatterError ? (
               <div className="raw-markdown-shell">
                 <textarea
+                  ref={rawMarkdownInputRef}
                   aria-label="Raw Markdown"
                   className="raw-markdown-input"
                   value={rawMarkdownDraft}
                   disabled={!activeNoteEditable}
+                  autoCapitalize="none"
+                  autoCorrect="off"
                   onChange={(event) => {
                     if (!activeNoteEditable) return;
+                    rawMarkdownSelectionRef.current = {
+                      start: event.currentTarget.selectionStart,
+                      end: event.currentTarget.selectionEnd,
+                      direction: event.currentTarget.selectionDirection,
+                      scrollTop: event.currentTarget.scrollTop,
+                      scrollLeft: event.currentTarget.scrollLeft,
+                    };
                     handleRawMarkdownChange(event.target.value);
                   }}
                   onSelect={(event) => {
                     const input = event.currentTarget;
                     setSelectedEditorText(input.value.slice(input.selectionStart, input.selectionEnd));
                   }}
-                  spellCheck
+                  spellCheck={false}
                 />
               </div>
             ) : (
@@ -7129,7 +7181,7 @@ function splitMarkdownTitle(markdown: string, fallbackTitle: string) {
 }
 
 function parseNoteMarkdown(markdown: string): ParsedNoteMarkdown {
-  const normalized = markdown.replace(/\r\n/g, "\n");
+  const normalized = normalizeFrontmatterClosingFence(markdown).replace(/\r\n/g, "\n");
   const lines = normalized.split("\n");
   if (lines[0].trim() !== "---") {
     return { body: markdown, frontmatter: "", frontmatterError: null };
@@ -7157,6 +7209,23 @@ function parseNoteMarkdown(markdown: string): ParsedNoteMarkdown {
   }
 
   return { body, frontmatter, frontmatterError: null };
+}
+
+function normalizeFrontmatterClosingFence(markdown: string) {
+  const normalized = markdown.replace(/\r\n/g, "\n");
+  const lines = normalized.split("\n");
+  if (lines[0]?.trim() !== "---") return markdown;
+
+  const closingIndex = lines.findIndex((line, index) => index > 0 && line.trim() === "---");
+  const smartDashIndex = lines.findIndex((line, index) => index > 0 && isSmartDashFence(line.trim()));
+  if (smartDashIndex === -1 || (closingIndex !== -1 && closingIndex < smartDashIndex)) return markdown;
+
+  lines[smartDashIndex] = "---";
+  return lines.join("\n");
+}
+
+function isSmartDashFence(line: string) {
+  return /^[\u2013\u2014\u2212]+$/.test(line);
 }
 
 function composeMarkdown(frontmatter: string, body: string, preserveRawBody = false) {
