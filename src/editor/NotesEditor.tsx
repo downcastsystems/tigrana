@@ -55,6 +55,7 @@ type NotesEditorProps = {
   reloadRequest?: number;
   notePath: string | null;
   restorePosition: NotePositionMetadata | null;
+  editable: boolean;
   workspace: string;
   onChange: (markdown: string) => void;
   onLoadError: (error: unknown) => void;
@@ -326,7 +327,7 @@ const MarkdownImage = Image.extend({
   },
 });
 
-export function NotesEditor({ content, focusRequest, focusAtEndRequest, findRequest, reloadRequest, notePath, restorePosition, workspace, onChange, onLoadError, onPositionChange, onInternalLinkClick, onRequestEmoji, onRequestLink }: NotesEditorProps) {
+export function NotesEditor({ content, focusRequest, focusAtEndRequest, findRequest, reloadRequest, notePath, restorePosition, editable, workspace, onChange, onLoadError, onPositionChange, onInternalLinkClick, onRequestEmoji, onRequestLink }: NotesEditorProps) {
   const [slash, setSlash] = useState<SlashState | null>(null);
   const [findOpen, setFindOpen] = useState(false);
   const [findQuery, setFindQuery] = useState("");
@@ -435,6 +436,7 @@ export function NotesEditor({ content, focusRequest, focusAtEndRequest, findRequ
       const command = currentCommands[currentState.selected] ?? currentCommands[0];
       if (!command) return false;
       event.preventDefault();
+      event.stopPropagation();
       command.run(currentEditor, currentSlash.range, { requestEmoji: onRequestEmoji, requestLink: onRequestLink });
       slashRef.current = null;
       setSlash(null);
@@ -452,6 +454,7 @@ export function NotesEditor({ content, focusRequest, focusAtEndRequest, findRequ
 
   const editor = useEditor({
     extensions,
+    editable,
     content: initialContent.html,
     editorProps: {
       attributes: {
@@ -535,6 +538,10 @@ export function NotesEditor({ content, focusRequest, focusAtEndRequest, findRequ
   }, [editor]);
 
   useEffect(() => {
+    editor?.setEditable(editable);
+  }, [editable, editor]);
+
+  useEffect(() => {
     if (!editor) return;
     void hydrateNotebookImageNodes(editor, workspace);
   }, [content, editor, workspace]);
@@ -604,12 +611,12 @@ export function NotesEditor({ content, focusRequest, focusAtEndRequest, findRequ
     // content reload that blurs+refocuses) and can drop us back to BODY.
     editor.view.dom.focus({ preventScroll: true });
     const chain = editor.chain().focus("start", { scrollIntoView: false });
-    if (!editor.state.doc.textContent.trim()) {
+    if (editable && !editor.state.doc.textContent.trim()) {
       chain.setParagraph().run();
     } else {
       chain.run();
     }
-  }, [editor, focusRequest]);
+  }, [editable, editor, focusRequest]);
 
   useEffect(() => {
     if (!editor || !focusAtEndRequest) return;

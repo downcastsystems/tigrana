@@ -1,4 +1,5 @@
 import type { Editor, Range } from "@tiptap/react";
+import { TextSelection } from "@tiptap/pm/state";
 import {
   CheckSquare,
   Code,
@@ -206,11 +207,36 @@ export const slashCommands: SlashCommand[] = [
     keywords: ["table", "grid", "spreadsheet"],
     run: (editor, range) => {
       editor.chain().focus().deleteRange(range).insertTable({ rows: 3, cols: 3, withHeaderRow: true }).run();
-      // editor.state is updated synchronously after .run(); capture size now for paragraph insertion
-      editor.commands.insertContentAt(editor.state.doc.content.size, { type: "paragraph" });
+      ensureParagraphAfterCurrentTable(editor);
     },
   },
 ];
+
+function ensureParagraphAfterCurrentTable(editor: Editor) {
+  const { state, view } = editor;
+  const { selection, schema } = state;
+  const paragraph = schema.nodes.paragraph;
+  if (!paragraph) return;
+
+  let tableDepth = -1;
+  for (let depth = selection.$from.depth; depth > 0; depth -= 1) {
+    if (selection.$from.node(depth).type.name === "table") {
+      tableDepth = depth;
+      break;
+    }
+  }
+  if (tableDepth < 0) return;
+
+  const tablePos = selection.$from.before(tableDepth);
+  const tableNode = selection.$from.node(tableDepth);
+  const afterTable = tablePos + tableNode.nodeSize;
+  const nextNode = state.doc.nodeAt(afterTable);
+  const tr = nextNode?.type.name === "paragraph"
+    ? state.tr
+    : state.tr.insert(afterTable, paragraph.create());
+  const cursorPos = Math.min(afterTable + 1, tr.doc.content.size);
+  view.dispatch(tr.setSelection(TextSelection.create(tr.doc, cursorPos)).scrollIntoView());
+}
 
 export function filterSlashCommands(query: string) {
   const lower = query.toLowerCase();

@@ -2257,6 +2257,41 @@ html[data-theme="dark"] .tab-list-separator {
   color: #aaa197;
 }
 
+.note-title-input:disabled,
+.raw-markdown-input:disabled {
+  color: var(--text);
+  opacity: 0.78;
+  cursor: default;
+}
+
+.note-lock-warning {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin: 10px 0 0;
+  color: var(--text-muted);
+  font-size: 13px;
+}
+
+.note-lock-warning span {
+  min-width: 0;
+}
+
+.note-lock-warning button {
+  flex: 0 0 auto;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 4px 8px;
+  color: var(--text);
+  background: var(--surface-soft);
+  font: inherit;
+  cursor: pointer;
+}
+
+.note-lock-warning button:hover {
+  background: var(--surface-strong);
+}
+
 .note-error {
   margin: 10px 0 0;
   text-align: left;

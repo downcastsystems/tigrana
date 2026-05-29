@@ -1,11 +1,15 @@
 use base64::{engine::general_purpose, Engine as _};
+use fs2::FileExt;
 use notify::{Config, EventKind, RecommendedWatcher, RecursiveMode, Watcher};
 use serde::{Deserialize, Serialize};
 use std::collections::{HashMap, HashSet};
-use std::fs;
+use std::fs::{self, File, OpenOptions};
+use std::hash::{Hash, Hasher};
+use std::io::Write;
 use std::path::{Component, Path, PathBuf};
 use std::process::Command;
 use std::sync::Mutex;
+use std::{collections::hash_map::DefaultHasher, process};
 use tauri::menu::{AboutMetadataBuilder, Menu, MenuItem, PredefinedMenuItem, Submenu};
 use tauri::{AppHandle, Emitter, Manager, WebviewWindow, WindowEvent, Wry};
 use tauri_plugin_dialog::DialogExt;
@@ -34,6 +38,30 @@ struct SaveNotePayload {
     workspace: String,
     path: String,
     content: String,
+}
+
+#[derive(Debug, Deserialize)]
+struct NoteEditLockPayload {
+    workspace: String,
+    path: String,
+    window_label: String,
+}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct NoteEditLockResult {
+    acquired: bool,
+    owner: Option<NoteEditLockOwner>,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
+#[serde(rename_all = "camelCase")]
+struct NoteEditLockOwner {
+    window_label: String,
+    pid: u32,
+    acquired_at: u64,
+    workspace: String,
+    path: String,
 }
 
 #[derive(Debug, Deserialize)]
@@ -142,6 +170,18 @@ struct NotebookWindow {
 #[derive(Default)]
 struct NotebookWindowState {
     windows: Mutex<HashMap<String, NotebookWindow>>,
+}
+
+struct NoteEditLock {
+    workspace: String,
+    path: String,
+    window_label: String,
+    _file: File,
+}
+
+#[derive(Default)]
+struct NoteEditLockState {
+    locks: Mutex<HashMap<String, NoteEditLock>>,
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -2035,6 +2075,164 @@ fn focus_notebook_window(
     Ok(true)
 }
 
+#[tauri::command]
+fn acquire_note_edit_lock(
+    state: tauri::State<NoteEditLockState>,
+    payload: NoteEditLockPayload,
+) -> Result<NoteEditLockResult, String> {
+    let root = safe_workspace(&payload.workspace)?;
+    let note_path = safe_note_path(&payload.workspace, &payload.path)?;
+    let lock_key = note_edit_lock_key(&root, &payload.path, &note_path);
+    let lock_id = note_edit_lock_id(&payload.workspace, &lock_key);
+
+    {
+        let mut locks = state.locks.lock().map_err(|error| error.to_string())?;
+        if let Some(existing) = locks.get(&lock_id) {
+            if existing.window_label == payload.window_label {
+                return Ok(NoteEditLockResult {
+                    acquired: true,
+                    owner: None,
+                });
+            }
+            return Ok(NoteEditLockResult {
+                acquired: false,
+                owner: Some(NoteEditLockOwner {
+                    window_label: existing.window_label.clone(),
+                    pid: process::id(),
+                    acquired_at: 0,
+                    workspace: existing.workspace.clone(),
+                    path: existing.path.clone(),
+                }),
+            });
+        }
+
+        locks.retain(|id, lock| lock.window_label != payload.window_label || id == &lock_id);
+    }
+
+    let lock_path = note_edit_lock_path(&root, &lock_key)?;
+    if let Some(parent) = lock_path.parent() {
+        fs::create_dir_all(parent).map_err(|error| error.to_string())?;
+    }
+    let mut file = OpenOptions::new()
+        .read(true)
+        .write(true)
+        .create(true)
+        .open(&lock_path)
+        .map_err(|error| error.to_string())?;
+
+    if file.try_lock_exclusive().is_err() {
+        let owner = read_note_edit_lock_owner(&lock_path);
+        return Ok(NoteEditLockResult {
+            acquired: false,
+            owner,
+        });
+    }
+
+    let owner = NoteEditLockOwner {
+        window_label: payload.window_label.clone(),
+        pid: process::id(),
+        acquired_at: OffsetDateTime::now_utc().unix_timestamp().max(0) as u64,
+        workspace: payload.workspace.clone(),
+        path: payload.path.clone(),
+    };
+    let metadata = serde_json::to_string_pretty(&owner).map_err(|error| error.to_string())?;
+    file.set_len(0).map_err(|error| error.to_string())?;
+    file.write_all(format!("{metadata}\n").as_bytes())
+        .map_err(|error| error.to_string())?;
+
+    let mut locks = state.locks.lock().map_err(|error| error.to_string())?;
+    locks.insert(
+        lock_id,
+        NoteEditLock {
+            workspace: payload.workspace,
+            path: payload.path,
+            window_label: payload.window_label,
+            _file: file,
+        },
+    );
+
+    Ok(NoteEditLockResult {
+        acquired: true,
+        owner: None,
+    })
+}
+
+#[tauri::command]
+fn release_note_edit_lock(
+    state: tauri::State<NoteEditLockState>,
+    payload: NoteEditLockPayload,
+) -> Result<(), String> {
+    let root = safe_workspace(&payload.workspace)?;
+    let note_path = safe_note_path(&payload.workspace, &payload.path)?;
+    let lock_key = note_edit_lock_key(&root, &payload.path, &note_path);
+    let lock_id = note_edit_lock_id(&payload.workspace, &lock_key);
+
+    let mut locks = state.locks.lock().map_err(|error| error.to_string())?;
+    if locks
+        .get(&lock_id)
+        .is_some_and(|lock| lock.window_label == payload.window_label)
+    {
+        locks.remove(&lock_id);
+    }
+    Ok(())
+}
+
+fn release_note_edit_locks_for_window(state: &NoteEditLockState, window_label: &str) {
+    if let Ok(mut locks) = state.locks.lock() {
+        locks.retain(|_, lock| lock.window_label != window_label);
+    }
+}
+
+fn note_edit_lock_id(workspace: &str, lock_key: &str) -> String {
+    format!("{workspace}\0{lock_key}")
+}
+
+fn note_edit_lock_key(root: &Path, rel: &str, note_path: &Path) -> String {
+    let index = read_link_index_file(root);
+    if let Some(id) = index.path_to_id.get(rel) {
+        return format!("note-{}", sanitize_lock_key(id));
+    }
+
+    if let Ok(content) = fs::read_to_string(note_path) {
+        let (frontmatter, _, has_frontmatter) = split_frontmatter(&content);
+        if has_frontmatter {
+            if let Some(id) = read_frontmatter_field(&frontmatter, "id") {
+                return format!("note-{}", sanitize_lock_key(&id));
+            }
+        }
+    }
+
+    let mut hasher = DefaultHasher::new();
+    rel.hash(&mut hasher);
+    format!("path-{:x}", hasher.finish())
+}
+
+fn note_edit_lock_path(root: &Path, lock_key: &str) -> Result<PathBuf, String> {
+    Ok(app_dir(root)
+        .join("locks")
+        .join("notes")
+        .join(format!("{lock_key}.lock")))
+}
+
+fn sanitize_lock_key(value: &str) -> String {
+    value
+        .chars()
+        .map(|ch| {
+            if ch.is_ascii_alphanumeric() || ch == '-' || ch == '_' {
+                ch
+            } else {
+                '_'
+            }
+        })
+        .collect()
+}
+
+fn read_note_edit_lock_owner(path: &Path) -> Option<NoteEditLockOwner> {
+    fs::read_to_string(path)
+        .ok()
+        .and_then(|content| serde_json::from_str::<NoteEditLockOwner>(&content).ok())
+}
+
 fn safe_workspace(workspace: &str) -> Result<PathBuf, String> {
     let path = PathBuf::from(workspace);
     if !path.is_absolute() {
@@ -2594,6 +2792,7 @@ pub fn run() {
     tauri::Builder::default()
         .manage(WatchState::default())
         .manage(NotebookWindowState::default())
+        .manage(NoteEditLockState::default())
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_fs::init())
         .plugin(tauri_plugin_shell::init())
@@ -2608,6 +2807,8 @@ pub fn run() {
                 windows.remove(window.label());
             }
             let _ = rebuild_app_menu(app, &state);
+            let lock_state = app.state::<NoteEditLockState>();
+            release_note_edit_locks_for_window(&lock_state, window.label());
         })
         .on_menu_event(|app, event| match event.id().as_ref() {
             "open_settings" => {
@@ -2646,6 +2847,8 @@ pub fn run() {
             list_notes,
             read_note,
             save_note,
+            acquire_note_edit_lock,
+            release_note_edit_lock,
             create_note,
             rename_note,
             create_folder,

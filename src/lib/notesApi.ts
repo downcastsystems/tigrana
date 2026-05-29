@@ -19,6 +19,19 @@ export type AppPreferences = {
   lastWorkspace?: string | null;
 };
 
+export type NoteEditLockOwner = {
+  windowLabel: string;
+  pid: number;
+  acquiredAt: number;
+  workspace: string;
+  path: string;
+};
+
+export type NoteEditLockResult = {
+  acquired: boolean;
+  owner?: NoteEditLockOwner | null;
+};
+
 const initialDemo: DemoStore = {
   notes: {
     [WELCOME_NOTE_PATH]: WELCOME_NOTE_CONTENT,
@@ -137,6 +150,20 @@ export async function listFolders(workspace: string): Promise<FolderEntry[]> {
 export async function readNote(workspace: string, path: string) {
   if (isTauri()) return invoke<string>("read_note", { workspace, path });
   return readDemoStore().notes[path] ?? "";
+}
+
+export async function acquireNoteEditLock(workspace: string, path: string, windowLabel: string): Promise<NoteEditLockResult> {
+  if (!isTauri()) return { acquired: true };
+  return invoke<NoteEditLockResult>("acquire_note_edit_lock", {
+    payload: { workspace, path, window_label: windowLabel },
+  });
+}
+
+export async function releaseNoteEditLock(workspace: string, path: string, windowLabel: string): Promise<void> {
+  if (!isTauri()) return;
+  await invoke("release_note_edit_lock", {
+    payload: { workspace, path, window_label: windowLabel },
+  });
 }
 
 // Returns the actual on-disk content after the save. Rust normalizes line
