@@ -376,6 +376,18 @@ export type TrashEntry = {
   deletedAt: number;
 };
 
+export type NoteVersionEntry = {
+  id: string;
+  noteId?: string | null;
+  path: string;
+  title: string;
+  fileName: string;
+  createdAt: number;
+  reason: string;
+  contentLength: number;
+  contentHash: string;
+};
+
 export async function trashNote(workspace: string, path: string): Promise<TrashEntry | null> {
   if (isTauri()) {
     return invoke<TrashEntry>("trash_note", { payload: { workspace, path } });
@@ -423,6 +435,27 @@ export async function cleanupTrash(workspace: string): Promise<number> {
     return invoke<number>("cleanup_trash", { workspace });
   }
   return 0;
+}
+
+export async function listNoteVersions(workspace: string, path: string): Promise<NoteVersionEntry[]> {
+  if (isTauri()) {
+    return invoke<NoteVersionEntry[]>("list_note_versions", { payload: { workspace, path } });
+  }
+  return [];
+}
+
+export async function readNoteVersion(workspace: string, path: string, id: string): Promise<string> {
+  if (isTauri()) {
+    return invoke<string>("read_note_version", { payload: { workspace, path, id } });
+  }
+  return "";
+}
+
+export async function restoreNoteVersion(workspace: string, path: string, id: string): Promise<string> {
+  if (isTauri()) {
+    return invoke<string>("restore_note_version", { payload: { workspace, path, id } });
+  }
+  return "";
 }
 
 export async function saveAsset(workspace: string, file: File) {
