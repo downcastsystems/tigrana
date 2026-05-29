@@ -528,6 +528,9 @@ export function htmlToMarkdown(html: string) {
       if (!inline.trim() && isCodeBlockNeighbor(blocks, index)) {
         return;
       }
+      if (!inline.trim() && isTableLandingParagraph(blocks, index)) {
+        return;
+      }
       const segments = inline.split(HARD_BREAK_PLACEHOLDER).map(paragraphIndentToMarkdown);
       const lastIndex = segments.length - 1;
       const joined = segments.map((segment, idx) => (idx < lastIndex ? `${segment}  ` : segment)).join("\n");
@@ -582,6 +585,10 @@ function isCodeBlockNeighbor(blocks: Element[], index: number) {
   const previous = blocks[index - 1]?.tagName.toLowerCase();
   const next = blocks[index + 1]?.tagName.toLowerCase();
   return previous === "pre" || next === "pre";
+}
+
+function isTableLandingParagraph(blocks: Element[], index: number) {
+  return blocks[index - 1]?.tagName.toLowerCase() === "table";
 }
 
 // Join blocks with paragraph breaks, but let empty entries (from empty
