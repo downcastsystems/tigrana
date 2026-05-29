@@ -419,7 +419,7 @@ export default function App() {
   const workspaceRef = useRef<string | null>(null);
   const chooseWorkspaceRef = useRef<(intent: "open" | "new", openInNewWindow?: boolean) => void>(() => {});
   const externalNoteChangeRef = useRef<(path: string) => void>(() => {});
-  const selfWriteRef = useRef<Map<string, { content: string; at: number }>>(new Map());
+  const acceptedDiskContentRef = useRef<Map<string, string>>(new Map());
   const activeNoteLockRef = useRef<{ workspace: string; path: string; windowLabel: string } | null>(null);
   const noteLoadTokenRef = useRef(0);
   // Guards against concurrent persistDraft calls. The Enter handler and the
@@ -871,7 +871,10 @@ export default function App() {
 
   useEffect(() => { openTabsRef.current = openTabs; }, [openTabs]);
   useEffect(() => { activeTabIdRef.current = activeTabId; }, [activeTabId]);
-  useEffect(() => { workspaceRef.current = workspace; }, [workspace]);
+  useEffect(() => {
+    workspaceRef.current = workspace;
+    acceptedDiskContentRef.current.clear();
+  }, [workspace]);
   useEffect(() => {
     chooseWorkspaceRef.current = (intent, openInNewWindow) => void chooseWorkspace(intent, openInNewWindow);
   });
@@ -1044,6 +1047,7 @@ export default function App() {
       const note = notes.find((entry) => entry.path === path);
       const restorePosition = getRestorableNotePosition(metadataRef.current, path, content);
       const access = await acquireActiveNoteLock(path);
+      acceptedDiskContentRef.current.set(path, normalizeNoteContentForWatcher(content));
       setActivePath(path);
       setPendingNote(null);
       if (note && !options.preserveSelectedFolder) {
@@ -1356,20 +1360,17 @@ export default function App() {
     try {
       const nextContent = await readNote(workspace, path);
 
-      // iCloud Drive (and other sync clients) routinely re-touch files without
-      // changing meaningful content — they may normalize line endings, strip
-      // or add a trailing newline, or just bump mtime. Compare on a normalized
-      // form so those harmless re-writes don't look like real edits.
-      const normalize = (value: string) => value.replace(/\r\n/g, "\n").replace(/\s+$/, "");
-      const nextNormalized = normalize(nextContent);
+      const nextNormalized = normalizeNoteContentForWatcher(nextContent);
 
-      // The filesystem watcher fires for our own writes too. If the disk
-      // matches what we last persisted for this path (within a short window),
-      // it's an echo of our own save — skip it. Otherwise rapid typing during
-      // an auto-save flashes "this note changed on disk" because the editor
-      // snapshot has moved past the just-written content.
-      const selfWrite = selfWriteRef.current.get(path);
-      if (selfWrite && Date.now() - selfWrite.at < 10_000 && normalize(selfWrite.content) === nextNormalized) {
+      // The filesystem watcher fires for Tigrana's own writes too, sometimes
+      // after the editor has already moved on. Compare against the latest disk
+      // content the app accepted instead of using a fragile time window.
+      if (acceptedDiskContentRef.current.get(path) === nextNormalized) {
+        setContents((current) => {
+          const next = new Map(current);
+          next.set(path, nextContent);
+          return next;
+        });
         return;
       }
 
@@ -1377,10 +1378,11 @@ export default function App() {
       // source of truth. A move that rewrote inbound links on disk also calls
       // refreshWorkspace, which has already updated the contents map; without this
       // check we'd short-circuit and the editor would keep showing the stale link.
-      const sameAsEditor = activePath === path && nextNormalized === normalize(currentMarkdownSnapshot());
+      const sameAsEditor = activePath === path && nextNormalized === normalizeNoteContentForWatcher(currentMarkdownSnapshot());
       const currentContent = contents.get(path);
-      if (activePath !== path && currentContent !== undefined && normalize(currentContent) === nextNormalized) return;
+      if (activePath !== path && currentContent !== undefined && normalizeNoteContentForWatcher(currentContent) === nextNormalized) return;
       if (sameAsEditor) {
+        acceptedDiskContentRef.current.set(path, nextNormalized);
         setContents((current) => {
           const next = new Map(current);
           next.set(path, nextContent);
@@ -1413,6 +1415,7 @@ export default function App() {
         selectionFrom: metadataRef.current.notePositions[path]?.selectionFrom,
         selectionTo: metadataRef.current.notePositions[path]?.selectionTo,
       };
+      acceptedDiskContentRef.current.set(path, nextNormalized);
       loadContentIntoEditor(note, nextContent, restorePosition);
       // Force the editor to actually reload, since notePath is unchanged.
       setEditorReloadRequest((value) => value + 1);
@@ -1454,12 +1457,12 @@ export default function App() {
         const note = await createNote(workspace, pendingNote.parentPath, titleDraft.trim());
         nextPath = note.path;
         // createNote writes initial scaffolding to disk (frontmatter id +
-        // blank body) which produces a file-watcher echo. Pre-seed
-        // selfWriteRef with what's on disk so that echo doesn't fire the
-        // "changed on disk" warning before our own saveNote runs.
+        // blank body) which produces a file-watcher echo. Pre-seed the
+        // accepted disk baseline so that echo doesn't fire the "changed on
+        // disk" warning before our own saveNote runs.
         try {
           const initial = await readNote(workspace, note.path);
-          selfWriteRef.current.set(note.path, { content: initial, at: Date.now() });
+          acceptedDiskContentRef.current.set(note.path, normalizeNoteContentForWatcher(initial));
         } catch {
           // Best-effort; the saveNote below will overwrite the entry anyway.
         }
@@ -1490,7 +1493,8 @@ export default function App() {
       // have added an id frontmatter or normalized line endings) so the
       // file-watcher echo of our own write doesn't trip the "changed on disk"
       // warning on the next keystroke.
-      selfWriteRef.current.set(nextPath, { content: written, at: Date.now() });
+      if (activePath && activePath !== nextPath) acceptedDiskContentRef.current.delete(activePath);
+      acceptedDiskContentRef.current.set(nextPath, normalizeNoteContentForWatcher(written));
       recordNotePosition(nextPath, markdown);
       setSavedTitle(titleDraft.trim());
       setSavedDraft(draft);
@@ -1890,7 +1894,7 @@ export default function App() {
         await persistDraft();
       }
       const restored = await restoreNoteVersion(workspace, path, id);
-      selfWriteRef.current.set(path, { content: restored, at: Date.now() });
+      acceptedDiskContentRef.current.set(path, normalizeNoteContentForWatcher(restored));
       setContents((current) => {
         const next = new Map(current);
         next.set(path, restored);
@@ -7037,6 +7041,10 @@ function composeMarkdown(frontmatter: string, body: string, preserveRawBody = fa
   const trimmedFrontmatter = frontmatter.trim();
   if (!trimmedFrontmatter) return body;
   return `---\n${trimmedFrontmatter}\n---\n\n${body.replace(/^\n+/, "")}`;
+}
+
+function normalizeNoteContentForWatcher(value: string) {
+  return value.replace(/\r\n/g, "\n").replace(/\s+$/, "");
 }
 
 function validateFrontmatter(frontmatter: string) {
