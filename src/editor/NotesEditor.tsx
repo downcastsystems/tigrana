@@ -505,10 +505,17 @@ class TableControlsNodeView implements NodeView {
   addRowEdgeButton: HTMLButtonElement;
   resizeLayer: HTMLDivElement;
   axisMenu: HTMLDivElement | null = null;
+  selectionOverlay: HTMLDivElement;
   copiedTimer: number | null = null;
   selectionActive = false;
   hoveredRow: number | null = null;
   hoveredColumn: number | null = null;
+  selectedRowRange: { start: number; end: number } | null = null;
+  selectedColumnRange: { start: number; end: number } | null = null;
+  addRowButtonHovered = false;
+  addColumnButtonHovered = false;
+  pendingRowMenu: { index: number; anchorRect: DOMRect } | null = null;
+  pendingColumnMenu: { index: number; anchorRect: DOMRect } | null = null;
   resizeState: ResizeState | null = null;
   isOpeningAxisMenu = false;
 
@@ -528,20 +535,39 @@ class TableControlsNodeView implements NodeView {
     this.colgroup = this.table.appendChild(document.createElement("colgroup"));
     updateTableColumns(node, this.colgroup, this.table, cellMinWidth);
     this.contentDOM = this.table.appendChild(document.createElement("tbody"));
+    this.applyRichTableLayout();
     this.rowHandle = this.dom.appendChild(createTableToolButton("Row options", tableIconSvg("rows", 16)));
     this.rowHandle.classList.add("table-axis-handle", "table-row-handle");
     this.rowHandle.contentEditable = "false";
-    this.rowHandle.addEventListener("mousedown", this.stopToolEvent);
+    this.isOpeningAxisMenu = false;
+    this.rowHandle.addEventListener("mousedown", (event) => {
+      event.preventDefault();
+      event.stopPropagation();
+      const raw = this.rowHandle.dataset.targetRow;
+      const row = raw == null || raw === "" ? null : Number(raw);
+      if (row == null || !Number.isFinite(row)) {
+        this.pendingRowMenu = null;
+        return;
+      }
+      this.pendingRowMenu = {
+        index: row,
+        anchorRect: this.rowHandle.getBoundingClientRect(),
+      };
+      this.isOpeningAxisMenu = true;
+      this.armPendingMenuSafetyReset();
+    });
     this.rowHandle.addEventListener("mouseenter", this.keepAxisHandlesVisible);
     this.rowHandle.addEventListener("mouseleave", this.handleAxisHandleLeave);
-    this.rowHandle.addEventListener("click", (event) => {
-      const row = this.getRowIndexAtY(event.clientY) ?? this.hoveredRow;
-      if (row == null) return;
-      const anchorRect = this.rowHandle.getBoundingClientRect();
-      this.isOpeningAxisMenu = true;
-      this.hoveredRow = row;
-      this.selectRow(row, { preserveHandlePosition: true });
-      this.openAxisMenu("row", row, anchorRect);
+    this.rowHandle.addEventListener("click", () => {
+      const pending = this.pendingRowMenu;
+      this.pendingRowMenu = null;
+      if (!pending) {
+        this.isOpeningAxisMenu = false;
+        return;
+      }
+      this.hoveredRow = pending.index;
+      this.selectRow(pending.index, { preserveHandlePosition: true });
+      this.openAxisMenu("row", pending.index, pending.anchorRect);
       window.requestAnimationFrame(() => {
         this.isOpeningAxisMenu = false;
       });
@@ -550,17 +576,34 @@ class TableControlsNodeView implements NodeView {
     this.columnHandle = this.dom.appendChild(createTableToolButton("Column options", tableIconSvg("columns", 16)));
     this.columnHandle.classList.add("table-axis-handle", "table-column-handle");
     this.columnHandle.contentEditable = "false";
-    this.columnHandle.addEventListener("mousedown", this.stopToolEvent);
+    this.columnHandle.addEventListener("mousedown", (event) => {
+      event.preventDefault();
+      event.stopPropagation();
+      const raw = this.columnHandle.dataset.targetColumn;
+      const column = raw == null || raw === "" ? null : Number(raw);
+      if (column == null || !Number.isFinite(column)) {
+        this.pendingColumnMenu = null;
+        return;
+      }
+      this.pendingColumnMenu = {
+        index: column,
+        anchorRect: this.columnHandle.getBoundingClientRect(),
+      };
+      this.isOpeningAxisMenu = true;
+      this.armPendingMenuSafetyReset();
+    });
     this.columnHandle.addEventListener("mouseenter", this.keepAxisHandlesVisible);
     this.columnHandle.addEventListener("mouseleave", this.handleAxisHandleLeave);
-    this.columnHandle.addEventListener("click", (event) => {
-      const column = this.getColumnIndexAtX(event.clientX) ?? this.hoveredColumn;
-      if (column == null) return;
-      const anchorRect = this.columnHandle.getBoundingClientRect();
-      this.isOpeningAxisMenu = true;
-      this.hoveredColumn = column;
-      this.selectColumn(column, { preserveHandlePosition: true });
-      this.openAxisMenu("column", column, anchorRect);
+    this.columnHandle.addEventListener("click", () => {
+      const pending = this.pendingColumnMenu;
+      this.pendingColumnMenu = null;
+      if (!pending) {
+        this.isOpeningAxisMenu = false;
+        return;
+      }
+      this.hoveredColumn = pending.index;
+      this.selectColumn(pending.index, { preserveHandlePosition: true });
+      this.openAxisMenu("column", pending.index, pending.anchorRect);
       window.requestAnimationFrame(() => {
         this.isOpeningAxisMenu = false;
       });
@@ -571,12 +614,32 @@ class TableControlsNodeView implements NodeView {
     this.addColumnEdgeButton.contentEditable = "false";
     this.addColumnEdgeButton.addEventListener("mousedown", this.stopToolEvent);
     this.addColumnEdgeButton.addEventListener("click", () => this.addColumnToEnd());
+    this.addColumnEdgeButton.addEventListener("mouseenter", () => {
+      this.addColumnButtonHovered = true;
+      this.positionEdgeButtons();
+    });
+    this.addColumnEdgeButton.addEventListener("mouseleave", () => {
+      this.addColumnButtonHovered = false;
+      this.positionEdgeButtons();
+    });
 
     this.addRowEdgeButton = this.dom.appendChild(createTableToolButton("Add row", tableIconSvg("plus", 14)));
     this.addRowEdgeButton.classList.add("table-edge-add", "table-edge-add-row");
     this.addRowEdgeButton.contentEditable = "false";
     this.addRowEdgeButton.addEventListener("mousedown", this.stopToolEvent);
     this.addRowEdgeButton.addEventListener("click", () => this.addRowToBottom());
+    this.addRowEdgeButton.addEventListener("mouseenter", () => {
+      this.addRowButtonHovered = true;
+      this.positionEdgeButtons();
+    });
+    this.addRowEdgeButton.addEventListener("mouseleave", () => {
+      this.addRowButtonHovered = false;
+      this.positionEdgeButtons();
+    });
+
+    this.selectionOverlay = this.dom.appendChild(document.createElement("div"));
+    this.selectionOverlay.className = "table-selection-overlay";
+    this.selectionOverlay.contentEditable = "false";
 
     this.resizeLayer = this.dom.appendChild(document.createElement("div"));
     this.resizeLayer.className = "table-resize-layer";
@@ -599,10 +662,12 @@ class TableControlsNodeView implements NodeView {
     if (node.type !== this.node.type) return false;
     this.node = node;
     updateTableColumns(node, this.colgroup, this.table, this.cellMinWidth);
+    this.applyRichTableLayout();
     this.dom.classList.toggle("is-rich-table", isRichTableNode(node));
     this.positionEdgeButtons();
     this.renderResizeHandles();
     this.refreshSelectionActive();
+    this.updateSelectionOverlay();
     return true;
   }
 
@@ -668,7 +733,11 @@ class TableControlsNodeView implements NodeView {
     const pos = this.resolvePos();
     if (pos == null) {
       this.selectionActive = false;
+      this.selectedRowRange = null;
+      this.selectedColumnRange = null;
       if (!this.axisMenu) this.dom.classList.remove("is-active");
+      this.updateSelectionOverlay();
+      this.positionEdgeButtons();
       return;
     }
 
@@ -680,19 +749,149 @@ class TableControlsNodeView implements NodeView {
       this.dom.classList.remove("is-active");
     }
 
+    this.computeSelectedRanges();
+    this.updateSelectionOverlay();
+    this.positionEdgeButtons();
+
     if (this.isOpeningAxisMenu) return;
 
     const selectedCell = this.findSelectionCellElement();
-    if (selectedCell) {
+    if (selectedCell && this.hoveredRow == null && this.hoveredColumn == null) {
+      // Only reposition handles from selection state when we don't already
+      // have a hover-driven position; otherwise hover wins and stays put.
       const row = selectedCell.parentElement as HTMLTableRowElement | null;
       const rowIndex = row ? Array.from(this.table.rows).indexOf(row) : -1;
       if (rowIndex >= 0 && selectedCell.cellIndex >= 0) {
-        this.hoveredRow = rowIndex;
-        this.hoveredColumn = selectedCell.cellIndex;
         this.positionAxisHandles(selectedCell, rowIndex, selectedCell.cellIndex);
       }
     }
   };
+
+  computeSelectedRanges() {
+    const { selection } = this.view.state;
+    if (!(selection instanceof CellSelection)) {
+      this.selectedRowRange = null;
+      this.selectedColumnRange = null;
+      return;
+    }
+    const map = TableMap.get(this.node);
+    let rowStart = Infinity;
+    let rowEnd = -Infinity;
+    let colStart = Infinity;
+    let colEnd = -Infinity;
+    selection.forEachCell((_cell, cellPos) => {
+      const tablePos = this.resolvePos();
+      if (tablePos == null) return;
+      const rel = cellPos - tablePos - 1;
+      const idx = map.map.indexOf(rel);
+      if (idx < 0) return;
+      const row = Math.floor(idx / map.width);
+      const col = idx % map.width;
+      rowStart = Math.min(rowStart, row);
+      rowEnd = Math.max(rowEnd, row);
+      colStart = Math.min(colStart, col);
+      colEnd = Math.max(colEnd, col);
+    });
+    if (!Number.isFinite(rowStart) || !Number.isFinite(colStart)) {
+      this.selectedRowRange = null;
+      this.selectedColumnRange = null;
+      return;
+    }
+    this.selectedRowRange = { start: rowStart, end: rowEnd };
+    this.selectedColumnRange = { start: colStart, end: colEnd };
+  }
+
+  updateSelectionOverlay = () => {
+    const { selection } = this.view.state;
+    if (!(selection instanceof CellSelection) || !this.selectionActive) {
+      this.selectionOverlay.classList.remove("is-visible");
+      return;
+    }
+    const cells: HTMLTableCellElement[] = [];
+    selection.forEachCell((_node, cellPos) => {
+      try {
+        const dom = this.view.nodeDOM(cellPos);
+        if (dom instanceof HTMLTableCellElement) cells.push(dom);
+      } catch {
+        // ignore
+      }
+    });
+    if (!cells.length) {
+      this.selectionOverlay.classList.remove("is-visible");
+      return;
+    }
+    const domRect = this.dom.getBoundingClientRect();
+    let top = Infinity;
+    let bottom = -Infinity;
+    let left = Infinity;
+    let right = -Infinity;
+    cells.forEach((cell) => {
+      const rect = cell.getBoundingClientRect();
+      top = Math.min(top, rect.top);
+      bottom = Math.max(bottom, rect.bottom);
+      left = Math.min(left, rect.left);
+      right = Math.max(right, rect.right);
+    });
+    this.selectionOverlay.style.top = `${top - domRect.top}px`;
+    this.selectionOverlay.style.left = `${left - domRect.left}px`;
+    this.selectionOverlay.style.width = `${Math.max(0, right - left)}px`;
+    this.selectionOverlay.style.height = `${Math.max(0, bottom - top)}px`;
+    this.selectionOverlay.classList.add("is-visible");
+  };
+
+  armPendingMenuSafetyReset() {
+    // If mousedown captured a pending menu but click never fires (e.g. the
+    // user drags off the button before releasing), clear the captured state
+    // so future selection refreshes can reposition the handle normally.
+    const onUp = () => {
+      window.removeEventListener("mouseup", onUp, true);
+      // The click event fires after mouseup; defer cleanup until after that
+      // so a successful click can consume the pending state first.
+      window.setTimeout(() => {
+        this.pendingRowMenu = null;
+        this.pendingColumnMenu = null;
+        if (!this.axisMenu) this.isOpeningAxisMenu = false;
+      }, 0);
+    };
+    window.addEventListener("mouseup", onUp, true);
+  }
+
+  applyRichTableLayout() {
+    if (!isRichTableNode(this.node)) {
+      this.table.classList.remove("rich-table-fluid");
+      return;
+    }
+    // Force the table to fill its container. Pixel col widths from
+    // updateTableColumns would otherwise force the table wider than the
+    // container under table-layout:fixed; convert them into percentages so
+    // the columns always proportionally fill 100% of the available width.
+    this.table.classList.add("rich-table-fluid");
+    this.table.style.width = "100%";
+    this.table.style.minWidth = "";
+    const cols = Array.from(this.colgroup.children) as HTMLTableColElement[];
+    if (!cols.length) return;
+    const pxWidths = cols.map((col) => {
+      const raw = col.style.width || col.getAttribute("data-width") || "";
+      const w = parseFloat(raw);
+      return Number.isFinite(w) && w > 0 ? w : null;
+    });
+    let totalKnown = 0;
+    let knownCount = 0;
+    for (const w of pxWidths) {
+      if (w != null) {
+        totalKnown += w;
+        knownCount += 1;
+      }
+    }
+    const avg = knownCount > 0 ? totalKnown / knownCount : RICH_TABLE_DEFAULT_COLUMN_WIDTH;
+    const widths = pxWidths.map((w) => w ?? avg);
+    const total = widths.reduce((sum, w) => sum + w, 0) || widths.length;
+    cols.forEach((col, index) => {
+      const pct = (widths[index] / total) * 100;
+      col.style.width = `${pct}%`;
+      col.style.minWidth = "";
+    });
+  }
 
   findSelectionCellElement() {
     const { selection } = this.view.state;
@@ -742,11 +941,13 @@ class TableControlsNodeView implements NodeView {
     if (this.axisMenu || this.resizeState) return;
     window.setTimeout(() => {
       if (this.dom.matches(":hover") || this.rowHandle.matches(":hover") || this.columnHandle.matches(":hover")) return;
+      if (this.addRowButtonHovered || this.addColumnButtonHovered) return;
       if (this.selectionActive) return;
       this.hoveredRow = null;
       this.hoveredColumn = null;
       this.rowHandle.classList.remove("is-visible");
       this.columnHandle.classList.remove("is-visible");
+      this.positionEdgeButtons();
     }, 450);
   };
 
@@ -773,10 +974,12 @@ class TableControlsNodeView implements NodeView {
     this.rowHandle.style.top = `${rowRect.top - domRect.top + Math.max((rowRect.height - 24) / 2, 0)}px`;
     this.rowHandle.style.left = `${tableRect.left - domRect.left - 30}px`;
     this.rowHandle.classList.add("is-visible");
+    this.rowHandle.dataset.targetRow = String(rowIndex);
 
     this.columnHandle.style.top = `${tableRect.top - domRect.top - 30}px`;
     this.columnHandle.style.left = `${cellRect.left - domRect.left + Math.max((cellRect.width - 24) / 2, 0)}px`;
     this.columnHandle.classList.add("is-visible");
+    this.columnHandle.dataset.targetColumn = String(columnIndex);
 
     this.rowHandle.setAttribute("aria-label", `Row ${rowIndex + 1} options`);
     this.columnHandle.setAttribute("aria-label", `Column ${columnIndex + 1} options`);
@@ -831,23 +1034,54 @@ class TableControlsNodeView implements NodeView {
   positionEdgeButtons() {
     const tableRect = this.table.getBoundingClientRect();
     const domRect = this.dom.getBoundingClientRect();
-    const visible = this.selectionActive || this.dom.matches(":hover") || Boolean(this.axisMenu);
-    this.addColumnEdgeButton.style.left = `${tableRect.right - domRect.left + 12}px`;
+    const map = TableMap.get(this.node);
+    const lastRow = Math.max(0, map.height - 1);
+    const lastCol = Math.max(0, map.width - 1);
+
+    // A "full-row" selection (selecting an entire row) spans every column —
+    // but the user isn't acting on the last column, so don't reveal the
+    // add-column edge button in that case. Same for full-column selections
+    // and the add-row button.
+    const rowRange = this.selectedRowRange;
+    const colRange = this.selectedColumnRange;
+    const isFullRowSelection =
+      Boolean(rowRange && colRange && colRange.start === 0 && colRange.end === lastCol && rowRange.end - rowRange.start < map.height - 1);
+    const isFullColumnSelection =
+      Boolean(rowRange && colRange && rowRange.start === 0 && rowRange.end === lastRow && colRange.end - colRange.start < map.width - 1);
+
+    const cursorInLastRow = rowRange?.end === lastRow && !isFullColumnSelection;
+    const cursorInLastCol = colRange?.end === lastCol && !isFullRowSelection;
+    const hoverInLastRow = this.hoveredRow === lastRow;
+    const hoverInLastCol = this.hoveredColumn === lastCol;
+
+    const columnVisible =
+      hoverInLastCol || cursorInLastCol || this.addColumnButtonHovered;
+    const rowVisible =
+      hoverInLastRow || cursorInLastRow || this.addRowButtonHovered;
+
+    // Position the add-column button flush with the right edge of the table.
+    // The CSS provides a transparent hover-bridge to the right of the table so
+    // the cursor can travel from the last column to the button without losing
+    // its hover position.
+    this.addColumnEdgeButton.style.left = `${tableRect.right - domRect.left}px`;
     this.addColumnEdgeButton.style.top = `${tableRect.top - domRect.top}px`;
     this.addColumnEdgeButton.style.height = `${Math.max(tableRect.height, 42)}px`;
-    this.addColumnEdgeButton.classList.toggle("is-visible", visible);
+    this.addColumnEdgeButton.classList.toggle("is-visible", columnVisible);
 
     this.addRowEdgeButton.style.left = `${tableRect.left - domRect.left}px`;
-    this.addRowEdgeButton.style.top = `${tableRect.bottom - domRect.top + 10}px`;
+    this.addRowEdgeButton.style.top = `${tableRect.bottom - domRect.top}px`;
     this.addRowEdgeButton.style.width = `${Math.max(tableRect.width, 120)}px`;
-    this.addRowEdgeButton.classList.toggle("is-visible", visible);
+    this.addRowEdgeButton.classList.toggle("is-visible", rowVisible);
   }
 
   scheduleChromeRefresh() {
     window.requestAnimationFrame(() => {
       window.requestAnimationFrame(() => {
+        this.applyRichTableLayout();
         this.positionEdgeButtons();
         this.renderResizeHandles();
+        this.computeSelectedRanges();
+        this.updateSelectionOverlay();
       });
     });
   }
@@ -1331,11 +1565,11 @@ class TableControlsNodeView implements NodeView {
         headerButton.addEventListener("click", () => this.toggleHeaderColumn());
       }
       this.axisMenu.appendChild(createTableMenuSeparator());
-      this.axisMenu.appendChild(createTableMenuButton(tableIconSvg("arrowLeft", 14), "Insert left")).addEventListener("click", () => this.insertColumn(index, "left"));
-      this.axisMenu.appendChild(createTableMenuButton(tableIconSvg("arrowRight", 14), "Insert right")).addEventListener("click", () => this.insertColumn(index, "right"));
-      this.axisMenu.appendChild(createTableMenuButton(tableIconSvg("copy", 14), "Duplicate")).addEventListener("click", () => this.duplicateColumn(index));
-      this.axisMenu.appendChild(createTableMenuButton(tableIconSvg("xCircle", 14), "Clear contents")).addEventListener("click", () => this.clearColumn(index));
-      const deleteButton = this.axisMenu.appendChild(createTableMenuButton(tableIconSvg("trash", 14), "Delete"));
+      this.axisMenu.appendChild(createTableMenuButton(tableIconSvg("arrowLeft", 14), "Insert column left")).addEventListener("click", () => this.insertColumn(index, "left"));
+      this.axisMenu.appendChild(createTableMenuButton(tableIconSvg("arrowRight", 14), "Insert column right")).addEventListener("click", () => this.insertColumn(index, "right"));
+      this.axisMenu.appendChild(createTableMenuButton(tableIconSvg("copy", 14), "Duplicate column")).addEventListener("click", () => this.duplicateColumn(index));
+      this.axisMenu.appendChild(createTableMenuButton(tableIconSvg("xCircle", 14), "Clear column contents")).addEventListener("click", () => this.clearColumn(index));
+      const deleteButton = this.axisMenu.appendChild(createTableMenuButton(tableIconSvg("trash", 14), "Delete column"));
       deleteButton.classList.add("danger-item");
       deleteButton.addEventListener("click", () => this.deleteSelectedColumn(index));
     }

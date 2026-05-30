@@ -12,6 +12,8 @@
   --accent-soft: rgba(49, 95, 89, 0.14);
   --accent-active: rgba(49, 95, 89, 0.3);
   --accent-muted: rgba(49, 95, 89, 0.12);
+  --accent-bright: color-mix(in srgb, var(--accent) 65%, #ffffff 35%);
+  --accent-bright-glow: color-mix(in srgb, var(--accent) 35%, transparent);
   --link-color: var(--accent);
   --app-bg: #f7f4ef;
   --shadow-popover: 0 10px 28px rgba(35, 30, 24, 0.16);
@@ -3051,6 +3053,11 @@ html[data-theme="dark"] .tab-list-separator {
   margin: 0;
 }
 
+.ProseMirror .table-node-view.is-rich-table table.rich-table-fluid {
+  width: 100% !important;
+  min-width: 0 !important;
+}
+
 .table-tool-button {
   display: inline-flex;
   align-items: center;
@@ -3272,11 +3279,34 @@ html[data-theme="dark"] .tab-list-separator {
 }
 
 .table-edge-add-column {
-  width: 32px;
+  width: 24px;
+  margin-left: 6px;
 }
 
 .table-edge-add-row {
-  height: 28px;
+  height: 22px;
+  margin-top: 6px;
+}
+
+/* Invisible hover bridges so the cursor can travel from the last row/col
+   into the edge button without leaving the active hover zone. The bridges
+   sit between the table edge and the visible button. */
+.table-edge-add-column::before {
+  content: "";
+  position: absolute;
+  top: 0;
+  left: -6px;
+  width: 6px;
+  height: 100%;
+}
+
+.table-edge-add-row::before {
+  content: "";
+  position: absolute;
+  top: -6px;
+  left: 0;
+  width: 100%;
+  height: 6px;
 }
 
 .table-resize-layer {
@@ -3330,15 +3360,29 @@ html[data-theme="dark"] .tab-list-separator {
   margin: 0;
 }
 
+/* The single-rectangle selection overlay below renders the highlight for
+   rich tables, so suppress the per-cell border there. Plain Markdown tables
+   keep the per-cell visual via the same overlay (the overlay is drawn for
+   all table-node-views), so suppress globally. */
 .ProseMirror .selectedCell::after {
+  display: none;
+}
+
+/* Selection overlay — a single rectangle around the bounding box of the
+   selected cells, no inner borders. */
+.table-selection-overlay {
   position: absolute;
-  inset: -1px;
-  z-index: 1;
-  border: 2px solid var(--accent);
-  border-radius: 2px;
-  background: transparent;
-  content: "";
+  z-index: 5;
   pointer-events: none;
+  border: 2px solid var(--accent-bright);
+  border-radius: 4px;
+  box-shadow: 0 0 0 1px var(--accent-bright-glow);
+  opacity: 0;
+  transition: opacity 80ms ease;
+}
+
+.table-selection-overlay.is-visible {
+  opacity: 1;
 }
 
 html[data-theme="dark"] .ProseMirror td,
@@ -4205,6 +4249,8 @@ html[data-theme="dark"] {
   color: #fafafa;
   background: var(--app-bg);
   --link-color: color-mix(in srgb, var(--accent) 45%, white);
+  --accent-bright: color-mix(in srgb, var(--accent) 45%, #ffffff 55%);
+  --accent-bright-glow: color-mix(in srgb, var(--accent) 55%, transparent);
   --shadow-popover: 0 10px 28px rgba(0, 0, 0, 0.55);
   --shadow-modal: 0 24px 70px rgba(0, 0, 0, 0.7);
   --shadow-modal-strong: 0 30px 90px rgba(0, 0, 0, 0.8);
