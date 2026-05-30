@@ -752,6 +752,7 @@ class TableControlsNodeView implements NodeView {
     this.computeSelectedRanges();
     this.updateSelectionOverlay();
     this.positionEdgeButtons();
+    this.applyHandleVisibility();
 
     if (this.isOpeningAxisMenu) return;
 
@@ -952,8 +953,9 @@ class TableControlsNodeView implements NodeView {
   };
 
   keepAxisHandlesVisible = () => {
-    if (this.hoveredRow != null) this.rowHandle.classList.add("is-visible");
-    if (this.hoveredColumn != null) this.columnHandle.classList.add("is-visible");
+    // Just re-run the gating; the per-handle :hover branches keep whichever
+    // handle the user is on, without re-showing the gated-off one.
+    this.applyHandleVisibility();
   };
 
   handleAxisHandleLeave = () => {
@@ -973,16 +975,46 @@ class TableControlsNodeView implements NodeView {
 
     this.rowHandle.style.top = `${rowRect.top - domRect.top + Math.max((rowRect.height - 24) / 2, 0)}px`;
     this.rowHandle.style.left = `${tableRect.left - domRect.left - 30}px`;
-    this.rowHandle.classList.add("is-visible");
     this.rowHandle.dataset.targetRow = String(rowIndex);
 
     this.columnHandle.style.top = `${tableRect.top - domRect.top - 30}px`;
     this.columnHandle.style.left = `${cellRect.left - domRect.left + Math.max((cellRect.width - 24) / 2, 0)}px`;
-    this.columnHandle.classList.add("is-visible");
     this.columnHandle.dataset.targetColumn = String(columnIndex);
 
     this.rowHandle.setAttribute("aria-label", `Row ${rowIndex + 1} options`);
     this.columnHandle.setAttribute("aria-label", `Column ${columnIndex + 1} options`);
+
+    this.applyHandleVisibility();
+  }
+
+  applyHandleVisibility() {
+    // Notion-style gating: the row handle (left of the row) only shows when
+    // the user is hovering or has the cursor in the FIRST column, and the
+    // column handle (above the column) only shows when in the FIRST row.
+    // A full-row or full-column selection (from clicking a handle) keeps
+    // the relevant handle visible at the selected row/column.
+    const map = TableMap.get(this.node);
+    const lastRow = Math.max(0, map.height - 1);
+    const lastCol = Math.max(0, map.width - 1);
+    const rowRange = this.selectedRowRange;
+    const colRange = this.selectedColumnRange;
+    const isFullRowSelection =
+      Boolean(rowRange && colRange && colRange.start === 0 && colRange.end === lastCol);
+    const isFullColumnSelection =
+      Boolean(rowRange && colRange && rowRange.start === 0 && rowRange.end === lastRow);
+    const isRowSelection = isFullRowSelection && !isFullColumnSelection;
+    const isColumnSelection = isFullColumnSelection && !isFullRowSelection;
+
+    const rowFromHover = this.hoveredColumn === 0 && !isColumnSelection;
+    const colFromHover = this.hoveredRow === 0 && !isRowSelection;
+    const rowHandleHovered = this.rowHandle.matches(":hover");
+    const columnHandleHovered = this.columnHandle.matches(":hover");
+
+    const showRow = rowFromHover || isRowSelection || rowHandleHovered;
+    const showCol = colFromHover || isColumnSelection || columnHandleHovered;
+
+    this.rowHandle.classList.toggle("is-visible", showRow);
+    this.columnHandle.classList.toggle("is-visible", showCol);
   }
 
   getRowIndexAtY(clientY: number) {
@@ -1089,18 +1121,22 @@ class TableControlsNodeView implements NodeView {
   renderResizeHandles() {
     this.resizeLayer.innerHTML = "";
     if (!isRichTableNode(this.node)) return;
-    const widths = this.getColumnWidths();
-    if (widths.length < 2) return;
+    const firstRow = this.table.rows[0];
+    if (!firstRow || firstRow.cells.length < 2) return;
+    // Read boundaries from the actual rendered cells. The col widths are
+    // stored as percentages (for fluid layout), so adding the numeric
+    // values as pixels would put handles inside cells rather than at the
+    // cell boundaries.
     const tableRect = this.table.getBoundingClientRect();
     const domRect = this.dom.getBoundingClientRect();
-    let left = tableRect.left - domRect.left;
-    widths.slice(0, -1).forEach((width, index) => {
-      left += width;
+    const cells = Array.from(firstRow.cells);
+    cells.slice(0, -1).forEach((cell, index) => {
+      const cellRect = cell.getBoundingClientRect();
       const handle = this.resizeLayer.appendChild(document.createElement("button"));
       handle.type = "button";
       handle.className = "table-column-resize-handle";
       handle.title = "Resize column";
-      handle.style.left = `${left - 4}px`;
+      handle.style.left = `${cellRect.right - domRect.left - 4}px`;
       handle.style.top = `${tableRect.top - domRect.top}px`;
       handle.style.height = `${Math.max(tableRect.height, 24)}px`;
       handle.addEventListener("pointerdown", (event) => this.startColumnResize(event, index));
@@ -1430,6 +1466,7 @@ class TableControlsNodeView implements NodeView {
     const pos = this.resolvePos();
     if (pos == null) return;
     const widths = this.getColumnWidths();
+    const originalSelection = this.view.state.selection;
     const tr = this.view.state.tr.setNodeMarkup(pos, undefined, {
       ...this.node.attrs,
       tigranaTable: true,
@@ -1438,15 +1475,17 @@ class TableControlsNodeView implements NodeView {
     });
     applyHeaderCellsToTransaction(tr, this.node, pos, true, false);
     applyColumnWidthsToTransaction(tr, this.node, pos, widths);
-    this.view.dispatch(tr.scrollIntoView());
+    this.preserveSelectionThrough(tr, originalSelection);
+    this.view.dispatch(tr);
     this.closeAxisMenu();
     this.refreshSelectionActive();
-    this.view.focus();
+    this.focusWithoutScroll();
   }
 
   convertToMarkdownTable() {
     const pos = this.resolvePos();
     if (pos == null) return;
+    const originalSelection = this.view.state.selection;
     const tr = this.view.state.tr.setNodeMarkup(pos, undefined, {
       ...this.node.attrs,
       tigranaTable: false,
@@ -1454,10 +1493,11 @@ class TableControlsNodeView implements NodeView {
       headerColumn: false,
     });
     applyHeaderCellsToTransaction(tr, this.node, pos, true, false, { clearWidths: true });
-    this.view.dispatch(tr.scrollIntoView());
+    this.preserveSelectionThrough(tr, originalSelection);
+    this.view.dispatch(tr);
     this.closeAxisMenu();
     this.refreshSelectionActive();
-    this.view.focus();
+    this.focusWithoutScroll();
   }
 
   toggleHeaderRow() {
@@ -1473,6 +1513,7 @@ class TableControlsNodeView implements NodeView {
   setHeaderOptions(headerRow: boolean, headerColumn: boolean) {
     const pos = this.resolvePos();
     if (pos == null) return;
+    const originalSelection = this.view.state.selection;
     const tr = this.view.state.tr.setNodeMarkup(pos, undefined, {
       ...this.node.attrs,
       tigranaTable: true,
@@ -1480,10 +1521,72 @@ class TableControlsNodeView implements NodeView {
       headerColumn,
     });
     applyHeaderCellsToTransaction(tr, this.node, pos, headerRow, headerColumn);
-    this.view.dispatch(tr.scrollIntoView());
+    this.preserveSelectionThrough(tr, originalSelection);
+    this.view.dispatch(tr);
     this.closeAxisMenu();
     this.refreshSelectionActive();
-    this.view.focus();
+    this.focusWithoutScroll();
+  }
+
+  preserveSelectionThrough(tr: Transaction, original: Selection) {
+    // setNodeMarkup on cells doesn't shift positions, but changing cell
+    // types invalidates a CellSelection's internal type guard, which makes
+    // ProseMirror fall back to a near-by selection — typically position 1
+    // or the end of the table. Explicitly re-anchor instead.
+    // Use duck-typing because instanceof can fail across bundled copies of
+    // prosemirror-tables.
+    const asCell = original as Selection & {
+      $anchorCell?: { pos: number };
+      $headCell?: { pos: number };
+    };
+    try {
+      if (asCell.$anchorCell && asCell.$headCell) {
+        const anchorPos = asCell.$anchorCell.pos;
+        const headPos = asCell.$headCell.pos;
+        if (tr.doc.nodeAt(anchorPos) && tr.doc.nodeAt(headPos)) {
+          tr.setSelection(CellSelection.create(tr.doc, anchorPos, headPos));
+          return;
+        }
+      }
+      tr.setSelection(original.map(tr.doc, tr.mapping));
+    } catch {
+      // leave whatever default mapping produced
+    }
+  }
+
+  focusWithoutScroll() {
+    if (this.view.hasFocus()) return;
+    // Avoid the browser scrolling the editor into view when re-focusing,
+    // which would visually "jump" the cursor. After focus is granted, the
+    // browser fires a domSelectionChange that can reset the PM selection
+    // (typically collapsing it to position 1), so re-assert the captured
+    // selection on the next frame.
+    const sel = this.view.state.selection;
+    const anchorCellPos = (sel as Selection & { $anchorCell?: { pos: number } }).$anchorCell?.pos;
+    const headCellPos = (sel as Selection & { $headCell?: { pos: number } }).$headCell?.pos;
+    try {
+      (this.view.dom as HTMLElement).focus({ preventScroll: true });
+    } catch {
+      this.view.focus();
+    }
+    window.requestAnimationFrame(() => {
+      if (this.view.isDestroyed) return;
+      const current = this.view.state.selection;
+      if (anchorCellPos != null && headCellPos != null) {
+        const curAnchor = (current as Selection & { $anchorCell?: { pos: number } }).$anchorCell?.pos;
+        const curHead = (current as Selection & { $headCell?: { pos: number } }).$headCell?.pos;
+        if (curAnchor === anchorCellPos && curHead === headCellPos) return;
+        try {
+          this.view.dispatch(
+            this.view.state.tr.setSelection(
+              CellSelection.create(this.view.state.doc, anchorCellPos, headCellPos),
+            ),
+          );
+        } catch {
+          // ignore
+        }
+      }
+    });
   }
 
   appendTableMenuActions(menu: HTMLDivElement) {
@@ -1576,11 +1679,40 @@ class TableControlsNodeView implements NodeView {
 
     const domRect = this.dom.getBoundingClientRect();
     this.axisMenu.style.top = `${anchorRect.bottom - domRect.top + 6}px`;
-    this.axisMenu.style.left = `${Math.max(0, anchorRect.left - domRect.left)}px`;
+    this.axisMenu.style.left = `${anchorRect.left - domRect.left}px`;
     this.dom.appendChild(this.axisMenu);
+    this.clampAxisMenuToViewport();
     this.dom.classList.add("is-active");
     window.addEventListener("mousedown", this.handleOutsideMouseDown, true);
     window.addEventListener("keydown", this.handleOutsideKeyDown, true);
+  }
+
+  clampAxisMenuToViewport() {
+    if (!this.axisMenu) return;
+    const domRect = this.dom.getBoundingClientRect();
+    const menuRect = this.axisMenu.getBoundingClientRect();
+    const margin = 8;
+    const viewportRight = window.innerWidth - margin;
+    const viewportBottom = window.innerHeight - margin;
+
+    let leftPx = parseFloat(this.axisMenu.style.left) || 0;
+    let topPx = parseFloat(this.axisMenu.style.top) || 0;
+
+    const overflowRight = menuRect.right - viewportRight;
+    if (overflowRight > 0) leftPx -= overflowRight;
+    const minLeftPx = margin - domRect.left;
+    if (leftPx < minLeftPx) leftPx = minLeftPx;
+
+    const overflowBottom = menuRect.bottom - viewportBottom;
+    if (overflowBottom > 0) {
+      // Flip the menu above the anchor when it would run off the bottom.
+      topPx -= menuRect.height + 12;
+      const minTopPx = margin - domRect.top;
+      if (topPx < minTopPx) topPx = minTopPx;
+    }
+
+    this.axisMenu.style.left = `${leftPx}px`;
+    this.axisMenu.style.top = `${topPx}px`;
   }
 
   closeAxisMenu() {
