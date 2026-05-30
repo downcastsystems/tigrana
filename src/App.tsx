@@ -13,6 +13,7 @@ import {
   ChevronDown,
   ChevronRight,
   ChevronUp,
+  Copy,
   FileCode2,
   FileText,
   Folder,
@@ -48,6 +49,7 @@ import {
   cleanupTrash,
   createFolder,
   createNote,
+  duplicateNote,
   acquireNoteEditLock,
   ensureWelcomeNote,
   ensureWorkspace,
@@ -2011,6 +2013,41 @@ export default function App() {
     await refreshWorkspace(workspace);
   }
 
+  async function handleDuplicateNote(path: string) {
+    if (!workspace) return;
+    try {
+      if (hasUnsavedChanges) {
+        await persistDraftForNavigation();
+      }
+      const duplicated = await duplicateNote(workspace, path);
+      const content = await readNote(workspace, duplicated.path);
+      const access = await acquireActiveNoteLock(duplicated.path);
+      acceptedDiskContentRef.current.set(duplicated.path, normalizeNoteContentForWatcher(content));
+      setNotes((current) => current.some((entry) => entry.path === duplicated.path) ? current : [...current, duplicated]);
+      setContents((current) => {
+        const next = new Map(current);
+        next.set(duplicated.path, content);
+        return next;
+      });
+      setActivePath(duplicated.path);
+      setPendingNote(null);
+      setSelectedFolder(navigationStyle === "section-view" ? getTopLevelFolderPath(duplicated.parent_path) : duplicated.parent_path);
+      placePathInActiveTab(duplicated.path);
+      loadContentIntoEditor(duplicated, content, {
+        path: duplicated.path,
+        lastOpenedAt: Date.now(),
+        scrollTop: 0,
+        contentLength: content.length,
+      });
+      applyNoteAccess(access);
+      recordNotePosition(duplicated.path, content, { lastOpenedAt: Date.now(), scrollTop: 0 });
+      updateMetadata((current) => addToOrder(current, duplicated.parent_path, duplicated.path));
+      await refreshWorkspace(workspace);
+    } catch (error) {
+      setAppError(error instanceof Error ? error.message : String(error));
+    }
+  }
+
   async function handleDeleteFolder(path: string) {
     if (!workspace || !path) return;
     if (activePath?.startsWith(`${path}/`)) {
@@ -3355,6 +3392,9 @@ export default function App() {
           onDelete={() => {
             if (contextMenu.kind === "note") void handleDeleteNote(contextMenu.path);
             if (contextMenu.kind === "folder") void handleDeleteFolder(contextMenu.path);
+          }}
+          onDuplicate={() => {
+            if (contextMenu.kind === "note") void handleDuplicateNote(contextMenu.path);
           }}
           onMoveTo={() => {
             if (contextMenu.kind !== "empty" && contextMenu.path) openMoveDialog(contextMenu.kind, contextMenu.path);
@@ -6312,6 +6352,7 @@ function ContextMenu({
   onCreateNote,
   onCreateSection,
   onDelete,
+  onDuplicate,
   onMoveTo,
   onOpenInNewTab,
   onOpenInNewWindow,
@@ -6334,6 +6375,7 @@ function ContextMenu({
   onCreateNote: () => void;
   onCreateSection: () => void;
   onDelete: () => void;
+  onDuplicate: () => void;
   onMoveTo: () => void;
   onOpenInNewTab: () => void;
   onOpenInNewWindow: () => void;
@@ -6423,6 +6465,10 @@ function ContextMenu({
           <button type="button" onClick={onMoveTo}>
             <MoveRight size={14} />
             <span>Move to…</span>
+          </button>
+          <button type="button" onClick={onDuplicate}>
+            <Copy size={14} />
+            <span>Duplicate</span>
           </button>
           <button type="button" onClick={onSetNoteIcon}>
             <FileText size={14} />

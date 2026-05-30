@@ -2617,7 +2617,9 @@ html[data-theme="dark"] .tab-list-separator {
 .ProseMirror > p + pre,
 .ProseMirror > pre + p,
 .ProseMirror > p + .node-codeBlock,
-.ProseMirror > .node-codeBlock + p {
+.ProseMirror > .node-codeBlock + p,
+.ProseMirror > p + .code-block-node-view,
+.ProseMirror > .code-block-node-view + p {
   margin-top: 0.95em;
 }
 
@@ -2653,7 +2655,104 @@ html[data-theme="dark"] .tab-list-separator {
   background: transparent;
 }
 
-.ProseMirror pre.code-block .code-block-controls {
+.ProseMirror .code-block-node-view {
+  position: relative;
+}
+
+.ProseMirror .code-block-node-view::before {
+  content: "";
+  position: absolute;
+  top: 0;
+  left: -40px;
+  width: 40px;
+  height: 32px;
+}
+
+.ProseMirror .code-block-node-view .code-block-side-tools {
+  position: absolute;
+  top: 0;
+  left: -32px;
+  z-index: 5;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding-right: 8px;
+  opacity: 0;
+  pointer-events: auto;
+  transition: opacity 120ms ease;
+}
+
+.ProseMirror .code-block-node-view:hover .code-block-side-tools,
+.ProseMirror .code-block-node-view:focus-within .code-block-side-tools,
+.ProseMirror .code-block-node-view .code-block-side-tools:hover,
+.ProseMirror .code-block-node-view.is-active .code-block-side-tools {
+  opacity: 1;
+}
+
+.code-block-menu-wrap {
+  position: relative;
+}
+
+.code-block-tool-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  padding: 0;
+  border: 0;
+  border-radius: 6px;
+  color: #817a70;
+  background: transparent;
+  cursor: pointer;
+}
+
+.code-block-tool-button:hover,
+.code-block-tool-button[aria-expanded="true"] {
+  color: #302b25;
+  background: rgba(52, 48, 43, 0.08);
+}
+
+.code-block-context-menu {
+  position: absolute;
+  top: 28px;
+  left: 0;
+  z-index: 60;
+  display: flex;
+  flex-direction: column;
+  min-width: 172px;
+  padding: 5px;
+  border: 1px solid rgba(52, 48, 43, 0.12);
+  border-radius: 8px;
+  background: rgba(255, 252, 247, 0.96);
+  box-shadow: var(--shadow-popover);
+}
+
+.code-block-context-menu button {
+  display: grid;
+  grid-template-columns: 16px minmax(0, 1fr);
+  align-items: center;
+  gap: 8px;
+  min-height: 30px;
+  padding: 5px 8px;
+  border: 0;
+  border-radius: 6px;
+  color: #302b25;
+  background: transparent;
+  font-size: 13px;
+  text-align: left;
+  cursor: pointer;
+}
+
+.code-block-context-menu button:hover {
+  background: rgba(52, 48, 43, 0.08);
+}
+
+.code-block-context-menu .danger-item {
+  color: #b64a3d;
+}
+
+.ProseMirror .code-block-node-view .code-block-controls {
   position: absolute;
   top: 6px;
   right: 6px;
@@ -2666,8 +2765,9 @@ html[data-theme="dark"] .tab-list-separator {
   z-index: 2;
 }
 
-.ProseMirror pre.code-block:hover .code-block-controls,
-.ProseMirror pre.code-block:focus-within .code-block-controls {
+.ProseMirror .code-block-node-view:hover .code-block-controls,
+.ProseMirror .code-block-node-view:focus-within .code-block-controls,
+.ProseMirror .code-block-node-view.is-active .code-block-controls {
   opacity: 1;
   pointer-events: auto;
 }
@@ -2929,6 +3029,15 @@ html[data-theme="dark"] .tab-list-separator {
   margin: 18px 0;
 }
 
+.ProseMirror .table-node-view::before {
+  content: "";
+  position: absolute;
+  top: 0;
+  left: -40px;
+  width: 40px;
+  height: 32px;
+}
+
 .ProseMirror .table-node-view table,
 .ProseMirror table {
   width: 100%;
@@ -2952,15 +3061,15 @@ html[data-theme="dark"] .tab-list-separator {
   gap: 4px;
   padding-right: 8px;
   opacity: 0;
-  pointer-events: none;
+  pointer-events: auto;
   transition: opacity 120ms ease;
 }
 
 .table-node-view:hover .table-block-tools,
 .table-node-view:focus-within .table-block-tools,
+.table-block-tools:hover,
 .table-node-view.is-active .table-block-tools {
   opacity: 1;
-  pointer-events: auto;
 }
 
 .table-tool-button {
@@ -3946,6 +4055,7 @@ html[data-theme="dark"] .note-status-bar,
 html[data-theme="dark"] .dialog-input,
 html[data-theme="dark"] .segmented-button,
 html[data-theme="dark"] .context-menu,
+html[data-theme="dark"] .code-block-context-menu,
 html[data-theme="dark"] .table-context-menu,
 html[data-theme="dark"] .icon-choice,
 html[data-theme="dark"] .folder-search-input,
@@ -3995,6 +4105,9 @@ html[data-theme="dark"] .note-tab:hover,
 html[data-theme="dark"] .note-tab-add:hover,
 html[data-theme="dark"] .context-menu button:hover,
 html[data-theme="dark"] .note-find-bar button:hover:not(:disabled),
+html[data-theme="dark"] .code-block-tool-button:hover,
+html[data-theme="dark"] .code-block-tool-button[aria-expanded="true"],
+html[data-theme="dark"] .code-block-context-menu button:hover,
 html[data-theme="dark"] .table-tool-button:hover,
 html[data-theme="dark"] .table-tool-button[aria-expanded="true"],
 html[data-theme="dark"] .table-context-menu button:hover,
@@ -4007,14 +4120,19 @@ html[data-theme="dark"] .icon-choice.is-selected {
   background: rgba(238, 232, 223, 0.08);
 }
 
-html[data-theme="dark"] .context-menu .danger-item {
+html[data-theme="dark"] .context-menu .danger-item,
+html[data-theme="dark"] .code-block-context-menu .danger-item {
   color: #f08a7f;
 }
 
+html[data-theme="dark"] .code-block-tool-button,
 html[data-theme="dark"] .table-tool-button {
   color: #a9a096;
 }
 
+html[data-theme="dark"] .code-block-tool-button:hover,
+html[data-theme="dark"] .code-block-tool-button[aria-expanded="true"],
+html[data-theme="dark"] .code-block-context-menu button,
 html[data-theme="dark"] .table-tool-button:hover,
 html[data-theme="dark"] .table-tool-button[aria-expanded="true"],
 html[data-theme="dark"] .table-context-menu button {

@@ -72,6 +72,12 @@ struct CreateNotePayload {
 }
 
 #[derive(Debug, Deserialize)]
+struct DuplicateNotePayload {
+    workspace: String,
+    path: String,
+}
+
+#[derive(Debug, Deserialize)]
 struct RenameNotePayload {
     workspace: String,
     path: String,
@@ -434,6 +440,62 @@ fn create_note(payload: CreateNotePayload) -> Result<NoteEntry, String> {
 }
 
 #[tauri::command]
+fn duplicate_note(payload: DuplicateNotePayload) -> Result<NoteEntry, String> {
+    let root = safe_workspace(&payload.workspace)?;
+    let source_relative = normalize_relative(&payload.path)?;
+    let source_path = root.join(&source_relative);
+    if !source_path.exists() {
+        return Err("The note could not be found.".to_string());
+    }
+
+    let parent = source_relative
+        .parent()
+        .map(PathBuf::from)
+        .unwrap_or_default();
+    let source_stem = source_relative
+        .file_stem()
+        .and_then(|name| name.to_str())
+        .unwrap_or("Untitled");
+    let copy_stem = format!("Copy of {source_stem}");
+    let new_relative = unique_note_relative(&root, &parent, &copy_stem);
+    let new_path = root.join(&new_relative);
+    if let Some(parent) = new_path.parent() {
+        fs::create_dir_all(parent).map_err(|error| error.to_string())?;
+    }
+
+    let source_content = fs::read_to_string(&source_path).map_err(|error| error.to_string())?;
+    let new_id = Uuid::new_v4().to_string();
+    let duplicate_content = set_note_id_in_content(&source_content, &new_id);
+    fs::write(&new_path, &duplicate_content).map_err(|error| error.to_string())?;
+
+    let path = new_relative.to_string_lossy().replace('\\', "/");
+    let title = note_title_from_path(&path);
+    let mut index = read_link_index_file(&root);
+    index.notes_by_id.insert(
+        new_id.clone(),
+        NoteRecord {
+            id: new_id.clone(),
+            path: path.clone(),
+            title: title.clone(),
+        },
+    );
+    index.path_to_id.insert(path.clone(), new_id.clone());
+    let refs = parse_links_for_note(&new_id, &duplicate_content, &index);
+    update_index_links_for_source(&mut index, &new_id, refs);
+    let _ = write_link_index_file(&root, &index);
+
+    Ok(NoteEntry {
+        path: path.clone(),
+        title,
+        parent_path: Path::new(&path)
+            .parent()
+            .map(|parent| parent.to_string_lossy().replace('\\', "/"))
+            .unwrap_or_default(),
+        updated_at: None,
+    })
+}
+
+#[tauri::command]
 fn rename_note(payload: RenameNotePayload) -> Result<NoteEntry, String> {
     validate_note_title(&payload.title)?;
     let root = safe_workspace(&payload.workspace)?;
@@ -581,21 +643,32 @@ fn move_note(payload: MovePathPayload) -> Result<NoteEntry, String> {
     let file_name = old_relative
         .file_name()
         .ok_or_else(|| "Invalid note path.".to_string())?;
-    let new_relative = if target_parent.as_os_str().is_empty() {
+    let initial_new_relative = if target_parent.as_os_str().is_empty() {
         PathBuf::from(file_name)
     } else {
         target_parent.join(file_name)
     };
     let old_path = root.join(&old_relative);
+    let new_relative = if old_relative == initial_new_relative {
+        initial_new_relative
+    } else {
+        let initial_new_path = root.join(&initial_new_relative);
+        if initial_new_path.exists() {
+            let stem = old_relative
+                .file_stem()
+                .and_then(|name| name.to_str())
+                .unwrap_or("Untitled");
+            unique_note_relative(&root, &target_parent, stem)
+        } else {
+            initial_new_relative
+        }
+    };
     let new_path = root.join(&new_relative);
 
     let old_rel_str = payload.path.clone();
     let new_rel_str = new_relative.to_string_lossy().replace('\\', "/");
 
     if old_path != new_path {
-        if new_path.exists() {
-            return Err("A note with that title already exists in the target folder.".to_string());
-        }
         if let Some(parent) = new_path.parent() {
             fs::create_dir_all(parent).map_err(|error| error.to_string())?;
         }
@@ -914,6 +987,66 @@ fn insert_frontmatter_field(frontmatter: &str, key: &str, value: &str) -> String
         format!("{key}: {value}")
     } else {
         format!("{key}: {value}\n{trimmed}")
+    }
+}
+
+fn set_frontmatter_field(frontmatter: &str, key: &str, value: &str) -> String {
+    let mut replaced = false;
+    let lines = frontmatter.split('\n').map(|line| {
+        let trimmed = line.trim_start();
+        if !replaced && !trimmed.starts_with('#') {
+            if let Some((k, _)) = trimmed.split_once(':') {
+                if k.trim() == key {
+                    replaced = true;
+                    return format!("{key}: {value}");
+                }
+            }
+        }
+        line.to_string()
+    });
+    let updated = lines.collect::<Vec<_>>().join("\n");
+    if replaced {
+        updated
+    } else {
+        insert_frontmatter_field(&updated, key, value)
+    }
+}
+
+fn set_note_id_in_content(content: &str, id: &str) -> String {
+    let normalized = content.replace("\r\n", "\n");
+    let (frontmatter, body, has_frontmatter) = split_frontmatter(&normalized);
+    if has_frontmatter {
+        let new_frontmatter = set_frontmatter_field(&frontmatter, "id", id);
+        format!("---\n{new_frontmatter}\n---\n{body}")
+    } else {
+        format!(
+            "---\nid: {id}\n---\n\n{}",
+            normalized.trim_start_matches('\n')
+        )
+    }
+}
+
+fn note_relative(parent: &Path, stem: &str) -> PathBuf {
+    if parent.as_os_str().is_empty() {
+        PathBuf::from(format!("{stem}.md"))
+    } else {
+        parent.join(format!("{stem}.md"))
+    }
+}
+
+fn unique_note_relative(root: &Path, parent: &Path, stem: &str) -> PathBuf {
+    let mut suffix = 0;
+    loop {
+        let candidate_stem = if suffix == 0 {
+            stem.to_string()
+        } else {
+            format!("{stem} {suffix}")
+        };
+        let relative = note_relative(parent, &candidate_stem);
+        if !root.join(&relative).exists() {
+            return relative;
+        }
+        suffix += 1;
     }
 }
 
@@ -3195,6 +3328,7 @@ pub fn run() {
             acquire_note_edit_lock,
             release_note_edit_lock,
             create_note,
+            duplicate_note,
             rename_note,
             create_folder,
             rename_folder,

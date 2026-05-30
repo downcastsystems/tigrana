@@ -205,6 +205,33 @@ export async function createNote(workspace: string, parentPath: string, title: s
   };
 }
 
+export async function duplicateNote(workspace: string, path: string): Promise<NoteEntry> {
+  if (isTauri()) {
+    const entry = await invoke<NoteEntry>("duplicate_note", {
+      payload: { workspace, path },
+    });
+    return decodeNoteEntry(entry);
+  }
+
+  const store = readDemoStore();
+  const content = store.notes[path];
+  if (content === undefined) throw new Error("The note could not be found.");
+  const parts = path.split("/");
+  const parentPath = parts.slice(0, -1).join("/");
+  const sourceStem = parts.at(-1)?.replace(/\.md$/, "") || "Untitled";
+  const copyStem = `Copy of ${sourceStem}`;
+  const nextPath = uniqueDemoNotePath(store, parentPath, copyStem);
+  store.notes[nextPath] = content;
+  writeDemoStore(store);
+
+  return {
+    path: nextPath,
+    title: decodeTitleFromFilename(nextPath.split("/").at(-1)?.replace(/\.md$/, "") ?? "Untitled"),
+    parent_path: parentPath,
+    updated_at: Date.now() / 1000,
+  };
+}
+
 export async function createFolder(workspace: string, parentPath: string, name: string): Promise<FolderEntry> {
   validateNoteTitle(name);
   const encodedName = encodeTitleForFilename(name.trim());
@@ -296,10 +323,11 @@ export async function moveNote(workspace: string, path: string, targetParentPath
 
   const store = readDemoStore();
   const fileName = path.split("/").at(-1) ?? path;
-  const nextPath = targetParentPath ? `${targetParentPath}/${fileName}` : fileName;
-  if (path !== nextPath && store.notes[nextPath]) {
-    throw new Error("A note with that title already exists in the target folder.");
-  }
+  const fileStem = fileName.replace(/\.md$/, "");
+  const initialNextPath = targetParentPath ? `${targetParentPath}/${fileName}` : fileName;
+  const nextPath = path === initialNextPath || !store.notes[initialNextPath]
+    ? initialNextPath
+    : uniqueDemoNotePath(store, targetParentPath, fileStem);
 
   store.notes[nextPath] = store.notes[path] ?? "";
   if (path !== nextPath) delete store.notes[path];
@@ -515,6 +543,14 @@ export function encodeTitleForFilename(title: string): string {
 
 export function decodeTitleFromFilename(name: string): string {
   return name.replace(/／/g, "/").replace(/．/g, ".").replace(/＃/g, "#").replace(/％/g, "%");
+}
+
+function uniqueDemoNotePath(store: DemoStore, parentPath: string, encodedStem: string): string {
+  for (let suffix = 0; ; suffix += 1) {
+    const stem = suffix === 0 ? encodedStem : `${encodedStem} ${suffix}`;
+    const candidate = parentPath ? `${parentPath}/${stem}.md` : `${stem}.md`;
+    if (!store.notes[candidate]) return candidate;
+  }
 }
 
 function decodeNoteEntry(entry: NoteEntry): NoteEntry {
