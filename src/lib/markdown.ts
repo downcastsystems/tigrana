@@ -69,6 +69,14 @@ function parseTableRow(line: string): string[] {
   return line.trim().replace(/^\||\|$/g, "").split("|").map((cell) => cell.trim());
 }
 
+function startsHtmlTable(line: string) {
+  return /^<table\b/i.test(line.trim());
+}
+
+function endsHtmlTable(line: string) {
+  return /<\/table>\s*$/i.test(line.trim());
+}
+
 export function markdownToHtml(markdown: string, options: MarkdownOptions = {}) {
   const lines = markdown.replace(/\r\n/g, "\n").split("\n");
   const html: string[] = [];
@@ -279,6 +287,20 @@ export function markdownToHtml(markdown: string, options: MarkdownOptions = {}) 
 
     if (inCode) {
       codeLines.push(line);
+      i += 1;
+      continue;
+    }
+
+    if (startsHtmlTable(line)) {
+      closeList();
+      closeTable();
+      flushBlankParagraphs();
+      const tableLines = [line];
+      while (!endsHtmlTable(lines[i] ?? "") && i + 1 < lines.length) {
+        i += 1;
+        tableLines.push(lines[i]);
+      }
+      html.push(tableLines.join("\n"));
       i += 1;
       continue;
     }
@@ -550,6 +572,8 @@ export function htmlToMarkdown(html: string) {
       markdown.push("---");
     } else if (tag === "ul" || tag === "ol") {
       markdown.push(serializeList(block, 0));
+    } else if (tag === "table" && block.getAttribute("data-tigrana-table") === "true") {
+      markdown.push(serializeTigranaHtmlTable(block));
     } else if (tag === "table") {
       // Handle both standard <thead>/<tbody> and TipTap's tbody-only structure
       // (TipTap puts all rows in <tbody>, using <th> for the header row).
@@ -579,6 +603,87 @@ export function htmlToMarkdown(html: string) {
   });
 
   return `${normalizeMarkdownImageLines(joinMarkdownBlocks(markdown)).trim()}\n`;
+}
+
+function serializeTigranaHtmlTable(table: Element) {
+  const rows = Array.from(table.querySelectorAll("tr"));
+  const columnCount = rows.reduce((max, row) => Math.max(max, row.children.length), 0);
+  const widths = getTigranaTableWidths(table, columnCount);
+  const headerRow = table.getAttribute("data-header-row") !== "false";
+  const headerColumn = table.getAttribute("data-header-column") === "true";
+  const lines: string[] = [
+    `<table data-tigrana-table="true" data-header-row="${headerRow ? "true" : "false"}" data-header-column="${headerColumn ? "true" : "false"}">`,
+  ];
+
+  if (columnCount > 0) {
+    lines.push("  <colgroup>");
+    for (const width of widths) {
+      lines.push(`    <col data-width="${width}">`);
+    }
+    lines.push("  </colgroup>");
+  }
+
+  const writeRow = (row: Element, indent: string) => {
+    lines.push(`${indent}<tr>`);
+    Array.from(row.children).forEach((cell, cellIndex) => {
+      const tag = headerColumn && cellIndex === 0 ? "th" : cell.tagName.toLowerCase() === "th" ? "th" : "td";
+      lines.push(`${indent}  <${tag}>${serializeTableCellHtml(cell)}</${tag}>`);
+    });
+    lines.push(`${indent}</tr>`);
+  };
+
+  const [firstRow, ...bodyRows] = rows;
+  if (headerRow && firstRow) {
+    lines.push("  <thead>");
+    writeRow(firstRow, "    ");
+    lines.push("  </thead>");
+    if (bodyRows.length > 0) {
+      lines.push("  <tbody>");
+      bodyRows.forEach((row) => writeRow(row, "    "));
+      lines.push("  </tbody>");
+    }
+  } else if (rows.length > 0) {
+    lines.push("  <tbody>");
+    rows.forEach((row) => writeRow(row, "    "));
+    lines.push("  </tbody>");
+  }
+
+  lines.push("</table>");
+  return lines.join("\n");
+}
+
+function getTigranaTableWidths(table: Element, columnCount: number) {
+  const cols = Array.from(table.querySelectorAll("colgroup > col"));
+  return Array.from({ length: columnCount }, (_value, index) => {
+    const col = cols[index] as HTMLElement | undefined;
+    const raw =
+      col?.getAttribute("data-width") ??
+      col?.getAttribute("width") ??
+      (/width\s*:\s*(\d+(?:\.\d+)?)px/i.exec(col?.getAttribute("style") ?? "")?.[1] ?? null);
+    const width = raw ? Math.round(Number(raw)) : 160;
+    return Number.isFinite(width) && width > 0 ? width : 160;
+  });
+}
+
+function serializeTableCellHtml(cell: Element) {
+  const clone = cell.cloneNode(true) as Element;
+  clone.querySelectorAll("[data-node-view-wrapper], [data-node-view-content], [data-node-view-content-react]").forEach((element) => {
+    element.removeAttribute("data-node-view-wrapper");
+    element.removeAttribute("data-node-view-content");
+    element.removeAttribute("data-node-view-content-react");
+  });
+  clone.querySelectorAll("[class]").forEach((element) => {
+    const className = element.getAttribute("class") ?? "";
+    const kept = className.split(/\s+/).filter((name) => !/^ProseMirror/.test(name) && name !== "selectedCell");
+    if (kept.length > 0) element.setAttribute("class", kept.join(" "));
+    else element.removeAttribute("class");
+  });
+
+  const elementChildren = Array.from(clone.children);
+  if (elementChildren.length === 1 && elementChildren[0].tagName.toLowerCase() === "p") {
+    return elementChildren[0].innerHTML;
+  }
+  return clone.innerHTML;
 }
 
 function isCodeBlockNeighbor(blocks: Element[], index: number) {

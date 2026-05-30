@@ -1,5 +1,6 @@
 import type { Editor, Range } from "@tiptap/react";
 import { TextSelection } from "@tiptap/pm/state";
+import { TableMap } from "@tiptap/pm/tables";
 import {
   CheckSquare,
   Code,
@@ -207,10 +208,47 @@ export const slashCommands: SlashCommand[] = [
     keywords: ["table", "grid", "spreadsheet"],
     run: (editor, range) => {
       editor.chain().focus().deleteRange(range).insertTable({ rows: 3, cols: 3, withHeaderRow: true }).run();
+      markCurrentTableAsTigranaHtml(editor);
       ensureParagraphAfterCurrentTable(editor);
     },
   },
 ];
+
+function markCurrentTableAsTigranaHtml(editor: Editor) {
+  const { state, view } = editor;
+  const { selection } = state;
+  let tableDepth = -1;
+  for (let depth = selection.$from.depth; depth > 0; depth -= 1) {
+    if (selection.$from.node(depth).type.name === "table") {
+      tableDepth = depth;
+      break;
+    }
+  }
+  if (tableDepth < 0) return;
+
+  const tablePos = selection.$from.before(tableDepth);
+  const tableNode = selection.$from.node(tableDepth);
+  const map = TableMap.get(tableNode);
+  let tr = state.tr.setNodeMarkup(tablePos, undefined, {
+    ...tableNode.attrs,
+    tigranaTable: true,
+    headerRow: true,
+    headerColumn: false,
+  });
+
+  for (let column = 0; column < map.width; column += 1) {
+    const cellPos = tablePos + 1 + map.positionAt(0, column, tableNode);
+    const cell = tr.doc.nodeAt(cellPos);
+    if (cell) {
+      tr = tr.setNodeMarkup(cellPos, undefined, {
+        ...cell.attrs,
+        colwidth: [180],
+      });
+    }
+  }
+
+  view.dispatch(tr);
+}
 
 function ensureParagraphAfterCurrentTable(editor: Editor) {
   const { state, view } = editor;

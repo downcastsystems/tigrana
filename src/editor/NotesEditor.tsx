@@ -12,8 +12,8 @@ import { TableRow } from "@tiptap/extension-table-row";
 import TaskItem from "@tiptap/extension-task-item";
 import TaskList from "@tiptap/extension-task-list";
 import { DOMSerializer, type Fragment as ProseMirrorFragment, type Node as ProseMirrorNode, type ResolvedPos } from "@tiptap/pm/model";
-import { NodeSelection, Plugin, PluginKey, Selection, TextSelection } from "@tiptap/pm/state";
-import { addColumnAfter, addRowAfter, TableMap } from "@tiptap/pm/tables";
+import { NodeSelection, Plugin, PluginKey, Selection, TextSelection, type Transaction } from "@tiptap/pm/state";
+import { addColumnAfter, addColumnBefore, addRowAfter, addRowBefore, CellSelection, deleteColumn, deleteRow, TableMap } from "@tiptap/pm/tables";
 import { Decoration, DecorationSet, type EditorView, type NodeView, type ViewMutationRecord } from "@tiptap/pm/view";
 import { EditorContent, NodeViewContent, NodeViewWrapper, Range, ReactNodeViewRenderer, useEditor, type Editor } from "@tiptap/react";
 import StarterKit from "@tiptap/starter-kit";
@@ -36,7 +36,7 @@ import {
   Link as LinkIcon,
   List,
   ListOrdered,
-  MoreVertical,
+  Menu,
   Plus,
   Quote,
   Search,
@@ -383,7 +383,7 @@ function CodeBlockNodeView({
               setMenuOpen((value) => !value);
             }}
           >
-            <MoreVertical size={16} />
+            <Menu size={16} />
           </button>
           {menuOpen ? (
             <div className="code-block-context-menu">
@@ -460,6 +460,35 @@ const CodeBlockWithControls = CodeBlockLowlight.extend({
 });
 
 type NodeViewGetPos = (() => number | undefined) | boolean;
+type TableAxis = "row" | "column";
+type ResizeState = {
+  startX: number;
+  columnIndex: number;
+  widths: number[];
+};
+
+const RICH_TABLE_DEFAULT_COLUMN_WIDTH = 180;
+const RICH_TABLE_MIN_COLUMN_WIDTH = 96;
+
+function isRichTableNode(node: ProseMirrorNode) {
+  return node.attrs.tigranaTable === true;
+}
+
+function parseCellColwidth(element: HTMLElement) {
+  const colwidth = element.getAttribute("colwidth");
+  const value = colwidth ? colwidth.split(",").map((width) => parseInt(width, 10)).filter(Number.isFinite) : null;
+  if (value?.length) return value;
+
+  const cols = element.closest("table")?.querySelectorAll("colgroup > col");
+  const cellIndex = Array.from(element.parentElement?.children ?? []).indexOf(element);
+  const col = cellIndex >= 0 ? cols?.[cellIndex] : null;
+  const raw =
+    col?.getAttribute("data-width") ??
+    col?.getAttribute("width") ??
+    (/width\s*:\s*(\d+(?:\.\d+)?)px/i.exec(col?.getAttribute("style") ?? "")?.[1] ?? null);
+  const width = raw ? Math.round(Number(raw)) : null;
+  return width && Number.isFinite(width) ? [width] : null;
+}
 
 class TableControlsNodeView implements NodeView {
   node: ProseMirrorNode;
@@ -470,11 +499,18 @@ class TableControlsNodeView implements NodeView {
   table: HTMLTableElement;
   colgroup: HTMLTableColElement;
   contentDOM: HTMLTableSectionElement;
-  tools: HTMLDivElement;
-  handleButton: HTMLButtonElement;
-  menu: HTMLDivElement | null = null;
+  rowHandle: HTMLButtonElement;
+  columnHandle: HTMLButtonElement;
+  addColumnEdgeButton: HTMLButtonElement;
+  addRowEdgeButton: HTMLButtonElement;
+  resizeLayer: HTMLDivElement;
+  axisMenu: HTMLDivElement | null = null;
   copiedTimer: number | null = null;
   selectionActive = false;
+  hoveredRow: number | null = null;
+  hoveredColumn: number | null = null;
+  resizeState: ResizeState | null = null;
+  isOpeningAxisMenu = false;
 
   constructor(node: ProseMirrorNode, cellMinWidth: number, view: EditorView, getPos: NodeViewGetPos) {
     this.node = node;
@@ -484,39 +520,88 @@ class TableControlsNodeView implements NodeView {
     this.dom = document.createElement("div");
     this.dom.className = "tableWrapper table-node-view";
 
-    this.tools = this.dom.appendChild(document.createElement("div"));
-    this.tools.className = "table-block-tools";
-    this.tools.contentEditable = "false";
-    this.tools.addEventListener("mousedown", this.stopToolEvent);
-
-    const menuWrap = this.tools.appendChild(document.createElement("div"));
-    menuWrap.className = "table-menu-wrap";
-    this.handleButton = menuWrap.appendChild(createTableToolButton("Table options", tableIconSvg("grip", 16)));
-    this.handleButton.classList.add("table-handle-button");
-    this.handleButton.setAttribute("aria-expanded", "false");
-    this.handleButton.addEventListener("click", () => {
-      this.selectTable();
-      this.setMenuOpen(!this.menu);
-    });
-
     this.table = this.dom.appendChild(document.createElement("table"));
+    this.dom.classList.toggle("is-rich-table", isRichTableNode(node));
     if (node.attrs.style) {
       this.table.style.cssText = String(node.attrs.style);
     }
     this.colgroup = this.table.appendChild(document.createElement("colgroup"));
     updateTableColumns(node, this.colgroup, this.table, cellMinWidth);
     this.contentDOM = this.table.appendChild(document.createElement("tbody"));
+    this.rowHandle = this.dom.appendChild(createTableToolButton("Row options", tableIconSvg("rows", 16)));
+    this.rowHandle.classList.add("table-axis-handle", "table-row-handle");
+    this.rowHandle.contentEditable = "false";
+    this.rowHandle.addEventListener("mousedown", this.stopToolEvent);
+    this.rowHandle.addEventListener("mouseenter", this.keepAxisHandlesVisible);
+    this.rowHandle.addEventListener("mouseleave", this.handleAxisHandleLeave);
+    this.rowHandle.addEventListener("click", (event) => {
+      const row = this.getRowIndexAtY(event.clientY) ?? this.hoveredRow;
+      if (row == null) return;
+      const anchorRect = this.rowHandle.getBoundingClientRect();
+      this.isOpeningAxisMenu = true;
+      this.hoveredRow = row;
+      this.selectRow(row, { preserveHandlePosition: true });
+      this.openAxisMenu("row", row, anchorRect);
+      window.requestAnimationFrame(() => {
+        this.isOpeningAxisMenu = false;
+      });
+    });
+
+    this.columnHandle = this.dom.appendChild(createTableToolButton("Column options", tableIconSvg("columns", 16)));
+    this.columnHandle.classList.add("table-axis-handle", "table-column-handle");
+    this.columnHandle.contentEditable = "false";
+    this.columnHandle.addEventListener("mousedown", this.stopToolEvent);
+    this.columnHandle.addEventListener("mouseenter", this.keepAxisHandlesVisible);
+    this.columnHandle.addEventListener("mouseleave", this.handleAxisHandleLeave);
+    this.columnHandle.addEventListener("click", (event) => {
+      const column = this.getColumnIndexAtX(event.clientX) ?? this.hoveredColumn;
+      if (column == null) return;
+      const anchorRect = this.columnHandle.getBoundingClientRect();
+      this.isOpeningAxisMenu = true;
+      this.hoveredColumn = column;
+      this.selectColumn(column, { preserveHandlePosition: true });
+      this.openAxisMenu("column", column, anchorRect);
+      window.requestAnimationFrame(() => {
+        this.isOpeningAxisMenu = false;
+      });
+    });
+
+    this.addColumnEdgeButton = this.dom.appendChild(createTableToolButton("Add column", tableIconSvg("plus", 14)));
+    this.addColumnEdgeButton.classList.add("table-edge-add", "table-edge-add-column");
+    this.addColumnEdgeButton.contentEditable = "false";
+    this.addColumnEdgeButton.addEventListener("mousedown", this.stopToolEvent);
+    this.addColumnEdgeButton.addEventListener("click", () => this.addColumnToEnd());
+
+    this.addRowEdgeButton = this.dom.appendChild(createTableToolButton("Add row", tableIconSvg("plus", 14)));
+    this.addRowEdgeButton.classList.add("table-edge-add", "table-edge-add-row");
+    this.addRowEdgeButton.contentEditable = "false";
+    this.addRowEdgeButton.addEventListener("mousedown", this.stopToolEvent);
+    this.addRowEdgeButton.addEventListener("click", () => this.addRowToBottom());
+
+    this.resizeLayer = this.dom.appendChild(document.createElement("div"));
+    this.resizeLayer.className = "table-resize-layer";
+    this.resizeLayer.contentEditable = "false";
+    this.resizeLayer.addEventListener("mousedown", this.stopToolEvent);
+    this.dom.addEventListener("mousemove", this.handleMouseMove);
+    this.dom.addEventListener("mouseleave", this.handleMouseLeave);
     this.view.dom.addEventListener("keyup", this.refreshSelectionActive);
     this.view.dom.addEventListener("mouseup", this.refreshSelectionActive);
     this.view.dom.addEventListener("mousedown", this.refreshSelectionActive);
     window.addEventListener("selectionchange", this.refreshSelectionActive);
-    window.setTimeout(this.refreshSelectionActive);
+    window.setTimeout(() => {
+      this.refreshSelectionActive();
+      this.positionEdgeButtons();
+      this.renderResizeHandles();
+    });
   }
 
   update(node: ProseMirrorNode) {
     if (node.type !== this.node.type) return false;
     this.node = node;
     updateTableColumns(node, this.colgroup, this.table, this.cellMinWidth);
+    this.dom.classList.toggle("is-rich-table", isRichTableNode(node));
+    this.positionEdgeButtons();
+    this.renderResizeHandles();
     this.refreshSelectionActive();
     return true;
   }
@@ -526,15 +611,27 @@ class TableControlsNodeView implements NodeView {
   }
 
   deselectNode() {
-    if (!this.menu) this.dom.classList.remove("is-active");
+    if (!this.axisMenu) this.dom.classList.remove("is-active");
   }
 
   destroy() {
-    this.tools.removeEventListener("mousedown", this.stopToolEvent);
+    this.rowHandle.removeEventListener("mousedown", this.stopToolEvent);
+    this.columnHandle.removeEventListener("mousedown", this.stopToolEvent);
+    this.rowHandle.removeEventListener("mouseenter", this.keepAxisHandlesVisible);
+    this.rowHandle.removeEventListener("mouseleave", this.handleAxisHandleLeave);
+    this.columnHandle.removeEventListener("mouseenter", this.keepAxisHandlesVisible);
+    this.columnHandle.removeEventListener("mouseleave", this.handleAxisHandleLeave);
+    this.addColumnEdgeButton.removeEventListener("mousedown", this.stopToolEvent);
+    this.addRowEdgeButton.removeEventListener("mousedown", this.stopToolEvent);
+    this.resizeLayer.removeEventListener("mousedown", this.stopToolEvent);
+    this.dom.removeEventListener("mousemove", this.handleMouseMove);
+    this.dom.removeEventListener("mouseleave", this.handleMouseLeave);
     this.view.dom.removeEventListener("keyup", this.refreshSelectionActive);
     this.view.dom.removeEventListener("mouseup", this.refreshSelectionActive);
     this.view.dom.removeEventListener("mousedown", this.refreshSelectionActive);
     window.removeEventListener("selectionchange", this.refreshSelectionActive);
+    window.removeEventListener("pointermove", this.handleResizePointerMove);
+    window.removeEventListener("pointerup", this.handleResizePointerUp);
     this.removeOutsideListeners();
     if (this.copiedTimer !== null) window.clearTimeout(this.copiedTimer);
   }
@@ -557,30 +654,53 @@ class TableControlsNodeView implements NodeView {
   };
 
   handleOutsideMouseDown = (event: MouseEvent) => {
-    if (this.tools.contains(event.target as Node)) return;
-    this.setMenuOpen(false);
+    if (this.axisMenu?.contains(event.target as Node)) return;
+    this.closeAxisMenu();
   };
 
   handleOutsideKeyDown = (event: KeyboardEvent) => {
-    if (event.key === "Escape") this.setMenuOpen(false);
+    if (event.key === "Escape") {
+      this.closeAxisMenu();
+    }
   };
 
   refreshSelectionActive = () => {
     const pos = this.resolvePos();
     if (pos == null) {
       this.selectionActive = false;
-      if (!this.menu) this.dom.classList.remove("is-active");
+      if (!this.axisMenu) this.dom.classList.remove("is-active");
       return;
     }
 
     const { from, to } = this.view.state.selection;
     this.selectionActive = from >= pos && to <= pos + this.node.nodeSize;
-    if (this.selectionActive || this.menu) {
+    if (this.selectionActive || this.axisMenu) {
       this.dom.classList.add("is-active");
     } else {
       this.dom.classList.remove("is-active");
     }
+
+    if (this.isOpeningAxisMenu) return;
+
+    const selectedCell = this.findSelectionCellElement();
+    if (selectedCell) {
+      const row = selectedCell.parentElement as HTMLTableRowElement | null;
+      const rowIndex = row ? Array.from(this.table.rows).indexOf(row) : -1;
+      if (rowIndex >= 0 && selectedCell.cellIndex >= 0) {
+        this.hoveredRow = rowIndex;
+        this.hoveredColumn = selectedCell.cellIndex;
+        this.positionAxisHandles(selectedCell, rowIndex, selectedCell.cellIndex);
+      }
+    }
   };
+
+  findSelectionCellElement() {
+    const { selection } = this.view.state;
+    const domAtSelection = this.view.domAtPos(selection.from).node;
+    const element = domAtSelection instanceof Element ? domAtSelection : domAtSelection.parentElement;
+    const cell = element?.closest("td, th") as HTMLTableCellElement | null;
+    return cell && this.table.contains(cell) ? cell : null;
+  }
 
   resolvePos() {
     if (typeof this.getPos !== "function") return null;
@@ -588,11 +708,246 @@ class TableControlsNodeView implements NodeView {
     return typeof pos === "number" ? pos : null;
   }
 
-  selectTable() {
+  handleMouseMove = (event: MouseEvent) => {
+    if (!(event.target instanceof Element)) return;
+    if (
+      event.target.closest(".table-axis-handle") ||
+      event.target.closest(".table-edge-add") ||
+      event.target.closest(".table-context-menu") ||
+      event.target.closest(".table-column-resize-handle")
+    ) {
+      this.keepAxisHandlesVisible();
+      this.positionEdgeButtons();
+      return;
+    }
+
+    const cell = event.target.closest("td, th") as HTMLTableCellElement | null;
+    if (!cell || !this.table.contains(cell)) {
+      return;
+    }
+
+    const row = cell.parentElement as HTMLTableRowElement | null;
+    const rowIndex = row ? Array.from(this.table.rows).indexOf(row) : -1;
+    const columnIndex = cell.cellIndex;
+    if (rowIndex < 0 || columnIndex < 0) return;
+
+    this.hoveredRow = rowIndex;
+    this.hoveredColumn = columnIndex;
+    this.positionAxisHandles(cell, rowIndex, columnIndex);
+    this.positionEdgeButtons();
+    this.renderResizeHandles();
+  };
+
+  handleMouseLeave = () => {
+    if (this.axisMenu || this.resizeState) return;
+    window.setTimeout(() => {
+      if (this.dom.matches(":hover") || this.rowHandle.matches(":hover") || this.columnHandle.matches(":hover")) return;
+      if (this.selectionActive) return;
+      this.hoveredRow = null;
+      this.hoveredColumn = null;
+      this.rowHandle.classList.remove("is-visible");
+      this.columnHandle.classList.remove("is-visible");
+    }, 450);
+  };
+
+  keepAxisHandlesVisible = () => {
+    if (this.hoveredRow != null) this.rowHandle.classList.add("is-visible");
+    if (this.hoveredColumn != null) this.columnHandle.classList.add("is-visible");
+  };
+
+  handleAxisHandleLeave = () => {
+    window.setTimeout(() => {
+      if (this.dom.matches(":hover") || this.rowHandle.matches(":hover") || this.columnHandle.matches(":hover") || this.axisMenu || this.selectionActive) return;
+      this.rowHandle.classList.remove("is-visible");
+      this.columnHandle.classList.remove("is-visible");
+    }, 450);
+  };
+
+  positionAxisHandles(cell: HTMLTableCellElement, rowIndex: number, columnIndex: number) {
+    const tableRect = this.table.getBoundingClientRect();
+    const domRect = this.dom.getBoundingClientRect();
+    const rowRect = this.table.rows[rowIndex]?.getBoundingClientRect();
+    const cellRect = cell.getBoundingClientRect();
+    if (!rowRect) return;
+
+    this.rowHandle.style.top = `${rowRect.top - domRect.top + Math.max((rowRect.height - 24) / 2, 0)}px`;
+    this.rowHandle.style.left = `${tableRect.left - domRect.left - 30}px`;
+    this.rowHandle.classList.add("is-visible");
+
+    this.columnHandle.style.top = `${tableRect.top - domRect.top - 30}px`;
+    this.columnHandle.style.left = `${cellRect.left - domRect.left + Math.max((cellRect.width - 24) / 2, 0)}px`;
+    this.columnHandle.classList.add("is-visible");
+
+    this.rowHandle.setAttribute("aria-label", `Row ${rowIndex + 1} options`);
+    this.columnHandle.setAttribute("aria-label", `Column ${columnIndex + 1} options`);
+  }
+
+  getRowIndexAtY(clientY: number) {
+    const rows = Array.from(this.table.rows);
+    if (!rows.length) return null;
+    const exactIndex = rows.findIndex((row) => {
+      const rect = row.getBoundingClientRect();
+      return clientY >= rect.top && clientY <= rect.bottom;
+    });
+    if (exactIndex >= 0) return exactIndex;
+
+    let closestIndex = 0;
+    let closestDistance = Infinity;
+    rows.forEach((row, index) => {
+      const rect = row.getBoundingClientRect();
+      const distance = Math.abs(clientY - (rect.top + rect.height / 2));
+      if (distance < closestDistance) {
+        closestDistance = distance;
+        closestIndex = index;
+      }
+    });
+    return closestIndex;
+  }
+
+  getColumnIndexAtX(clientX: number) {
+    const firstRow = this.table.rows[0];
+    if (!firstRow) return null;
+    const cells = Array.from(firstRow.cells);
+    if (!cells.length) return null;
+    const exactIndex = cells.findIndex((cell) => {
+      const rect = cell.getBoundingClientRect();
+      return clientX >= rect.left && clientX <= rect.right;
+    });
+    if (exactIndex >= 0) return exactIndex;
+
+    let closestIndex = 0;
+    let closestDistance = Infinity;
+    cells.forEach((cell, index) => {
+      const rect = cell.getBoundingClientRect();
+      const distance = Math.abs(clientX - (rect.left + rect.width / 2));
+      if (distance < closestDistance) {
+        closestDistance = distance;
+        closestIndex = index;
+      }
+    });
+    return closestIndex;
+  }
+
+  positionEdgeButtons() {
+    const tableRect = this.table.getBoundingClientRect();
+    const domRect = this.dom.getBoundingClientRect();
+    const visible = this.selectionActive || this.dom.matches(":hover") || Boolean(this.axisMenu);
+    this.addColumnEdgeButton.style.left = `${tableRect.right - domRect.left + 12}px`;
+    this.addColumnEdgeButton.style.top = `${tableRect.top - domRect.top}px`;
+    this.addColumnEdgeButton.style.height = `${Math.max(tableRect.height, 42)}px`;
+    this.addColumnEdgeButton.classList.toggle("is-visible", visible);
+
+    this.addRowEdgeButton.style.left = `${tableRect.left - domRect.left}px`;
+    this.addRowEdgeButton.style.top = `${tableRect.bottom - domRect.top + 10}px`;
+    this.addRowEdgeButton.style.width = `${Math.max(tableRect.width, 120)}px`;
+    this.addRowEdgeButton.classList.toggle("is-visible", visible);
+  }
+
+  scheduleChromeRefresh() {
+    window.requestAnimationFrame(() => {
+      window.requestAnimationFrame(() => {
+        this.positionEdgeButtons();
+        this.renderResizeHandles();
+      });
+    });
+  }
+
+  renderResizeHandles() {
+    this.resizeLayer.innerHTML = "";
+    if (!isRichTableNode(this.node)) return;
+    const widths = this.getColumnWidths();
+    if (widths.length < 2) return;
+    const tableRect = this.table.getBoundingClientRect();
+    const domRect = this.dom.getBoundingClientRect();
+    let left = tableRect.left - domRect.left;
+    widths.slice(0, -1).forEach((width, index) => {
+      left += width;
+      const handle = this.resizeLayer.appendChild(document.createElement("button"));
+      handle.type = "button";
+      handle.className = "table-column-resize-handle";
+      handle.title = "Resize column";
+      handle.style.left = `${left - 4}px`;
+      handle.style.top = `${tableRect.top - domRect.top}px`;
+      handle.style.height = `${Math.max(tableRect.height, 24)}px`;
+      handle.addEventListener("pointerdown", (event) => this.startColumnResize(event, index));
+    });
+  }
+
+  startColumnResize(event: PointerEvent, columnIndex: number) {
+    event.preventDefault();
+    event.stopPropagation();
+    this.resizeState = {
+      startX: event.clientX,
+      columnIndex,
+      widths: this.getColumnWidths(),
+    };
+    this.dom.classList.add("is-resizing-table");
+    window.addEventListener("pointermove", this.handleResizePointerMove);
+    window.addEventListener("pointerup", this.handleResizePointerUp);
+  }
+
+  handleResizePointerMove = (event: PointerEvent) => {
+    if (!this.resizeState) return;
+    const widths = this.nextResizeWidths(event.clientX);
+    this.applyVisualColumnWidths(widths);
+  };
+
+  handleResizePointerUp = (event: PointerEvent) => {
+    if (!this.resizeState) return;
+    const widths = this.nextResizeWidths(event.clientX);
+    this.resizeState = null;
+    this.dom.classList.remove("is-resizing-table");
+    window.removeEventListener("pointermove", this.handleResizePointerMove);
+    window.removeEventListener("pointerup", this.handleResizePointerUp);
+    this.commitColumnWidths(widths);
+  };
+
+  nextResizeWidths(clientX: number) {
+    const state = this.resizeState;
+    if (!state) return this.getColumnWidths();
+    const widths = [...state.widths];
+    const delta = clientX - state.startX;
+    const left = Math.max(RICH_TABLE_MIN_COLUMN_WIDTH, state.widths[state.columnIndex] + delta);
+    const right = Math.max(RICH_TABLE_MIN_COLUMN_WIDTH, state.widths[state.columnIndex + 1] - (left - state.widths[state.columnIndex]));
+    widths[state.columnIndex] = left;
+    widths[state.columnIndex + 1] = right;
+    return widths.map((width) => Math.round(width));
+  }
+
+  getColumnWidths() {
+    const map = TableMap.get(this.node);
+    const cols = Array.from(this.colgroup.children) as HTMLTableColElement[];
+    return Array.from({ length: map.width }, (_value, index) => {
+      const col = cols[index];
+      const styleWidth = parseFloat(col?.style.width || "");
+      const attrWidth = parseFloat(col?.getAttribute("data-width") ?? col?.getAttribute("width") ?? "");
+      const width = Number.isFinite(styleWidth) && styleWidth > 0 ? styleWidth : attrWidth;
+      if (Number.isFinite(width) && width > 0) return Math.round(width);
+      const firstRow = this.node.firstChild;
+      const cell = firstRow?.child(index);
+      const colwidth = Array.isArray(cell?.attrs.colwidth) ? cell?.attrs.colwidth[0] : null;
+      return typeof colwidth === "number" && Number.isFinite(colwidth) ? colwidth : RICH_TABLE_DEFAULT_COLUMN_WIDTH;
+    });
+  }
+
+  applyVisualColumnWidths(widths: number[]) {
+    Array.from(this.colgroup.children).forEach((col, index) => {
+      const width = widths[index];
+      if (!(col instanceof HTMLTableColElement) || !width) return;
+      col.style.width = `${width}px`;
+      col.style.minWidth = "";
+    });
+    this.table.style.width = `${widths.reduce((sum, width) => sum + width, 0)}px`;
+    this.table.style.minWidth = "";
+    this.renderResizeHandles();
+  }
+
+  commitColumnWidths(widths: number[]) {
     const pos = this.resolvePos();
     if (pos == null) return;
-    const { state } = this.view;
-    this.view.dispatch(state.tr.setSelection(NodeSelection.create(state.doc, pos)).scrollIntoView());
+    const tr = this.view.state.tr;
+    applyColumnWidthsToTransaction(tr, this.node, pos, widths);
+    this.view.dispatch(tr.scrollIntoView());
     this.refreshSelectionActive();
     this.view.focus();
   }
@@ -621,7 +976,8 @@ class TableControlsNodeView implements NodeView {
     this.view.dispatch(tr.scrollIntoView());
     this.refreshSelectionActive();
     this.view.focus();
-    this.setMenuOpen(false);
+    this.closeAxisMenu();
+    this.scheduleChromeRefresh();
   }
 
   addRowToBottom() {
@@ -631,10 +987,10 @@ class TableControlsNodeView implements NodeView {
 
   addColumnToEnd() {
     const map = TableMap.get(this.node);
-    this.runTableCommandAt(0, map.width - 1, addColumnAfter);
+    this.runTableCommandAt(0, map.width - 1, addColumnAfter, { rebalanceColumns: 1 });
   }
 
-  runTableCommandAt(row: number, col: number, command: typeof addRowAfter) {
+  runTableCommandAt(row: number, col: number, command: typeof addRowAfter, options: { rebalanceColumns?: number } = {}) {
     const pos = this.resolvePos();
     if (pos == null || row < 0 || col < 0) return;
 
@@ -646,9 +1002,151 @@ class TableControlsNodeView implements NodeView {
 
     this.view.dispatch(state.tr.setSelection(selection));
     command(this.view.state, (tr) => this.view.dispatch(tr));
+    if (isRichTableNode(this.node)) {
+      this.normalizeRichHeaderCells();
+    }
+    if (options.rebalanceColumns && isRichTableNode(this.node)) {
+      this.rebalanceColumns(options.rebalanceColumns);
+    }
     this.refreshSelectionActive();
     this.view.focus();
-    this.setMenuOpen(false);
+    this.closeAxisMenu();
+    this.scheduleChromeRefresh();
+  }
+
+  selectRow(row: number, options: { preserveHandlePosition?: boolean } = {}) {
+    const pos = this.resolvePos();
+    if (pos == null) return;
+    const map = TableMap.get(this.node);
+    if (row < 0 || row >= map.height) return;
+    const anchor = pos + 1 + map.positionAt(row, 0, this.node);
+    const head = pos + 1 + map.positionAt(row, map.width - 1, this.node);
+    this.view.dispatch(this.view.state.tr.setSelection(CellSelection.create(this.view.state.doc, anchor, head)));
+    if (!options.preserveHandlePosition) this.refreshSelectionActive();
+    this.hoveredRow = row;
+    this.scheduleChromeRefresh();
+  }
+
+  selectColumn(column: number, options: { preserveHandlePosition?: boolean } = {}) {
+    const pos = this.resolvePos();
+    if (pos == null) return;
+    const map = TableMap.get(this.node);
+    if (column < 0 || column >= map.width) return;
+    const anchor = pos + 1 + map.positionAt(0, column, this.node);
+    const head = pos + 1 + map.positionAt(map.height - 1, column, this.node);
+    this.view.dispatch(this.view.state.tr.setSelection(CellSelection.create(this.view.state.doc, anchor, head)));
+    if (!options.preserveHandlePosition) this.refreshSelectionActive();
+    this.hoveredColumn = column;
+    this.scheduleChromeRefresh();
+  }
+
+  insertRow(row: number, direction: "above" | "below") {
+    this.runTableCommandAt(row, 0, direction === "above" ? addRowBefore : addRowAfter);
+    this.closeAxisMenu();
+  }
+
+  insertColumn(column: number, direction: "left" | "right") {
+    this.runTableCommandAt(0, column, direction === "left" ? addColumnBefore : addColumnAfter, { rebalanceColumns: 1 });
+    this.closeAxisMenu();
+  }
+
+  duplicateRow(row: number) {
+    const pos = this.resolvePos();
+    if (pos == null) return;
+    const rowInfo = getRowInfo(this.node, pos, row);
+    if (!rowInfo) return;
+    this.view.dispatch(this.view.state.tr.insert(rowInfo.pos + rowInfo.node.nodeSize, rowInfo.node.copy(rowInfo.node.content)).scrollIntoView());
+    this.normalizeRichHeaderCells();
+    this.closeAxisMenu();
+    this.refreshSelectionActive();
+    this.scheduleChromeRefresh();
+  }
+
+  duplicateColumn(column: number) {
+    const pos = this.resolvePos();
+    if (pos == null) return;
+    const cells = getColumnCellInfos(this.node, pos, column).reverse();
+    if (!cells.length) return;
+    let tr = this.view.state.tr;
+    cells.forEach(({ pos: cellPos, node }) => {
+      tr = tr.insert(cellPos + node.nodeSize, node.copy(node.content));
+    });
+    this.view.dispatch(tr.scrollIntoView());
+    this.normalizeRichHeaderCells();
+    if (isRichTableNode(this.node)) this.rebalanceColumns(1);
+    this.closeAxisMenu();
+    this.refreshSelectionActive();
+    this.scheduleChromeRefresh();
+  }
+
+  clearRow(row: number) {
+    const pos = this.resolvePos();
+    const paragraph = this.view.state.schema.nodes.paragraph;
+    if (pos == null || !paragraph) return;
+    const cells = getRowCellInfos(this.node, pos, row).reverse();
+    let tr = this.view.state.tr;
+    cells.forEach(({ pos: cellPos, node }) => {
+      tr = tr.replaceWith(cellPos + 1, cellPos + node.nodeSize - 1, paragraph.create());
+    });
+    this.view.dispatch(tr.scrollIntoView());
+    this.closeAxisMenu();
+    this.refreshSelectionActive();
+    this.scheduleChromeRefresh();
+  }
+
+  clearColumn(column: number) {
+    const pos = this.resolvePos();
+    const paragraph = this.view.state.schema.nodes.paragraph;
+    if (pos == null || !paragraph) return;
+    const cells = getColumnCellInfos(this.node, pos, column).reverse();
+    let tr = this.view.state.tr;
+    cells.forEach(({ pos: cellPos, node }) => {
+      tr = tr.replaceWith(cellPos + 1, cellPos + node.nodeSize - 1, paragraph.create());
+    });
+    this.view.dispatch(tr.scrollIntoView());
+    this.closeAxisMenu();
+    this.refreshSelectionActive();
+    this.scheduleChromeRefresh();
+  }
+
+  deleteSelectedRow(row: number) {
+    this.runTableCommandAt(row, 0, deleteRow);
+    this.closeAxisMenu();
+  }
+
+  deleteSelectedColumn(column: number) {
+    this.runTableCommandAt(0, column, deleteColumn, { rebalanceColumns: -1 });
+    this.closeAxisMenu();
+  }
+
+  rebalanceColumns(delta: number) {
+    if (!isRichTableNode(this.node)) return;
+    const pos = this.resolvePos();
+    if (pos == null) return;
+    const nextNode = this.view.state.doc.nodeAt(pos);
+    if (!nextNode) return;
+    const map = TableMap.get(nextNode);
+    const currentWidths = this.getColumnWidths();
+    const total = currentWidths.reduce((sum, width) => sum + width, 0) || map.width * RICH_TABLE_DEFAULT_COLUMN_WIDTH;
+    const widths = Array.from({ length: map.width }, (_value, index) => currentWidths[index] ?? RICH_TABLE_DEFAULT_COLUMN_WIDTH);
+    if (delta > 0) {
+      const target = total / map.width;
+      const scaled = widths.map((width) => Math.max(RICH_TABLE_MIN_COLUMN_WIDTH, width - target / Math.max(map.width - 1, 1)));
+      scaled[scaled.length - 1] = Math.max(RICH_TABLE_MIN_COLUMN_WIDTH, target);
+      this.commitColumnWidths(normalizeWidthsToTotal(scaled, total));
+    } else {
+      this.commitColumnWidths(normalizeWidthsToTotal(widths, total));
+    }
+  }
+
+  normalizeRichHeaderCells() {
+    const pos = this.resolvePos();
+    if (pos == null || !isRichTableNode(this.node)) return;
+    const table = this.view.state.doc.nodeAt(pos);
+    if (!table) return;
+    const tr = this.view.state.tr;
+    applyHeaderCellsToTransaction(tr, table, pos, Boolean(table.attrs.headerRow), Boolean(table.attrs.headerColumn));
+    if (tr.docChanged) this.view.dispatch(tr);
   }
 
   copyTable(label: HTMLSpanElement, iconSlot: HTMLSpanElement) {
@@ -691,46 +1189,171 @@ class TableControlsNodeView implements NodeView {
     this.view.dispatch(tr.scrollIntoView());
     this.refreshSelectionActive();
     this.view.focus();
-    this.setMenuOpen(false);
+    this.closeAxisMenu();
   }
 
-  setMenuOpen(open: boolean) {
-    if (!open) {
-      this.menu?.remove();
-      this.menu = null;
-      this.handleButton.setAttribute("aria-expanded", "false");
-      if (!this.selectionActive) this.dom.classList.remove("is-active");
-      this.removeOutsideListeners();
-      return;
-    }
+  convertToRichTable() {
+    const pos = this.resolvePos();
+    if (pos == null) return;
+    const widths = this.getColumnWidths();
+    const tr = this.view.state.tr.setNodeMarkup(pos, undefined, {
+      ...this.node.attrs,
+      tigranaTable: true,
+      headerRow: true,
+      headerColumn: false,
+    });
+    applyHeaderCellsToTransaction(tr, this.node, pos, true, false);
+    applyColumnWidthsToTransaction(tr, this.node, pos, widths);
+    this.view.dispatch(tr.scrollIntoView());
+    this.closeAxisMenu();
+    this.refreshSelectionActive();
+    this.view.focus();
+  }
 
-    if (this.menu) return;
-    this.menu = document.createElement("div");
-    this.menu.className = "table-context-menu";
+  convertToMarkdownTable() {
+    const pos = this.resolvePos();
+    if (pos == null) return;
+    const tr = this.view.state.tr.setNodeMarkup(pos, undefined, {
+      ...this.node.attrs,
+      tigranaTable: false,
+      headerRow: true,
+      headerColumn: false,
+    });
+    applyHeaderCellsToTransaction(tr, this.node, pos, true, false, { clearWidths: true });
+    this.view.dispatch(tr.scrollIntoView());
+    this.closeAxisMenu();
+    this.refreshSelectionActive();
+    this.view.focus();
+  }
 
-    const copyButton = this.menu.appendChild(createTableMenuButton(tableIconSvg("copy", 14), "Copy table"));
+  toggleHeaderRow() {
+    if (!isRichTableNode(this.node)) return;
+    this.setHeaderOptions(!this.node.attrs.headerRow, Boolean(this.node.attrs.headerColumn));
+  }
+
+  toggleHeaderColumn() {
+    if (!isRichTableNode(this.node)) return;
+    this.setHeaderOptions(Boolean(this.node.attrs.headerRow), !this.node.attrs.headerColumn);
+  }
+
+  setHeaderOptions(headerRow: boolean, headerColumn: boolean) {
+    const pos = this.resolvePos();
+    if (pos == null) return;
+    const tr = this.view.state.tr.setNodeMarkup(pos, undefined, {
+      ...this.node.attrs,
+      tigranaTable: true,
+      headerRow,
+      headerColumn,
+    });
+    applyHeaderCellsToTransaction(tr, this.node, pos, headerRow, headerColumn);
+    this.view.dispatch(tr.scrollIntoView());
+    this.closeAxisMenu();
+    this.refreshSelectionActive();
+    this.view.focus();
+  }
+
+  appendTableMenuActions(menu: HTMLDivElement) {
+    const copyButton = menu.appendChild(createTableMenuButton(tableIconSvg("copy", 14), "Copy table"));
     const copyIcon = copyButton.querySelector(".table-menu-icon") as HTMLSpanElement;
     const copyLabel = copyButton.querySelector("span:last-child") as HTMLSpanElement;
     copyButton.addEventListener("click", () => this.copyTable(copyLabel, copyIcon));
 
-    const addButton = this.menu.appendChild(createTableMenuButton(tableIconSvg("plus", 14), "Add line after"));
-    addButton.addEventListener("click", () => this.insertParagraphAfterTable());
+    menu.appendChild(createTableMenuButton(tableIconSvg("plus", 14), "Add blank line after table")).addEventListener("click", () => this.insertParagraphAfterTable());
 
-    const rowButton = this.menu.appendChild(createTableMenuButton(tableIconSvg("plus", 14), "Add row"));
-    rowButton.addEventListener("click", () => this.addRowToBottom());
+    const convertButton = menu.appendChild(createTableMenuButton(
+      tableIconSvg("table", 14),
+      isRichTableNode(this.node) ? "Convert to Markdown table (loses formatting)" : "Convert to HTML table for more options",
+    ));
+    convertButton.addEventListener("click", () => {
+      if (isRichTableNode(this.node)) this.convertToMarkdownTable();
+      else this.convertToRichTable();
+    });
 
-    const columnButton = this.menu.appendChild(createTableMenuButton(tableIconSvg("plus", 14), "Add column"));
-    columnButton.addEventListener("click", () => this.addColumnToEnd());
-
-    const deleteButton = this.menu.appendChild(createTableMenuButton(tableIconSvg("trash", 14), "Delete table"));
+    const deleteButton = menu.appendChild(createTableMenuButton(tableIconSvg("trash", 14), "Delete table"));
     deleteButton.classList.add("danger-item");
     deleteButton.addEventListener("click", () => this.deleteTable());
+  }
 
-    this.handleButton.parentElement?.appendChild(this.menu);
-    this.handleButton.setAttribute("aria-expanded", "true");
+  appendTableOptionsSubmenu(menu: HTMLDivElement) {
+    const wrap = menu.appendChild(document.createElement("div"));
+    wrap.className = "table-menu-submenu";
+    const trigger = wrap.appendChild(createTableSubmenuButton(tableIconSvg("table", 14), "Table options"));
+    const submenu = wrap.appendChild(document.createElement("div"));
+    submenu.className = "table-context-menu table-submenu-panel";
+    submenu.setAttribute("role", "menu");
+    trigger.setAttribute("aria-haspopup", "menu");
+    trigger.setAttribute("aria-expanded", "false");
+    this.appendTableMenuActions(submenu);
+
+    const setOpen = (open: boolean) => {
+      wrap.classList.toggle("is-open", open);
+      trigger.setAttribute("aria-expanded", open ? "true" : "false");
+    };
+
+    wrap.addEventListener("mouseenter", () => setOpen(true));
+    wrap.addEventListener("mouseleave", () => setOpen(false));
+    trigger.addEventListener("click", (event) => {
+      event.preventDefault();
+      event.stopPropagation();
+      setOpen(!wrap.classList.contains("is-open"));
+    });
+  }
+
+  openAxisMenu(axis: TableAxis, index: number, anchorRect: DOMRect) {
+    this.closeAxisMenu();
+    this.axisMenu = document.createElement("div");
+    this.axisMenu.className = "table-context-menu table-axis-menu";
+
+    if (axis === "row") {
+      this.appendTableOptionsSubmenu(this.axisMenu);
+      this.axisMenu.appendChild(createTableMenuSeparator());
+      this.axisMenu.appendChild(createTableMenuHeader("Row options"));
+      const isRichTable = isRichTableNode(this.node);
+      const headerButton = this.axisMenu.appendChild(createTableMenuSwitchButton("Header row", isRichTable ? Boolean(this.node.attrs.headerRow) : true, !isRichTable));
+      if (isRichTable) {
+        headerButton.addEventListener("click", () => this.toggleHeaderRow());
+      }
+      this.axisMenu.appendChild(createTableMenuButton(tableIconSvg("arrowUp", 14), "Insert row above")).addEventListener("click", () => this.insertRow(index, "above"));
+      this.axisMenu.appendChild(createTableMenuButton(tableIconSvg("arrowDown", 14), "Insert row below")).addEventListener("click", () => this.insertRow(index, "below"));
+      this.axisMenu.appendChild(createTableMenuButton(tableIconSvg("copy", 14), "Duplicate row")).addEventListener("click", () => this.duplicateRow(index));
+      this.axisMenu.appendChild(createTableMenuButton(tableIconSvg("xCircle", 14), "Clear row contents")).addEventListener("click", () => this.clearRow(index));
+      const deleteButton = this.axisMenu.appendChild(createTableMenuButton(tableIconSvg("trash", 14), "Delete row"));
+      deleteButton.classList.add("danger-item");
+      deleteButton.addEventListener("click", () => this.deleteSelectedRow(index));
+    } else {
+      const isRichTable = isRichTableNode(this.node);
+      const headerButton = this.axisMenu.appendChild(createTableMenuSwitchButton(
+        isRichTable ? "Header column" : "Convert to HTML table to customize header column",
+        isRichTable ? Boolean(this.node.attrs.headerColumn) : false,
+        !isRichTable,
+      ));
+      if (isRichTable) {
+        headerButton.addEventListener("click", () => this.toggleHeaderColumn());
+      }
+      this.axisMenu.appendChild(createTableMenuSeparator());
+      this.axisMenu.appendChild(createTableMenuButton(tableIconSvg("arrowLeft", 14), "Insert left")).addEventListener("click", () => this.insertColumn(index, "left"));
+      this.axisMenu.appendChild(createTableMenuButton(tableIconSvg("arrowRight", 14), "Insert right")).addEventListener("click", () => this.insertColumn(index, "right"));
+      this.axisMenu.appendChild(createTableMenuButton(tableIconSvg("copy", 14), "Duplicate")).addEventListener("click", () => this.duplicateColumn(index));
+      this.axisMenu.appendChild(createTableMenuButton(tableIconSvg("xCircle", 14), "Clear contents")).addEventListener("click", () => this.clearColumn(index));
+      const deleteButton = this.axisMenu.appendChild(createTableMenuButton(tableIconSvg("trash", 14), "Delete"));
+      deleteButton.classList.add("danger-item");
+      deleteButton.addEventListener("click", () => this.deleteSelectedColumn(index));
+    }
+
+    const domRect = this.dom.getBoundingClientRect();
+    this.axisMenu.style.top = `${anchorRect.bottom - domRect.top + 6}px`;
+    this.axisMenu.style.left = `${Math.max(0, anchorRect.left - domRect.left)}px`;
+    this.dom.appendChild(this.axisMenu);
     this.dom.classList.add("is-active");
     window.addEventListener("mousedown", this.handleOutsideMouseDown, true);
     window.addEventListener("keydown", this.handleOutsideKeyDown, true);
+  }
+
+  closeAxisMenu() {
+    this.axisMenu?.remove();
+    this.axisMenu = null;
+    if (!this.selectionActive) this.dom.classList.remove("is-active");
+    this.removeOutsideListeners();
   }
 
   removeOutsideListeners() {
@@ -739,19 +1362,167 @@ class TableControlsNodeView implements NodeView {
   }
 }
 
+function getRowInfo(table: ProseMirrorNode, tablePos: number, row: number) {
+  if (row < 0 || row >= table.childCount) return null;
+  let offset = 0;
+  for (let index = 0; index < table.childCount; index += 1) {
+    const rowNode = table.child(index);
+    if (index === row) return { node: rowNode, pos: tablePos + 1 + offset };
+    offset += rowNode.nodeSize;
+  }
+  return null;
+}
+
+function getRowCellInfos(table: ProseMirrorNode, tablePos: number, row: number) {
+  const map = TableMap.get(table);
+  if (row < 0 || row >= map.height) return [];
+  return Array.from({ length: map.width }, (_value, column) => {
+    const pos = tablePos + 1 + map.positionAt(row, column, table);
+    return { pos, node: table.nodeAt(pos - tablePos - 1)! };
+  }).filter((info, index, all) => info.node && all.findIndex((other) => other.pos === info.pos) === index);
+}
+
+function getColumnCellInfos(table: ProseMirrorNode, tablePos: number, column: number) {
+  const map = TableMap.get(table);
+  if (column < 0 || column >= map.width) return [];
+  return Array.from({ length: map.height }, (_value, row) => {
+    const pos = tablePos + 1 + map.positionAt(row, column, table);
+    return { pos, node: table.nodeAt(pos - tablePos - 1)! };
+  }).filter((info, index, all) => info.node && all.findIndex((other) => other.pos === info.pos) === index);
+}
+
+function applyColumnWidthsToTransaction(tr: Transaction, table: ProseMirrorNode, tablePos: number, widths: number[]) {
+  const firstRow = table.firstChild;
+  if (!firstRow) return;
+  const map = TableMap.get(table);
+  for (let column = 0; column < Math.min(map.width, widths.length); column += 1) {
+    const cellPos = tablePos + 1 + map.positionAt(0, column, table);
+    const cell = tr.doc.nodeAt(cellPos);
+    if (!cell) continue;
+    tr.setNodeMarkup(cellPos, undefined, {
+      ...cell.attrs,
+      colwidth: [Math.max(RICH_TABLE_MIN_COLUMN_WIDTH, Math.round(widths[column]))],
+    });
+  }
+}
+
+function applyHeaderCellsToTransaction(
+  tr: Transaction,
+  table: ProseMirrorNode,
+  tablePos: number,
+  headerRow: boolean,
+  headerColumn: boolean,
+  options: { clearWidths?: boolean } = {},
+) {
+  const map = TableMap.get(table);
+  const tableCell = table.type.schema.nodes.tableCell;
+  const tableHeader = table.type.schema.nodes.tableHeader;
+  if (!tableCell || !tableHeader) return;
+
+  for (let row = 0; row < map.height; row += 1) {
+    for (let column = 0; column < map.width; column += 1) {
+      const cellPos = tablePos + 1 + map.positionAt(row, column, table);
+      const cell = tr.doc.nodeAt(cellPos);
+      if (!cell) continue;
+      const shouldBeHeader = (headerRow && row === 0) || (headerColumn && column === 0);
+      const attrs = { ...cell.attrs };
+      if (options.clearWidths) attrs.colwidth = null;
+      tr.setNodeMarkup(cellPos, shouldBeHeader ? tableHeader : tableCell, attrs, cell.marks);
+    }
+  }
+}
+
+function normalizeWidthsToTotal(widths: number[], total: number) {
+  const clamped = widths.map((width) => Math.max(RICH_TABLE_MIN_COLUMN_WIDTH, width));
+  const sum = clamped.reduce((value, width) => value + width, 0);
+  if (!sum || sum === total) return clamped.map(Math.round);
+  return clamped.map((width) => Math.max(RICH_TABLE_MIN_COLUMN_WIDTH, Math.round((width / sum) * total)));
+}
+
 const TableWithControls = Table.extend({
+  addAttributes() {
+    return {
+      ...this.parent?.(),
+      tigranaTable: {
+        default: false,
+        parseHTML: (element) => element.getAttribute("data-tigrana-table") === "true",
+        renderHTML: (attributes) => (attributes.tigranaTable ? { "data-tigrana-table": "true" } : {}),
+      },
+      headerRow: {
+        default: true,
+        parseHTML: (element) => element.getAttribute("data-header-row") !== "false",
+        renderHTML: (attributes) => attributes.tigranaTable ? { "data-header-row": attributes.headerRow ? "true" : "false" } : {},
+      },
+      headerColumn: {
+        default: false,
+        parseHTML: (element) => element.getAttribute("data-header-column") === "true",
+        renderHTML: (attributes) => attributes.tigranaTable ? { "data-header-column": attributes.headerColumn ? "true" : "false" } : {},
+      },
+    };
+  },
   addNodeView() {
     return ({ node, view, getPos }) => new TableControlsNodeView(node, this.options.cellMinWidth, view, getPos);
   },
 });
 
-type TableIconName = "check" | "copy" | "grip" | "plus" | "trash";
+const TigranaTableCell = TableCell.extend({
+  addAttributes() {
+    return {
+      ...this.parent?.(),
+      colwidth: {
+        default: null,
+        parseHTML: parseCellColwidth,
+      },
+    };
+  },
+});
+
+const TigranaTableHeader = TableHeader.extend({
+  addAttributes() {
+    return {
+      ...this.parent?.(),
+      colwidth: {
+        default: null,
+        parseHTML: parseCellColwidth,
+      },
+    };
+  },
+});
+
+type TableIconName =
+  | "arrowDown"
+  | "arrowLeft"
+  | "arrowRight"
+  | "arrowUp"
+  | "chevronRight"
+  | "check"
+  | "copy"
+  | "columns"
+  | "grip"
+  | "headerColumn"
+  | "headerRow"
+  | "menu"
+  | "plus"
+  | "rows"
+  | "table"
+  | "trash"
+  | "xCircle";
 
 const TABLE_ICON_PATHS: Record<TableIconName, string[]> = {
+  arrowDown: ['<path d="M12 5v14"></path>', '<path d="m19 12-7 7-7-7"></path>'],
+  arrowLeft: ['<path d="M19 12H5"></path>', '<path d="m12 19-7-7 7-7"></path>'],
+  arrowRight: ['<path d="M5 12h14"></path>', '<path d="m12 5 7 7-7 7"></path>'],
+  arrowUp: ['<path d="M12 19V5"></path>', '<path d="m5 12 7-7 7 7"></path>'],
+  chevronRight: ['<path d="m9 18 6-6-6-6"></path>'],
   check: ['<path d="M20 6 9 17l-5-5"></path>'],
   copy: [
     '<rect width="14" height="14" x="8" y="8" rx="2" ry="2"></rect>',
     '<path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2"></path>',
+  ],
+  columns: [
+    '<rect width="18" height="18" x="3" y="3" rx="2"></rect>',
+    '<path d="M9 3v18"></path>',
+    '<path d="M15 3v18"></path>',
   ],
   grip: [
     '<circle cx="9" cy="12" r="1"></circle>',
@@ -761,7 +1532,30 @@ const TABLE_ICON_PATHS: Record<TableIconName, string[]> = {
     '<circle cx="15" cy="5" r="1"></circle>',
     '<circle cx="15" cy="19" r="1"></circle>',
   ],
+  headerColumn: [
+    '<rect width="18" height="16" x="3" y="4" rx="2"></rect>',
+    '<path d="M9 4v16"></path>',
+    '<path d="M3 9h18"></path>',
+    '<path d="M3 14h18"></path>',
+  ],
+  headerRow: [
+    '<rect width="18" height="16" x="3" y="4" rx="2"></rect>',
+    '<path d="M3 9h18"></path>',
+    '<path d="M9 4v16"></path>',
+  ],
+  menu: ['<path d="M4 12h16"></path>', '<path d="M4 6h16"></path>', '<path d="M4 18h16"></path>'],
   plus: ['<path d="M5 12h14"></path>', '<path d="M12 5v14"></path>'],
+  rows: [
+    '<rect width="18" height="18" x="3" y="3" rx="2"></rect>',
+    '<path d="M3 9h18"></path>',
+    '<path d="M3 15h18"></path>',
+  ],
+  table: [
+    '<path d="M12 3v18"></path>',
+    '<rect width="18" height="18" x="3" y="3" rx="2"></rect>',
+    '<path d="M3 9h18"></path>',
+    '<path d="M3 15h18"></path>',
+  ],
   trash: [
     '<path d="M3 6h18"></path>',
     '<path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6"></path>',
@@ -769,6 +1563,7 @@ const TABLE_ICON_PATHS: Record<TableIconName, string[]> = {
     '<line x1="10" x2="10" y1="11" y2="17"></line>',
     '<line x1="14" x2="14" y1="11" y2="17"></line>',
   ],
+  xCircle: ['<circle cx="12" cy="12" r="10"></circle>', '<path d="m15 9-6 6"></path>', '<path d="m9 9 6 6"></path>'],
 };
 
 function tableIconSvg(name: TableIconName, size: number) {
@@ -793,6 +1588,45 @@ function createTableMenuButton(iconMarkup: string, label: string) {
   const text = button.appendChild(document.createElement("span"));
   text.textContent = label;
   return button;
+}
+
+function createTableSubmenuButton(iconMarkup: string, label: string) {
+  const button = createTableMenuButton(iconMarkup, label);
+  button.classList.add("table-submenu-trigger");
+  const arrow = button.appendChild(document.createElement("span"));
+  arrow.className = "table-submenu-arrow";
+  arrow.innerHTML = tableIconSvg("chevronRight", 14);
+  return button;
+}
+
+function createTableMenuHeader(label: string) {
+  const header = document.createElement("div");
+  header.className = "table-menu-header";
+  header.textContent = label;
+  return header;
+}
+
+function createTableMenuSwitchButton(label: string, checked: boolean, disabled = false) {
+  const button = document.createElement("button");
+  button.type = "button";
+  button.className = "table-menu-switch-item";
+  button.disabled = disabled;
+  const text = button.appendChild(document.createElement("span"));
+  text.textContent = label;
+  const switchTrack = button.appendChild(document.createElement("span"));
+  switchTrack.className = "table-menu-switch";
+  switchTrack.setAttribute("aria-hidden", "true");
+  switchTrack.dataset.checked = checked ? "true" : "false";
+  if (checked) button.classList.add("is-checked");
+  if (disabled) button.classList.add("is-disabled");
+  return button;
+}
+
+function createTableMenuSeparator() {
+  const separator = document.createElement("div");
+  separator.className = "table-menu-separator";
+  separator.setAttribute("role", "separator");
+  return separator;
 }
 
 function updateTableColumns(
@@ -824,6 +1658,8 @@ function updateTableColumns(
 
         nextDOM.style.width = width ? `${Math.max(width, cellMinWidth)}px` : "";
         nextDOM.style.minWidth = width ? "" : `${cellMinWidth}px`;
+        if (isRichTableNode(node) && width) nextDOM.setAttribute("data-width", String(Math.max(width, cellMinWidth)));
+        else nextDOM.removeAttribute("data-width");
         nextDOM = nextDOM.nextSibling as HTMLTableColElement | null;
       }
     }
@@ -948,8 +1784,8 @@ export function NotesEditor({ content, focusRequest, focusAtEndRequest, findRequ
       }),
       TableWithControls.configure({ resizable: false, allowTableNodeSelection: true }),
       TableRow,
-      TableHeader,
-      TableCell,
+      TigranaTableHeader,
+      TigranaTableCell,
     ],
     [],
   );
@@ -1392,6 +2228,13 @@ function removeTextblockIndent(editor: Editor) {
   view.dispatch(state.tr.delete(start, start + 1).scrollIntoView());
 }
 
+function isTableChromeTarget(target: EventTarget | null) {
+  return (
+    target instanceof HTMLElement &&
+    target.closest(".table-axis-handle, .table-edge-add, .table-context-menu, .table-column-resize-handle") != null
+  );
+}
+
 function FormattingBubbleMenu({
   editor,
   onRequestLink,
@@ -1449,6 +2292,11 @@ function FormattingBubbleMenu({
       // Clicks on the bubble itself are button presses, not new selections —
       // don't suppress (which would unmount the bubble mid-click).
       if (isFromBubble(event)) return;
+      if (isTableChromeTarget(event.target)) {
+        mouse = true;
+        sync();
+        return;
+      }
       mouse = true;
       sync();
     };
@@ -1537,6 +2385,9 @@ function FormattingBubbleMenu({
     const { selection } = editor.state;
     if (selection instanceof NodeSelection && selection.node.type.name === "image") return false;
     if (selection instanceof NodeSelection && selection.node.type.name === "table") return false;
+    if (selection instanceof CellSelection) return false;
+    if (document.querySelector(".table-context-menu")) return false;
+    if (isTableChromeTarget(activeElement)) return false;
     if (editor.isActive("image")) return false;
     return !selection.empty && editor.isEditable && editor.isFocused;
   })();
