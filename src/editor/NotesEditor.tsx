@@ -518,6 +518,7 @@ class TableControlsNodeView implements NodeView {
   pendingColumnMenu: { index: number; anchorRect: DOMRect } | null = null;
   resizeState: ResizeState | null = null;
   isOpeningAxisMenu = false;
+  wrapperResizeObserver: ResizeObserver | null = null;
 
   constructor(node: ProseMirrorNode, cellMinWidth: number, view: EditorView, getPos: NodeViewGetPos) {
     this.node = node;
@@ -651,6 +652,19 @@ class TableControlsNodeView implements NodeView {
     this.view.dom.addEventListener("mouseup", this.refreshSelectionActive);
     this.view.dom.addEventListener("mousedown", this.refreshSelectionActive);
     window.addEventListener("selectionchange", this.refreshSelectionActive);
+    // The edge buttons, resize handles, and selection overlay are positioned
+    // in absolute pixel coordinates; when the wrapper resizes (window resize,
+    // editor width change, splitter drag) those positions go stale until the
+    // next mouseover. Observe the wrapper and refresh chrome immediately.
+    if (typeof ResizeObserver !== "undefined") {
+      this.wrapperResizeObserver = new ResizeObserver(() => {
+        this.applyRichTableLayout();
+        this.positionEdgeButtons();
+        this.renderResizeHandles();
+        this.updateSelectionOverlay();
+      });
+      this.wrapperResizeObserver.observe(this.dom);
+    }
     window.setTimeout(() => {
       this.refreshSelectionActive();
       this.positionEdgeButtons();
@@ -698,6 +712,8 @@ class TableControlsNodeView implements NodeView {
     window.removeEventListener("pointermove", this.handleResizePointerMove);
     window.removeEventListener("pointerup", this.handleResizePointerUp);
     this.removeOutsideListeners();
+    this.wrapperResizeObserver?.disconnect();
+    this.wrapperResizeObserver = null;
     if (this.copiedTimer !== null) window.clearTimeout(this.copiedTimer);
   }
 
@@ -1252,9 +1268,11 @@ class TableControlsNodeView implements NodeView {
     if (pos == null) return;
     const tr = this.view.state.tr;
     applyColumnWidthsToTransaction(tr, this.node, pos, widths);
-    this.view.dispatch(tr.scrollIntoView());
-    this.refreshSelectionActive();
-    this.view.focus();
+    this.preserveScrollAround(() => {
+      this.view.dispatch(tr);
+      this.refreshSelectionActive();
+      this.focusWithoutScroll();
+    });
   }
 
   insertParagraphAfterTable() {
@@ -1278,9 +1296,11 @@ class TableControlsNodeView implements NodeView {
 
     cursorPos = Math.min(cursorPos, tr.doc.content.size);
     tr = tr.setSelection(TextSelection.create(tr.doc, cursorPos));
-    this.view.dispatch(tr.scrollIntoView());
-    this.refreshSelectionActive();
-    this.view.focus();
+    this.preserveScrollAround(() => {
+      this.view.dispatch(tr);
+      this.refreshSelectionActive();
+      this.focusWithoutScroll();
+    });
     this.closeAxisMenu();
     this.scheduleChromeRefresh();
   }
@@ -1305,16 +1325,18 @@ class TableControlsNodeView implements NodeView {
     const { state } = this.view;
     const selection = Selection.near(state.doc.resolve(Math.min(absoluteCellPos + 1, state.doc.content.size)));
 
-    this.view.dispatch(state.tr.setSelection(selection));
-    command(this.view.state, (tr) => this.view.dispatch(tr));
-    if (isRichTableNode(this.node)) {
-      this.normalizeRichHeaderCells();
-    }
-    if (options.rebalanceColumns && isRichTableNode(this.node)) {
-      this.rebalanceColumns(options.rebalanceColumns);
-    }
-    this.refreshSelectionActive();
-    this.view.focus();
+    this.preserveScrollAround(() => {
+      this.view.dispatch(state.tr.setSelection(selection));
+      command(this.view.state, (tr) => this.view.dispatch(tr));
+      if (isRichTableNode(this.node)) {
+        this.normalizeRichHeaderCells();
+      }
+      if (options.rebalanceColumns && isRichTableNode(this.node)) {
+        this.rebalanceColumns(options.rebalanceColumns);
+      }
+      this.refreshSelectionActive();
+      this.focusWithoutScroll();
+    });
     this.closeAxisMenu();
     this.scheduleChromeRefresh();
   }
@@ -1326,8 +1348,10 @@ class TableControlsNodeView implements NodeView {
     if (row < 0 || row >= map.height) return;
     const anchor = pos + 1 + map.positionAt(row, 0, this.node);
     const head = pos + 1 + map.positionAt(row, map.width - 1, this.node);
-    this.view.dispatch(this.view.state.tr.setSelection(CellSelection.create(this.view.state.doc, anchor, head)));
-    if (!options.preserveHandlePosition) this.refreshSelectionActive();
+    this.preserveScrollAround(() => {
+      this.view.dispatch(this.view.state.tr.setSelection(CellSelection.create(this.view.state.doc, anchor, head)));
+      if (!options.preserveHandlePosition) this.refreshSelectionActive();
+    });
     this.hoveredRow = row;
     this.scheduleChromeRefresh();
   }
@@ -1339,8 +1363,10 @@ class TableControlsNodeView implements NodeView {
     if (column < 0 || column >= map.width) return;
     const anchor = pos + 1 + map.positionAt(0, column, this.node);
     const head = pos + 1 + map.positionAt(map.height - 1, column, this.node);
-    this.view.dispatch(this.view.state.tr.setSelection(CellSelection.create(this.view.state.doc, anchor, head)));
-    if (!options.preserveHandlePosition) this.refreshSelectionActive();
+    this.preserveScrollAround(() => {
+      this.view.dispatch(this.view.state.tr.setSelection(CellSelection.create(this.view.state.doc, anchor, head)));
+      if (!options.preserveHandlePosition) this.refreshSelectionActive();
+    });
     this.hoveredColumn = column;
     this.scheduleChromeRefresh();
   }
@@ -1360,10 +1386,12 @@ class TableControlsNodeView implements NodeView {
     if (pos == null) return;
     const rowInfo = getRowInfo(this.node, pos, row);
     if (!rowInfo) return;
-    this.view.dispatch(this.view.state.tr.insert(rowInfo.pos + rowInfo.node.nodeSize, rowInfo.node.copy(rowInfo.node.content)).scrollIntoView());
-    this.normalizeRichHeaderCells();
+    this.preserveScrollAround(() => {
+      this.view.dispatch(this.view.state.tr.insert(rowInfo.pos + rowInfo.node.nodeSize, rowInfo.node.copy(rowInfo.node.content)));
+      this.normalizeRichHeaderCells();
+      this.refreshSelectionActive();
+    });
     this.closeAxisMenu();
-    this.refreshSelectionActive();
     this.scheduleChromeRefresh();
   }
 
@@ -1376,11 +1404,13 @@ class TableControlsNodeView implements NodeView {
     cells.forEach(({ pos: cellPos, node }) => {
       tr = tr.insert(cellPos + node.nodeSize, node.copy(node.content));
     });
-    this.view.dispatch(tr.scrollIntoView());
-    this.normalizeRichHeaderCells();
-    if (isRichTableNode(this.node)) this.rebalanceColumns(1);
+    this.preserveScrollAround(() => {
+      this.view.dispatch(tr);
+      this.normalizeRichHeaderCells();
+      if (isRichTableNode(this.node)) this.rebalanceColumns(1);
+      this.refreshSelectionActive();
+    });
     this.closeAxisMenu();
-    this.refreshSelectionActive();
     this.scheduleChromeRefresh();
   }
 
@@ -1393,9 +1423,11 @@ class TableControlsNodeView implements NodeView {
     cells.forEach(({ pos: cellPos, node }) => {
       tr = tr.replaceWith(cellPos + 1, cellPos + node.nodeSize - 1, paragraph.create());
     });
-    this.view.dispatch(tr.scrollIntoView());
+    this.preserveScrollAround(() => {
+      this.view.dispatch(tr);
+      this.refreshSelectionActive();
+    });
     this.closeAxisMenu();
-    this.refreshSelectionActive();
     this.scheduleChromeRefresh();
   }
 
@@ -1408,9 +1440,11 @@ class TableControlsNodeView implements NodeView {
     cells.forEach(({ pos: cellPos, node }) => {
       tr = tr.replaceWith(cellPos + 1, cellPos + node.nodeSize - 1, paragraph.create());
     });
-    this.view.dispatch(tr.scrollIntoView());
+    this.preserveScrollAround(() => {
+      this.view.dispatch(tr);
+      this.refreshSelectionActive();
+    });
     this.closeAxisMenu();
-    this.refreshSelectionActive();
     this.scheduleChromeRefresh();
   }
 
@@ -1491,9 +1525,11 @@ class TableControlsNodeView implements NodeView {
       tr = tr.setSelection(Selection.near(tr.doc.resolve(selectionPos), -1));
     }
 
-    this.view.dispatch(tr.scrollIntoView());
-    this.refreshSelectionActive();
-    this.view.focus();
+    this.preserveScrollAround(() => {
+      this.view.dispatch(tr);
+      this.refreshSelectionActive();
+      this.focusWithoutScroll();
+    });
     this.closeAxisMenu();
   }
 
@@ -1511,10 +1547,12 @@ class TableControlsNodeView implements NodeView {
     applyHeaderCellsToTransaction(tr, this.node, pos, true, false);
     applyColumnWidthsToTransaction(tr, this.node, pos, widths);
     this.preserveSelectionThrough(tr, originalSelection);
-    this.view.dispatch(tr);
+    this.preserveScrollAround(() => {
+      this.view.dispatch(tr);
+      this.refreshSelectionActive();
+      this.focusWithoutScroll();
+    });
     this.closeAxisMenu();
-    this.refreshSelectionActive();
-    this.focusWithoutScroll();
   }
 
   convertToMarkdownTable() {
@@ -1529,10 +1567,12 @@ class TableControlsNodeView implements NodeView {
     });
     applyHeaderCellsToTransaction(tr, this.node, pos, true, false, { clearWidths: true });
     this.preserveSelectionThrough(tr, originalSelection);
-    this.view.dispatch(tr);
+    this.preserveScrollAround(() => {
+      this.view.dispatch(tr);
+      this.refreshSelectionActive();
+      this.focusWithoutScroll();
+    });
     this.closeAxisMenu();
-    this.refreshSelectionActive();
-    this.focusWithoutScroll();
   }
 
   toggleHeaderRow() {
@@ -1557,10 +1597,12 @@ class TableControlsNodeView implements NodeView {
     });
     applyHeaderCellsToTransaction(tr, this.node, pos, headerRow, headerColumn);
     this.preserveSelectionThrough(tr, originalSelection);
-    this.view.dispatch(tr);
+    this.preserveScrollAround(() => {
+      this.view.dispatch(tr);
+      this.refreshSelectionActive();
+      this.focusWithoutScroll();
+    });
     this.closeAxisMenu();
-    this.refreshSelectionActive();
-    this.focusWithoutScroll();
   }
 
   preserveSelectionThrough(tr: Transaction, original: Selection) {
@@ -1587,6 +1629,47 @@ class TableControlsNodeView implements NodeView {
     } catch {
       // leave whatever default mapping produced
     }
+  }
+
+  collectScrollContainers() {
+    const containers: HTMLElement[] = [];
+    let el: HTMLElement | null = this.view.dom as HTMLElement;
+    while (el && el !== document.body && el !== document.documentElement) {
+      const style = window.getComputedStyle(el);
+      const overflow = `${style.overflowY} ${style.overflowX}`;
+      if (overflow.includes("auto") || overflow.includes("scroll")) {
+        containers.push(el);
+      }
+      el = el.parentElement;
+    }
+    return containers;
+  }
+
+  preserveScrollAround(work: () => void) {
+    // Save scroll positions of every scrollable ancestor + the window, run
+    // the work (transaction dispatches, focus, etc.), then re-pin scroll so
+    // the user's view doesn't jump to the caret. ProseMirror's selection
+    // sync and the browser's focus behavior can each scroll the editor or
+    // the page; restoring twice (immediately + in rAF) handles both.
+    const containers = this.collectScrollContainers();
+    const saved = containers.map((el) => ({ el, top: el.scrollTop, left: el.scrollLeft }));
+    const winX = window.scrollX;
+    const winY = window.scrollY;
+    const restore = () => {
+      for (const { el, top, left } of saved) {
+        if (el.scrollTop !== top) el.scrollTop = top;
+        if (el.scrollLeft !== left) el.scrollLeft = left;
+      }
+      if (window.scrollX !== winX || window.scrollY !== winY) {
+        window.scrollTo(winX, winY);
+      }
+    };
+    work();
+    restore();
+    window.requestAnimationFrame(() => {
+      restore();
+      window.requestAnimationFrame(restore);
+    });
   }
 
   focusWithoutScroll() {

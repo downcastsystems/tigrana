@@ -3029,6 +3029,7 @@ html[data-theme="dark"] .tab-list-separator {
 .ProseMirror .table-node-view {
   position: relative;
   margin: 18px 0 38px;
+  padding-right: 32px;
 }
 
 .ProseMirror .table-node-view::before {
