@@ -1176,31 +1176,66 @@ class TableControlsNodeView implements NodeView {
     const state = this.resizeState;
     if (!state) return this.getColumnWidths();
     const widths = [...state.widths];
-    const delta = clientX - state.startX;
-    const left = Math.max(RICH_TABLE_MIN_COLUMN_WIDTH, state.widths[state.columnIndex] + delta);
-    const right = Math.max(RICH_TABLE_MIN_COLUMN_WIDTH, state.widths[state.columnIndex + 1] - (left - state.widths[state.columnIndex]));
-    widths[state.columnIndex] = left;
-    widths[state.columnIndex + 1] = right;
+    const idx = state.columnIndex;
+    const startLeft = state.widths[idx];
+    const startRight = state.widths[idx + 1];
+    // Clamp delta so neither column shrinks below the minimum, preserving
+    // the sum of the two adjacent columns (so the rest of the table doesn't
+    // shift around when one side hits its minimum).
+    const maxIncrease = startRight - RICH_TABLE_MIN_COLUMN_WIDTH;
+    const maxDecrease = RICH_TABLE_MIN_COLUMN_WIDTH - startLeft;
+    const delta = Math.max(maxDecrease, Math.min(maxIncrease, clientX - state.startX));
+    widths[idx] = startLeft + delta;
+    widths[idx + 1] = startRight - delta;
     return widths.map((width) => Math.round(width));
   }
 
   getColumnWidths() {
     const map = TableMap.get(this.node);
+    // For fluid rich tables col widths are stored as percentages, so the
+    // rendered cell rect is the source of truth in pixels. Fall back to
+    // the colgroup styles / data attributes for non-fluid tables.
+    const firstRow = this.table.rows[0];
     const cols = Array.from(this.colgroup.children) as HTMLTableColElement[];
     return Array.from({ length: map.width }, (_value, index) => {
+      const cell = firstRow?.cells[index];
+      if (cell) {
+        const rendered = Math.round(cell.getBoundingClientRect().width);
+        if (rendered > 0) return rendered;
+      }
       const col = cols[index];
-      const styleWidth = parseFloat(col?.style.width || "");
+      const rawStyleWidth = col?.style.width || "";
+      // Percentages in the style aren't usable pixels — only treat as
+      // pixels when the unit is missing or explicitly "px".
+      const isPxStyleWidth = /^\s*\d+(\.\d+)?(px)?\s*$/.test(rawStyleWidth);
+      const styleWidth = isPxStyleWidth ? parseFloat(rawStyleWidth) : NaN;
       const attrWidth = parseFloat(col?.getAttribute("data-width") ?? col?.getAttribute("width") ?? "");
       const width = Number.isFinite(styleWidth) && styleWidth > 0 ? styleWidth : attrWidth;
       if (Number.isFinite(width) && width > 0) return Math.round(width);
-      const firstRow = this.node.firstChild;
-      const cell = firstRow?.child(index);
-      const colwidth = Array.isArray(cell?.attrs.colwidth) ? cell?.attrs.colwidth[0] : null;
+      const nodeFirstRow = this.node.firstChild;
+      const cellNode = nodeFirstRow?.child(index);
+      const colwidth = Array.isArray(cellNode?.attrs.colwidth) ? cellNode?.attrs.colwidth[0] : null;
       return typeof colwidth === "number" && Number.isFinite(colwidth) ? colwidth : RICH_TABLE_DEFAULT_COLUMN_WIDTH;
     });
   }
 
   applyVisualColumnWidths(widths: number[]) {
+    if (isRichTableNode(this.node)) {
+      // Keep the table at fluid 100% width during drag; express the new
+      // column widths as percentages of their (preserved) total so only the
+      // two adjacent columns change visually.
+      const total = widths.reduce((sum, w) => sum + w, 0) || 1;
+      Array.from(this.colgroup.children).forEach((col, index) => {
+        const width = widths[index];
+        if (!(col instanceof HTMLTableColElement) || !width) return;
+        col.style.width = `${(width / total) * 100}%`;
+        col.style.minWidth = "";
+      });
+      this.table.style.width = "100%";
+      this.table.style.minWidth = "";
+      this.renderResizeHandles();
+      return;
+    }
     Array.from(this.colgroup.children).forEach((col, index) => {
       const width = widths[index];
       if (!(col instanceof HTMLTableColElement) || !width) return;
@@ -1761,15 +1796,46 @@ function applyColumnWidthsToTransaction(tr: Transaction, table: ProseMirrorNode,
   const firstRow = table.firstChild;
   if (!firstRow) return;
   const map = TableMap.get(table);
+  // prosemirror-tables' `fixTables` plugin reverts colwidth changes that are
+  // inconsistent across rows in the same column. Write the same width to
+  // every cell in each column so the table is internally consistent.
   for (let column = 0; column < Math.min(map.width, widths.length); column += 1) {
-    const cellPos = tablePos + 1 + map.positionAt(0, column, table);
-    const cell = tr.doc.nodeAt(cellPos);
-    if (!cell) continue;
-    tr.setNodeMarkup(cellPos, undefined, {
-      ...cell.attrs,
-      colwidth: [Math.max(RICH_TABLE_MIN_COLUMN_WIDTH, Math.round(widths[column]))],
-    });
+    const width = Math.max(RICH_TABLE_MIN_COLUMN_WIDTH, Math.round(widths[column]));
+    const seenPositions = new Set<number>();
+    for (let row = 0; row < map.height; row += 1) {
+      const cellPos = tablePos + 1 + map.positionAt(row, column, table);
+      if (seenPositions.has(cellPos)) continue;
+      seenPositions.add(cellPos);
+      const cell = tr.doc.nodeAt(cellPos);
+      if (!cell) continue;
+      const colspan = Number(cell.attrs.colspan ?? 1);
+      let nextColwidth: number[];
+      if (colspan > 1 && Array.isArray(cell.attrs.colwidth) && cell.attrs.colwidth.length === colspan) {
+        // For spanning cells, only update the slot for this column.
+        const localIndex = column - findCellColumnStart(map, cellPos - tablePos - 1);
+        nextColwidth = [...cell.attrs.colwidth];
+        if (localIndex >= 0 && localIndex < nextColwidth.length) nextColwidth[localIndex] = width;
+      } else {
+        nextColwidth = Array.from({ length: colspan }, (_, i) => {
+          if (i === 0) return width;
+          return widths[column + i] != null
+            ? Math.max(RICH_TABLE_MIN_COLUMN_WIDTH, Math.round(widths[column + i]))
+            : width;
+        });
+      }
+      tr.setNodeMarkup(cellPos, undefined, {
+        ...cell.attrs,
+        colwidth: nextColwidth,
+      });
+    }
   }
+}
+
+function findCellColumnStart(map: TableMap, cellRelPos: number) {
+  for (let i = 0; i < map.map.length; i += 1) {
+    if (map.map[i] === cellRelPos) return i % map.width;
+  }
+  return -1;
 }
 
 function applyHeaderCellsToTransaction(

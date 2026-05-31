@@ -3327,8 +3327,8 @@ html[data-theme="dark"] .tab-list-separator {
 .table-column-resize-handle::before {
   content: "";
   position: absolute;
-  top: 6px;
-  bottom: 6px;
+  top: 0;
+  bottom: 0;
   left: 3px;
   width: 2px;
   border-radius: 999px;

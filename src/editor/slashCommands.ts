@@ -236,10 +236,16 @@ function markCurrentTableAsTigranaHtml(editor: Editor) {
     headerColumn: false,
   });
 
+  // Set colwidth on every cell in every row so prosemirror-tables' fixTables
+  // doesn't treat the row 0 widths as a "colwidth mismatch" and revert them.
   for (let column = 0; column < map.width; column += 1) {
-    const cellPos = tablePos + 1 + map.positionAt(0, column, tableNode);
-    const cell = tr.doc.nodeAt(cellPos);
-    if (cell) {
+    const seen = new Set<number>();
+    for (let row = 0; row < map.height; row += 1) {
+      const cellPos = tablePos + 1 + map.positionAt(row, column, tableNode);
+      if (seen.has(cellPos)) continue;
+      seen.add(cellPos);
+      const cell = tr.doc.nodeAt(cellPos);
+      if (!cell) continue;
       tr = tr.setNodeMarkup(cellPos, undefined, {
         ...cell.attrs,
         colwidth: [180],
