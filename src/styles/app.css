@@ -3028,7 +3028,7 @@ html[data-theme="dark"] .tab-list-separator {
 
 .ProseMirror .table-node-view {
   position: relative;
-  margin: 18px 0;
+  margin: 18px 0 38px;
 }
 
 .ProseMirror .table-node-view::before {
@@ -3089,7 +3089,7 @@ html[data-theme="dark"] .tab-list-separator {
   padding: 7px;
   border: 1px solid rgba(52, 48, 43, 0.12);
   border-radius: 10px;
-  background: rgba(255, 252, 247, 0.98);
+  background: #fffcf7;
   box-shadow: var(--shadow-popover);
   font-size: 14px;
   font-weight: 520;
@@ -3254,16 +3254,18 @@ html[data-theme="dark"] .tab-list-separator {
 
 .table-row-handle,
 .table-column-handle {
-  border: 1px solid rgba(52, 48, 43, 0.16);
-  background: rgba(255, 252, 247, 0.94);
+  border: 1px solid transparent;
+  background: transparent;
   color: #817a70;
-  box-shadow: 0 6px 18px rgba(29, 25, 21, 0.12);
+  box-shadow: none;
 }
 
 .table-row-handle:hover,
 .table-column-handle:hover {
-  background: rgba(52, 48, 43, 0.08);
+  border-color: rgba(52, 48, 43, 0.16);
+  background: rgba(255, 252, 247, 0.94);
   color: #302b25;
+  box-shadow: 0 6px 18px rgba(29, 25, 21, 0.12);
 }
 
 .table-edge-add {
@@ -3411,16 +3413,18 @@ html[data-theme="dark"] .table-edge-add:hover {
 
 html[data-theme="dark"] .table-row-handle,
 html[data-theme="dark"] .table-column-handle {
-  border-color: rgba(238, 232, 223, 0.12);
-  background: rgba(34, 34, 34, 0.94);
+  border-color: transparent;
+  background: transparent;
   color: #aaa197;
-  box-shadow: 0 8px 22px rgba(0, 0, 0, 0.35);
+  box-shadow: none;
 }
 
 html[data-theme="dark"] .table-row-handle:hover,
 html[data-theme="dark"] .table-column-handle:hover {
-  background: rgba(238, 232, 223, 0.12);
+  border-color: rgba(238, 232, 223, 0.12);
+  background: rgba(34, 34, 34, 0.94);
   color: #eee8df;
+  box-shadow: 0 8px 22px rgba(0, 0, 0, 0.35);
 }
 
 .ProseMirror .is-editor-empty:first-child::before {
@@ -4309,7 +4313,12 @@ html[data-theme="dark"] .dialog-input,
 html[data-theme="dark"] .segmented-button,
 html[data-theme="dark"] .context-menu,
 html[data-theme="dark"] .code-block-context-menu,
-html[data-theme="dark"] .table-context-menu,
+html[data-theme="dark"] .table-context-menu {
+  color: #eee8df;
+  border-color: rgba(238, 232, 223, 0.12);
+  background: #1f2223;
+}
+
 html[data-theme="dark"] .icon-choice,
 html[data-theme="dark"] .folder-search-input,
 html[data-theme="dark"] .format-bubble,

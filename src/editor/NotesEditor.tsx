@@ -536,7 +536,7 @@ class TableControlsNodeView implements NodeView {
     updateTableColumns(node, this.colgroup, this.table, cellMinWidth);
     this.contentDOM = this.table.appendChild(document.createElement("tbody"));
     this.applyRichTableLayout();
-    this.rowHandle = this.dom.appendChild(createTableToolButton("Row options", tableIconSvg("rows", 16)));
+    this.rowHandle = this.dom.appendChild(createTableToolButton("Row options", tableIconSvg("ellipsisVertical", 16)));
     this.rowHandle.classList.add("table-axis-handle", "table-row-handle");
     this.rowHandle.contentEditable = "false";
     this.isOpeningAxisMenu = false;
@@ -573,7 +573,7 @@ class TableControlsNodeView implements NodeView {
       });
     });
 
-    this.columnHandle = this.dom.appendChild(createTableToolButton("Column options", tableIconSvg("columns", 16)));
+    this.columnHandle = this.dom.appendChild(createTableToolButton("Column options", tableIconSvg("ellipsis", 16)));
     this.columnHandle.classList.add("table-axis-handle", "table-column-handle");
     this.columnHandle.contentEditable = "false";
     this.columnHandle.addEventListener("mousedown", (event) => {
@@ -1930,6 +1930,8 @@ type TableIconName =
   | "check"
   | "copy"
   | "columns"
+  | "ellipsis"
+  | "ellipsisVertical"
   | "grip"
   | "headerColumn"
   | "headerRow"
@@ -1955,6 +1957,16 @@ const TABLE_ICON_PATHS: Record<TableIconName, string[]> = {
     '<rect width="18" height="18" x="3" y="3" rx="2"></rect>',
     '<path d="M9 3v18"></path>',
     '<path d="M15 3v18"></path>',
+  ],
+  ellipsis: [
+    '<circle cx="12" cy="12" r="1"></circle>',
+    '<circle cx="19" cy="12" r="1"></circle>',
+    '<circle cx="5" cy="12" r="1"></circle>',
+  ],
+  ellipsisVertical: [
+    '<circle cx="12" cy="12" r="1"></circle>',
+    '<circle cx="12" cy="5" r="1"></circle>',
+    '<circle cx="12" cy="19" r="1"></circle>',
   ],
   grip: [
     '<circle cx="9" cy="12" r="1"></circle>',
