@@ -989,12 +989,18 @@ class TableControlsNodeView implements NodeView {
     const cellRect = cell.getBoundingClientRect();
     if (!rowRect) return;
 
-    this.rowHandle.style.top = `${rowRect.top - domRect.top + Math.max((rowRect.height - 24) / 2, 0)}px`;
-    this.rowHandle.style.left = `${tableRect.left - domRect.left - 30}px`;
+    this.rowHandle.style.top = `${rowRect.top - domRect.top + Math.max((rowRect.height - 32) / 2, 0)}px`;
+    // Mirror the column handle's overlap with the table top: the row handle
+    // sits 20 px left of the table edge so its right edge laps 4 px over
+    // the first column, matching the column handle's vertical placement.
+    this.rowHandle.style.left = `${tableRect.left - domRect.left - 20}px`;
     this.rowHandle.dataset.targetRow = String(rowIndex);
 
-    this.columnHandle.style.top = `${tableRect.top - domRect.top - 30}px`;
-    this.columnHandle.style.left = `${cellRect.left - domRect.left + Math.max((cellRect.width - 24) / 2, 0)}px`;
+    // Position the column handle to overlap the top of the table by a few
+    // pixels rather than floating above it, so it doesn't crash into text or
+    // a sibling block sitting directly above the table.
+    this.columnHandle.style.top = `${tableRect.top - domRect.top - 20}px`;
+    this.columnHandle.style.left = `${cellRect.left - domRect.left + Math.max((cellRect.width - 32) / 2, 0)}px`;
     this.columnHandle.dataset.targetColumn = String(columnIndex);
 
     this.rowHandle.setAttribute("aria-label", `Row ${rowIndex + 1} options`);
@@ -1282,25 +1288,16 @@ class TableControlsNodeView implements NodeView {
 
     const { state } = this.view;
     const afterTable = pos + this.node.nodeSize;
-    const nextNode = state.doc.nodeAt(afterTable);
-    let tr = state.tr;
-    let cursorPos = afterTable + 1;
-
-    if (nextNode) {
-      const nextCursorPos = nextNode.isTextblock ? afterTable + 1 : Selection.near(state.doc.resolve(afterTable), 1).from;
-      cursorPos = Math.min(nextCursorPos, tr.doc.content.size);
-    } else {
-      tr = tr.insert(afterTable, paragraph.create());
-      cursorPos = afterTable + 1;
-    }
-
-    cursorPos = Math.min(cursorPos, tr.doc.content.size);
-    tr = tr.setSelection(TextSelection.create(tr.doc, cursorPos));
-    this.preserveScrollAround(() => {
-      this.view.dispatch(tr);
-      this.refreshSelectionActive();
-      this.focusWithoutScroll();
-    });
+    // Always insert a fresh empty paragraph immediately after the table and
+    // drop the cursor into it. The user explicitly asked for a blank line —
+    // skipping the insert when another block already follows would leave
+    // them with no visible "new line", which is what they reported.
+    let tr = state.tr.insert(afterTable, paragraph.create());
+    const cursorPos = Math.min(afterTable + 1, tr.doc.content.size);
+    tr = tr.setSelection(TextSelection.create(tr.doc, cursorPos)).scrollIntoView();
+    this.view.dispatch(tr);
+    this.refreshSelectionActive();
+    this.view.focus();
     this.closeAxisMenu();
     this.scheduleChromeRefresh();
   }
@@ -1795,10 +1792,14 @@ class TableControlsNodeView implements NodeView {
       deleteButton.addEventListener("click", () => this.deleteSelectedColumn(index));
     }
 
-    const domRect = this.dom.getBoundingClientRect();
-    this.axisMenu.style.top = `${anchorRect.bottom - domRect.top + 6}px`;
-    this.axisMenu.style.left = `${anchorRect.left - domRect.left}px`;
-    this.dom.appendChild(this.axisMenu);
+    // Render the menu to <body> with position: fixed so it can't be clipped
+    // by an ancestor's overflow (e.g. the editor pane). anchorRect is already
+    // viewport-relative, so we use it directly without translating into the
+    // wrapper's coordinate system.
+    this.axisMenu.style.position = "fixed";
+    this.axisMenu.style.top = `${anchorRect.bottom + 6}px`;
+    this.axisMenu.style.left = `${anchorRect.left}px`;
+    document.body.appendChild(this.axisMenu);
     this.clampAxisMenuToViewport();
     this.dom.classList.add("is-active");
     window.addEventListener("mousedown", this.handleOutsideMouseDown, true);
@@ -1807,7 +1808,6 @@ class TableControlsNodeView implements NodeView {
 
   clampAxisMenuToViewport() {
     if (!this.axisMenu) return;
-    const domRect = this.dom.getBoundingClientRect();
     const menuRect = this.axisMenu.getBoundingClientRect();
     const margin = 8;
     const viewportRight = window.innerWidth - margin;
@@ -1818,15 +1818,13 @@ class TableControlsNodeView implements NodeView {
 
     const overflowRight = menuRect.right - viewportRight;
     if (overflowRight > 0) leftPx -= overflowRight;
-    const minLeftPx = margin - domRect.left;
-    if (leftPx < minLeftPx) leftPx = minLeftPx;
+    if (leftPx < margin) leftPx = margin;
 
     const overflowBottom = menuRect.bottom - viewportBottom;
     if (overflowBottom > 0) {
       // Flip the menu above the anchor when it would run off the bottom.
       topPx -= menuRect.height + 12;
-      const minTopPx = margin - domRect.top;
-      if (topPx < minTopPx) topPx = minTopPx;
+      if (topPx < margin) topPx = margin;
     }
 
     this.axisMenu.style.left = `${leftPx}px`;

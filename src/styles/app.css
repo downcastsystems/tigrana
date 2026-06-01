@@ -3261,10 +3261,23 @@ html[data-theme="dark"] .tab-list-separator {
   box-shadow: none;
 }
 
-.table-row-handle:hover,
-.table-column-handle:hover {
+/* Grow the hit area along the axis the handle runs without changing the
+   16 px icon. The row handle stretches vertically (it sits beside a row);
+   the column handle stretches horizontally (it sits above a column). */
+.table-row-handle {
+  width: 24px;
+  height: 32px;
+}
+
+.table-column-handle {
+  width: 32px;
+  height: 24px;
+}
+
+.table-row-handle.is-visible:hover,
+.table-column-handle.is-visible:hover {
   border-color: rgba(52, 48, 43, 0.16);
-  background: rgba(255, 252, 247, 0.94);
+  background: #fffcf7;
   color: #302b25;
   box-shadow: 0 6px 18px rgba(29, 25, 21, 0.12);
 }
@@ -3420,10 +3433,10 @@ html[data-theme="dark"] .table-column-handle {
   box-shadow: none;
 }
 
-html[data-theme="dark"] .table-row-handle:hover,
-html[data-theme="dark"] .table-column-handle:hover {
+html[data-theme="dark"] .table-row-handle.is-visible:hover,
+html[data-theme="dark"] .table-column-handle.is-visible:hover {
   border-color: rgba(238, 232, 223, 0.12);
-  background: rgba(34, 34, 34, 0.94);
+  background: #222222;
   color: #eee8df;
   box-shadow: 0 8px 22px rgba(0, 0, 0, 0.35);
 }
