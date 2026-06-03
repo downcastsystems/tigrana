@@ -479,6 +479,12 @@ body.is-dragging-note.is-over-drop-target * {
   cursor: copy !important;
 }
 
+body.is-dragging-folder,
+body.is-dragging-folder * {
+  cursor: grabbing !important;
+  user-select: none;
+}
+
 .folder-pane {
   position: relative;
   z-index: 10;
@@ -773,12 +779,16 @@ body.is-dragging-section * {
   bottom: -1px;
 }
 
-/* Note row reorder indicator (unified tree + legacy notes pane) */
+/* Reorder indicators (unified tree + legacy notes pane) */
+.unified-folder-row.is-reorder-before,
+.unified-folder-row.is-reorder-after,
 .unified-note-row,
 .note-card {
   position: relative;
 }
 
+.unified-folder-row.is-reorder-before::after,
+.unified-folder-row.is-reorder-after::after,
 .unified-note-row.is-reorder-before::after,
 .unified-note-row.is-reorder-after::after,
 .note-card.is-reorder-before::after,
@@ -794,11 +804,13 @@ body.is-dragging-section * {
   z-index: 2;
 }
 
+.unified-folder-row.is-reorder-before::after,
 .unified-note-row.is-reorder-before::after,
 .note-card.is-reorder-before::after {
   top: -1px;
 }
 
+.unified-folder-row.is-reorder-after::after,
 .unified-note-row.is-reorder-after::after,
 .note-card.is-reorder-after::after {
   bottom: -1px;
@@ -2580,7 +2592,7 @@ html[data-theme="dark"] .tab-list-separator {
 }
 
 .ProseMirror h2 {
-  margin-top: 1.6em;
+  margin-top: 1.35em;
   font-size: calc(var(--editor-font-size) * 1.76);
 }
 
@@ -2606,6 +2618,10 @@ html[data-theme="dark"] .tab-list-separator {
 
 .ProseMirror h1 + h2 {
   margin-top: 0.65em;
+}
+
+.ProseMirror p + h2 {
+  margin-top: 0.85em;
 }
 
 .ProseMirror h2 + h3 {

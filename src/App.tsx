@@ -207,6 +207,11 @@ type DragItem =
   | null;
 
 type DropPlacement = "before" | "after";
+type FolderOrderingMode = "alphabetical" | "custom";
+type FolderDropIntent =
+  | { kind: "before"; path: string }
+  | { kind: "after"; path: string }
+  | { kind: "into"; path: string };
 
 type NotePointerDrag = {
   dragging: boolean;
@@ -401,6 +406,7 @@ export default function App() {
   const [dropTargetFolder, setDropTargetFolder] = useState<string | null>(null);
   const [noteDragPreview, setNoteDragPreview] = useState<NoteDragPreview | null>(null);
   const [sectionReorderHover, setSectionReorderHover] = useState<{ path: string; placement: DropPlacement } | null>(null);
+  const [folderDropIntent, setFolderDropIntent] = useState<FolderDropIntent | null>(null);
   const [noteDropIndicator, setNoteDropIndicator] = useState<{ path: string; placement: DropPlacement } | null>(null);
   const [editorFocusRequest, setEditorFocusRequest] = useState(0);
   const [editorFocusAtEndRequest, setEditorFocusAtEndRequest] = useState(0);
@@ -410,8 +416,10 @@ export default function App() {
   const titleInputRef = useRef<HTMLTextAreaElement | null>(null);
   const draggingItemRef = useRef<DragItem>(null);
   const notePointerDragRef = useRef<NotePointerDrag | null>(null);
+  const folderPointerDragRef = useRef<NotePointerDrag | null>(null);
   const sectionPointerDragRef = useRef<NotePointerDrag | null>(null);
   const suppressNextNoteClickRef = useRef(false);
+  const suppressNextFolderClickRef = useRef(false);
   const suppressNextSectionClickRef = useRef(false);
   const autoSelectedWorkspaceRef = useRef<string | null>(null);
   const metadataRef = useRef(metadata);
@@ -506,6 +514,10 @@ export default function App() {
     () => (selectedSection ? displayFolderName(selectedSection, folders, workspace) : "Uncategorized"),
     [folders, selectedSection, workspace],
   );
+  const activeNoteFolderPath = useMemo(() => {
+    if (!activePath) return null;
+    return notes.find((note) => note.path === activePath)?.parent_path ?? null;
+  }, [activePath, notes]);
   const bookmarks = useMemo(() => buildBookmarkViews(metadata.bookmarks, folders, notes, metadata, workspace), [folders, metadata, notes, workspace]);
   const visibleTabs = useMemo(
     () =>
@@ -2410,21 +2422,6 @@ export default function App() {
         const sourceFolder = folders.find((folder) => folder.path === droppedItem.path);
         const targetFolder = folders.find((folder) => folder.path === targetFolderPath);
         if (!sourceFolder || !sourceFolder.path || !targetFolder) return;
-        if (sourceFolder.parent_path === targetFolder.parent_path && targetFolder.path) {
-          const siblings = orderFolders(
-            folders.filter((folder) => folder.parent_path === sourceFolder.parent_path).map((folder) => ({ ...folder, children: [] })),
-            sourceFolder.parent_path,
-            metadata,
-          ).map((folder) => folder.path);
-          const nextOrder = siblings.filter((path) => path !== sourceFolder.path);
-          const targetIndex = Math.max(0, nextOrder.indexOf(targetFolder.path));
-          nextOrder.splice(targetIndex, 0, sourceFolder.path);
-          updateMetadata((current) => ({
-            ...current,
-            folderOrder: { ...current.folderOrder, [sourceFolder.parent_path]: nextOrder },
-          }));
-          return;
-        }
         if (sourceFolder.parent_path === targetFolderPath) return;
         const moved = await moveFolder(workspace, droppedItem.path, targetFolderPath);
         updateMetadata((current) => moveFolderInMetadata(current, droppedItem.path, moved.path, sourceFolder.parent_path, moved.parent_path));
@@ -2449,6 +2446,7 @@ export default function App() {
       setDraggingItem(null);
       draggingItemRef.current = null;
       setDropTargetFolder(null);
+      setFolderDropIntent(null);
       setNoteDragPreview(null);
     }
   }
@@ -2471,7 +2469,67 @@ export default function App() {
       ...current,
       folderOrder: { ...current.folderOrder, [sourceFolder.parent_path]: nextOrder },
     }));
+    setFolderDropIntent(null);
     setCurrentDragItem(null);
+  }
+
+  async function handleFolderDropIntent(sourcePath: string, intent: FolderDropIntent) {
+    if (intent.kind === "into") {
+      await handleDropOnFolder(intent.path, { kind: "folder", path: sourcePath });
+      return;
+    }
+    if (!workspace || sourcePath === intent.path) return;
+    const sourceFolder = folders.find((folder) => folder.path === sourcePath);
+    const targetFolder = folders.find((folder) => folder.path === intent.path);
+    if (!sourceFolder || !targetFolder || !sourceFolder.path || targetFolder.path.startsWith(`${sourceFolder.path}/`)) return;
+
+    const placement = intent.kind === "after" ? "after" : "before";
+    if (sourceFolder.parent_path === targetFolder.parent_path) {
+      handleFolderReorder(targetFolder.path, { kind: "folder", path: sourceFolder.path }, placement);
+      return;
+    }
+
+    try {
+      const moved = await moveFolder(workspace, sourceFolder.path, targetFolder.parent_path);
+      updateMetadata((current) => {
+        const relocated = moveFolderInMetadata(current, sourceFolder.path, moved.path, sourceFolder.parent_path, moved.parent_path);
+        const siblingPaths = orderFolders(
+          folders
+            .filter((folder) => folder.parent_path === targetFolder.parent_path && folder.path !== sourceFolder.path)
+            .map((folder) => ({ ...folder, children: [] })),
+          targetFolder.parent_path,
+          relocated,
+        ).map((folder) => folder.path);
+        const nextOrder = siblingPaths.filter((path) => path !== moved.path);
+        const targetIndex = Math.max(0, nextOrder.indexOf(targetFolder.path));
+        nextOrder.splice(targetIndex + (placement === "after" ? 1 : 0), 0, moved.path);
+        return {
+          ...relocated,
+          folderOrder: {
+            ...relocated.folderOrder,
+            [targetFolder.parent_path]: nextOrder,
+          },
+        };
+      });
+      if (selectedFolder === sourceFolder.path || selectedFolder.startsWith(`${sourceFolder.path}/`)) {
+        setSelectedFolder(replacePathPrefix(selectedFolder, sourceFolder.path, moved.path));
+      }
+      if (activePath?.startsWith(`${sourceFolder.path}/`)) {
+        const nextActivePath = replacePathPrefix(activePath, sourceFolder.path, moved.path);
+        setActivePath(nextActivePath);
+        if (activeNoteLockRef.current?.path === activePath) {
+          activeNoteLockRef.current = { ...activeNoteLockRef.current, path: nextActivePath };
+        }
+      }
+      replaceOpenTabPrefix(sourceFolder.path, moved.path);
+      await refreshWorkspace(workspace);
+    } catch (error) {
+      setAppError(error instanceof Error ? error.message : String(error));
+    } finally {
+      setFolderDropIntent(null);
+      setDropTargetFolder(null);
+      setCurrentDragItem(null);
+    }
   }
 
   function setCurrentDragItem(item: DragItem) {
@@ -2498,6 +2556,100 @@ export default function App() {
       path,
       placement: (clientY > bounds.top + bounds.height / 2 ? "after" : "before") as DropPlacement,
     };
+  }
+
+  function folderDropTargetAtPoint(clientX: number, clientY: number, sourcePath: string, orderingMode: FolderOrderingMode): FolderDropIntent | null {
+    const sourceFolder = folders.find((folder) => folder.path === sourcePath);
+    if (!sourceFolder) return null;
+
+    const row = document.elementFromPoint(clientX, clientY)?.closest<HTMLElement>(".unified-tree-pane [data-folder-path]");
+    const path = row?.dataset.folderPath ?? null;
+    if (!row || path === null) {
+      const paneRoot = document.elementFromPoint(clientX, clientY)?.closest<HTMLElement>(".unified-tree-pane [data-pane-root-path]");
+      const paneRootPath = paneRoot?.dataset.paneRootPath;
+      if (paneRootPath === undefined || sourceFolder.parent_path === paneRootPath || paneRootPath.startsWith(`${sourcePath}/`)) return null;
+      return { kind: "into", path: paneRootPath };
+    }
+    if (path === sourcePath || path.startsWith(`${sourcePath}/`)) return null;
+
+    if (orderingMode === "alphabetical") {
+      return sourceFolder.parent_path === path ? null : { kind: "into", path };
+    }
+
+    const bounds = row.getBoundingClientRect();
+    const offsetY = clientY - bounds.top;
+    const edgeZone = bounds.height / 3;
+    if (offsetY <= edgeZone) return { kind: "before", path };
+    if (offsetY >= bounds.height - edgeZone) return { kind: "after", path };
+    return sourceFolder.parent_path === path ? null : { kind: "into", path };
+  }
+
+  function beginFolderPointerDrag(path: string, event: React.PointerEvent<HTMLElement>, orderingMode: FolderOrderingMode) {
+    if (event.button !== 0) return;
+    if ((event.target as HTMLElement | null)?.closest("[data-no-folder-drag]")) return;
+    const folder = folders.find((entry) => entry.path === path);
+    if (!folder || !folder.path) return;
+
+    folderPointerDragRef.current = {
+      dragging: false,
+      path,
+      startX: event.clientX,
+      startY: event.clientY,
+    };
+
+    const handlePointerMove = (moveEvent: PointerEvent) => {
+      const drag = folderPointerDragRef.current;
+      if (!drag) return;
+
+      const distance = Math.hypot(moveEvent.clientX - drag.startX, moveEvent.clientY - drag.startY);
+      if (!drag.dragging && distance < 5) return;
+
+      if (!drag.dragging) {
+        drag.dragging = true;
+        suppressNextFolderClickRef.current = true;
+        document.body.classList.add("is-dragging-folder");
+        setCurrentDragItem({ kind: "folder", path: drag.path });
+      }
+
+      moveEvent.preventDefault();
+      const intent = folderDropTargetAtPoint(moveEvent.clientX, moveEvent.clientY, drag.path, orderingMode);
+      setFolderDropIntent(intent);
+      setDropTargetFolder(intent?.kind === "into" ? intent.path : null);
+      document.body.classList.toggle("is-over-drop-target", Boolean(intent));
+    };
+
+    const cleanupPointerDrag = () => {
+      window.removeEventListener("pointermove", handlePointerMove);
+      window.removeEventListener("pointerup", handlePointerUp);
+      window.removeEventListener("pointercancel", handlePointerCancel);
+      document.body.classList.remove("is-dragging-folder");
+      document.body.classList.remove("is-over-drop-target");
+      setFolderDropIntent(null);
+      setDropTargetFolder(null);
+      folderPointerDragRef.current = null;
+    };
+
+    const handlePointerCancel = () => {
+      cleanupPointerDrag();
+      setCurrentDragItem(null);
+    };
+
+    const handlePointerUp = (upEvent: PointerEvent) => {
+      const drag = folderPointerDragRef.current;
+      const intent = drag?.dragging ? folderDropTargetAtPoint(upEvent.clientX, upEvent.clientY, drag.path, orderingMode) : null;
+      cleanupPointerDrag();
+
+      if (drag?.dragging && intent) {
+        void handleFolderDropIntent(drag.path, intent);
+      } else if (drag?.dragging) {
+        setCurrentDragItem(null);
+      }
+      setTimeout(() => { suppressNextFolderClickRef.current = false; }, 0);
+    };
+
+    window.addEventListener("pointermove", handlePointerMove);
+    window.addEventListener("pointerup", handlePointerUp, { once: true });
+    window.addEventListener("pointercancel", handlePointerCancel, { once: true });
   }
 
   function beginNotePointerDrag(path: string, event: React.PointerEvent<HTMLElement>) {
@@ -2946,6 +3098,8 @@ export default function App() {
               bookmarksExpanded={metadata.bookmarksExpanded}
               createParentPath={selectedFolder}
               contents={contents}
+              folderDropIntent={folderDropIntent}
+              folderOrderingMode="alphabetical"
               folders={folders}
               menuOpen={appMenuOpen}
               metadata={metadata}
@@ -2961,16 +3115,14 @@ export default function App() {
               showNotebookFooter
               showPins={false}
               showSearch
+              suppressFolderClickRef={suppressNextFolderClickRef}
               title={getNotebookName(workspace)}
               workspace={workspace}
               dropTargetFolder={dropTargetFolder}
               onContextMenu={openContextMenu}
               onCreateFolder={requestCreateFolder}
               onCreateNote={requestCreateNote}
-              onDragStart={setCurrentDragItem}
-              onDropOnFolder={(path, item) => void handleDropOnFolder(path, item)}
-              onDropTargetChange={setDropTargetFolder}
-              onFolderReorder={handleFolderReorder}
+              onFolderPointerDragStart={(path, event) => beginFolderPointerDrag(path, event, "alphabetical")}
               onManageNotebooks={() => {
                 setNotebooksManageOpen(true);
                 setAppMenuOpen(false);
@@ -3046,6 +3198,8 @@ export default function App() {
                 activePath={activePath}
                 createParentPath={selectedFolder}
                 contents={contents}
+                folderDropIntent={folderDropIntent}
+                folderOrderingMode="custom"
                 folders={folders}
                 metadata={metadata}
                 notes={notes}
@@ -3053,16 +3207,14 @@ export default function App() {
                 hiddenFolderParentPath={selectedSection === "" ? "" : undefined}
                 selectedFolderPath={activePath ? undefined : selectedFolder}
                 showPins
+                suppressFolderClickRef={suppressNextFolderClickRef}
                 title={selectedSectionTitle}
                 workspace={workspace}
                 dropTargetFolder={dropTargetFolder}
                 onContextMenu={openContextMenu}
                 onCreateFolder={requestCreateFolder}
                 onCreateNote={requestCreateNote}
-                onDragStart={setCurrentDragItem}
-                onDropOnFolder={(path, item) => void handleDropOnFolder(path, item)}
-                onDropTargetChange={setDropTargetFolder}
-                onFolderReorder={handleFolderReorder}
+                onFolderPointerDragStart={(path, event) => beginFolderPointerDrag(path, event, "custom")}
                 onPin={toggleNotePin}
                 onPointerDragStart={beginNotePointerDrag}
                 onSelectFolder={(path) => void selectFolderForNewNote(path)}
@@ -3379,14 +3531,30 @@ export default function App() {
             contextMenu.kind === "folder" ? contextMenu.path
               : contextMenu.kind === "empty" && contextMenu.parentPath !== undefined ? contextMenu.parentPath
               : selectedFolder;
+          const activeCreateNoteFolderPath =
+            contextMenu.kind === "empty"
+              ? activeNoteFolderPath ?? (selectedFolder ? selectedFolder : null)
+              : null;
+          const showActiveCreateNoteFolder =
+            activeCreateNoteFolderPath !== null &&
+            activeCreateNoteFolderPath !== "" &&
+            activeCreateNoteFolderPath !== createParent &&
+            folders.some((folder) => folder.path === activeCreateNoteFolderPath);
           return (
         <ContextMenu
           state={contextMenu}
           folderColorSubject={isSectionContextTarget(contextMenu, navigationStyle, folders) ? "section" : "folder"}
+          activeCreateNoteParentName={
+            showActiveCreateNoteFolder ? displayFolderName(activeCreateNoteFolderPath, folders, workspace) : undefined
+          }
+          createFolderLabel={contextMenu.source === "sections-pane" ? "New Section" : undefined}
           createFolderParentName={displayFolderName(createParent, folders, workspace)}
           createNoteParentName={displayFolderName(createParent, folders, workspace)}
           showCreateSection={contextMenu.source === "sections-pane"}
           onCreateFolder={() => requestCreateFolder(createParent)}
+          onCreateNoteInActiveFolder={
+            showActiveCreateNoteFolder ? () => requestCreateNote(activeCreateNoteFolderPath) : undefined
+          }
           onCreateNote={() => requestCreateNote(createParent)}
           onCreateSection={() => requestCreateFolder("")}
           onDelete={() => {
@@ -4359,6 +4527,8 @@ function UnifiedNode({
   contents,
   depth,
   dropTargetFolder,
+  folderDropIntent,
+  folderOrderingMode,
   folders,
   hiddenFolderParentPath,
   metadata,
@@ -4366,12 +4536,10 @@ function UnifiedNode({
   parentPath,
   selectedFolderPath,
   showPins,
+  suppressFolderClickRef,
   workspace,
   onContextMenu,
-  onDragStart,
-  onDropOnFolder,
-  onDropTargetChange,
-  onFolderReorder,
+  onFolderPointerDragStart,
   onPin,
   onPointerDragStart,
   onSelectFolder,
@@ -4382,6 +4550,8 @@ function UnifiedNode({
   contents: Map<string, string>;
   depth: number;
   dropTargetFolder?: string | null;
+  folderDropIntent?: FolderDropIntent | null;
+  folderOrderingMode: FolderOrderingMode;
   folders: FolderEntry[];
   hiddenFolderParentPath?: string;
   metadata: WorkspaceMetadata;
@@ -4389,12 +4559,10 @@ function UnifiedNode({
   parentPath: string;
   selectedFolderPath?: string;
   showPins: boolean;
+  suppressFolderClickRef: React.MutableRefObject<boolean>;
   workspace: string;
   onContextMenu: (event: React.MouseEvent, state: ContextMenuTarget) => void;
-  onDragStart?: (item: DragItem) => void;
-  onDropOnFolder?: (path: string, item?: Exclude<DragItem, null>) => void;
-  onDropTargetChange?: (path: string | null) => void;
-  onFolderReorder?: (targetPath: string, item: Exclude<DragItem, null> | null, placement?: DropPlacement) => void;
+  onFolderPointerDragStart: (path: string, event: React.PointerEvent<HTMLElement>) => void;
   onPin: (path: string) => void;
   onPointerDragStart: (path: string, event: React.PointerEvent<HTMLElement>) => void;
   onSelectFolder?: (path: string) => void;
@@ -4405,12 +4573,17 @@ function UnifiedNode({
     () =>
       hiddenFolderParentPath === parentPath
         ? []
-        : orderFolders(
-            folders.filter((f) => f.parent_path === parentPath && f.path !== "").map((folder) => ({ ...folder, children: [] })),
-            parentPath,
-            metadata,
-          ),
-    [folders, hiddenFolderParentPath, metadata, parentPath],
+        : folderOrderingMode === "custom"
+          ? orderFolders(
+              folders.filter((f) => f.parent_path === parentPath && f.path !== "").map((folder) => ({ ...folder, children: [] })),
+              parentPath,
+              metadata,
+            )
+          : folders
+              .filter((f) => f.parent_path === parentPath && f.path !== "")
+              .map((folder) => ({ ...folder, children: [] }))
+              .sort((a, b) => a.name.localeCompare(b.name)),
+    [folderOrderingMode, folders, hiddenFolderParentPath, metadata, parentPath],
   );
   const childNotes = useMemo(
     () =>
@@ -4429,6 +4602,8 @@ function UnifiedNode({
           contents={contents}
           depth={depth}
           dropTargetFolder={dropTargetFolder}
+          folderDropIntent={folderDropIntent}
+          folderOrderingMode={folderOrderingMode}
           folder={folder}
           folders={folders}
           hiddenFolderParentPath={hiddenFolderParentPath}
@@ -4436,12 +4611,10 @@ function UnifiedNode({
           notes={notes}
           selectedFolderPath={selectedFolderPath}
           showPins={showPins}
+          suppressFolderClickRef={suppressFolderClickRef}
           workspace={workspace}
           onContextMenu={onContextMenu}
-          onDragStart={onDragStart}
-          onDropOnFolder={onDropOnFolder}
-          onDropTargetChange={onDropTargetChange}
-          onFolderReorder={onFolderReorder}
+          onFolderPointerDragStart={onFolderPointerDragStart}
           onPin={onPin}
           onPointerDragStart={onPointerDragStart}
           onSelectFolder={onSelectFolder}
@@ -4480,6 +4653,8 @@ function UnifiedFolderRow({
   contents,
   depth,
   dropTargetFolder,
+  folderDropIntent,
+  folderOrderingMode,
   folder,
   folders,
   hiddenFolderParentPath,
@@ -4487,12 +4662,10 @@ function UnifiedFolderRow({
   notes,
   selectedFolderPath,
   showPins,
+  suppressFolderClickRef,
   workspace,
   onContextMenu,
-  onDragStart,
-  onDropOnFolder,
-  onDropTargetChange,
-  onFolderReorder,
+  onFolderPointerDragStart,
   onPin,
   onPointerDragStart,
   onSelectFolder,
@@ -4503,6 +4676,8 @@ function UnifiedFolderRow({
   contents: Map<string, string>;
   depth: number;
   dropTargetFolder?: string | null;
+  folderDropIntent?: FolderDropIntent | null;
+  folderOrderingMode: FolderOrderingMode;
   folder: FolderEntry;
   folders: FolderEntry[];
   hiddenFolderParentPath?: string;
@@ -4510,12 +4685,10 @@ function UnifiedFolderRow({
   notes: NoteEntry[];
   selectedFolderPath?: string;
   showPins: boolean;
+  suppressFolderClickRef: React.MutableRefObject<boolean>;
   workspace: string;
   onContextMenu: (event: React.MouseEvent, state: ContextMenuTarget) => void;
-  onDragStart?: (item: DragItem) => void;
-  onDropOnFolder?: (path: string, item?: Exclude<DragItem, null>) => void;
-  onDropTargetChange?: (path: string | null) => void;
-  onFolderReorder?: (targetPath: string, item: Exclude<DragItem, null> | null, placement?: DropPlacement) => void;
+  onFolderPointerDragStart: (path: string, event: React.PointerEvent<HTMLElement>) => void;
   onPin: (path: string) => void;
   onPointerDragStart: (path: string, event: React.PointerEvent<HTMLElement>) => void;
   onSelectFolder?: (path: string) => void;
@@ -4525,70 +4698,31 @@ function UnifiedFolderRow({
   const open = metadata.expandedFolders[folder.path] ?? true;
   const folderColor = metadata.folderColors[folder.path];
   const customIcon = metadata.folderIcons[folder.path];
+  const dropIntent = folderDropIntent?.path === folder.path ? folderDropIntent : null;
   const hasChildren =
     folders.some((f) => f.parent_path === folder.path) ||
     notes.some((n) => n.parent_path === folder.path);
-  const folderDropPlacement = (event: React.DragEvent<HTMLElement>): DropPlacement => {
-    const bounds = event.currentTarget.getBoundingClientRect();
-    return event.clientY > bounds.top + bounds.height / 2 ? "after" : "before";
-  };
-  const getDraggedItem = (event: React.DragEvent): Exclude<DragItem, null> | null => {
-    const folderPath = event.dataTransfer.getData("application/tigrana-folder-path");
-    if (folderPath) return { kind: "folder", path: folderPath };
-    const notePath = event.dataTransfer.getData("application/tigrana-note-path") || event.dataTransfer.getData("text/plain");
-    if (notePath) return { kind: "note", path: notePath };
-    return null;
-  };
 
   return (
     <div className="unified-folder-node">
       <div
-        className={`unified-folder-row${selectedFolderPath === folder.path ? " is-active" : ""}${dropTargetFolder === folder.path ? " is-drop-target" : ""}`}
+        className={`unified-folder-row${selectedFolderPath === folder.path ? " is-active" : ""}${(dropTargetFolder === folder.path || dropIntent?.kind === "into") ? " is-drop-target" : ""}${dropIntent?.kind === "before" ? " is-reorder-before" : ""}${dropIntent?.kind === "after" ? " is-reorder-after" : ""}`}
         style={{ "--row-indent": `${depth * 16}px` } as React.CSSProperties}
         data-folder-path={folder.path}
-        draggable={Boolean(onDragStart && onFolderReorder)}
-        onClick={() => onSelectFolder?.(folder.path)}
-        onContextMenu={(event) => onContextMenu(event, { kind: "folder", path: folder.path })}
-        onDragStart={(event) => {
-          if (!onDragStart || !onFolderReorder) return;
-          event.dataTransfer.setData("application/tigrana-folder-path", folder.path);
-          event.dataTransfer.effectAllowed = "move";
-          onDragStart({ kind: "folder", path: folder.path });
-        }}
-        onDragEnd={() => onDragStart?.(null)}
-        onDragOver={(event) => {
-          const item = getDraggedItem(event);
-          if (!item) return;
-          if (item.kind === "folder" && (item.path === folder.path || folder.path.startsWith(`${item.path}/`))) return;
-          event.preventDefault();
-          event.dataTransfer.dropEffect = "move";
-          onDropTargetChange?.(folder.path);
-        }}
-        onDragLeave={(event) => {
-          if (event.currentTarget.contains(event.relatedTarget as Node | null)) return;
-          onDropTargetChange?.(null);
-        }}
-        onDrop={(event) => {
-          const item = getDraggedItem(event);
-          if (!item) return;
-          event.preventDefault();
-          onDropTargetChange?.(null);
-          if (item.kind === "note") {
-            onDropOnFolder?.(folder.path, item);
+        onClick={() => {
+          if (suppressFolderClickRef.current) {
+            suppressFolderClickRef.current = false;
             return;
           }
-          if (item.path === folder.path || folder.path.startsWith(`${item.path}/`)) return;
-          const sourceFolder = folders.find((entry) => entry.path === item.path);
-          if (sourceFolder && sourceFolder.parent_path === folder.parent_path && onFolderReorder) {
-            onFolderReorder(folder.path, item, folderDropPlacement(event));
-          } else {
-            onDropOnFolder?.(folder.path, item);
-          }
+          onSelectFolder?.(folder.path);
         }}
+        onContextMenu={(event) => onContextMenu(event, { kind: "folder", path: folder.path })}
+        onPointerDown={(event) => onFolderPointerDragStart(folder.path, event)}
       >
         <button
           className="tree-toggle"
           type="button"
+          data-no-folder-drag
           onClick={(event) => {
             event.stopPropagation();
             onSetFolderExpanded(folder.path, !open);
@@ -4607,6 +4741,8 @@ function UnifiedFolderRow({
           contents={contents}
           depth={depth + 1}
           dropTargetFolder={dropTargetFolder}
+          folderDropIntent={folderDropIntent}
+          folderOrderingMode={folderOrderingMode}
           folders={folders}
           hiddenFolderParentPath={hiddenFolderParentPath}
           metadata={metadata}
@@ -4614,12 +4750,10 @@ function UnifiedFolderRow({
           parentPath={folder.path}
           selectedFolderPath={selectedFolderPath}
           showPins={showPins}
+          suppressFolderClickRef={suppressFolderClickRef}
           workspace={workspace}
           onContextMenu={onContextMenu}
-          onDragStart={onDragStart}
-          onDropOnFolder={onDropOnFolder}
-          onDropTargetChange={onDropTargetChange}
-          onFolderReorder={onFolderReorder}
+          onFolderPointerDragStart={onFolderPointerDragStart}
           onPin={onPin}
           onPointerDragStart={onPointerDragStart}
           onSelectFolder={onSelectFolder}
@@ -4637,6 +4771,8 @@ function UnifiedTreePane({
   bookmarksExpanded = true,
   createParentPath,
   contents,
+  folderDropIntent,
+  folderOrderingMode = "custom",
   folders,
   hiddenFolderParentPath,
   menuOpen = false,
@@ -4653,16 +4789,14 @@ function UnifiedTreePane({
   showNotebookFooter = false,
   showPins = true,
   showSearch = false,
+  suppressFolderClickRef,
   title,
   workspace,
   dropTargetFolder,
   onContextMenu,
   onCreateFolder,
   onCreateNote,
-  onDragStart,
-  onDropOnFolder,
-  onDropTargetChange,
-  onFolderReorder,
+  onFolderPointerDragStart,
   onManageNotebooks,
   onNewNotebook,
   onOpenWorkspace,
@@ -4685,6 +4819,8 @@ function UnifiedTreePane({
   bookmarksExpanded?: boolean;
   createParentPath?: string;
   contents: Map<string, string>;
+  folderDropIntent?: FolderDropIntent | null;
+  folderOrderingMode?: FolderOrderingMode;
   dropTargetFolder?: string | null;
   folders: FolderEntry[];
   hiddenFolderParentPath?: string;
@@ -4702,15 +4838,13 @@ function UnifiedTreePane({
   showNotebookFooter?: boolean;
   showPins?: boolean;
   showSearch?: boolean;
+  suppressFolderClickRef: React.MutableRefObject<boolean>;
   title: string;
   workspace: string;
   onContextMenu: (event: React.MouseEvent, state: ContextMenuTarget) => void;
   onCreateFolder?: (parentPath?: string) => void;
   onCreateNote?: (parentPath?: string) => void;
-  onDragStart?: (item: DragItem) => void;
-  onDropOnFolder?: (path: string, item?: Exclude<DragItem, null>) => void;
-  onDropTargetChange?: (path: string | null) => void;
-  onFolderReorder?: (targetPath: string, item: Exclude<DragItem, null> | null, placement?: DropPlacement) => void;
+  onFolderPointerDragStart: (path: string, event: React.PointerEvent<HTMLElement>) => void;
   onManageNotebooks?: () => void;
   onNewNotebook?: () => void;
   onOpenWorkspace?: () => void;
@@ -4783,6 +4917,8 @@ function UnifiedTreePane({
           contents={contents}
           depth={0}
           dropTargetFolder={dropTargetFolder}
+          folderDropIntent={folderDropIntent}
+          folderOrderingMode={folderOrderingMode}
           folders={folders}
           hiddenFolderParentPath={hiddenFolderParentPath}
           metadata={metadata}
@@ -4790,12 +4926,10 @@ function UnifiedTreePane({
           parentPath={rootPath}
           selectedFolderPath={selectedFolderPath}
           showPins={showPins}
+          suppressFolderClickRef={suppressFolderClickRef}
           workspace={workspace}
           onContextMenu={onContextMenu}
-          onDragStart={onDragStart}
-          onDropOnFolder={onDropOnFolder}
-          onDropTargetChange={onDropTargetChange}
-          onFolderReorder={onFolderReorder}
+          onFolderPointerDragStart={onFolderPointerDragStart}
           onPin={onPin}
           onPointerDragStart={onPointerDragStart}
           onSelectFolder={onSelectFolder}
@@ -6316,6 +6450,36 @@ function SearchIconPreview({ value }: { value: string }) {
   return <IconMark value={value} fallback={Search} size={18} />;
 }
 
+function useClampedContextMenuPosition(x: number, y: number) {
+  const menuRef = useRef<HTMLDivElement | null>(null);
+  const [menuStyle, setMenuStyle] = useState<CSSProperties>({ left: x, top: y });
+
+  const updateMenuPosition = useCallback(() => {
+    const menu = menuRef.current;
+    if (!menu) return;
+
+    const padding = 8;
+    const rect = menu.getBoundingClientRect();
+    const maxLeft = Math.max(padding, window.innerWidth - rect.width - padding);
+    const maxTop = Math.max(padding, window.innerHeight - rect.height - padding);
+    const left = Math.min(Math.max(x, padding), maxLeft);
+    const top = Math.min(Math.max(y, padding), maxTop);
+
+    setMenuStyle((current) => (current.left === left && current.top === top ? current : { left, top }));
+  }, [x, y]);
+
+  useLayoutEffect(() => {
+    updateMenuPosition();
+  });
+
+  useEffect(() => {
+    window.addEventListener("resize", updateMenuPosition);
+    return () => window.removeEventListener("resize", updateMenuPosition);
+  }, [updateMenuPosition]);
+
+  return { menuRef, menuStyle };
+}
+
 function TabContextMenu({
   state,
   onClose,
@@ -6327,8 +6491,10 @@ function TabContextMenu({
   onCloseAll: () => void;
   onCloseTab: () => void;
 }) {
+  const { menuRef, menuStyle } = useClampedContextMenuPosition(state.x, state.y);
+
   return (
-    <div className="context-menu" style={{ left: state.x, top: state.y }} onClick={onClose}>
+    <div className="context-menu" ref={menuRef} style={menuStyle} onClick={onClose}>
       <button type="button" onClick={onCloseTab}>
         <X size={14} />
         <span>Close Tab</span>
@@ -6342,7 +6508,9 @@ function TabContextMenu({
 }
 
 function ContextMenu({
+  activeCreateNoteParentName,
   createFolderParentName,
+  createFolderLabel,
   createNoteParentName,
   folderColorSubject,
   isBookmarked,
@@ -6350,6 +6518,7 @@ function ContextMenu({
   state,
   onCreateFolder,
   onCreateNote,
+  onCreateNoteInActiveFolder,
   onCreateSection,
   onDelete,
   onDuplicate,
@@ -6365,7 +6534,9 @@ function ContextMenu({
   onToggleBookmark,
   onClose,
 }: {
+  activeCreateNoteParentName?: string;
   createFolderParentName: string;
+  createFolderLabel?: string;
   createNoteParentName: string;
   folderColorSubject: "folder" | "section";
   isBookmarked: boolean;
@@ -6373,6 +6544,7 @@ function ContextMenu({
   state: ContextMenuState;
   onCreateFolder: () => void;
   onCreateNote: () => void;
+  onCreateNoteInActiveFolder?: () => void;
   onCreateSection: () => void;
   onDelete: () => void;
   onDuplicate: () => void;
@@ -6388,17 +6560,25 @@ function ContextMenu({
   onToggleBookmark: () => void;
   onClose: () => void;
 }) {
+  const { menuRef, menuStyle } = useClampedContextMenuPosition(state.x, state.y);
+
   return (
-    <div className="context-menu" style={{ left: state.x, top: state.y }} onClick={onClose}>
+    <div className="context-menu" ref={menuRef} style={menuStyle} onClick={onClose}>
       {state.kind !== "note" ? (
         <>
           <button type="button" onClick={onCreateNote}>
             <FileText size={14} />
             <span>New Note in {createNoteParentName}</span>
           </button>
+          {activeCreateNoteParentName && onCreateNoteInActiveFolder ? (
+            <button type="button" onClick={onCreateNoteInActiveFolder}>
+              <FileText size={14} />
+              <span>New Note in {activeCreateNoteParentName}</span>
+            </button>
+          ) : null}
           <button type="button" onClick={onCreateFolder}>
             <Folder size={14} />
-            <span>New Folder in {createFolderParentName}</span>
+            <span>{createFolderLabel ?? "New Folder"} in {createFolderParentName}</span>
           </button>
         </>
       ) : null}
