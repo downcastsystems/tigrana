@@ -68,11 +68,14 @@ npm run lint
 npm run build
 ```
 
-## Roadmap
+Build macOS app bundle:
 
-- Replace the browser-only Fuse search with a Tauri-side SQLite FTS5 index.
-- Add file watching and background reindexing.
-- Add rename, move, and delete operations for notes and folders.
-- Add robust Markdown round-trip tests.
-- Add native app icons and signed installers.
-- Add a small settings surface for attachment strategy and typography.
+```bash
+npm run tauri -- build --bundles app
+```
+
+The `.app` bundle is produced at:
+
+```text
+src-tauri/target/release/bundle/macos/Tigrana.app
+```
