@@ -277,6 +277,18 @@ type ParsedNoteMarkdown = {
   frontmatterError: string | null;
 };
 
+type PersistDraftSnapshot = {
+  workspace: string;
+  path: string | null;
+  pendingNote: DraftNote | null;
+  title: string;
+  savedTitle: string;
+  body: string;
+  frontmatter: string;
+  rawMode: boolean;
+  markdown: string;
+};
+
 type FrontmatterField = {
   editable: boolean;
   key: string;
@@ -454,6 +466,7 @@ export default function App() {
   // Guards path-changing creates/renames. Plain body saves are queued per note,
   // but creates and renames still need a single owner because they change identity.
   const pathChangePersistRef = useRef<Promise<void> | null>(null);
+  const titleCommitInFlightRef = useRef(false);
   const keyboardActionsRef = useRef<{
     addEmptyTab: () => void;
     chooseWorkspace: (intent: "open" | "new") => void;
@@ -1513,6 +1526,33 @@ export default function App() {
 
   externalNoteChangeRef.current = (path: string) => void handleExternalNoteChange(path);
 
+  const acceptSavedMarkdown = useCallback((savedPath: string, written: string, snapshot: PersistDraftSnapshot) => {
+    const parsed = parseNoteMarkdown(written);
+    const nextBody = parsed.frontmatterError ? snapshot.body : parsed.body;
+    const nextFrontmatter = parsed.frontmatterError ? snapshot.frontmatter : parsed.frontmatter;
+    const currentDraft = activeDraftStateRef.current;
+    const sameDraft =
+      currentDraft.draft === snapshot.body &&
+      currentDraft.frontmatterDraft === snapshot.frontmatter &&
+      (!snapshot.rawMode || currentDraft.rawMarkdownText === snapshot.markdown) &&
+      currentDraft.titleDraft.trim() === snapshot.title;
+    const sameNote =
+      currentDraft.activePath === savedPath ||
+      (snapshot.path !== null && currentDraft.activePath === snapshot.path) ||
+      (snapshot.pendingNote !== null && currentDraft.activePath === null);
+
+    setSavedRawMarkdownText(written);
+    if (!sameNote || !sameDraft) return;
+
+    setSavedTitle(snapshot.title);
+    setSavedDraft(nextBody);
+    setSavedFrontmatter(nextFrontmatter);
+    setDraft(nextBody);
+    setFrontmatterDraft(nextFrontmatter);
+    setRawMarkdownText(written);
+    if (!parsed.frontmatterError) setFrontmatterError(null);
+  }, []);
+
   const persistDraft = useCallback(async () => {
     setAppError(null);
     if (!workspace || !noteOpen) return;
@@ -1592,11 +1632,7 @@ export default function App() {
           if (snapshot.path && snapshot.path !== savedPath) acceptedDiskContentRef.current.delete(snapshot.path);
           acceptedDiskContentRef.current.set(savedPath, normalizeNoteContentForWatcher(written));
           recordNotePosition(savedPath, written);
-          setSavedTitle(snapshot.title);
-          setSavedDraft(snapshot.body);
-          setSavedFrontmatter(snapshot.frontmatter);
-          setRawMarkdownText(written);
-          setSavedRawMarkdownText(written);
+          acceptSavedMarkdown(savedPath, written, snapshot);
           setContents((current) => {
             const next = new Map(current);
             if (snapshot.path && snapshot.path !== savedPath) next.delete(snapshot.path);
@@ -1636,7 +1672,7 @@ export default function App() {
       const written = await saveNote(snapshot.workspace, snapshot.path as string, snapshot.markdown);
       acceptedDiskContentRef.current.set(snapshot.path as string, normalizeNoteContentForWatcher(written));
       recordNotePosition(snapshot.path as string, written);
-      setSavedRawMarkdownText(written);
+      acceptSavedMarkdown(snapshot.path as string, written, snapshot);
       setContents((current) => {
         const next = new Map(current);
         next.set(snapshot.path as string, written);
@@ -1649,25 +1685,40 @@ export default function App() {
             : note,
         ),
       );
-      const currentDraft = activeDraftStateRef.current;
-      if (
-        currentDraft.activePath === snapshot.path &&
-        currentDraft.draft === snapshot.body &&
-        currentDraft.frontmatterDraft === snapshot.frontmatter &&
-        (!snapshot.rawMode || currentDraft.rawMarkdownText === snapshot.markdown) &&
-        currentDraft.titleDraft.trim() === snapshot.title
-      ) {
-        setSavedTitle(snapshot.title);
-        setSavedDraft(snapshot.body);
-        setSavedFrontmatter(snapshot.frontmatter);
-        if (!snapshot.rawMode || currentDraft.rawMarkdownText === snapshot.markdown) {
-          setRawMarkdownText(written);
-        }
-      }
       const nextIndex = await readLinkIndex(snapshot.workspace);
       setLinkIndex(nextIndex);
     });
-  }, [acquireActiveNoteLock, activeNoteEditable, activePath, applyNoteAccess, draft, enqueueNoteSave, frontmatterDraft, frontmatterError, hasUnsavedBody, navigationStyle, noteOpen, pendingNote, placePathInActiveTab, rawMarkdownDraft, rawMarkdownVisible, recordNotePosition, refreshWorkspace, savedTitle, titleDraft, updateMetadata, workspace]);
+  }, [acceptSavedMarkdown, acquireActiveNoteLock, activeNoteEditable, activePath, applyNoteAccess, draft, enqueueNoteSave, frontmatterDraft, frontmatterError, hasUnsavedBody, navigationStyle, noteOpen, pendingNote, placePathInActiveTab, rawMarkdownDraft, rawMarkdownVisible, recordNotePosition, refreshWorkspace, savedTitle, titleDraft, updateMetadata, workspace]);
+
+  const commitTitleAndFocusEditor = useCallback(async () => {
+    if (!activeNoteEditable) return;
+    if (!hasUnsavedChanges || !titleDraft.trim()) {
+      setEditorFocusRequest((value) => value + 1);
+      return;
+    }
+
+    try {
+      validateNoteTitle(titleDraft);
+    } catch (error) {
+      setAppError(error instanceof Error ? error.message : String(error));
+      return;
+    }
+
+    titleCommitInFlightRef.current = true;
+    let clearInFinally = true;
+    try {
+      await persistDraft();
+      requestAnimationFrame(() => {
+        setEditorFocusRequest((value) => value + 1);
+        window.setTimeout(() => {
+          titleCommitInFlightRef.current = false;
+        }, 150);
+      });
+      clearInFinally = false;
+    } finally {
+      if (clearInFinally) titleCommitInFlightRef.current = false;
+    }
+  }, [activeNoteEditable, hasUnsavedChanges, persistDraft, titleDraft]);
 
   async function persistDraftForNavigation() {
     if (!hasUnsavedChanges) return;
@@ -3154,6 +3205,7 @@ export default function App() {
           ) : navigationStyle === "section-view" ? (
             <>
               <SectionViewFolderPane
+                activePath={activePath}
                 bookmarks={bookmarks}
                 bookmarksExpanded={metadata.bookmarksExpanded}
                 draggingItem={draggingItem}
@@ -3228,6 +3280,7 @@ export default function App() {
           ) : (
             <>
               <FolderPane
+                activePath={activePath}
                 bookmarks={bookmarks}
                 bookmarksExpanded={metadata.bookmarksExpanded}
                 disabled={!workspace}
@@ -3399,6 +3452,7 @@ export default function App() {
                   setTitleDraft(event.target.value);
                 }}
                 onBlur={() => {
+                  if (titleCommitInFlightRef.current) return;
                   if (activeNoteEditable && hasUnsavedChanges && titleDraft.trim()) {
                     void persistDraft();
                   }
@@ -3407,13 +3461,7 @@ export default function App() {
                   if (!activeNoteEditable) return;
                   if (event.key === "Enter" || event.key === "Tab") {
                     event.preventDefault();
-                    // Focus the editor first so it has focus before persistDraft's
-                    // content reload (triggered by activePath changing for a new
-                    // note) runs and could otherwise blur it away.
-                    setEditorFocusRequest((value) => value + 1);
-                    if (hasUnsavedChanges && titleDraft.trim()) {
-                      void persistDraft();
-                    }
+                    void commitTitleAndFocusEditor();
                   }
                 }}
                 placeholder="Untitled"
@@ -3795,6 +3843,7 @@ export default function App() {
 }
 
 function FolderPane({
+  activePath,
   bookmarks,
   bookmarksExpanded,
   disabled,
@@ -3830,6 +3879,7 @@ function FolderPane({
   onToggleSearch,
   onToggleMenu,
 }: {
+  activePath: string | null;
   bookmarks: BookmarkView[];
   bookmarksExpanded: boolean;
   disabled: boolean;
@@ -3896,6 +3946,8 @@ function FolderPane({
         />
       ) : null}
       <BookmarksSection
+        activeFolderPath={selectedFolder}
+        activeNotePath={activePath}
         bookmarks={bookmarks}
         expanded={bookmarksExpanded}
         onRemove={onRemoveBookmark}
@@ -4022,12 +4074,16 @@ function NotebookFooter({
 }
 
 function BookmarksSection({
+  activeFolderPath,
+  activeNotePath,
   bookmarks,
   expanded,
   onRemove,
   onSelect,
   onToggle,
 }: {
+  activeFolderPath?: string | null;
+  activeNotePath?: string | null;
   bookmarks: BookmarkView[];
   expanded: boolean;
   onRemove: (id: string) => void;
@@ -4042,39 +4098,46 @@ function BookmarksSection({
       </button>
       {expanded ? (
         <div className="bookmarks-list">
-          {bookmarks.map((bookmark) => (
-            <button
-              className={`bookmark-item ${bookmark.missing ? "is-missing" : ""}`}
-              key={bookmark.id}
-              type="button"
-              aria-disabled={bookmark.missing}
-              onClick={() => {
-                if (!bookmark.missing) onSelect(bookmark);
-              }}
-            >
-              <IconMark value={bookmark.icon} fallback={bookmark.kind === "folder" ? Folder : FileText} size={15} />
-              <span>{bookmark.title}</span>
-              <span
-                className="bookmark-remove"
-                role="button"
-                tabIndex={0}
-                title="Remove bookmark"
-                onClick={(event) => {
-                  event.stopPropagation();
-                  onRemove(bookmark.id);
-                }}
-                onKeyDown={(event) => {
-                  if (event.key === "Enter" || event.key === " ") {
-                    event.preventDefault();
-                    event.stopPropagation();
-                    onRemove(bookmark.id);
-                  }
+          {bookmarks.map((bookmark) => {
+            const isActive =
+              !bookmark.missing &&
+              ((bookmark.kind === "note" && bookmark.path === activeNotePath) ||
+                (bookmark.kind === "folder" && bookmark.path === activeFolderPath));
+
+            return (
+              <button
+                className={`bookmark-item${bookmark.missing ? " is-missing" : ""}${isActive ? " is-active" : ""}`}
+                key={bookmark.id}
+                type="button"
+                aria-disabled={bookmark.missing}
+                onClick={() => {
+                  if (!bookmark.missing) onSelect(bookmark);
                 }}
               >
-                <X size={13} />
-              </span>
-            </button>
-          ))}
+                <IconMark value={bookmark.icon} fallback={bookmark.kind === "folder" ? Folder : FileText} size={15} />
+                <span>{bookmark.title}</span>
+                <span
+                  className="bookmark-remove"
+                  role="button"
+                  tabIndex={0}
+                  title="Remove bookmark"
+                  onClick={(event) => {
+                    event.stopPropagation();
+                    onRemove(bookmark.id);
+                  }}
+                  onKeyDown={(event) => {
+                    if (event.key === "Enter" || event.key === " ") {
+                      event.preventDefault();
+                      event.stopPropagation();
+                      onRemove(bookmark.id);
+                    }
+                  }}
+                >
+                  <X size={13} />
+                </span>
+              </button>
+            );
+          })}
           {!bookmarks.length ? <p className="empty-bookmarks">No bookmarks</p> : null}
         </div>
       ) : null}
@@ -4289,6 +4352,7 @@ function FolderRow({
 // ---------- Section View first pane (root folders only) ----------
 
 function SectionViewFolderPane({
+  activePath,
   bookmarks,
   bookmarksExpanded,
   draggingItem,
@@ -4323,6 +4387,7 @@ function SectionViewFolderPane({
   onToggleMenu,
   onToggleSearch,
 }: {
+  activePath: string | null;
   bookmarks: BookmarkView[];
   bookmarksExpanded: boolean;
   draggingItem: DragItem;
@@ -4396,6 +4461,8 @@ function SectionViewFolderPane({
         />
       ) : null}
       <BookmarksSection
+        activeFolderPath={selectedFolder}
+        activeNotePath={activePath}
         bookmarks={bookmarks}
         expanded={bookmarksExpanded}
         onRemove={onRemoveBookmark}
@@ -4897,6 +4964,8 @@ function UnifiedTreePane({
       ) : null}
       {showBookmarks && onRemoveBookmark && onSelectBookmark && onToggleBookmarksExpanded ? (
         <BookmarksSection
+          activeFolderPath={selectedFolderPath}
+          activeNotePath={activePath}
           bookmarks={bookmarks}
           expanded={bookmarksExpanded}
           onRemove={onRemoveBookmark}

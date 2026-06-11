@@ -1019,14 +1019,15 @@ body.is-dragging-section * {
   border-radius: 6px;
   color: #817a70;
   background: transparent;
-  font-size: 12px;
+  font-size: var(--app-font-size);
   font-weight: 750;
   text-align: left;
   cursor: pointer;
 }
 
 .section-header-button:hover {
-  background: rgba(52, 48, 43, 0.07);
+  color: var(--accent-contrast);
+  background: var(--accent);
 }
 
 .bookmarks-list {
@@ -1045,12 +1046,24 @@ body.is-dragging-section * {
   border: 0;
   border-radius: 7px;
   background: transparent;
+  color: var(--text);
   text-align: left;
   cursor: pointer;
 }
 
-.bookmark-item:hover {
-  background: rgba(52, 48, 43, 0.07);
+.bookmark-item.is-active {
+  color: var(--accent-contrast);
+  background: var(--accent);
+}
+
+.bookmark-item.is-active:hover {
+  color: var(--accent-contrast);
+  background: var(--accent);
+}
+
+.bookmark-item:not(.is-active):hover {
+  color: var(--accent-contrast);
+  background: var(--accent);
 }
 
 .bookmark-item.is-missing {
@@ -4570,6 +4583,22 @@ html[data-theme="dark"] .palette-empty {
   color: #a9a096;
 }
 
+html[data-theme="dark"] .bookmark-item {
+  color: #d8d0c5;
+  background: transparent;
+}
+
+html[data-theme="dark"] .bookmark-item:not(.is-active):hover {
+  color: var(--accent-contrast);
+  background: var(--accent);
+}
+
+html[data-theme="dark"] .bookmark-item.is-active,
+html[data-theme="dark"] .bookmark-item.is-active:hover {
+  color: var(--accent-contrast);
+  background: var(--accent);
+}
+
 html[data-theme="dark"] .property-row {
   border-color: rgba(238, 232, 223, 0.1);
 }
@@ -4593,10 +4622,9 @@ html[data-theme="dark"] .note-tab.is-active,
 html[data-theme="dark"] .slash-item.is-selected,
 html[data-theme="dark"] .slash-item:hover,
 html[data-theme="dark"] .palette-result:hover,
-html[data-theme="dark"] .section-header-button:hover,
-html[data-theme="dark"] .bookmark-item:hover {
-  color: var(--accent-strong);
-  background: var(--accent-active);
+html[data-theme="dark"] .section-header-button:hover {
+  color: var(--accent-contrast);
+  background: var(--accent);
 }
 
 html[data-theme="dark"] .note-row.is-active,

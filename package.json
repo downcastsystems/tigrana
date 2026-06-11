@@ -9,7 +9,7 @@
     "build": "tsc && vite build",
     "preview": "vite preview",
     "tauri": "tauri",
-    "copy:app": "node scripts/copy-tauri-app.mjs",
+    "install:app": "npm run tauri -- build --bundles app && rm -rf \"/Applications/Tigrana.app\" && ditto \"src-tauri/target/release/bundle/macos/Tigrana.app\" \"/Applications/Tigrana.app\" && echo \"✓ Installed to /Applications\"",
     "lint": "eslint . --ext ts,tsx --report-unused-disable-directives --max-warnings 0"
   },
   "dependencies": {
