@@ -2403,6 +2403,11 @@ html[data-theme="dark"] .tab-list-separator {
   letter-spacing: 0;
 }
 
+.note-title-input:not(:disabled),
+.raw-markdown-input:not(:disabled) {
+  cursor: text !important;
+}
+
 .note-title-input::placeholder {
   color: #aaa197;
 }
@@ -2459,6 +2464,23 @@ html[data-theme="dark"] .tab-list-separator {
   width: min(880px, calc(100% - 72px));
   margin: 0 auto;
   padding: 28px 0 140px;
+}
+
+.editor-shell[data-editable="true"],
+.editor-shell[data-editable="true"] .editor-content,
+.editor-shell[data-editable="true"] .ProseMirror,
+.editor-shell[data-editable="true"] .ProseMirror p,
+.editor-shell[data-editable="true"] .ProseMirror h1,
+.editor-shell[data-editable="true"] .ProseMirror h2,
+.editor-shell[data-editable="true"] .ProseMirror h3,
+.editor-shell[data-editable="true"] .ProseMirror h4,
+.editor-shell[data-editable="true"] .ProseMirror h5,
+.editor-shell[data-editable="true"] .ProseMirror h6,
+.editor-shell[data-editable="true"] .ProseMirror li,
+.editor-shell[data-editable="true"] .ProseMirror blockquote,
+.editor-shell[data-editable="true"] .ProseMirror td,
+.editor-shell[data-editable="true"] .ProseMirror th {
+  cursor: text;
 }
 
 .note-surface.is-left-aligned .title-shell,

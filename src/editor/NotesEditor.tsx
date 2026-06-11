@@ -2600,6 +2600,7 @@ export function NotesEditor({ content, focusRequest, focusAtEndRequest, findRequ
   return (
     <div
       className="editor-shell"
+      data-editable={editable ? "true" : "false"}
       onMouseDown={(e) => {
         if (!editor || e.button !== 0) return;
         if ((e.target as HTMLElement | null)?.closest(".note-find-bar")) return;

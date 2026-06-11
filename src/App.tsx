@@ -96,6 +96,46 @@ function stopChromeMouseDown(event: React.MouseEvent) {
   event.stopPropagation();
 }
 
+function isEditableNoteTextCursorTarget(target: EventTarget | null) {
+  if (!(target instanceof Element)) return false;
+  if (document.body.classList.contains("is-resizing-pane")) return false;
+  if (document.body.classList.contains("is-dragging-note")) return false;
+  if (document.body.classList.contains("is-dragging-folder")) return false;
+
+  if (target.closest(".note-title-input:not(:disabled), .raw-markdown-input:not(:disabled)")) return true;
+
+  const editorShell = target.closest('.editor-shell[data-editable="true"]');
+  if (!editorShell) return false;
+  if (
+    target.closest(
+      [
+        "a",
+        "button",
+        "input",
+        "select",
+        "textarea",
+        "[role='button']",
+        "[contenteditable='false']",
+        ".format-bubble",
+        ".slash-menu",
+        ".note-find-bar",
+        ".image-resizable",
+        ".image-resize-handle",
+        ".code-block-controls",
+        ".code-block-side-tools",
+        ".table-axis-button",
+        ".table-context-menu",
+        ".table-column-handle",
+        ".table-row-handle",
+      ].join(", "),
+    )
+  ) {
+    return false;
+  }
+
+  return target === editorShell || Boolean(target.closest(".editor-content, .ProseMirror"));
+}
+
 const workspaceKey = "tigrana-workspace";
 const themeKey = "tigrana-theme";
 const accentKey = "tigrana-accent";
@@ -562,6 +602,35 @@ export default function App() {
     if (isTauri()) document.documentElement.dataset.tauri = "true";
     const platform = navigator.platform || "";
     if (/Mac|iPhone|iPad/.test(platform)) document.documentElement.dataset.platform = "mac";
+  }, []);
+
+  useEffect(() => {
+    let forcedTextCursor = false;
+    const clearCursor = () => {
+      if (!forcedTextCursor) return;
+      document.documentElement.style.cursor = "";
+      document.body.style.cursor = "";
+      forcedTextCursor = false;
+    };
+    const onPointerMove = (event: PointerEvent) => {
+      if (isEditableNoteTextCursorTarget(event.target)) {
+        document.documentElement.style.cursor = "text";
+        document.body.style.cursor = "text";
+        forcedTextCursor = true;
+      } else {
+        clearCursor();
+      }
+    };
+
+    window.addEventListener("pointermove", onPointerMove, true);
+    window.addEventListener("pointerleave", clearCursor, true);
+    window.addEventListener("blur", clearCursor);
+    return () => {
+      clearCursor();
+      window.removeEventListener("pointermove", onPointerMove, true);
+      window.removeEventListener("pointerleave", clearCursor, true);
+      window.removeEventListener("blur", clearCursor);
+    };
   }, []);
 
   useEffect(() => {
