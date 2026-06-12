@@ -3,6 +3,7 @@ use fs2::FileExt;
 mod link_index;
 mod note_history;
 mod notebook_paths;
+mod trash;
 use link_index::{
     ensure_note_id_in_content, forget_path_from_index, forget_subtree_from_index, link_index_path,
     move_index_path, parse_links_for_note, read_frontmatter_field, read_link_index_file,
@@ -33,8 +34,12 @@ use std::{collections::hash_map::DefaultHasher, process};
 use tauri::menu::{AboutMetadataBuilder, Menu, MenuItem, PredefinedMenuItem, Submenu};
 use tauri::{AppHandle, Emitter, Manager, WebviewWindow, WindowEvent, Wry};
 use tauri_plugin_dialog::DialogExt;
-use time::macros::format_description;
 use time::OffsetDateTime;
+use trash::{
+    cleanup_trash as cleanup_trash_for_notebook, list_trash as list_trash_for_notebook,
+    purge_trash as purge_trash_entry, purge_trash_all as purge_all_trash_for_notebook,
+    restore_trash as restore_trash_entry, trash_item, TrashEntry,
+};
 use uuid::Uuid;
 use walkdir::WalkDir;
 
@@ -154,23 +159,6 @@ struct NoteVersionsPayload {
 #[serde(rename_all = "camelCase")]
 struct EnsureIdentityPayload {
     workspace: String,
-}
-
-#[derive(Debug, Serialize, Deserialize, Clone)]
-#[serde(rename_all = "camelCase")]
-struct TrashEntry {
-    id: String,
-    kind: String,
-    original_path: String,
-    display_name: String,
-    trash_name: String,
-    deleted_at: u64,
-}
-
-#[derive(Debug, Serialize, Deserialize, Default)]
-struct TrashIndex {
-    #[serde(default)]
-    entries: Vec<TrashEntry>,
 }
 
 #[derive(Debug, Serialize, Deserialize, Default)]
@@ -835,260 +823,46 @@ fn restore_note_version(payload: NoteVersionPayload) -> Result<String, String> {
 
 // ---------- Recently Deleted (trash) ----------
 
-const TRASH_RETENTION_DAYS: u64 = 30;
-
-fn trash_root(workspace: &Path) -> PathBuf {
-    app_dir(workspace).join("trash")
-}
-
-fn trash_items_dir(workspace: &Path) -> PathBuf {
-    trash_root(workspace).join("items")
-}
-
-fn trash_index_path(workspace: &Path) -> PathBuf {
-    trash_root(workspace).join("index.json")
-}
-
-fn read_trash_index(workspace: &Path) -> Result<TrashIndex, String> {
-    let path = trash_index_path(workspace);
-    if !path.exists() {
-        return Ok(TrashIndex::default());
-    }
-    let bytes = fs::read(&path).map_err(|error| error.to_string())?;
-    if bytes.is_empty() {
-        return Ok(TrashIndex::default());
-    }
-    serde_json::from_slice::<TrashIndex>(&bytes).map_err(|error| error.to_string())
-}
-
-fn write_trash_index(workspace: &Path, index: &TrashIndex) -> Result<(), String> {
-    let root = trash_root(workspace);
-    fs::create_dir_all(&root).map_err(|error| error.to_string())?;
-    let json = serde_json::to_vec_pretty(index).map_err(|error| error.to_string())?;
-    fs::write(trash_index_path(workspace), json).map_err(|error| error.to_string())
-}
-
-fn now_millis() -> u64 {
-    std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
-        .map(|d| d.as_millis() as u64)
-        .unwrap_or(0)
-}
-
-fn date_suffix_from_millis(millis: u64) -> String {
-    let secs = (millis / 1000) as i64;
-    let datetime = OffsetDateTime::from_unix_timestamp(secs).unwrap_or(OffsetDateTime::UNIX_EPOCH);
-    let fmt = format_description!("[year]-[month]-[day]");
-    datetime
-        .format(&fmt)
-        .unwrap_or_else(|_| "unknown-date".to_string())
-}
-
-fn generate_trash_id() -> String {
-    let now = now_millis();
-    let mut state: u64 = now;
-    state ^= state << 13;
-    state ^= state >> 7;
-    state ^= state << 17;
-    format!("{}-{:08x}", now, (state & 0xffff_ffff) as u32)
-}
-
-fn split_basename(name: &str) -> (String, String) {
-    if let Some(idx) = name.rfind('.') {
-        if idx > 0 {
-            return (name[..idx].to_string(), name[idx..].to_string());
-        }
-    }
-    (name.to_string(), String::new())
-}
-
-fn unique_name_in_dir(dir: &Path, desired: &str, date_label: &str) -> String {
-    let target = dir.join(desired);
-    if !target.exists() {
-        return desired.to_string();
-    }
-    let (stem, ext) = split_basename(desired);
-    let with_date = format!("{stem} (deleted {date_label}){ext}");
-    if !dir.join(&with_date).exists() {
-        return with_date;
-    }
-    let mut counter = 2u32;
-    loop {
-        let candidate = format!("{stem} (deleted {date_label} {counter}){ext}");
-        if !dir.join(&candidate).exists() {
-            return candidate;
-        }
-        counter += 1;
-        if counter > 9999 {
-            return format!("{stem} (deleted {date_label} {}){ext}", generate_trash_id());
-        }
-    }
-}
-
-fn trash_item(workspace: &str, relative_path: &str, kind: &str) -> Result<TrashEntry, String> {
-    let root = safe_workspace(workspace)?;
-    let relative = normalize_relative(relative_path)?;
-    if relative.as_os_str().is_empty() {
-        return Err("The notebook root cannot be deleted.".to_string());
-    }
-    let source = root.join(&relative);
-    if !source.exists() {
-        return Err("That item no longer exists.".to_string());
-    }
-
-    let items_dir = trash_items_dir(&root);
-    fs::create_dir_all(&items_dir).map_err(|error| error.to_string())?;
-
-    let display_name = relative
-        .file_name()
-        .and_then(|n| n.to_str())
-        .unwrap_or("item")
-        .to_string();
-    let deleted_at = now_millis();
-    let date_label = date_suffix_from_millis(deleted_at);
-    let trash_name = unique_name_in_dir(&items_dir, &display_name, &date_label);
-    let target = items_dir.join(&trash_name);
-    fs::rename(&source, &target).map_err(|error| error.to_string())?;
-
-    let entry = TrashEntry {
-        id: generate_trash_id(),
-        kind: kind.to_string(),
-        original_path: relative_path.to_string(),
-        display_name,
-        trash_name,
-        deleted_at,
-    };
-
-    let mut index = read_trash_index(&root).unwrap_or_default();
-    index.entries.push(entry.clone());
-    write_trash_index(&root, &index)?;
-    Ok(entry)
-}
-
 #[tauri::command]
 fn trash_note(payload: DeletePathPayload) -> Result<TrashEntry, String> {
-    trash_item(&payload.workspace, &payload.path, "note")
+    let root = safe_workspace(&payload.workspace)?;
+    trash_item(&root, &payload.path, "note")
 }
 
 #[tauri::command]
 fn trash_folder(payload: DeletePathPayload) -> Result<TrashEntry, String> {
-    trash_item(&payload.workspace, &payload.path, "folder")
+    let root = safe_workspace(&payload.workspace)?;
+    trash_item(&root, &payload.path, "folder")
 }
 
 #[tauri::command]
 fn list_trash(workspace: String) -> Result<Vec<TrashEntry>, String> {
     let root = safe_workspace(&workspace)?;
-    let index = read_trash_index(&root).unwrap_or_default();
-    Ok(index.entries)
+    Ok(list_trash_for_notebook(&root))
 }
 
 #[tauri::command]
 fn restore_trash(payload: TrashIdPayload) -> Result<String, String> {
     let root = safe_workspace(&payload.workspace)?;
-    let mut index = read_trash_index(&root).unwrap_or_default();
-    let pos = index
-        .entries
-        .iter()
-        .position(|entry| entry.id == payload.id)
-        .ok_or_else(|| "Trash entry not found.".to_string())?;
-    let entry = index.entries[pos].clone();
-
-    let items_dir = trash_items_dir(&root);
-    let source = items_dir.join(&entry.trash_name);
-    if !source.exists() {
-        index.entries.remove(pos);
-        write_trash_index(&root, &index)?;
-        return Err("That deleted item is missing from the trash.".to_string());
-    }
-
-    let original_rel = normalize_relative(&entry.original_path)?;
-    let parent_rel = original_rel.parent().map(PathBuf::from).unwrap_or_default();
-    let parent_abs = root.join(&parent_rel);
-    if !parent_abs.starts_with(&root) {
-        return Err("Restore target escapes the notebook.".to_string());
-    }
-    fs::create_dir_all(&parent_abs).map_err(|error| error.to_string())?;
-
-    let desired_name = original_rel
-        .file_name()
-        .and_then(|n| n.to_str())
-        .unwrap_or(&entry.display_name)
-        .to_string();
-    let date_label = date_suffix_from_millis(entry.deleted_at);
-    let final_name = unique_name_in_dir(&parent_abs, &desired_name, &date_label);
-    let target = parent_abs.join(&final_name);
-    fs::rename(&source, &target).map_err(|error| error.to_string())?;
-
-    index.entries.remove(pos);
-    write_trash_index(&root, &index)?;
-
-    let restored = target
-        .strip_prefix(&root)
-        .map(|p| p.to_string_lossy().replace('\\', "/"))
-        .unwrap_or_else(|_| entry.original_path.clone());
-    Ok(restored)
+    restore_trash_entry(&root, &payload.id)
 }
 
 #[tauri::command]
 fn purge_trash(payload: TrashIdPayload) -> Result<(), String> {
     let root = safe_workspace(&payload.workspace)?;
-    let mut index = read_trash_index(&root).unwrap_or_default();
-    let pos = index
-        .entries
-        .iter()
-        .position(|entry| entry.id == payload.id)
-        .ok_or_else(|| "Trash entry not found.".to_string())?;
-    let entry = index.entries.remove(pos);
-
-    let target = trash_items_dir(&root).join(&entry.trash_name);
-    if target.exists() {
-        if target.is_dir() {
-            fs::remove_dir_all(&target).map_err(|error| error.to_string())?;
-        } else {
-            fs::remove_file(&target).map_err(|error| error.to_string())?;
-        }
-    }
-    write_trash_index(&root, &index)?;
-    Ok(())
+    purge_trash_entry(&root, &payload.id)
 }
 
 #[tauri::command]
 fn purge_trash_all(workspace: String) -> Result<(), String> {
     let root = safe_workspace(&workspace)?;
-    let items_dir = trash_items_dir(&root);
-    if items_dir.exists() {
-        fs::remove_dir_all(&items_dir).map_err(|error| error.to_string())?;
-    }
-    write_trash_index(&root, &TrashIndex::default())?;
-    Ok(())
+    purge_all_trash_for_notebook(&root)
 }
 
 #[tauri::command]
 fn cleanup_trash(workspace: String) -> Result<u32, String> {
     let root = safe_workspace(&workspace)?;
-    let mut index = read_trash_index(&root).unwrap_or_default();
-    let cutoff_millis = now_millis().saturating_sub(TRASH_RETENTION_DAYS * 24 * 60 * 60 * 1000);
-    let items_dir = trash_items_dir(&root);
-
-    let mut purged: u32 = 0;
-    index.entries.retain(|entry| {
-        if entry.deleted_at < cutoff_millis {
-            let target = items_dir.join(&entry.trash_name);
-            if target.exists() {
-                let _ = if target.is_dir() {
-                    fs::remove_dir_all(&target)
-                } else {
-                    fs::remove_file(&target)
-                };
-            }
-            purged += 1;
-            false
-        } else {
-            true
-        }
-    });
-    write_trash_index(&root, &index)?;
-    Ok(purged)
+    cleanup_trash_for_notebook(&root)
 }
 
 #[tauri::command]

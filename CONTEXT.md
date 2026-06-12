@@ -20,6 +20,10 @@ _Avoid_: Editor state, ProseMirror document
 The `.tigrana/history/notes` record of prior Markdown content for a note, keyed by stable note identity when available and retained by the native snapshot policy.
 _Avoid_: Undo stack, backups
 
+**Recently Deleted**:
+The `.tigrana/trash` holding area for deleted notes and folders, with an index of original paths, deletion times, and restore/purge state.
+_Avoid_: Trash can, recycle bin, archived notes
+
 **Folder**:
 A directory inside a notebook that participates in the note hierarchy.
 _Avoid_: Section, collection
