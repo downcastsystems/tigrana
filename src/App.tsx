@@ -59,8 +59,6 @@ import {
   listNotes,
   listNoteVersions,
   listTrash,
-  moveFolder,
-  moveNote,
   purgeTrash,
   purgeTrashAll,
   readAppPreferences,
@@ -73,8 +71,6 @@ import {
   revealPath,
   readWorkspaceMetadata,
   registerNotebookWindow,
-  renameFolder,
-  renameNote,
   SAMPLE_WORKSPACE,
   saveNote,
   decodeTitleFromFilename,
@@ -89,6 +85,13 @@ import {
 } from "./lib/notesApi";
 import type { NoteVersionEntry, TrashEntry } from "./lib/notesApi";
 import { normalizeMarkdownImageLines } from "./lib/markdown";
+import {
+  addFolderToOrder,
+  addToOrder,
+  createNotebookPathMutations,
+  removeFolderFromMetadata,
+  removeNoteFromMetadata,
+} from "./lib/notebookPathMutations";
 import { searchNotes } from "./lib/search";
 import type { BookmarkEntry, FolderEntry, LinkIndex, NavigationStyle, NotebookThemeColors, NoteEntry, NotePositionMetadata, SearchResult, WorkspaceMetadata } from "./types";
 
@@ -1353,6 +1356,21 @@ export default function App() {
     }
   }, [metadata, workspace]);
 
+  const notebookPathMutations = useMemo(() => createNotebookPathMutations({
+    activePath,
+    activeNoteLockRef,
+    folders,
+    navigationStyle,
+    notes,
+    refreshWorkspace,
+    selectedFolder,
+    setActivePath,
+    setOpenTabs,
+    setSelectedFolder,
+    updateMetadata,
+    workspace,
+  }), [activePath, folders, navigationStyle, notes, refreshWorkspace, selectedFolder, updateMetadata, workspace]);
+
   const setFolderExpanded = useCallback((path: string, expanded: boolean) => {
     updateMetadata((current) => ({
       ...current,
@@ -1433,14 +1451,6 @@ export default function App() {
       return tabs.map((tab) => (tab.id === tabId ? { ...tab, path } : tab));
     });
   }, [activeTabId, openTabs]);
-
-  function replaceOpenTabPath(oldPath: string, newPath: string) {
-    setOpenTabs((current) => current.map((tab) => (tab.path === oldPath ? { ...tab, path: newPath } : tab)));
-  }
-
-  function replaceOpenTabPrefix(oldPrefix: string, newPrefix: string) {
-    setOpenTabs((current) => current.map((tab) => (tab.path ? { ...tab, path: replacePathPrefix(tab.path, oldPrefix, newPrefix) } : tab)));
-  }
 
   const handleNoteLoadError = useCallback((error: unknown) => {
     const noteTitle =
@@ -1684,14 +1694,8 @@ export default function App() {
             placePathInActiveTab(note.path);
             updateMetadata((current) => addToOrder(current, note.parent_path, note.path));
           } else if (snapshot.path && snapshot.title !== snapshot.savedTitle) {
-            const renamed = await renameNote(snapshot.workspace, snapshot.path, snapshot.title);
+            const renamed = await notebookPathMutations.renameActiveNote(snapshot.path, snapshot.title);
             nextPath = renamed.path;
-            setActivePath(renamed.path);
-            if (activeNoteLockRef.current?.path === snapshot.path) {
-              activeNoteLockRef.current = { ...activeNoteLockRef.current, path: renamed.path };
-            }
-            replaceOpenTabPath(snapshot.path, renamed.path);
-            updateMetadata((current) => replaceOrderedPath(current, snapshot.path as string, renamed.path));
           }
 
           if (!nextPath) return;
@@ -1757,7 +1761,7 @@ export default function App() {
       const nextIndex = await readLinkIndex(snapshot.workspace);
       setLinkIndex(nextIndex);
     });
-  }, [acceptSavedMarkdown, acquireActiveNoteLock, activeNoteEditable, activePath, applyNoteAccess, draft, enqueueNoteSave, frontmatterDraft, frontmatterError, hasUnsavedBody, navigationStyle, noteOpen, pendingNote, placePathInActiveTab, rawMarkdownDraft, rawMarkdownVisible, recordNotePosition, refreshWorkspace, savedTitle, titleDraft, updateMetadata, workspace]);
+  }, [acceptSavedMarkdown, acquireActiveNoteLock, activeNoteEditable, activePath, applyNoteAccess, draft, enqueueNoteSave, frontmatterDraft, frontmatterError, hasUnsavedBody, navigationStyle, noteOpen, notebookPathMutations, pendingNote, placePathInActiveTab, rawMarkdownDraft, rawMarkdownVisible, recordNotePosition, refreshWorkspace, savedTitle, titleDraft, updateMetadata, workspace]);
 
   const commitTitleAndFocusEditor = useCallback(async () => {
     if (!activeNoteEditable) return;
@@ -2319,16 +2323,7 @@ export default function App() {
           setMoveDialog(null);
           return;
         }
-        const moved = await moveNote(workspace, target.path, targetParentPath);
-        updateMetadata((current) => moveNoteInMetadata(current, target.path, moved.path, sourceNote.parent_path, moved.parent_path));
-        if (activePath === target.path) {
-          setActivePath(moved.path);
-          if (activeNoteLockRef.current?.path === target.path) {
-            activeNoteLockRef.current = { ...activeNoteLockRef.current, path: moved.path };
-          }
-        }
-        replaceOpenTabPath(target.path, moved.path);
-        setSelectedFolder(moved.parent_path);
+        await notebookPathMutations.moveNote(target.path, targetParentPath);
       } else {
         if (target.path === targetParentPath || targetParentPath.startsWith(`${target.path}/`)) {
           setAppError("A folder cannot be moved inside itself.");
@@ -2339,21 +2334,8 @@ export default function App() {
           setMoveDialog(null);
           return;
         }
-        const moved = await moveFolder(workspace, target.path, targetParentPath);
-        updateMetadata((current) => moveFolderInMetadata(current, target.path, moved.path, sourceFolder.parent_path, moved.parent_path));
-        if (selectedFolder === target.path || selectedFolder.startsWith(`${target.path}/`)) {
-          setSelectedFolder(replacePathPrefix(selectedFolder, target.path, moved.path));
-        }
-        if (activePath?.startsWith(`${target.path}/`)) {
-          const nextActivePath = replacePathPrefix(activePath, target.path, moved.path);
-          setActivePath(nextActivePath);
-          if (activeNoteLockRef.current?.path === activePath) {
-            activeNoteLockRef.current = { ...activeNoteLockRef.current, path: nextActivePath };
-          }
-        }
-        replaceOpenTabPrefix(target.path, moved.path);
+        await notebookPathMutations.moveFolder(target.path, targetParentPath);
       }
-      await refreshWorkspace(workspace);
       setMoveDialog(null);
     } catch (error) {
       setAppError(error instanceof Error ? error.message : String(error));
@@ -2423,20 +2405,7 @@ export default function App() {
     if (!workspace || !propertyDialog) return;
     try {
       if (propertyDialog.kind === "rename-folder") {
-        const renamed = await renameFolder(workspace, propertyDialog.path, propertyDialog.value);
-        updateMetadata((current) => replaceFolderPathPrefix(current, propertyDialog.path, renamed.path));
-        if (selectedFolder === propertyDialog.path || selectedFolder.startsWith(`${propertyDialog.path}/`)) {
-          setSelectedFolder(replacePathPrefix(selectedFolder, propertyDialog.path, renamed.path));
-        }
-        if (activePath?.startsWith(`${propertyDialog.path}/`)) {
-          const nextActivePath = replacePathPrefix(activePath, propertyDialog.path, renamed.path);
-          setActivePath(nextActivePath);
-          if (activeNoteLockRef.current?.path === activePath) {
-            activeNoteLockRef.current = { ...activeNoteLockRef.current, path: nextActivePath };
-          }
-        }
-        replaceOpenTabPrefix(propertyDialog.path, renamed.path);
-        await refreshWorkspace(workspace);
+        await notebookPathMutations.renameFolder(propertyDialog.path, propertyDialog.value);
       } else if (propertyDialog.kind === "folder-color") {
         updateMetadata((current) => setMetadataValue(current, "folderColors", propertyDialog.path, propertyDialog.value.trim()));
       }
@@ -2528,38 +2497,14 @@ export default function App() {
         }
         const sourceNote = notes.find((note) => note.path === droppedItem.path);
         if (!sourceNote || sourceNote.parent_path === targetFolderPath) return;
-        const moved = await moveNote(workspace, droppedItem.path, targetFolderPath);
-        updateMetadata((current) => moveNoteInMetadata(current, droppedItem.path, moved.path, sourceNote.parent_path, moved.parent_path));
-        if (activePath === droppedItem.path) {
-          setActivePath(moved.path);
-          if (activeNoteLockRef.current?.path === droppedItem.path) {
-            activeNoteLockRef.current = { ...activeNoteLockRef.current, path: moved.path };
-          }
-        }
-        replaceOpenTabPath(droppedItem.path, moved.path);
-        setSelectedFolder(moved.parent_path);
+        await notebookPathMutations.moveNote(droppedItem.path, targetFolderPath);
       } else if (droppedItem.kind === "folder") {
         const sourceFolder = folders.find((folder) => folder.path === droppedItem.path);
         const targetFolder = folders.find((folder) => folder.path === targetFolderPath);
         if (!sourceFolder || !sourceFolder.path || !targetFolder) return;
         if (sourceFolder.parent_path === targetFolderPath) return;
-        const moved = await moveFolder(workspace, droppedItem.path, targetFolderPath);
-        updateMetadata((current) => moveFolderInMetadata(current, droppedItem.path, moved.path, sourceFolder.parent_path, moved.parent_path));
-        if (selectedFolder === droppedItem.path || selectedFolder.startsWith(`${droppedItem.path}/`)) {
-          setSelectedFolder(replacePathPrefix(selectedFolder, droppedItem.path, moved.path));
-        } else {
-          setSelectedFolder(moved.path);
-        }
-        if (activePath?.startsWith(`${droppedItem.path}/`)) {
-          const nextActivePath = replacePathPrefix(activePath, droppedItem.path, moved.path);
-          setActivePath(nextActivePath);
-          if (activeNoteLockRef.current?.path === activePath) {
-            activeNoteLockRef.current = { ...activeNoteLockRef.current, path: nextActivePath };
-          }
-        }
-        replaceOpenTabPrefix(droppedItem.path, moved.path);
+        await notebookPathMutations.moveFolder(droppedItem.path, targetFolderPath, { selectMovedFolder: true });
       }
-      await refreshWorkspace(workspace);
     } catch (error) {
       setAppError(error instanceof Error ? error.message : String(error));
     } finally {
@@ -2610,39 +2555,9 @@ export default function App() {
     }
 
     try {
-      const moved = await moveFolder(workspace, sourceFolder.path, targetFolder.parent_path);
-      updateMetadata((current) => {
-        const relocated = moveFolderInMetadata(current, sourceFolder.path, moved.path, sourceFolder.parent_path, moved.parent_path);
-        const siblingPaths = orderFolders(
-          folders
-            .filter((folder) => folder.parent_path === targetFolder.parent_path && folder.path !== sourceFolder.path)
-            .map((folder) => ({ ...folder, children: [] })),
-          targetFolder.parent_path,
-          relocated,
-        ).map((folder) => folder.path);
-        const nextOrder = siblingPaths.filter((path) => path !== moved.path);
-        const targetIndex = Math.max(0, nextOrder.indexOf(targetFolder.path));
-        nextOrder.splice(targetIndex + (placement === "after" ? 1 : 0), 0, moved.path);
-        return {
-          ...relocated,
-          folderOrder: {
-            ...relocated.folderOrder,
-            [targetFolder.parent_path]: nextOrder,
-          },
-        };
+      await notebookPathMutations.moveFolder(sourceFolder.path, targetFolder.parent_path, {
+        siblingPlacement: { targetPath: targetFolder.path, placement },
       });
-      if (selectedFolder === sourceFolder.path || selectedFolder.startsWith(`${sourceFolder.path}/`)) {
-        setSelectedFolder(replacePathPrefix(selectedFolder, sourceFolder.path, moved.path));
-      }
-      if (activePath?.startsWith(`${sourceFolder.path}/`)) {
-        const nextActivePath = replacePathPrefix(activePath, sourceFolder.path, moved.path);
-        setActivePath(nextActivePath);
-        if (activeNoteLockRef.current?.path === activePath) {
-          activeNoteLockRef.current = { ...activeNoteLockRef.current, path: nextActivePath };
-        }
-      }
-      replaceOpenTabPrefix(sourceFolder.path, moved.path);
-      await refreshWorkspace(workspace);
     } catch (error) {
       setAppError(error instanceof Error ? error.message : String(error));
     } finally {
@@ -7693,143 +7608,6 @@ function extractOutline(title: string, body: string) {
   }));
 }
 
-function addToOrder(metadata: WorkspaceMetadata, folder: string, notePath: string): WorkspaceMetadata {
-  return {
-    ...metadata,
-    noteOrder: {
-      ...metadata.noteOrder,
-      [folder]: [...(metadata.noteOrder[folder] ?? []).filter((path) => path !== notePath), notePath],
-    },
-  };
-}
-
-function addFolderToOrder(metadata: WorkspaceMetadata, parent: string, folderPath: string): WorkspaceMetadata {
-  return {
-    ...metadata,
-    folderOrder: {
-      ...metadata.folderOrder,
-      [parent]: [...(metadata.folderOrder[parent] ?? []).filter((path) => path !== folderPath), folderPath],
-    },
-  };
-}
-
-function replaceOrderedPath(metadata: WorkspaceMetadata, oldPath: string, newPath: string): WorkspaceMetadata {
-  const noteOrder = Object.fromEntries(
-    Object.entries(metadata.noteOrder).map(([folder, paths]) => [folder, paths.map((path) => (path === oldPath ? newPath : path))]),
-  );
-  const pinnedNotes = { ...metadata.pinnedNotes };
-  if (pinnedNotes[oldPath]) {
-    delete pinnedNotes[oldPath];
-    pinnedNotes[newPath] = true;
-  }
-  const noteIcons = { ...metadata.noteIcons };
-  if (noteIcons[oldPath]) {
-    noteIcons[newPath] = noteIcons[oldPath];
-    delete noteIcons[oldPath];
-  }
-  const notePositions = { ...metadata.notePositions };
-  if (notePositions[oldPath]) {
-    notePositions[newPath] = { ...notePositions[oldPath], path: newPath };
-    delete notePositions[oldPath];
-  }
-  const bookmarks = metadata.bookmarks.map((bookmark) =>
-    bookmark.kind === "note" && bookmark.path === oldPath ? { ...bookmark, path: newPath } : bookmark,
-  );
-  return { ...metadata, noteOrder, pinnedNotes, noteIcons, notePositions, bookmarks };
-}
-
-function removeNoteFromMetadata(metadata: WorkspaceMetadata, notePath: string): WorkspaceMetadata {
-  return {
-    ...metadata,
-    noteOrder: Object.fromEntries(
-      Object.entries(metadata.noteOrder).map(([folder, paths]) => [folder, paths.filter((path) => path !== notePath)]),
-    ),
-    pinnedNotes: Object.fromEntries(Object.entries(metadata.pinnedNotes).filter(([path]) => path !== notePath)),
-    noteIcons: Object.fromEntries(Object.entries(metadata.noteIcons).filter(([path]) => path !== notePath)),
-    notePositions: Object.fromEntries(Object.entries(metadata.notePositions).filter(([path]) => path !== notePath)),
-    bookmarks: metadata.bookmarks.filter((bookmark) => bookmark.kind !== "note" || bookmark.path !== notePath),
-  };
-}
-
-function moveNoteInMetadata(metadata: WorkspaceMetadata, oldPath: string, newPath: string, oldFolder: string, newFolder: string): WorkspaceMetadata {
-  const afterPathReplace = replaceOrderedPath(metadata, oldPath, newPath);
-  const oldOrder = (afterPathReplace.noteOrder[oldFolder] ?? []).filter((path) => path !== newPath);
-  const newOrder = [...(afterPathReplace.noteOrder[newFolder] ?? []).filter((path) => path !== newPath), newPath];
-  return {
-    ...afterPathReplace,
-    noteOrder: {
-      ...afterPathReplace.noteOrder,
-      [oldFolder]: oldOrder,
-      [newFolder]: newOrder,
-    },
-  };
-}
-
-function moveFolderInMetadata(metadata: WorkspaceMetadata, oldPath: string, newPath: string, oldParent: string, newParent: string): WorkspaceMetadata {
-  const replaced = replaceFolderPathPrefix(metadata, oldPath, newPath);
-  const oldOrder = (replaced.folderOrder[oldParent] ?? []).filter((path) => path !== newPath);
-  const newOrder = [...(replaced.folderOrder[newParent] ?? []).filter((path) => path !== newPath), newPath];
-  return {
-    ...replaced,
-    folderOrder: {
-      ...replaced.folderOrder,
-      [oldParent]: oldOrder,
-      [newParent]: newOrder,
-    },
-  };
-}
-
-function replaceFolderPathPrefix(metadata: WorkspaceMetadata, oldPrefix: string, newPrefix: string): WorkspaceMetadata {
-  const folderOrder = Object.fromEntries(
-    Object.entries(metadata.folderOrder).map(([folder, paths]) => [
-      replacePathPrefix(folder, oldPrefix, newPrefix),
-      paths.map((path) => replacePathPrefix(path, oldPrefix, newPrefix)),
-    ]),
-  );
-  const noteOrder = Object.fromEntries(
-    Object.entries(metadata.noteOrder).map(([folder, paths]) => [
-      replacePathPrefix(folder, oldPrefix, newPrefix),
-      paths.map((path) => replacePathPrefix(path, oldPrefix, newPrefix)),
-    ]),
-  );
-  const pinnedNotes = Object.fromEntries(Object.entries(metadata.pinnedNotes).map(([path, pinned]) => [replacePathPrefix(path, oldPrefix, newPrefix), pinned]));
-  const folderIcons = Object.fromEntries(Object.entries(metadata.folderIcons).map(([path, icon]) => [replacePathPrefix(path, oldPrefix, newPrefix), icon]));
-  const folderColors = Object.fromEntries(Object.entries(metadata.folderColors).map(([path, color]) => [replacePathPrefix(path, oldPrefix, newPrefix), color]));
-  const expandedFolders = Object.fromEntries(Object.entries(metadata.expandedFolders).map(([path, expanded]) => [replacePathPrefix(path, oldPrefix, newPrefix), expanded]));
-  const noteIcons = Object.fromEntries(Object.entries(metadata.noteIcons).map(([path, icon]) => [replacePathPrefix(path, oldPrefix, newPrefix), icon]));
-  const notePositions = Object.fromEntries(
-    Object.entries(metadata.notePositions).map(([path, position]) => {
-      const nextPath = replacePathPrefix(path, oldPrefix, newPrefix);
-      return [nextPath, { ...position, path: nextPath }];
-    }),
-  );
-  const bookmarks = metadata.bookmarks.map((bookmark) => ({
-    ...bookmark,
-    path: replacePathPrefix(bookmark.path, oldPrefix, newPrefix),
-  }));
-  return { ...metadata, folderOrder, noteOrder, pinnedNotes, folderIcons, folderColors, expandedFolders, noteIcons, notePositions, bookmarks };
-}
-
-function removeFolderFromMetadata(metadata: WorkspaceMetadata, folderPath: string): WorkspaceMetadata {
-  const isInFolder = (path: string) => path === folderPath || path.startsWith(`${folderPath}/`);
-  return {
-    ...metadata,
-    folderOrder: Object.fromEntries(
-      Object.entries(metadata.folderOrder)
-        .filter(([folder]) => !isInFolder(folder))
-        .map(([folder, paths]) => [folder, paths.filter((path) => !isInFolder(path))]),
-    ),
-    noteOrder: Object.fromEntries(Object.entries(metadata.noteOrder).filter(([folder]) => !isInFolder(folder))),
-    pinnedNotes: Object.fromEntries(Object.entries(metadata.pinnedNotes).filter(([path]) => !isInFolder(path))),
-    folderIcons: Object.fromEntries(Object.entries(metadata.folderIcons).filter(([path]) => !isInFolder(path))),
-    folderColors: Object.fromEntries(Object.entries(metadata.folderColors).filter(([path]) => !isInFolder(path))),
-    expandedFolders: Object.fromEntries(Object.entries(metadata.expandedFolders).filter(([path]) => !isInFolder(path))),
-    noteIcons: Object.fromEntries(Object.entries(metadata.noteIcons).filter(([path]) => !isInFolder(path))),
-    notePositions: Object.fromEntries(Object.entries(metadata.notePositions).filter(([path]) => !isInFolder(path))),
-    bookmarks: metadata.bookmarks.filter((bookmark) => !isInFolder(bookmark.path)),
-  };
-}
-
 function setMetadataValue(metadata: WorkspaceMetadata, key: "folderIcons" | "folderColors" | "noteIcons", path: string, value: string): WorkspaceMetadata {
   const values: Record<string, string> = { ...metadata[key] };
   if (value) {
@@ -7838,12 +7616,6 @@ function setMetadataValue(metadata: WorkspaceMetadata, key: "folderIcons" | "fol
     delete values[path];
   }
   return { ...metadata, [key]: values };
-}
-
-function replacePathPrefix(path: string, oldPrefix: string, newPrefix: string) {
-  if (path === oldPrefix) return newPrefix;
-  if (path.startsWith(`${oldPrefix}/`)) return `${newPrefix}${path.slice(oldPrefix.length)}`;
-  return path;
 }
 
 function isLucideIcon(value: unknown): value is LucideIcon {
