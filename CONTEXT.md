@@ -16,6 +16,10 @@ _Avoid_: Page, document
 The parsed representation of a note's Markdown content, including frontmatter, body text, validation state, outline, preview, and text stats.
 _Avoid_: Editor state, ProseMirror document
 
+**Note history**:
+The `.tigrana/history/notes` record of prior Markdown content for a note, keyed by stable note identity when available and retained by the native snapshot policy.
+_Avoid_: Undo stack, backups
+
 **Folder**:
 A directory inside a notebook that participates in the note hierarchy.
 _Avoid_: Section, collection
