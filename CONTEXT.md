@@ -24,6 +24,10 @@ _Avoid_: Undo stack, backups
 The `.tigrana/trash` holding area for deleted notes and folders, with an index of original paths, deletion times, and restore/purge state.
 _Avoid_: Trash can, recycle bin, archived notes
 
+**Notebook assets**:
+Files under `.assets/` that are referenced from Markdown notes, including pasted images saved by the native asset pipeline.
+_Avoid_: Uploads, blobs, media library
+
 **Folder**:
 A directory inside a notebook that participates in the note hierarchy.
 _Avoid_: Section, collection
