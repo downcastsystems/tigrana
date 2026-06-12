@@ -12,6 +12,10 @@ _Avoid_: Workspace, vault, project
 An ordinary Markdown file inside a notebook.
 _Avoid_: Page, document
 
+**Note document**:
+The parsed representation of a note's Markdown content, including frontmatter, body text, validation state, outline, preview, and text stats.
+_Avoid_: Editor state, ProseMirror document
+
 **Folder**:
 A directory inside a notebook that participates in the note hierarchy.
 _Avoid_: Section, collection
