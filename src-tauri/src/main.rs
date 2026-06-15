@@ -3,27 +3,32 @@ mod assets;
 mod link_index;
 mod note_history;
 mod notebook_paths;
+mod notebook_storage;
 mod trash;
 use assets::{
     read_asset_data_url as read_asset_data_url_for_notebook, save_asset as save_asset_for_notebook,
     save_clipboard_image_asset as save_clipboard_image_asset_for_notebook, SaveAssetPayload,
 };
 use link_index::{
-    ensure_note_id_in_content, forget_path_from_index, forget_subtree_from_index, link_index_path,
-    move_index_path, parse_links_for_note, read_frontmatter_field, read_link_index_file,
-    rebuild_index_for_root, reindex_note_after_save, repair_inbound_links, repair_subtree_paths,
-    set_note_id_in_content, split_frontmatter, unique_note_relative, update_index_links_for_source,
-    write_folder_sidecar, write_link_index_file, FolderRecord, FolderSidecar, LinkIndex,
-    NoteRecord,
+    link_index_path, read_frontmatter_field, read_link_index_file, rebuild_index_for_root,
+    split_frontmatter, LinkIndex,
 };
 use note_history::{
-    create_note_version_snapshot, list_note_versions as list_note_versions_for_note,
-    note_history_reason, read_note_version as read_note_version_content,
-    restore_note_version as restore_note_version_content, NoteSnapshotMode, NoteVersionEntry,
+    list_note_versions as list_note_versions_for_note,
+    read_note_version as read_note_version_content,
+    restore_note_version as restore_note_version_content, NoteVersionEntry,
 };
 use notebook_paths::{
-    app_dir, is_hidden_entry, metadata_path, normalize_relative, note_title_from_path,
-    safe_note_path, safe_workspace, validate_note_title,
+    app_dir, is_hidden_entry, metadata_path, normalize_relative, safe_note_path, safe_workspace,
+};
+use notebook_storage::{
+    create_folder as create_folder_in_notebook, create_note as create_note_in_notebook,
+    delete_folder as delete_folder_from_notebook, delete_note as delete_note_from_notebook,
+    duplicate_note as duplicate_note_in_notebook, list_folders as list_folders_in_notebook,
+    list_notes as list_notes_in_notebook, move_folder as move_folder_in_notebook,
+    move_note as move_note_in_notebook, read_note as read_note_from_notebook,
+    rename_folder as rename_folder_in_notebook, rename_note as rename_note_in_notebook,
+    save_note as save_note_to_notebook, FolderEntry, NoteEntry,
 };
 use notify::{Config, EventKind, RecommendedWatcher, RecursiveMode, Watcher};
 use serde::{Deserialize, Serialize};
@@ -44,23 +49,6 @@ use trash::{
     purge_trash as purge_trash_entry, purge_trash_all as purge_all_trash_for_notebook,
     restore_trash as restore_trash_entry, trash_item, TrashEntry,
 };
-use uuid::Uuid;
-use walkdir::WalkDir;
-
-#[derive(Debug, Serialize)]
-struct NoteEntry {
-    path: String,
-    title: String,
-    parent_path: String,
-    updated_at: Option<u64>,
-}
-
-#[derive(Debug, Serialize)]
-struct FolderEntry {
-    path: String,
-    name: String,
-    parent_path: String,
-}
 
 #[derive(Debug, Deserialize)]
 struct SaveNotePayload {
@@ -245,529 +233,79 @@ struct WorkspaceMetadata {
 #[tauri::command]
 fn list_notes(workspace: String) -> Result<Vec<NoteEntry>, String> {
     let root = safe_workspace(&workspace)?;
-    let mut notes = Vec::new();
-
-    for entry in WalkDir::new(&root)
-        .into_iter()
-        .filter_entry(|entry| !is_hidden_entry(entry.path()))
-    {
-        let entry = entry.map_err(|error| error.to_string())?;
-        let path = entry.path();
-
-        if !path.is_file() || path.extension().and_then(|ext| ext.to_str()) != Some("md") {
-            continue;
-        }
-
-        let relative = path
-            .strip_prefix(&root)
-            .map_err(|error| error.to_string())?
-            .to_string_lossy()
-            .replace('\\', "/");
-        let parent_path = Path::new(&relative)
-            .parent()
-            .map(|parent| parent.to_string_lossy().replace('\\', "/"))
-            .unwrap_or_default();
-        let title = path
-            .file_stem()
-            .and_then(|name| name.to_str())
-            .unwrap_or("Untitled")
-            .to_string();
-        let updated_at = fs::metadata(path)
-            .and_then(|metadata| metadata.modified())
-            .ok()
-            .and_then(|time| time.duration_since(std::time::UNIX_EPOCH).ok())
-            .map(|duration| duration.as_secs());
-
-        notes.push(NoteEntry {
-            path: relative,
-            title,
-            parent_path,
-            updated_at,
-        });
-    }
-
-    notes.sort_by(|a, b| a.path.cmp(&b.path));
-    Ok(notes)
+    list_notes_in_notebook(&root)
 }
 
 #[tauri::command]
 fn list_folders(workspace: String) -> Result<Vec<FolderEntry>, String> {
     let root = safe_workspace(&workspace)?;
-    let mut folders = vec![FolderEntry {
-        path: String::new(),
-        name: root
-            .file_name()
-            .and_then(|name| name.to_str())
-            .unwrap_or("Notebook")
-            .to_string(),
-        parent_path: String::new(),
-    }];
-
-    if !root.exists() {
-        return Ok(folders);
-    }
-
-    for entry in WalkDir::new(&root)
-        .min_depth(1)
-        .into_iter()
-        .filter_entry(|entry| !is_hidden_entry(entry.path()))
-    {
-        let entry = entry.map_err(|error| error.to_string())?;
-        let path = entry.path();
-        if !path.is_dir() {
-            continue;
-        }
-
-        let relative = path
-            .strip_prefix(&root)
-            .map_err(|error| error.to_string())?
-            .to_string_lossy()
-            .replace('\\', "/");
-        let parent_path = Path::new(&relative)
-            .parent()
-            .map(|parent| parent.to_string_lossy().replace('\\', "/"))
-            .unwrap_or_default();
-        let name = path
-            .file_name()
-            .and_then(|name| name.to_str())
-            .unwrap_or("Untitled")
-            .to_string();
-
-        folders.push(FolderEntry {
-            path: relative,
-            name,
-            parent_path,
-        });
-    }
-
-    folders.sort_by(|a, b| a.path.cmp(&b.path));
-    Ok(folders)
+    list_folders_in_notebook(&root)
 }
 
 #[tauri::command]
 fn read_note(workspace: String, path: String) -> Result<String, String> {
-    let note_path = safe_note_path(&workspace, &path)?;
-    fs::read_to_string(note_path).map_err(|error| error.to_string())
+    let root = safe_workspace(&workspace)?;
+    read_note_from_notebook(&root, &path)
 }
 
 #[tauri::command]
 fn save_note(payload: SaveNotePayload) -> Result<String, String> {
     let root = safe_workspace(&payload.workspace)?;
-    let note_path = safe_note_path(&payload.workspace, &payload.path)?;
-    if let Some(parent) = note_path.parent() {
-        fs::create_dir_all(parent).map_err(|error| error.to_string())?;
-    }
-    // Make sure the note carries an id in its frontmatter.
-    let (_id, content_with_id, _mutated) = ensure_note_id_in_content(&payload.content);
-    if let Ok(existing) = fs::read_to_string(&note_path) {
-        let reason = note_history_reason(&existing, &content_with_id);
-        let _ = create_note_version_snapshot(
-            &root,
-            &payload.path,
-            &existing,
-            &content_with_id,
-            &reason,
-            NoteSnapshotMode::Throttled,
-        );
-    }
-    fs::write(&note_path, &content_with_id).map_err(|error| error.to_string())?;
-    let _ = reindex_note_after_save(&root, &payload.path);
-    // Return what was actually written so the frontend can tell its own write
-    // apart from genuine external changes (Rust may have normalized line
-    // endings or added an id frontmatter).
-    Ok(content_with_id)
+    save_note_to_notebook(&root, &payload.path, &payload.content)
 }
 
 #[tauri::command]
 fn create_note(payload: CreateNotePayload) -> Result<NoteEntry, String> {
     let root = safe_workspace(&payload.workspace)?;
-    validate_note_title(&payload.title)?;
-    let file_name = payload.title.trim();
-    let parent = normalize_relative(&payload.parent_path)?;
-    let relative = if parent.as_os_str().is_empty() {
-        PathBuf::from(format!("{file_name}.md"))
-    } else {
-        parent.join(format!("{file_name}.md"))
-    };
-    let absolute = root.join(&relative);
-
-    if let Some(parent) = absolute.parent() {
-        fs::create_dir_all(parent).map_err(|error| error.to_string())?;
-    }
-
-    if absolute.exists() {
-        return Err("A note with that title already exists in this folder.".to_string());
-    }
-
-    // New notes are born with a stable id in their frontmatter.
-    let new_id = Uuid::new_v4().to_string();
-    let initial_content = format!("---\nid: {new_id}\n---\n\n");
-    fs::write(&absolute, &initial_content).map_err(|error| error.to_string())?;
-
-    let path = relative.to_string_lossy().replace('\\', "/");
-    // Register the note in the link index.
-    let mut index = read_link_index_file(&root);
-    index.notes_by_id.insert(
-        new_id.clone(),
-        NoteRecord {
-            id: new_id.clone(),
-            path: path.clone(),
-            title: note_title_from_path(&path),
-        },
-    );
-    index.path_to_id.insert(path.clone(), new_id);
-    let _ = write_link_index_file(&root, &index);
-
-    Ok(NoteEntry {
-        path: path.clone(),
-        title: payload.title,
-        parent_path: Path::new(&path)
-            .parent()
-            .map(|parent| parent.to_string_lossy().replace('\\', "/"))
-            .unwrap_or_default(),
-        updated_at: None,
-    })
+    create_note_in_notebook(&root, &payload.parent_path, &payload.title)
 }
 
 #[tauri::command]
 fn duplicate_note(payload: DuplicateNotePayload) -> Result<NoteEntry, String> {
     let root = safe_workspace(&payload.workspace)?;
-    let source_relative = normalize_relative(&payload.path)?;
-    let source_path = root.join(&source_relative);
-    if !source_path.exists() {
-        return Err("The note could not be found.".to_string());
-    }
-
-    let parent = source_relative
-        .parent()
-        .map(PathBuf::from)
-        .unwrap_or_default();
-    let source_stem = source_relative
-        .file_stem()
-        .and_then(|name| name.to_str())
-        .unwrap_or("Untitled");
-    let copy_stem = format!("Copy of {source_stem}");
-    let new_relative = unique_note_relative(&root, &parent, &copy_stem);
-    let new_path = root.join(&new_relative);
-    if let Some(parent) = new_path.parent() {
-        fs::create_dir_all(parent).map_err(|error| error.to_string())?;
-    }
-
-    let source_content = fs::read_to_string(&source_path).map_err(|error| error.to_string())?;
-    let new_id = Uuid::new_v4().to_string();
-    let duplicate_content = set_note_id_in_content(&source_content, &new_id);
-    fs::write(&new_path, &duplicate_content).map_err(|error| error.to_string())?;
-
-    let path = new_relative.to_string_lossy().replace('\\', "/");
-    let title = note_title_from_path(&path);
-    let mut index = read_link_index_file(&root);
-    index.notes_by_id.insert(
-        new_id.clone(),
-        NoteRecord {
-            id: new_id.clone(),
-            path: path.clone(),
-            title: title.clone(),
-        },
-    );
-    index.path_to_id.insert(path.clone(), new_id.clone());
-    let refs = parse_links_for_note(&new_id, &duplicate_content, &index);
-    update_index_links_for_source(&mut index, &new_id, refs);
-    let _ = write_link_index_file(&root, &index);
-
-    Ok(NoteEntry {
-        path: path.clone(),
-        title,
-        parent_path: Path::new(&path)
-            .parent()
-            .map(|parent| parent.to_string_lossy().replace('\\', "/"))
-            .unwrap_or_default(),
-        updated_at: None,
-    })
+    duplicate_note_in_notebook(&root, &payload.path)
 }
 
 #[tauri::command]
 fn rename_note(payload: RenameNotePayload) -> Result<NoteEntry, String> {
-    validate_note_title(&payload.title)?;
     let root = safe_workspace(&payload.workspace)?;
-    let old_path = safe_note_path(&payload.workspace, &payload.path)?;
-    let parent = Path::new(&payload.path)
-        .parent()
-        .map(PathBuf::from)
-        .unwrap_or_default();
-    let new_relative = if parent.as_os_str().is_empty() {
-        PathBuf::from(format!("{}.md", payload.title.trim()))
-    } else {
-        parent.join(format!("{}.md", payload.title.trim()))
-    };
-    let new_path = root.join(&new_relative);
-
-    let new_rel_str = new_relative.to_string_lossy().replace('\\', "/");
-    let old_rel_str = payload.path.clone();
-
-    if old_path != new_path {
-        if new_path.exists() {
-            return Err("A note with that title already exists in this folder.".to_string());
-        }
-        fs::rename(&old_path, &new_path).map_err(|error| error.to_string())?;
-
-        // Repair inbound links and update the index.
-        let mut index = read_link_index_file(&root);
-        if let Some(id) = index.path_to_id.get(&old_rel_str).cloned() {
-            move_index_path(&mut index, &old_rel_str, &new_rel_str, &id, "note");
-            let _ = repair_inbound_links(&root, &mut index, &id, &old_rel_str, &new_rel_str);
-            let _ = write_link_index_file(&root, &index);
-        }
-    }
-
-    let path = new_rel_str;
-    Ok(NoteEntry {
-        path: path.clone(),
-        title: payload.title.trim().to_string(),
-        parent_path: Path::new(&path)
-            .parent()
-            .map(|parent| parent.to_string_lossy().replace('\\', "/"))
-            .unwrap_or_default(),
-        updated_at: None,
-    })
+    rename_note_in_notebook(&root, &payload.path, &payload.title)
 }
 
 #[tauri::command]
 fn create_folder(payload: FolderPayload) -> Result<FolderEntry, String> {
-    validate_note_title(&payload.name)?;
     let root = safe_workspace(&payload.workspace)?;
-    let parent = normalize_relative(&payload.parent_path)?;
-    let relative = if parent.as_os_str().is_empty() {
-        PathBuf::from(payload.name.trim())
-    } else {
-        parent.join(payload.name.trim())
-    };
-    let absolute = root.join(&relative);
-    if absolute.exists() {
-        return Err("A folder with that name already exists here.".to_string());
-    }
-    fs::create_dir_all(&absolute).map_err(|error| error.to_string())?;
-    let path = relative.to_string_lossy().replace('\\', "/");
-
-    // Mint folder id, write sidecar, register in index.
-    let folder_id = Uuid::new_v4().to_string();
-    let _ = write_folder_sidecar(
-        &root,
-        &path,
-        &FolderSidecar {
-            id: folder_id.clone(),
-        },
-    );
-    let mut index = read_link_index_file(&root);
-    index.folders_by_id.insert(
-        folder_id.clone(),
-        FolderRecord {
-            id: folder_id.clone(),
-            path: path.clone(),
-        },
-    );
-    index.path_to_id.insert(path.clone(), folder_id);
-    let _ = write_link_index_file(&root, &index);
-
-    Ok(FolderEntry {
-        path: path.clone(),
-        name: payload.name.trim().to_string(),
-        parent_path: Path::new(&path)
-            .parent()
-            .map(|parent| parent.to_string_lossy().replace('\\', "/"))
-            .unwrap_or_default(),
-    })
+    create_folder_in_notebook(&root, &payload.parent_path, &payload.name)
 }
 
 #[tauri::command]
 fn rename_folder(payload: RenameFolderPayload) -> Result<FolderEntry, String> {
-    validate_note_title(&payload.name)?;
     let root = safe_workspace(&payload.workspace)?;
-    let old_relative = normalize_relative(&payload.path)?;
-    if old_relative.as_os_str().is_empty() {
-        return Err("The notebook root cannot be renamed.".to_string());
-    }
-
-    let parent = Path::new(&payload.path)
-        .parent()
-        .map(PathBuf::from)
-        .unwrap_or_default();
-    let new_relative = if parent.as_os_str().is_empty() {
-        PathBuf::from(payload.name.trim())
-    } else {
-        parent.join(payload.name.trim())
-    };
-    let old_path = root.join(&old_relative);
-    let new_path = root.join(&new_relative);
-
-    let old_rel_str = payload.path.clone();
-    let new_rel_str = new_relative.to_string_lossy().replace('\\', "/");
-
-    if old_path != new_path {
-        if new_path.exists() {
-            return Err("A folder with that name already exists here.".to_string());
-        }
-        fs::rename(&old_path, &new_path).map_err(|error| error.to_string())?;
-
-        // Folder rename moves every contained note and subfolder transitively.
-        let mut index = read_link_index_file(&root);
-        repair_subtree_paths(&root, &mut index, &old_rel_str, &new_rel_str)?;
-        let _ = write_link_index_file(&root, &index);
-    }
-
-    let path = new_rel_str;
-    Ok(FolderEntry {
-        path: path.clone(),
-        name: payload.name.trim().to_string(),
-        parent_path: Path::new(&path)
-            .parent()
-            .map(|parent| parent.to_string_lossy().replace('\\', "/"))
-            .unwrap_or_default(),
-    })
+    rename_folder_in_notebook(&root, &payload.path, &payload.name)
 }
 
 #[tauri::command]
 fn move_note(payload: MovePathPayload) -> Result<NoteEntry, String> {
     let root = safe_workspace(&payload.workspace)?;
-    let old_relative = normalize_relative(&payload.path)?;
-    let target_parent = normalize_relative(&payload.target_parent_path)?;
-    let file_name = old_relative
-        .file_name()
-        .ok_or_else(|| "Invalid note path.".to_string())?;
-    let initial_new_relative = if target_parent.as_os_str().is_empty() {
-        PathBuf::from(file_name)
-    } else {
-        target_parent.join(file_name)
-    };
-    let old_path = root.join(&old_relative);
-    let new_relative = if old_relative == initial_new_relative {
-        initial_new_relative
-    } else {
-        let initial_new_path = root.join(&initial_new_relative);
-        if initial_new_path.exists() {
-            let stem = old_relative
-                .file_stem()
-                .and_then(|name| name.to_str())
-                .unwrap_or("Untitled");
-            unique_note_relative(&root, &target_parent, stem)
-        } else {
-            initial_new_relative
-        }
-    };
-    let new_path = root.join(&new_relative);
-
-    let old_rel_str = payload.path.clone();
-    let new_rel_str = new_relative.to_string_lossy().replace('\\', "/");
-
-    if old_path != new_path {
-        if let Some(parent) = new_path.parent() {
-            fs::create_dir_all(parent).map_err(|error| error.to_string())?;
-        }
-        fs::rename(&old_path, &new_path).map_err(|error| error.to_string())?;
-
-        let mut index = read_link_index_file(&root);
-        if let Some(id) = index.path_to_id.get(&old_rel_str).cloned() {
-            move_index_path(&mut index, &old_rel_str, &new_rel_str, &id, "note");
-            let _ = repair_inbound_links(&root, &mut index, &id, &old_rel_str, &new_rel_str);
-            let _ = write_link_index_file(&root, &index);
-        }
-    }
-
-    let path = new_rel_str;
-    let title = Path::new(&path)
-        .file_stem()
-        .and_then(|name| name.to_str())
-        .unwrap_or("Untitled")
-        .to_string();
-    Ok(NoteEntry {
-        path: path.clone(),
-        title,
-        parent_path: Path::new(&path)
-            .parent()
-            .map(|parent| parent.to_string_lossy().replace('\\', "/"))
-            .unwrap_or_default(),
-        updated_at: None,
-    })
+    move_note_in_notebook(&root, &payload.path, &payload.target_parent_path)
 }
 
 #[tauri::command]
 fn move_folder(payload: MovePathPayload) -> Result<FolderEntry, String> {
     let root = safe_workspace(&payload.workspace)?;
-    let old_relative = normalize_relative(&payload.path)?;
-    let target_parent = normalize_relative(&payload.target_parent_path)?;
-    if old_relative.as_os_str().is_empty() {
-        return Err("The notebook root cannot be moved.".to_string());
-    }
-    if target_parent == old_relative || target_parent.starts_with(&old_relative) {
-        return Err("A folder cannot be moved inside itself.".to_string());
-    }
-
-    let name = old_relative
-        .file_name()
-        .ok_or_else(|| "Invalid folder path.".to_string())?;
-    let new_relative = if target_parent.as_os_str().is_empty() {
-        PathBuf::from(name)
-    } else {
-        target_parent.join(name)
-    };
-    let old_path = root.join(&old_relative);
-    let new_path = root.join(&new_relative);
-
-    let old_rel_str = payload.path.clone();
-    let new_rel_str = new_relative.to_string_lossy().replace('\\', "/");
-
-    if old_path != new_path {
-        if new_path.exists() {
-            return Err("A folder with that name already exists in the target folder.".to_string());
-        }
-        if let Some(parent) = new_path.parent() {
-            fs::create_dir_all(parent).map_err(|error| error.to_string())?;
-        }
-        fs::rename(&old_path, &new_path).map_err(|error| error.to_string())?;
-
-        let mut index = read_link_index_file(&root);
-        repair_subtree_paths(&root, &mut index, &old_rel_str, &new_rel_str)?;
-        let _ = write_link_index_file(&root, &index);
-    }
-
-    let path = new_rel_str;
-    Ok(FolderEntry {
-        path: path.clone(),
-        name: name.to_string_lossy().to_string(),
-        parent_path: Path::new(&path)
-            .parent()
-            .map(|parent| parent.to_string_lossy().replace('\\', "/"))
-            .unwrap_or_default(),
-    })
+    move_folder_in_notebook(&root, &payload.path, &payload.target_parent_path)
 }
 
 #[tauri::command]
 fn delete_note(payload: DeletePathPayload) -> Result<(), String> {
     let root = safe_workspace(&payload.workspace)?;
-    let path = safe_note_path(&payload.workspace, &payload.path)?;
-    if path.exists() {
-        fs::remove_file(path).map_err(|error| error.to_string())?;
-    }
-    let mut index = read_link_index_file(&root);
-    forget_path_from_index(&mut index, &payload.path);
-    let _ = write_link_index_file(&root, &index);
-    Ok(())
+    delete_note_from_notebook(&root, &payload.path)
 }
 
 #[tauri::command]
 fn delete_folder(payload: DeletePathPayload) -> Result<(), String> {
     let root = safe_workspace(&payload.workspace)?;
-    let relative = normalize_relative(&payload.path)?;
-    if relative.as_os_str().is_empty() {
-        return Err("The notebook root cannot be deleted.".to_string());
-    }
-    let path = root.join(relative);
-    if path.exists() {
-        fs::remove_dir_all(path).map_err(|error| error.to_string())?;
-    }
-    let mut index = read_link_index_file(&root);
-    forget_subtree_from_index(&mut index, &payload.path);
-    let _ = write_link_index_file(&root, &index);
-    Ok(())
+    delete_folder_from_notebook(&root, &payload.path)
 }
 
 // ---------- Identity + link index ----------

@@ -45,5 +45,5 @@ The `.tigrana/metadata.json` file that stores app state tied to the notebook, su
 _Avoid_: Preferences, settings
 
 **Native notebook storage**:
-The Rust-side storage boundary that validates notebook paths, reads and writes durable note files, maintains stable identities and link indexes, manages note history/trash/assets, and exposes narrow Tauri command adapters to React.
+The Rust-side storage boundary that validates notebook paths, owns note and folder lifecycle operations, reads and writes durable note files, maintains stable identities and link indexes, manages note history/trash/assets, and exposes narrow Tauri command adapters to React.
 _Avoid_: Backend blob, filesystem helpers, Tauri handlers
