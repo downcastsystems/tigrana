@@ -470,6 +470,8 @@ export default function App() {
   const [titleFocusRequest, setTitleFocusRequest] = useState(0);
   const noteSurfaceRef = useRef<HTMLElement | null>(null);
   const titleInputRef = useRef<HTMLTextAreaElement | null>(null);
+  const handledTitleFocusRequestRef = useRef(0);
+  const armedTitleFocusRequestRef = useRef(0);
   const draggingItemRef = useRef<DragItem>(null);
   const notePointerDragRef = useRef<NotePointerDrag | null>(null);
   const folderPointerDragRef = useRef<NotePointerDrag | null>(null);
@@ -532,6 +534,7 @@ export default function App() {
 
   const activeNote = notes.find((note) => note.path === activePath) ?? null;
   const noteOpen = pendingNote || activeNote;
+  const hasOpenNote = Boolean(noteOpen);
   const results = useMemo(() => searchNotes(notes, contents, searchQuery), [contents, notes, searchQuery]);
   const folderTree = useMemo(() => buildFolderTree(folders, workspace, metadata), [folders, metadata, workspace]);
   const visibleNotes = useMemo(
@@ -1511,6 +1514,10 @@ export default function App() {
     updateMetadata((current) => ({ ...current, pinnedNotes: { ...current.pinnedNotes, [path]: !current.pinnedNotes[path] } }));
   }
 
+  const disarmPendingTitleFocus = useCallback(() => {
+    armedTitleFocusRequestRef.current = 0;
+  }, []);
+
   async function selectNote(path: string, options: { preserveSelectedFolder?: boolean; skipPersist?: boolean } = {}) {
     if (hasUnsavedChanges && !options.skipPersist) {
       await persistDraftForNavigation();
@@ -1792,6 +1799,7 @@ export default function App() {
 
   const commitTitleAndFocusEditor = useCallback(async () => {
     if (!activeNoteEditable) return;
+    disarmPendingTitleFocus();
     if (!hasUnsavedChanges || !titleDraft.trim()) {
       setEditorFocusRequest((value) => value + 1);
       return;
@@ -1818,7 +1826,7 @@ export default function App() {
     } finally {
       if (clearInFinally) titleCommitInFlightRef.current = false;
     }
-  }, [activeNoteEditable, hasUnsavedChanges, persistDraft, titleDraft]);
+  }, [activeNoteEditable, disarmPendingTitleFocus, hasUnsavedChanges, persistDraft, titleDraft]);
 
   async function persistDraftForNavigation() {
     if (!hasUnsavedChanges) return;
@@ -1991,19 +1999,30 @@ export default function App() {
   }
 
   useLayoutEffect(() => {
-    if (!noteOpen || !titleFocusRequest) return;
+    if (!hasOpenNote || !titleFocusRequest) return;
+    if (handledTitleFocusRequestRef.current === titleFocusRequest) return;
+    handledTitleFocusRequestRef.current = titleFocusRequest;
+    armedTitleFocusRequestRef.current = titleFocusRequest;
+
     const focusTitle = () => {
-      titleInputRef.current?.focus({ preventScroll: true });
-      titleInputRef.current?.select();
+      if (armedTitleFocusRequestRef.current !== titleFocusRequest) return;
+      const titleInput = titleInputRef.current;
+      if (!titleInput) return;
+      titleInput.focus({ preventScroll: true });
+      titleInput.select();
     };
+
     focusTitle();
     const frame = requestAnimationFrame(focusTitle);
     const timeout = window.setTimeout(focusTitle, 50);
     return () => {
       cancelAnimationFrame(frame);
       window.clearTimeout(timeout);
+      if (armedTitleFocusRequestRef.current === titleFocusRequest) {
+        armedTitleFocusRequestRef.current = 0;
+      }
     };
-  }, [noteOpen, titleFocusRequest]);
+  }, [hasOpenNote, titleFocusRequest]);
 
   function canUndoNewNoteCreationFromTitle() {
     const undoable = undoableNewNoteRef.current;
@@ -3526,6 +3545,7 @@ export default function App() {
                 disabled={!activeNoteEditable}
                 onChange={(event) => {
                   if (!activeNoteEditable) return;
+                  disarmPendingTitleFocus();
                   setTitleDraft(event.target.value);
                 }}
                 onBlur={() => {
@@ -3546,6 +3566,7 @@ export default function App() {
                   }
                   if (event.key === "Enter" || event.key === "Tab") {
                     event.preventDefault();
+                    disarmPendingTitleFocus();
                     void commitTitleAndFocusEditor();
                   }
                 }}
