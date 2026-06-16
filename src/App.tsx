@@ -489,6 +489,7 @@ export default function App() {
   const acceptedDiskContentRef = useRef<Map<string, string>>(new Map());
   const activeNoteLockRef = useRef<{ workspace: string; path: string; windowLabel: string } | null>(null);
   const noteLoadTokenRef = useRef(0);
+  const noteLoadGenerationRef = useRef(0);
   const noteSaveQueuesRef = useRef<Map<string, Promise<void>>>(new Map());
   const activeDraftStateRef = useRef({
     activePath: null as string | null,
@@ -1168,8 +1169,17 @@ export default function App() {
   }, []);
 
   const beginNoteLoad = useCallback(() => {
-    noteLoadTokenRef.current += 1;
-    return noteLoadTokenRef.current;
+    const token = noteLoadGenerationRef.current + 1;
+    noteLoadGenerationRef.current = token;
+    noteLoadTokenRef.current = token;
+    return token;
+  }, []);
+
+  const isCurrentNoteLoad = useCallback((token: number) => noteLoadGenerationRef.current === token, []);
+
+  const cancelPendingNoteLoads = useCallback(() => {
+    noteLoadGenerationRef.current += 1;
+    noteLoadTokenRef.current = 0;
   }, []);
 
   const finishNoteLoad = useCallback((token: number) => {
@@ -1212,9 +1222,14 @@ export default function App() {
     const token = beginNoteLoad();
     try {
       const content = contents.get(path) ?? (await readNote(workspace, path));
+      if (!isCurrentNoteLoad(token)) return { access: "editable" as ActiveNoteAccess, content, note: null };
       const note = notes.find((entry) => entry.path === path);
       const restorePosition = getRestorableNotePosition(metadataRef.current, path, content);
       const access = await acquireActiveNoteLock(path);
+      if (!isCurrentNoteLoad(token)) {
+        if (access === "editable") await releaseActiveNoteLock();
+        return { access, content, note };
+      }
       acceptedDiskContentRef.current.set(path, normalizeNoteContentForWatcher(content));
       setActivePath(path);
       setPendingNote(null);
@@ -1228,7 +1243,7 @@ export default function App() {
     } finally {
       finishNoteLoad(token);
     }
-  }, [acquireActiveNoteLock, applyNoteAccess, beginNoteLoad, contents, finishNoteLoad, navigationStyle, notes, recordNotePosition, workspace]);
+  }, [acquireActiveNoteLock, applyNoteAccess, beginNoteLoad, contents, finishNoteLoad, isCurrentNoteLoad, navigationStyle, notes, recordNotePosition, releaseActiveNoteLock, workspace]);
 
   useEffect(() => {
     return () => {
@@ -1237,6 +1252,7 @@ export default function App() {
   }, [releaseActiveNoteLock]);
 
   const clearCurrentNote = useCallback(() => {
+    cancelPendingNoteLoads();
     void releaseActiveNoteLock();
     applyNoteAccess("editable");
     setActivePath(null);
@@ -1252,7 +1268,7 @@ export default function App() {
     setSavedRawMarkdownText("");
     setFrontmatterError(null);
     setSelectedEditorText("");
-  }, [applyNoteAccess, releaseActiveNoteLock]);
+  }, [applyNoteAccess, cancelPendingNoteLoads, releaseActiveNoteLock]);
 
   useEffect(() => {
     if (!workspace) return;
@@ -1911,6 +1927,7 @@ export default function App() {
       setAppError("Open a notes folder before creating a note.");
       return;
     }
+    cancelPendingNoteLoads();
     void releaseActiveNoteLock();
     applyNoteAccess("editable");
     setSelectedFolder(parentPath);

@@ -2461,6 +2461,7 @@ html[data-theme="dark"] .tab-list-separator {
 
 .editor-shell {
   position: relative;
+  --editor-bottom-breathing-room: clamp(160px, 32vh, 280px);
   width: min(880px, calc(100% - 72px));
   margin: 0 auto;
   padding: 28px 0 140px;
@@ -2604,6 +2605,8 @@ html[data-theme="dark"] .tab-list-separator {
   font-family: var(--editor-font-family);
   font-size: var(--editor-font-size);
   line-height: 1.72;
+  min-height: 68vh;
+  padding-bottom: var(--editor-bottom-breathing-room);
 }
 
 .ProseMirror > * + * {

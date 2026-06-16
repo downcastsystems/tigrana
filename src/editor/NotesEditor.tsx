@@ -2366,6 +2366,18 @@ export function NotesEditor({ content, focusRequest, focusAtEndRequest, findRequ
     editable,
     content: initialContent.html,
     editorProps: {
+      scrollThreshold: {
+        top: 32,
+        right: 8,
+        bottom: 160,
+        left: 8,
+      },
+      scrollMargin: {
+        top: 56,
+        right: 8,
+        bottom: 220,
+        left: 8,
+      },
       attributes: {
         autocapitalize: "off",
         autocomplete: "off",

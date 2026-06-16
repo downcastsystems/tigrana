@@ -119,7 +119,8 @@ New notes should behave like Notion:
 - The title is typed into the note title field, not a prompt/modal.
 - The filename is derived from the title only when saved.
 - Invalid filename characters are rejected:
-  - `/ \ : * ? " < > |`
+  - `\ : * ? " < > |`
+  - Note that there is a special handling for '/' so that it can be used in titles.
 - Duplicate note titles in the same folder are rejected.
 
 Do not reintroduce `window.prompt()` for note creation.
