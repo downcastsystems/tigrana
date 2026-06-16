@@ -533,7 +533,9 @@ export default function App() {
   });
 
   const activeNote = notes.find((note) => note.path === activePath) ?? null;
-  const noteOpen = pendingNote || activeNote;
+  const activePathSaveInFlight = Boolean(activePath && savingPaths.has(activePath));
+  const transientActiveDraftOpen = Boolean(activePathSaveInFlight && titleDraft.trim());
+  const noteOpen = pendingNote || activeNote || transientActiveDraftOpen;
   const hasOpenNote = Boolean(noteOpen);
   const results = useMemo(() => searchNotes(notes, contents, searchQuery), [contents, notes, searchQuery]);
   const folderTree = useMemo(() => buildFolderTree(folders, workspace, metadata), [folders, metadata, workspace]);
