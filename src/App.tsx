@@ -534,7 +534,8 @@ export default function App() {
 
   const activeNote = notes.find((note) => note.path === activePath) ?? null;
   const activePathSaveInFlight = Boolean(activePath && savingPaths.has(activePath));
-  const transientActiveDraftOpen = Boolean(activePathSaveInFlight && titleDraft.trim());
+  const pathChangeSaveInFlight = Boolean(pathChangePersistRef.current);
+  const transientActiveDraftOpen = Boolean(activePath && titleDraft.trim() && (activePathSaveInFlight || pathChangeSaveInFlight));
   const noteOpen = pendingNote || activeNote || transientActiveDraftOpen;
   const hasOpenNote = Boolean(noteOpen);
   const results = useMemo(() => searchNotes(notes, contents, searchQuery), [contents, notes, searchQuery]);
