@@ -49,6 +49,7 @@ import {
   cleanupTrash,
   createFolder,
   createNote,
+  deleteNote,
   duplicateNote,
   acquireNoteEditLock,
   ensureWelcomeNote,
@@ -490,6 +491,8 @@ export default function App() {
   const activeNoteLockRef = useRef<{ workspace: string; path: string; windowLabel: string } | null>(null);
   const noteLoadTokenRef = useRef(0);
   const noteLoadGenerationRef = useRef(0);
+  const undoableNewNoteRef = useRef<{ workspace: string; path: string } | null>(null);
+  const titleEscapeUndoInFlightRef = useRef(false);
   const noteSaveQueuesRef = useRef<Map<string, Promise<void>>>(new Map());
   const activeDraftStateRef = useRef({
     activePath: null as string | null,
@@ -1182,6 +1185,12 @@ export default function App() {
     noteLoadTokenRef.current = 0;
   }, []);
 
+  const disarmUndoableNewNote = useCallback((path?: string | null) => {
+    if (!path || undoableNewNoteRef.current?.path === path) {
+      undoableNewNoteRef.current = null;
+    }
+  }, []);
+
   const finishNoteLoad = useCallback((token: number) => {
     if (noteLoadTokenRef.current === token) {
       noteLoadTokenRef.current = 0;
@@ -1231,6 +1240,7 @@ export default function App() {
         return { access, content, note };
       }
       acceptedDiskContentRef.current.set(path, normalizeNoteContentForWatcher(content));
+      disarmUndoableNewNote(path);
       setActivePath(path);
       setPendingNote(null);
       if (note && !options.preserveSelectedFolder) {
@@ -1243,7 +1253,7 @@ export default function App() {
     } finally {
       finishNoteLoad(token);
     }
-  }, [acquireActiveNoteLock, applyNoteAccess, beginNoteLoad, contents, finishNoteLoad, isCurrentNoteLoad, navigationStyle, notes, recordNotePosition, releaseActiveNoteLock, workspace]);
+  }, [acquireActiveNoteLock, applyNoteAccess, beginNoteLoad, contents, disarmUndoableNewNote, finishNoteLoad, isCurrentNoteLoad, navigationStyle, notes, recordNotePosition, releaseActiveNoteLock, workspace]);
 
   useEffect(() => {
     return () => {
@@ -1253,6 +1263,7 @@ export default function App() {
 
   const clearCurrentNote = useCallback(() => {
     cancelPendingNoteLoads();
+    disarmUndoableNewNote(activePath);
     void releaseActiveNoteLock();
     applyNoteAccess("editable");
     setActivePath(null);
@@ -1268,7 +1279,7 @@ export default function App() {
     setSavedRawMarkdownText("");
     setFrontmatterError(null);
     setSelectedEditorText("");
-  }, [applyNoteAccess, cancelPendingNoteLoads, releaseActiveNoteLock]);
+  }, [activePath, applyNoteAccess, cancelPendingNoteLoads, disarmUndoableNewNote, releaseActiveNoteLock]);
 
   useEffect(() => {
     if (!workspace) return;
@@ -1922,40 +1933,65 @@ export default function App() {
   }, [activeNoteEditable, hasUnsavedBody, pendingNote, titleDraft, persistDraft]);
 
 
-  function requestCreateNote(parentPath = selectedFolder) {
+  async function requestCreateNote(parentPath = selectedFolder) {
     if (!workspace) {
       setAppError("Open a notes folder before creating a note.");
       return;
     }
-    cancelPendingNoteLoads();
-    void releaseActiveNoteLock();
-    applyNoteAccess("editable");
-    setSelectedFolder(parentPath);
-    setPendingNote({ parentPath });
-    setActivePath(null);
-    setEditorRestorePosition(null);
-    setTitleFocusRequest((value) => value + 1);
-    const tabId = activeTabId && openTabs.some((tab) => tab.id === activeTabId) ? activeTabId : createTabId();
-    if (!activeTabId || !openTabs.some((tab) => tab.id === activeTabId)) {
-      setOpenTabs((current) => [...current, { id: tabId, path: null }]);
-      setActiveTabId(tabId);
-    } else {
-      setOpenTabs((current) => current.map((tab) => (tab.id === tabId ? { ...tab, path: null } : tab)));
+    try {
+      if (hasUnsavedChanges) {
+        await persistDraftForNavigation();
+      }
+
+      cancelPendingNoteLoads();
+      await releaseActiveNoteLock();
+      applyNoteAccess("editable");
+      setSelectedFolder(parentPath);
+      setPendingNote(null);
+      setEditorRestorePosition(null);
+      setAppError(null);
+
+      const usedTitles = new Set(notes.filter((note) => note.parent_path === parentPath).map((note) => note.title));
+      let note: NoteEntry | null = null;
+      for (let attempt = 0; attempt < 100; attempt += 1) {
+        const title = nextUntitledNoteTitle(usedTitles);
+        usedTitles.add(title);
+        try {
+          note = await createNote(workspace, parentPath, title);
+          break;
+        } catch (error) {
+          if (!isDuplicateNoteTitleError(error)) throw error;
+        }
+      }
+      if (!note) throw new Error("Could not create an untitled note.");
+      const createdNote = note;
+
+      const content = await readNote(workspace, createdNote.path);
+      const access = await acquireActiveNoteLock(createdNote.path);
+      acceptedDiskContentRef.current.set(createdNote.path, normalizeNoteContentForWatcher(content));
+      undoableNewNoteRef.current = access === "editable" ? { workspace, path: createdNote.path } : null;
+      setNotes((current) => current.some((entry) => entry.path === createdNote.path) ? current : [...current, createdNote]);
+      setContents((current) => {
+        const next = new Map(current);
+        next.set(createdNote.path, content);
+        return next;
+      });
+      setActivePath(createdNote.path);
+      loadContentIntoEditor(createdNote, content);
+      applyNoteAccess(access);
+      recordNotePosition(createdNote.path, content, { lastOpenedAt: Date.now() });
+      setSelectedFolder(navigationStyle === "section-view" ? getTopLevelFolderPath(createdNote.parent_path) : createdNote.parent_path);
+      placePathInActiveTab(createdNote.path);
+      updateMetadata((current) => addToOrder(current, createdNote.parent_path, createdNote.path));
+      setTitleFocusRequest((value) => value + 1);
+      await refreshWorkspace(workspace);
+    } catch (error) {
+      setAppError(error instanceof Error ? error.message : String(error));
     }
-    setTitleDraft("");
-    setSavedTitle("");
-    setDraft("");
-    setSavedDraft("");
-    setFrontmatterDraft("");
-    setSavedFrontmatter("");
-    setRawMarkdownText("");
-    setSavedRawMarkdownText("");
-    setFrontmatterError(null);
-    setAppError(null);
   }
 
   useLayoutEffect(() => {
-    if (!pendingNote) return;
+    if (!noteOpen || !titleFocusRequest) return;
     const focusTitle = () => {
       titleInputRef.current?.focus({ preventScroll: true });
       titleInputRef.current?.select();
@@ -1967,7 +2003,47 @@ export default function App() {
       cancelAnimationFrame(frame);
       window.clearTimeout(timeout);
     };
-  }, [pendingNote, titleFocusRequest]);
+  }, [noteOpen, titleFocusRequest]);
+
+  function canUndoNewNoteCreationFromTitle() {
+    const undoable = undoableNewNoteRef.current;
+    return Boolean(
+      workspace &&
+      activePath &&
+      undoable?.workspace === workspace &&
+      undoable.path === activePath &&
+      document.activeElement === titleInputRef.current &&
+      !draft.trim(),
+    );
+  }
+
+  async function undoNewNoteCreationFromTitle() {
+    if (!workspace || !activePath || !canUndoNewNoteCreationFromTitle()) return;
+    const path = activePath;
+    titleEscapeUndoInFlightRef.current = true;
+    undoableNewNoteRef.current = null;
+    try {
+      await releaseActiveNoteLock();
+      await deleteNote(workspace, path);
+      acceptedDiskContentRef.current.delete(path);
+      setNotes((current) => current.filter((note) => note.path !== path));
+      setContents((current) => {
+        const next = new Map(current);
+        next.delete(path);
+        return next;
+      });
+      setOpenTabs((current) => current.filter((tab) => tab.path !== path));
+      updateMetadata((current) => removeNoteFromMetadata(current, path));
+      clearCurrentNote();
+      await refreshWorkspace(workspace);
+    } catch (error) {
+      setAppError(error instanceof Error ? error.message : String(error));
+    } finally {
+      window.setTimeout(() => {
+        titleEscapeUndoInFlightRef.current = false;
+      }, 0);
+    }
+  }
 
   useEffect(() => {
     const titleInput = titleInputRef.current;
@@ -3453,6 +3529,8 @@ export default function App() {
                   setTitleDraft(event.target.value);
                 }}
                 onBlur={() => {
+                  disarmUndoableNewNote(activePath);
+                  if (titleEscapeUndoInFlightRef.current) return;
                   if (titleCommitInFlightRef.current) return;
                   if (activeNoteEditable && hasUnsavedChanges && titleDraft.trim()) {
                     void persistDraft();
@@ -3460,6 +3538,12 @@ export default function App() {
                 }}
                 onKeyDown={(event) => {
                   if (!activeNoteEditable) return;
+                  if (event.key === "Escape" && canUndoNewNoteCreationFromTitle()) {
+                    event.preventDefault();
+                    event.stopPropagation();
+                    void undoNewNoteCreationFromTitle();
+                    return;
+                  }
                   if (event.key === "Enter" || event.key === "Tab") {
                     event.preventDefault();
                     void commitTitleAndFocusEditor();
@@ -7472,6 +7556,18 @@ function orderNotes(notes: NoteEntry[], folderPath: string, metadata: WorkspaceM
 function formatUnknownError(error: unknown) {
   if (error instanceof Error) return error.message;
   return String(error);
+}
+
+function nextUntitledNoteTitle(usedTitles: Set<string>) {
+  if (!usedTitles.has("Untitled")) return "Untitled";
+  for (let suffix = 1; ; suffix += 1) {
+    const candidate = `Untitled ${suffix}`;
+    if (!usedTitles.has(candidate)) return candidate;
+  }
+}
+
+function isDuplicateNoteTitleError(error: unknown) {
+  return formatUnknownError(error).toLowerCase().includes("note with that title already exists");
 }
 
 function setMetadataValue(metadata: WorkspaceMetadata, key: "folderIcons" | "folderColors" | "noteIcons", path: string, value: string): WorkspaceMetadata {
