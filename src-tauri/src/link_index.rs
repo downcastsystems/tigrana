@@ -804,7 +804,7 @@ pub fn repair_subtree_paths(
     }
 
     for (id, _kind, old_path, new_path) in &affected {
-        let _ = repair_inbound_links(root, index, id, old_path, new_path);
+        repair_inbound_links(root, index, id, old_path, new_path)?;
     }
     Ok(())
 }

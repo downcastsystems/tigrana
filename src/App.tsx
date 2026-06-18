@@ -102,10 +102,18 @@ import {
 import {
   addFolderToOrder,
   addToOrder,
-  createNotebookPathMutations,
   removeFolderFromMetadata,
   removeNoteFromMetadata,
-} from "./lib/notebookPathMutations";
+  buildBookmarkViews,
+  buildFolderTree,
+  getNotebookName,
+  orderFolders,
+  orderNotes,
+  setMetadataValue,
+  type BookmarkView,
+  type FolderNode,
+} from "./lib/notebookMetadata";
+import { createNotebookPathMutations } from "./lib/notebookPathMutations";
 import { searchNotes } from "./lib/search";
 import type { BookmarkEntry, FolderEntry, LinkIndex, NavigationStyle, NotebookThemeColors, NoteEntry, NotePositionMetadata, SearchResult, WorkspaceMetadata } from "./types";
 
@@ -291,16 +299,6 @@ type RightSidebarMode = "outline" | "frontmatter" | "properties" | "backlinks";
 type NoteTab = {
   id: string;
   path: string | null;
-};
-
-type FolderNode = FolderEntry & {
-  children: FolderNode[];
-};
-
-type BookmarkView = BookmarkEntry & {
-  title: string;
-  icon?: string;
-  missing: boolean;
 };
 
 type ThemeTokens = {
@@ -7504,79 +7502,6 @@ function LinkPicker({
   );
 }
 
-function buildFolderTree(folders: FolderEntry[], workspace: string, metadata: WorkspaceMetadata): FolderNode[] {
-  const notebookName = getNotebookName(workspace);
-  const entries = folders.length
-    ? folders
-    : [{ path: "", name: notebookName, parent_path: "" }];
-  const map = new Map<string, FolderNode>();
-  entries.forEach((folder) => map.set(folder.path, { ...folder, children: [] }));
-  if (!map.has("")) {
-    map.set("", { path: "", name: notebookName, parent_path: "", children: [] });
-  }
-  map.forEach((node) => {
-    if (node.path === "") return;
-    map.get(node.parent_path)?.children.push(node);
-  });
-  const sortChildren = (node: FolderNode) => {
-    node.children = orderFolders(node.children, node.path, metadata);
-    node.children.forEach(sortChildren);
-  };
-  const root = map.get("")!;
-  sortChildren(root);
-  return [root];
-}
-
-function buildBookmarkViews(
-  bookmarks: BookmarkEntry[],
-  folders: FolderEntry[],
-  notes: NoteEntry[],
-  metadata: WorkspaceMetadata,
-  workspace: string,
-): BookmarkView[] {
-  const notebookName = getNotebookName(workspace);
-  return bookmarks.map((bookmark) => {
-    if (bookmark.kind === "folder") {
-      const folder = folders.find((entry) => entry.path === bookmark.path);
-      return {
-        ...bookmark,
-        title: folder ? folder.name : `${bookmark.path || notebookName} (missing)`,
-        icon: metadata.folderIcons[bookmark.path],
-        missing: !folder,
-      };
-    }
-    const note = notes.find((entry) => entry.path === bookmark.path);
-    return {
-      ...bookmark,
-      title: note?.title ?? `${bookmark.path} (missing)`,
-      icon: metadata.noteIcons[bookmark.path],
-      missing: !note,
-    };
-  });
-}
-
-function orderFolders(folders: FolderNode[], parentPath: string, metadata: WorkspaceMetadata) {
-  const order = metadata.folderOrder[parentPath] ?? [];
-  return [...folders].sort((a, b) => {
-    const aIndex = order.indexOf(a.path);
-    const bIndex = order.indexOf(b.path);
-    if (aIndex !== -1 || bIndex !== -1) return (aIndex === -1 ? Number.MAX_SAFE_INTEGER : aIndex) - (bIndex === -1 ? Number.MAX_SAFE_INTEGER : bIndex);
-    return a.name.localeCompare(b.name);
-  });
-}
-
-function orderNotes(notes: NoteEntry[], folderPath: string, metadata: WorkspaceMetadata) {
-  const order = metadata.noteOrder[folderPath] ?? [];
-  return [...notes].sort((a, b) => {
-    const pinDelta = Number(Boolean(metadata.pinnedNotes[b.path])) - Number(Boolean(metadata.pinnedNotes[a.path]));
-    if (pinDelta) return pinDelta;
-    const aIndex = order.indexOf(a.path);
-    const bIndex = order.indexOf(b.path);
-    if (aIndex !== -1 || bIndex !== -1) return (aIndex === -1 ? Number.MAX_SAFE_INTEGER : aIndex) - (bIndex === -1 ? Number.MAX_SAFE_INTEGER : bIndex);
-    return a.title.localeCompare(b.title);
-  });
-}
-
 function formatUnknownError(error: unknown) {
   if (error instanceof Error) return error.message;
   return String(error);
@@ -7592,16 +7517,6 @@ function nextUntitledNoteTitle(usedTitles: Set<string>) {
 
 function isDuplicateNoteTitleError(error: unknown) {
   return formatUnknownError(error).toLowerCase().includes("note with that title already exists");
-}
-
-function setMetadataValue(metadata: WorkspaceMetadata, key: "folderIcons" | "folderColors" | "noteIcons", path: string, value: string): WorkspaceMetadata {
-  const values: Record<string, string> = { ...metadata[key] };
-  if (value) {
-    values[path] = value;
-  } else {
-    delete values[path];
-  }
-  return { ...metadata, [key]: values };
 }
 
 function isLucideIcon(value: unknown): value is LucideIcon {
@@ -7877,10 +7792,6 @@ function isSectionContextTarget(
   return navigationStyle === "section-view" &&
     target.kind === "folder" &&
     (target.path === "" || folders.some((folder) => folder.path === target.path && folder.parent_path === ""));
-}
-
-function getNotebookName(workspace: string) {
-  return workspace.split("/").filter(Boolean).at(-1) || "Notebook";
 }
 
 function startResize(event: React.PointerEvent, onMove: (clientX: number) => void) {

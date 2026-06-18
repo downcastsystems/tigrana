@@ -261,8 +261,8 @@ pub fn rename_note(root: &Path, path: &str, title: &str) -> Result<NoteEntry, St
         let mut index = read_link_index_file(root);
         if let Some(id) = index.path_to_id.get(&old_rel_str).cloned() {
             move_index_path(&mut index, &old_rel_str, &new_rel_str, &id, "note");
-            let _ = repair_inbound_links(root, &mut index, &id, &old_rel_str, &new_rel_str);
-            let _ = write_link_index_file(root, &index);
+            repair_inbound_links(root, &mut index, &id, &old_rel_str, &new_rel_str)?;
+            write_link_index_file(root, &index)?;
         }
     }
 
@@ -345,7 +345,7 @@ pub fn rename_folder(root: &Path, path: &str, name: &str) -> Result<FolderEntry,
 
         let mut index = read_link_index_file(root);
         repair_subtree_paths(root, &mut index, &old_rel_str, &new_rel_str)?;
-        let _ = write_link_index_file(root, &index);
+        write_link_index_file(root, &index)?;
     }
 
     Ok(FolderEntry {
@@ -395,8 +395,8 @@ pub fn move_note(root: &Path, path: &str, target_parent_path: &str) -> Result<No
         let mut index = read_link_index_file(root);
         if let Some(id) = index.path_to_id.get(&old_rel_str).cloned() {
             move_index_path(&mut index, &old_rel_str, &new_rel_str, &id, "note");
-            let _ = repair_inbound_links(root, &mut index, &id, &old_rel_str, &new_rel_str);
-            let _ = write_link_index_file(root, &index);
+            repair_inbound_links(root, &mut index, &id, &old_rel_str, &new_rel_str)?;
+            write_link_index_file(root, &index)?;
         }
     }
 
@@ -448,7 +448,7 @@ pub fn move_folder(
 
         let mut index = read_link_index_file(root);
         repair_subtree_paths(root, &mut index, &old_rel_str, &new_rel_str)?;
-        let _ = write_link_index_file(root, &index);
+        write_link_index_file(root, &index)?;
     }
 
     Ok(FolderEntry {
