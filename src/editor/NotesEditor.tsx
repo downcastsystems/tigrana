@@ -33,6 +33,7 @@ import {
   Heading4,
   Heading5,
   Heading6,
+  Highlighter,
   Italic,
   Link as LinkIcon,
   List,
@@ -48,13 +49,14 @@ import {
 } from "lucide-react";
 import { common, createLowlight } from "lowlight";
 import { type CSSProperties, useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { filterSlashCommands } from "./slashCommands";
+import { ensureParagraphAfterCurrentTable, filterSlashCommands, markCurrentTableAsTigranaHtml } from "./slashCommands";
 import { htmlToMarkdown, markdownToHtml, normalizeMarkdownImageLines } from "../lib/markdown";
 import { isTauri, openExternal, readAssetDataUrl, saveAsset, saveClipboardImageAsset } from "../lib/notesApi";
 import type { NotePositionMetadata } from "../types";
 
 type NotesEditorProps = {
   content: string;
+  commandRequest?: EditorCommandRequest | null;
   focusRequest: number;
   focusAtEndRequest: number;
   findRequest: number;
@@ -62,6 +64,7 @@ type NotesEditorProps = {
   notePath: string | null;
   restorePosition: NotePositionMetadata | null;
   editable: boolean;
+  spellcheckEnabled: boolean;
   workspace: string;
   onChange: (markdown: string) => void;
   onLoadError: (error: unknown) => void;
@@ -69,6 +72,41 @@ type NotesEditorProps = {
   onInternalLinkClick?: (href: string) => void;
   onRequestEmoji?: () => Promise<string | null>;
   onRequestLink?: () => Promise<{ href: string; title: string } | null>;
+  onRequestImage?: () => Promise<{ src: string; alt?: string } | null>;
+};
+
+export type EditorCommand =
+  | "bold"
+  | "italic"
+  | "strike"
+  | "code"
+  | "highlight"
+  | "link"
+  | "clear"
+  | "paragraph"
+  | "h1"
+  | "h2"
+  | "h3"
+  | "h4"
+  | "h5"
+  | "h6"
+  | "bulletList"
+  | "orderedList"
+  | "taskList"
+  | "quote"
+  | "codeBlock"
+  | "divider"
+  | "table"
+  | "image"
+  | "findNext"
+  | "findPrevious"
+  | "replace";
+
+export type EditorCommandRequest = {
+  id: number;
+  command: EditorCommand;
+  src?: string;
+  alt?: string;
 };
 
 type SlashState = {
@@ -2232,15 +2270,19 @@ const MarkdownImage = Image.extend({
   },
 });
 
-export function NotesEditor({ content, focusRequest, focusAtEndRequest, findRequest, reloadRequest, notePath, restorePosition, editable, workspace, onChange, onLoadError, onPositionChange, onInternalLinkClick, onRequestEmoji, onRequestLink }: NotesEditorProps) {
+export function NotesEditor({ content, commandRequest, focusRequest, focusAtEndRequest, findRequest, reloadRequest, notePath, restorePosition, editable, spellcheckEnabled, workspace, onChange, onLoadError, onPositionChange, onInternalLinkClick, onRequestEmoji, onRequestLink, onRequestImage }: NotesEditorProps) {
   const [slash, setSlash] = useState<SlashState | null>(null);
   const [findOpen, setFindOpen] = useState(false);
+  const [replaceOpen, setReplaceOpen] = useState(false);
   const [findQuery, setFindQuery] = useState("");
+  const [replaceText, setReplaceText] = useState("");
   const [findIndex, setFindIndex] = useState(0);
+  const [findDocumentVersion, setFindDocumentVersion] = useState(0);
   const slashRef = useRef<SlashState | null>(null);
   const editorRef = useRef<Editor | null>(null);
   const findInputRef = useRef<HTMLInputElement | null>(null);
   const handledFindRequest = useRef(findRequest);
+  const handledCommandRequest = useRef(commandRequest?.id ?? 0);
   const lastLoadedNote = useRef<string | null>(null);
   const handledReloadRequest = useRef(reloadRequest ?? 0);
   const notePathRef = useRef(notePath);
@@ -2347,7 +2389,7 @@ export function NotesEditor({ content, focusRequest, focusAtEndRequest, findRequ
       if (!command) return false;
       event.preventDefault();
       event.stopPropagation();
-      command.run(currentEditor, currentSlash.range, { requestEmoji: onRequestEmoji, requestLink: onRequestLink });
+      command.run(currentEditor, currentSlash.range, { requestEmoji: onRequestEmoji, requestLink: onRequestLink, requestImage: onRequestImage });
       slashRef.current = null;
       setSlash(null);
       return true;
@@ -2360,7 +2402,7 @@ export function NotesEditor({ content, focusRequest, focusAtEndRequest, findRequ
       return true;
     }
     return false;
-  }, [onRequestEmoji, onRequestLink]);
+  }, [onRequestEmoji, onRequestImage, onRequestLink]);
 
   const editor = useEditor({
     extensions,
@@ -2383,7 +2425,7 @@ export function NotesEditor({ content, focusRequest, focusAtEndRequest, findRequ
         autocapitalize: "off",
         autocomplete: "off",
         autocorrect: "off",
-        spellcheck: "false",
+        spellcheck: spellcheckEnabled ? "true" : "false",
       },
       handleDOMEvents: {
         keydown(_view, event) {
@@ -2467,6 +2509,10 @@ export function NotesEditor({ content, focusRequest, focusAtEndRequest, findRequ
   useEffect(() => {
     editor?.setEditable(editable);
   }, [editable, editor]);
+
+  useEffect(() => {
+    editor?.view.dom.setAttribute("spellcheck", spellcheckEnabled ? "true" : "false");
+  }, [editor, spellcheckEnabled]);
 
   useEffect(() => {
     if (!editor) return;
@@ -2564,19 +2610,169 @@ export function NotesEditor({ content, focusRequest, focusAtEndRequest, findRequ
     });
   }, [findOpen]);
 
-  const findMatches = useMemo(() => (editor && findQuery.trim() ? getEditorMatches(editor, findQuery.trim()) : []), [editor, findQuery]);
+  useEffect(() => {
+    if (!editor) return;
+    const handleTransaction = ({ transaction }: { transaction: Transaction }) => {
+      if (transaction.docChanged) setFindDocumentVersion((version) => version + 1);
+    };
+    editor.on("transaction", handleTransaction);
+    return () => {
+      editor.off("transaction", handleTransaction);
+    };
+  }, [editor]);
 
-  const selectFindMatch = useCallback((index: number) => {
-    if (!editor || !findMatches.length) return;
-    const nextIndex = (index + findMatches.length) % findMatches.length;
-    const match = findMatches[nextIndex];
+  const findMatches = useMemo(
+    () => {
+      void findDocumentVersion;
+      return editor && findQuery.trim() ? getEditorMatches(editor, findQuery.trim()) : [];
+    },
+    [editor, findDocumentVersion, findQuery],
+  );
+
+  const selectMatchFromList = useCallback((matches: Array<{ from: number; to: number }>, index: number) => {
+    if (!editor || !matches.length) {
+      setFindIndex(0);
+      return;
+    }
+    const nextIndex = (index + matches.length) % matches.length;
+    const match = matches[nextIndex];
     setFindIndex(nextIndex);
     editor.commands.setTextSelection({ from: match.from, to: match.to });
     requestAnimationFrame(() => {
       scrollEditorPositionIntoView(editor, match.from);
       findInputRef.current?.focus();
     });
-  }, [editor, findMatches]);
+  }, [editor]);
+
+  const selectFindMatch = useCallback((index: number) => {
+    selectMatchFromList(findMatches, index);
+  }, [findMatches, selectMatchFromList]);
+
+  const replaceCurrentMatch = useCallback(() => {
+    const query = findQuery.trim();
+    if (!editor || !query || !editor.isEditable) return;
+    const currentMatches = getEditorMatches(editor, query);
+    if (!currentMatches.length) {
+      selectMatchFromList([], 0);
+      return;
+    }
+    const { from, to } = editor.state.selection;
+    const selectedMatch = currentMatches.find((match) => match.from === from && match.to === to);
+    const match = selectedMatch ?? currentMatches[Math.min(findIndex, currentMatches.length - 1)];
+    editor.chain().focus().insertContentAt({ from: match.from, to: match.to }, replaceText).run();
+    requestAnimationFrame(() => {
+      const nextMatches = getEditorMatches(editor, query);
+      selectMatchFromList(nextMatches, Math.min(findIndex, nextMatches.length - 1));
+    });
+  }, [editor, findIndex, findQuery, replaceText, selectMatchFromList]);
+
+  const replaceAllMatches = useCallback(() => {
+    const query = findQuery.trim();
+    if (!editor || !query || !editor.isEditable) return;
+    const currentMatches = getEditorMatches(editor, query);
+    if (!currentMatches.length) {
+      selectMatchFromList([], 0);
+      return;
+    }
+    const { tr } = editor.state;
+    [...currentMatches].reverse().forEach((match) => {
+      tr.insertText(replaceText, match.from, match.to);
+    });
+    editor.view.dispatch(tr);
+    editor.view.focus();
+    requestAnimationFrame(() => {
+      selectMatchFromList(getEditorMatches(editor, query), 0);
+    });
+  }, [editor, findQuery, replaceText, selectMatchFromList]);
+
+  const applyEditorCommand = useCallback((request: EditorCommandRequest) => {
+    if (!editor) return;
+    if (request.command === "findNext") {
+      setFindOpen(true);
+      selectFindMatch(findIndex + 1);
+      return;
+    }
+    if (request.command === "findPrevious") {
+      setFindOpen(true);
+      selectFindMatch(findIndex - 1);
+      return;
+    }
+    if (request.command === "replace") {
+      setFindOpen(true);
+      setReplaceOpen(true);
+      return;
+    }
+    if (!editor.isEditable) return;
+    const chain = editor.chain().focus();
+    switch (request.command) {
+      case "bold":
+        chain.toggleBold().run();
+        break;
+      case "italic":
+        chain.toggleItalic().run();
+        break;
+      case "strike":
+        chain.toggleStrike().run();
+        break;
+      case "code":
+        chain.toggleCode().run();
+        break;
+      case "highlight":
+        chain.toggleHighlight().run();
+        break;
+      case "link":
+        void applyLinkToEditorSelection(editor, onRequestLink);
+        break;
+      case "clear":
+        chain.unsetAllMarks().clearNodes().run();
+        break;
+      case "paragraph":
+        chain.setParagraph().run();
+        break;
+      case "h1":
+      case "h2":
+      case "h3":
+      case "h4":
+      case "h5":
+      case "h6":
+        chain.toggleHeading({ level: Number(request.command.slice(1)) as 1 | 2 | 3 | 4 | 5 | 6 }).run();
+        break;
+      case "bulletList":
+        chain.toggleBulletList().run();
+        break;
+      case "orderedList":
+        chain.toggleOrderedList().run();
+        break;
+      case "taskList":
+        chain.toggleTaskList().run();
+        break;
+      case "quote":
+        chain.toggleBlockquote().run();
+        break;
+      case "codeBlock":
+        chain.toggleCodeBlock().run();
+        break;
+      case "divider":
+        chain.setHorizontalRule().run();
+        break;
+      case "table":
+        chain.insertTable({ rows: 3, cols: 3, withHeaderRow: true }).run();
+        markCurrentTableAsTigranaHtml(editor);
+        ensureParagraphAfterCurrentTable(editor);
+        break;
+      case "image":
+        if (request.src) chain.setImage({ src: request.src, alt: request.alt || "Image" }).run();
+        break;
+      default:
+        break;
+    }
+  }, [editor, findIndex, onRequestLink, selectFindMatch]);
+
+  useEffect(() => {
+    if (!commandRequest || commandRequest.id === handledCommandRequest.current) return;
+    handledCommandRequest.current = commandRequest.id;
+    applyEditorCommand(commandRequest);
+  }, [applyEditorCommand, commandRequest]);
 
   useEffect(() => {
     setFindIndex(0);
@@ -2645,38 +2841,63 @@ export function NotesEditor({ content, focusRequest, focusAtEndRequest, findRequ
     >
       {editor ? <FormattingBubbleMenu editor={editor} onRequestLink={onRequestLink} /> : null}
       {findOpen ? (
-        <div className="note-find-bar">
-          <Search size={15} />
-          <input
-            ref={findInputRef}
-            value={findQuery}
-            onChange={(event) => setFindQuery(event.target.value)}
-            onKeyDown={(event) => {
-              if (event.key === "Enter") {
-                event.preventDefault();
-                selectFindMatch(findIndex + (event.shiftKey ? -1 : 1));
-              }
-              if (event.key === "Escape") {
-                event.preventDefault();
-                setFindOpen(false);
-              }
-            }}
-            placeholder="Find in note"
-            aria-label="Find in current note"
-            autoCapitalize="off"
-            autoCorrect="off"
-            spellCheck={false}
-          />
-          <span className="find-count">{findQuery.trim() ? `${findMatches.length ? findIndex + 1 : 0}/${findMatches.length}` : ""}</span>
-          <button type="button" title="Previous match" disabled={!findMatches.length} onClick={() => selectFindMatch(findIndex - 1)}>
-            <ChevronUp size={14} />
-          </button>
-          <button type="button" title="Next match" disabled={!findMatches.length} onClick={() => selectFindMatch(findIndex + 1)}>
-            <ChevronDown size={14} />
-          </button>
-          <button type="button" title="Close find" onClick={() => setFindOpen(false)}>
-            <X size={14} />
-          </button>
+        <div className={replaceOpen ? "note-find-bar has-replace" : "note-find-bar"}>
+          <div className="note-find-row">
+            <Search size={15} />
+            <input
+              ref={findInputRef}
+              value={findQuery}
+              onChange={(event) => setFindQuery(event.target.value)}
+              onKeyDown={(event) => {
+                if (event.key === "Enter") {
+                  event.preventDefault();
+                  selectFindMatch(findIndex + (event.shiftKey ? -1 : 1));
+                }
+                if (event.key === "Escape") {
+                  event.preventDefault();
+                  setFindOpen(false);
+                  setReplaceOpen(false);
+                }
+              }}
+              placeholder="Find in note"
+              aria-label="Find in current note"
+              autoCapitalize="off"
+              autoCorrect="off"
+              spellCheck={false}
+            />
+            <span className="find-count">{findQuery.trim() ? `${findMatches.length ? findIndex + 1 : 0}/${findMatches.length}` : ""}</span>
+          </div>
+          {replaceOpen ? (
+            <div className="note-replace-row">
+              <span className="note-find-row-spacer" aria-hidden="true" />
+              <input
+                value={replaceText}
+                onChange={(event) => setReplaceText(event.target.value)}
+                placeholder="Replace"
+                aria-label="Replace in current note"
+                autoCapitalize="off"
+                autoCorrect="off"
+                spellCheck={false}
+              />
+              <button type="button" disabled={!findMatches.length || !editable} onClick={replaceCurrentMatch}>
+                Replace
+              </button>
+              <button type="button" disabled={!findMatches.length || !editable} onClick={replaceAllMatches}>
+                All
+              </button>
+            </div>
+          ) : null}
+          <div className="note-find-controls">
+            <button type="button" title="Previous match" disabled={!findMatches.length} onClick={() => selectFindMatch(findIndex - 1)}>
+              <ChevronUp size={14} />
+            </button>
+            <button type="button" title="Next match" disabled={!findMatches.length} onClick={() => selectFindMatch(findIndex + 1)}>
+              <ChevronDown size={14} />
+            </button>
+            <button type="button" title="Close find" onClick={() => { setFindOpen(false); setReplaceOpen(false); }}>
+              <X size={14} />
+            </button>
+          </div>
         </div>
       ) : null}
       <EditorContent editor={editor} className="editor-content" />
@@ -2693,7 +2914,7 @@ export function NotesEditor({ content, focusRequest, focusAtEndRequest, findRequ
                   event.preventDefault();
                   if (!editor) return;
                   const currentSlash = findSlashQuery(editor) ?? slash;
-                  command.run(editor, currentSlash.range, { requestEmoji: onRequestEmoji, requestLink: onRequestLink });
+                  command.run(editor, currentSlash.range, { requestEmoji: onRequestEmoji, requestLink: onRequestLink, requestImage: onRequestImage });
                   slashRef.current = null;
                   setSlash(null);
                 }}
@@ -2775,6 +2996,40 @@ function isTableChromeTarget(target: EventTarget | null) {
     target instanceof HTMLElement &&
     target.closest(".table-axis-handle, .table-edge-add, .table-context-menu, .table-column-resize-handle") != null
   );
+}
+
+async function applyLinkToEditorSelection(
+  editor: Editor,
+  onRequestLink?: () => Promise<{ href: string; title: string } | null>,
+) {
+  if (!onRequestLink) return;
+  const { from, to, empty } = editor.state.selection;
+  const pick = await onRequestLink();
+  if (!pick) return;
+
+  if (empty) {
+    editor
+      .chain()
+      .focus()
+      .insertContent([
+        {
+          type: "text",
+          text: pick.title,
+          marks: [{ type: "link", attrs: { href: pick.href } }],
+        },
+        { type: "text", text: " " },
+      ])
+      .run();
+    return;
+  }
+
+  editor
+    .chain()
+    .focus()
+    .setTextSelection({ from, to })
+    .extendMarkRange("link")
+    .setLink({ href: pick.href })
+    .run();
 }
 
 function FormattingBubbleMenu({
@@ -2906,6 +3161,7 @@ function FormattingBubbleMenu({
     { label: "Italic", icon: Italic, active: editor.isActive("italic"), run: () => editor.chain().focus().toggleItalic().run() },
     { label: "Strike", icon: Strikethrough, active: editor.isActive("strike"), run: () => editor.chain().focus().toggleStrike().run() },
     { label: "Code", icon: Code, active: editor.isActive("code"), run: () => editor.chain().focus().toggleCode().run() },
+    { label: "Highlight", icon: Highlighter, active: editor.isActive("highlight"), run: () => editor.chain().focus().toggleHighlight().run() },
     { label: "Link", icon: LinkIcon, active: editor.isActive("link"), run: setLink },
     { label: "Clear formatting", icon: Eraser, active: false, run: () => editor.chain().focus().unsetAllMarks().clearNodes().run() },
     { label: "H1", icon: Heading1, active: editor.isActive("heading", { level: 1 }), run: () => editor.chain().focus().toggleHeading({ level: 1 }).run() },

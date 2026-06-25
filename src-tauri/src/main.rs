@@ -40,7 +40,7 @@ use std::path::{Path, PathBuf};
 use std::process::Command;
 use std::sync::Mutex;
 use std::{collections::hash_map::DefaultHasher, process};
-use tauri::menu::{AboutMetadataBuilder, Menu, MenuItem, PredefinedMenuItem, Submenu};
+use tauri::menu::{AboutMetadataBuilder, CheckMenuItem, Menu, MenuItem, PredefinedMenuItem, Submenu};
 use tauri::{AppHandle, Emitter, Manager, WebviewWindow, WindowEvent, Wry};
 use tauri_plugin_dialog::DialogExt;
 use time::OffsetDateTime;
@@ -153,10 +153,21 @@ struct EnsureIdentityPayload {
     workspace: String,
 }
 
-#[derive(Debug, Serialize, Deserialize, Default)]
+#[derive(Debug, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct AppPreferences {
     last_workspace: Option<String>,
+    #[serde(default = "default_true")]
+    spellcheck_enabled: bool,
+}
+
+impl Default for AppPreferences {
+    fn default() -> Self {
+        Self {
+            last_workspace: None,
+            spellcheck_enabled: true,
+        }
+    }
 }
 
 #[derive(Debug, Deserialize)]
@@ -164,6 +175,45 @@ struct RevealPathPayload {
     workspace: String,
     path: String,
     kind: String,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct WriteExportTextPayload {
+    path: String,
+    contents: String,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
+#[serde(rename_all = "camelCase")]
+struct AppMenuState {
+    has_workspace: bool,
+    has_open_note: bool,
+    active_note_editable: bool,
+    has_unsaved_changes: bool,
+    raw_markdown_visible: bool,
+    left_visible: bool,
+    outline_visible: bool,
+    spellcheck_enabled: bool,
+    editor_width_mode: String,
+    note_alignment: String,
+}
+
+impl Default for AppMenuState {
+    fn default() -> Self {
+        Self {
+            has_workspace: false,
+            has_open_note: false,
+            active_note_editable: false,
+            has_unsaved_changes: false,
+            raw_markdown_visible: false,
+            left_visible: true,
+            outline_visible: true,
+            spellcheck_enabled: true,
+            editor_width_mode: "comfortable".to_string(),
+            note_alignment: "left".to_string(),
+        }
+    }
 }
 
 #[derive(Debug, Serialize, Clone)]
@@ -187,6 +237,7 @@ struct NotebookWindow {
 #[derive(Default)]
 struct NotebookWindowState {
     windows: Mutex<HashMap<String, NotebookWindow>>,
+    menu_states: Mutex<HashMap<String, AppMenuState>>,
 }
 
 struct NoteEditLock {
@@ -610,11 +661,15 @@ fn register_notebook_window(
         windows.insert(
             label.clone(),
             NotebookWindow {
-                label,
+                label: label.clone(),
                 workspace,
                 name,
             },
         );
+    }
+    {
+        let mut menu_states = state.menu_states.lock().map_err(|error| error.to_string())?;
+        menu_states.entry(label).or_default().has_workspace = true;
     }
     rebuild_app_menu(&app, &state)
 }
@@ -629,7 +684,38 @@ fn unregister_notebook_window(
         let mut windows = state.windows.lock().map_err(|error| error.to_string())?;
         windows.remove(&label);
     }
+    {
+        let mut menu_states = state.menu_states.lock().map_err(|error| error.to_string())?;
+        menu_states.remove(&label);
+    }
     rebuild_app_menu(&app, &state)
+}
+
+#[tauri::command]
+fn update_app_menu_state(
+    app: AppHandle,
+    notebook_state: tauri::State<NotebookWindowState>,
+    label: String,
+    state: AppMenuState,
+) -> Result<(), String> {
+    {
+        let mut menu_states = notebook_state.menu_states.lock().map_err(|error| error.to_string())?;
+        menu_states.insert(label, state);
+    }
+    rebuild_app_menu(&app, &notebook_state)
+}
+
+#[tauri::command]
+fn write_export_text_file(payload: WriteExportTextPayload) -> Result<(), String> {
+    fs::write(payload.path, payload.contents).map_err(|error| error.to_string())
+}
+
+#[tauri::command]
+fn print_current_webview(app: AppHandle) -> Result<(), String> {
+    let Some(window) = active_menu_window(&app) else {
+        return Err("No active window to print.".to_string());
+    };
+    window.print().map_err(|error| error.to_string())
 }
 
 #[tauri::command]
@@ -841,7 +927,13 @@ fn default_true() -> bool {
 fn build_app_menu(
     handle: &AppHandle,
     notebook_windows: &[NotebookWindow],
+    state: &AppMenuState,
 ) -> tauri::Result<Menu<tauri::Wry>> {
+    let has_workspace = state.has_workspace;
+    let has_open_note = state.has_open_note;
+    let editable_note = has_open_note && state.active_note_editable;
+    let rich_editable_note = editable_note && !state.raw_markdown_visible;
+
     let about = PredefinedMenuItem::about(
         handle,
         Some("About Tigrana"),
@@ -858,11 +950,12 @@ fn build_app_menu(
     // instead of calling app.exit() directly, which would skip the
     // frontend's metadata-flush handler.
     let quit_item = MenuItem::with_id(handle, "request_quit", "Quit Tigrana", true, Some("Cmd+Q"))?;
+    let new_notebook = MenuItem::with_id(handle, "new_notebook", "New Notebook...", true, Some("Cmd+Shift+O"))?;
     let recently_deleted = MenuItem::with_id(
         handle,
         "open_recently_deleted",
         "Recently Deleted",
-        true,
+        has_workspace,
         None::<&str>,
     )?;
     let open_notebook = MenuItem::with_id(
@@ -879,6 +972,61 @@ fn build_app_menu(
         true,
         None::<&str>,
     )?;
+    let new_note = MenuItem::with_id(handle, "new_note", "New Note", has_workspace, Some("Cmd+N"))?;
+    let new_folder = MenuItem::with_id(handle, "new_folder", "New Folder/Section", has_workspace, Some("Cmd+Shift+N"))?;
+    let new_tab = MenuItem::with_id(handle, "new_tab", "New Tab", true, Some("Cmd+T"))?;
+    let save_note = MenuItem::with_id(handle, "save_note", "Save", editable_note && state.has_unsaved_changes, Some("Cmd+S"))?;
+    let export_markdown = MenuItem::with_id(handle, "export_markdown", "Export Current Note as Markdown...", has_open_note, None::<&str>)?;
+    let export_html = MenuItem::with_id(handle, "export_html", "Export Current Note as HTML...", has_open_note, None::<&str>)?;
+    let print_note = MenuItem::with_id(handle, "print_note", "Print Current Note...", has_open_note, Some("Cmd+P"))?;
+
+    let find_note = MenuItem::with_id(handle, "find_note", "Find in Note", has_open_note, Some("Cmd+F"))?;
+    let find_next = MenuItem::with_id(handle, "find_next", "Find Next", has_open_note, Some("Cmd+G"))?;
+    let find_previous = MenuItem::with_id(handle, "find_previous", "Find Previous", has_open_note, Some("Cmd+Shift+G"))?;
+    let replace_note = MenuItem::with_id(handle, "replace_note", "Replace in Note", editable_note, None::<&str>)?;
+    let search_notebook = MenuItem::with_id(handle, "search_notebook", "Search Notebook", has_workspace, Some("Cmd+K"))?;
+    let spellcheck = CheckMenuItem::with_id(
+        handle,
+        "toggle_spellcheck",
+        "Check Spelling While Typing",
+        true,
+        state.spellcheck_enabled,
+        None::<&str>,
+    )?;
+
+    let toggle_sidebar = CheckMenuItem::with_id(handle, "toggle_sidebar", "Show Sidebar", true, state.left_visible, Some("Cmd+\\"))?;
+    let toggle_outline = CheckMenuItem::with_id(handle, "toggle_outline", "Show Outline", has_open_note, state.outline_visible, None::<&str>)?;
+    let toggle_raw = CheckMenuItem::with_id(handle, "toggle_raw_markdown", "Show Raw Markdown", has_open_note, state.raw_markdown_visible, Some("Cmd+Alt+R"))?;
+    let width_comfortable = CheckMenuItem::with_id(handle, "width_comfortable", "Comfortable Width", has_open_note, state.editor_width_mode == "comfortable", None::<&str>)?;
+    let width_narrow = CheckMenuItem::with_id(handle, "width_narrow", "Narrow Width", has_open_note, state.editor_width_mode == "narrow", None::<&str>)?;
+    let width_full = CheckMenuItem::with_id(handle, "width_full", "Full Width", has_open_note, state.editor_width_mode == "full", None::<&str>)?;
+    let width_menu = Submenu::with_items(handle, "Editor Width", has_open_note, &[&width_comfortable, &width_narrow, &width_full])?;
+    let align_left = CheckMenuItem::with_id(handle, "align_left", "Left", has_open_note, state.note_alignment == "left", None::<&str>)?;
+    let align_center = CheckMenuItem::with_id(handle, "align_center", "Center", has_open_note, state.note_alignment == "center", None::<&str>)?;
+    let alignment_menu = Submenu::with_items(handle, "Note Alignment", has_open_note, &[&align_left, &align_center])?;
+
+    let format_bold = MenuItem::with_id(handle, "format_bold", "Bold", rich_editable_note, Some("Cmd+B"))?;
+    let format_italic = MenuItem::with_id(handle, "format_italic", "Italic", rich_editable_note, Some("Cmd+I"))?;
+    let format_strike = MenuItem::with_id(handle, "format_strike", "Strikethrough", rich_editable_note, None::<&str>)?;
+    let format_code = MenuItem::with_id(handle, "format_code", "Inline Code", rich_editable_note, None::<&str>)?;
+    let format_highlight = MenuItem::with_id(handle, "format_highlight", "Highlight", rich_editable_note, None::<&str>)?;
+    let format_link = MenuItem::with_id(handle, "format_link", "Link", rich_editable_note, Some("Cmd+Shift+K"))?;
+    let format_clear = MenuItem::with_id(handle, "format_clear", "Clear Formatting", rich_editable_note, None::<&str>)?;
+    let format_paragraph = MenuItem::with_id(handle, "format_paragraph", "Paragraph", rich_editable_note, None::<&str>)?;
+    let format_h1 = MenuItem::with_id(handle, "format_h1", "Heading 1", rich_editable_note, None::<&str>)?;
+    let format_h2 = MenuItem::with_id(handle, "format_h2", "Heading 2", rich_editable_note, None::<&str>)?;
+    let format_h3 = MenuItem::with_id(handle, "format_h3", "Heading 3", rich_editable_note, None::<&str>)?;
+    let format_h4 = MenuItem::with_id(handle, "format_h4", "Heading 4", rich_editable_note, None::<&str>)?;
+    let format_h5 = MenuItem::with_id(handle, "format_h5", "Heading 5", rich_editable_note, None::<&str>)?;
+    let format_h6 = MenuItem::with_id(handle, "format_h6", "Heading 6", rich_editable_note, None::<&str>)?;
+    let format_bullet_list = MenuItem::with_id(handle, "format_bullet_list", "Bulleted List", rich_editable_note, None::<&str>)?;
+    let format_ordered_list = MenuItem::with_id(handle, "format_ordered_list", "Numbered List", rich_editable_note, None::<&str>)?;
+    let format_task_list = MenuItem::with_id(handle, "format_task_list", "Task List", rich_editable_note, None::<&str>)?;
+    let format_quote = MenuItem::with_id(handle, "format_quote", "Quote", rich_editable_note, None::<&str>)?;
+    let format_code_block = MenuItem::with_id(handle, "format_code_block", "Code Block", rich_editable_note, None::<&str>)?;
+    let format_divider = MenuItem::with_id(handle, "format_divider", "Divider", rich_editable_note, None::<&str>)?;
+    let format_table = MenuItem::with_id(handle, "format_table", "Table", rich_editable_note, None::<&str>)?;
+    let format_image = MenuItem::with_id(handle, "format_image", "Image...", rich_editable_note, None::<&str>)?;
 
     let open_notebooks = Submenu::new(handle, "Open Notebooks", true)?;
     if notebook_windows.is_empty() {
@@ -926,8 +1074,20 @@ fn build_app_menu(
         "File",
         true,
         &[
+            &new_notebook,
             &open_notebook,
             &manage_notebooks,
+            &PredefinedMenuItem::separator(handle)?,
+            &new_note,
+            &new_folder,
+            &new_tab,
+            &save_note,
+            &PredefinedMenuItem::separator(handle)?,
+            &export_markdown,
+            &export_html,
+            &print_note,
+            &PredefinedMenuItem::separator(handle)?,
+            &recently_deleted,
             &PredefinedMenuItem::separator(handle)?,
             &PredefinedMenuItem::close_window(handle, None)?,
         ],
@@ -944,6 +1104,14 @@ fn build_app_menu(
             &PredefinedMenuItem::copy(handle, None)?,
             &PredefinedMenuItem::paste(handle, None)?,
             &PredefinedMenuItem::select_all(handle, None)?,
+            &PredefinedMenuItem::separator(handle)?,
+            &find_note,
+            &find_next,
+            &find_previous,
+            &replace_note,
+            &search_notebook,
+            &PredefinedMenuItem::separator(handle)?,
+            &spellcheck,
         ],
     )?;
     let view_menu = Submenu::with_items(
@@ -951,9 +1119,46 @@ fn build_app_menu(
         "View",
         true,
         &[
-            &PredefinedMenuItem::fullscreen(handle, None)?,
+            &toggle_sidebar,
+            &toggle_outline,
+            &toggle_raw,
             &PredefinedMenuItem::separator(handle)?,
-            &recently_deleted,
+            &width_menu,
+            &alignment_menu,
+            &PredefinedMenuItem::separator(handle)?,
+            &PredefinedMenuItem::fullscreen(handle, None)?,
+        ],
+    )?;
+    let format_menu = Submenu::with_items(
+        handle,
+        "Format",
+        true,
+        &[
+            &format_bold,
+            &format_italic,
+            &format_strike,
+            &format_code,
+            &format_highlight,
+            &format_link,
+            &format_clear,
+            &PredefinedMenuItem::separator(handle)?,
+            &format_paragraph,
+            &format_h1,
+            &format_h2,
+            &format_h3,
+            &format_h4,
+            &format_h5,
+            &format_h6,
+            &PredefinedMenuItem::separator(handle)?,
+            &format_bullet_list,
+            &format_ordered_list,
+            &format_task_list,
+            &format_quote,
+            &format_code_block,
+            &format_divider,
+            &PredefinedMenuItem::separator(handle)?,
+            &format_table,
+            &format_image,
         ],
     )?;
     let window_menu = Submenu::with_items(
@@ -977,6 +1182,7 @@ fn build_app_menu(
             &file_menu,
             &edit_menu,
             &view_menu,
+            &format_menu,
             &window_menu,
         ],
     )
@@ -989,8 +1195,23 @@ fn rebuild_app_menu(app: &AppHandle, state: &NotebookWindowState) -> Result<(), 
         windows.retain(|label, _| live_labels.contains(label));
         windows.values().cloned().collect::<Vec<_>>()
     };
+    let active_label = app
+        .webview_windows()
+        .values()
+        .find(|window| window.is_focused().unwrap_or(false))
+        .map(|window| window.label().to_string())
+        .or_else(|| app.webview_windows().values().next().map(|window| window.label().to_string()));
+    let active_state = {
+        let mut menu_states = state.menu_states.lock().map_err(|error| error.to_string())?;
+        menu_states.retain(|label, _| live_labels.contains(label));
+        active_label
+            .as_ref()
+            .and_then(|label| menu_states.get(label))
+            .cloned()
+            .unwrap_or_default()
+    };
     notebooks.sort_by(|a, b| a.name.cmp(&b.name).then(a.workspace.cmp(&b.workspace)));
-    let menu = build_app_menu(app, &notebooks).map_err(|error| error.to_string())?;
+    let menu = build_app_menu(app, &notebooks, &active_state).map_err(|error| error.to_string())?;
     app.set_menu(menu)
         .map(|_| ())
         .map_err(|error| error.to_string())
@@ -1057,6 +1278,16 @@ fn manage_notebooks_from_menu(app: &AppHandle) {
     }
 }
 
+fn emit_menu_command(app: &AppHandle, command: &str) {
+    if let Some(window) = active_menu_window(app) {
+        dispatch_frontend_menu_action(
+            &window,
+            "tigrana-menu-command",
+            serde_json::Value::String(command.to_string()),
+        );
+    }
+}
+
 fn reveal_in_file_manager(path: &Path) -> Result<(), String> {
     #[cfg(target_os = "macos")]
     {
@@ -1119,19 +1350,28 @@ pub fn run() {
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_fs::init())
         .plugin(tauri_plugin_shell::init())
-        .menu(|handle| build_app_menu(handle, &[]))
+        .menu(|handle| build_app_menu(handle, &[], &AppMenuState::default()))
         .on_window_event(|window, event| {
-            if !matches!(event, WindowEvent::Destroyed) {
-                return;
-            }
             let app = window.app_handle();
-            let state = app.state::<NotebookWindowState>();
-            if let Ok(mut windows) = state.windows.lock() {
-                windows.remove(window.label());
+            match event {
+                WindowEvent::Destroyed => {
+                    let state = app.state::<NotebookWindowState>();
+                    if let Ok(mut windows) = state.windows.lock() {
+                        windows.remove(window.label());
+                    }
+                    if let Ok(mut menu_states) = state.menu_states.lock() {
+                        menu_states.remove(window.label());
+                    }
+                    let _ = rebuild_app_menu(app, &state);
+                    let lock_state = app.state::<NoteEditLockState>();
+                    release_note_edit_locks_for_window(&lock_state, window.label());
+                }
+                WindowEvent::Focused(true) => {
+                    let state = app.state::<NotebookWindowState>();
+                    let _ = rebuild_app_menu(app, &state);
+                }
+                _ => {}
             }
-            let _ = rebuild_app_menu(app, &state);
-            let lock_state = app.state::<NoteEditLockState>();
-            release_note_edit_locks_for_window(&lock_state, window.label());
         })
         .on_menu_event(|app, event| match event.id().as_ref() {
             "open_settings" => {
@@ -1146,6 +1386,50 @@ pub fn run() {
             "open_recently_deleted" => {
                 emit_menu_action(app, "open-recently-deleted");
             }
+            "new_notebook" => emit_menu_command(app, "new_notebook"),
+            "new_note" => emit_menu_command(app, "new_note"),
+            "new_folder" => emit_menu_command(app, "new_folder"),
+            "new_tab" => emit_menu_command(app, "new_tab"),
+            "save_note" => emit_menu_command(app, "save_note"),
+            "export_markdown" => emit_menu_command(app, "export_markdown"),
+            "export_html" => emit_menu_command(app, "export_html"),
+            "print_note" => emit_menu_command(app, "print_note"),
+            "find_note" => emit_menu_command(app, "find_note"),
+            "find_next" => emit_menu_command(app, "find_next"),
+            "find_previous" => emit_menu_command(app, "find_previous"),
+            "replace_note" => emit_menu_command(app, "replace_note"),
+            "search_notebook" => emit_menu_command(app, "search_notebook"),
+            "toggle_spellcheck" => emit_menu_command(app, "toggle_spellcheck"),
+            "toggle_sidebar" => emit_menu_command(app, "toggle_sidebar"),
+            "toggle_outline" => emit_menu_command(app, "toggle_outline"),
+            "toggle_raw_markdown" => emit_menu_command(app, "toggle_raw_markdown"),
+            "width_comfortable" => emit_menu_command(app, "width_comfortable"),
+            "width_narrow" => emit_menu_command(app, "width_narrow"),
+            "width_full" => emit_menu_command(app, "width_full"),
+            "align_left" => emit_menu_command(app, "align_left"),
+            "align_center" => emit_menu_command(app, "align_center"),
+            "format_bold" => emit_menu_command(app, "format_bold"),
+            "format_italic" => emit_menu_command(app, "format_italic"),
+            "format_strike" => emit_menu_command(app, "format_strike"),
+            "format_code" => emit_menu_command(app, "format_code"),
+            "format_highlight" => emit_menu_command(app, "format_highlight"),
+            "format_link" => emit_menu_command(app, "format_link"),
+            "format_clear" => emit_menu_command(app, "format_clear"),
+            "format_paragraph" => emit_menu_command(app, "format_paragraph"),
+            "format_h1" => emit_menu_command(app, "format_h1"),
+            "format_h2" => emit_menu_command(app, "format_h2"),
+            "format_h3" => emit_menu_command(app, "format_h3"),
+            "format_h4" => emit_menu_command(app, "format_h4"),
+            "format_h5" => emit_menu_command(app, "format_h5"),
+            "format_h6" => emit_menu_command(app, "format_h6"),
+            "format_bullet_list" => emit_menu_command(app, "format_bullet_list"),
+            "format_ordered_list" => emit_menu_command(app, "format_ordered_list"),
+            "format_task_list" => emit_menu_command(app, "format_task_list"),
+            "format_quote" => emit_menu_command(app, "format_quote"),
+            "format_code_block" => emit_menu_command(app, "format_code_block"),
+            "format_divider" => emit_menu_command(app, "format_divider"),
+            "format_table" => emit_menu_command(app, "format_table"),
+            "format_image" => emit_menu_command(app, "format_image"),
             "request_quit" => {
                 let labels: Vec<String> = app.webview_windows().keys().cloned().collect();
                 for label in labels {
@@ -1195,6 +1479,7 @@ pub fn run() {
             write_workspace_metadata,
             register_notebook_window,
             unregister_notebook_window,
+            update_app_menu_state,
             focus_notebook_window,
             read_app_preferences,
             write_app_preferences,
@@ -1205,7 +1490,9 @@ pub fn run() {
             save_clipboard_image_asset,
             read_asset_data_url,
             reveal_path,
-            open_external
+            open_external,
+            write_export_text_file,
+            print_current_webview
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

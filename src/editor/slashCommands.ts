@@ -25,6 +25,7 @@ import {
 export type SlashCommandContext = {
   requestEmoji?: () => Promise<string | null>;
   requestLink?: () => Promise<{ href: string; title: string } | null>;
+  requestImage?: () => Promise<{ src: string; alt?: string } | null>;
 };
 
 export type SlashCommand = {
@@ -191,13 +192,18 @@ export const slashCommands: SlashCommand[] = [
   {
     id: "image",
     title: "Image",
-    hint: "Insert by URL",
+    hint: "Insert by URL or local file",
     icon: Image,
     keywords: ["image", "photo", "picture"],
-    run: (editor, range) => {
-      const url = window.prompt("Image URL");
-      if (!url) return;
-      editor.chain().focus().deleteRange(range).setImage({ src: url, alt: "Image" }).run();
+    run: (editor, range, context) => {
+      if (!context.requestImage) return;
+      void context.requestImage().then((pick) => {
+        if (!pick) {
+          editor.chain().focus().deleteRange(range).run();
+          return;
+        }
+        editor.chain().focus().deleteRange(range).setImage({ src: pick.src, alt: pick.alt || "Image" }).run();
+      });
     },
   },
   {
@@ -214,7 +220,7 @@ export const slashCommands: SlashCommand[] = [
   },
 ];
 
-function markCurrentTableAsTigranaHtml(editor: Editor) {
+export function markCurrentTableAsTigranaHtml(editor: Editor) {
   const { state, view } = editor;
   const { selection } = state;
   let tableDepth = -1;
@@ -256,7 +262,7 @@ function markCurrentTableAsTigranaHtml(editor: Editor) {
   view.dispatch(tr);
 }
 
-function ensureParagraphAfterCurrentTable(editor: Editor) {
+export function ensureParagraphAfterCurrentTable(editor: Editor) {
   const { state, view } = editor;
   const { selection, schema } = state;
   const paragraph = schema.nodes.paragraph;

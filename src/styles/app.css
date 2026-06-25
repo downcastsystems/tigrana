@@ -2497,17 +2497,49 @@ html[data-theme="dark"] .tab-list-separator {
   top: 10px;
   z-index: 20;
   display: grid;
-  grid-template-columns: 18px minmax(0, 1fr) auto 28px 28px 28px;
-  align-items: center;
-  gap: 6px;
-  width: min(430px, 100%);
+  grid-template-columns: minmax(0, 1fr) auto;
+  grid-template-areas:
+    "find controls"
+    "replace replace";
+  gap: 4px;
+  width: min(620px, 100%);
   min-height: 36px;
   margin: 0 0 18px auto;
-  padding: 4px 6px 4px 10px;
+  padding: 5px 6px 5px 10px;
   border: 1px solid rgba(52, 48, 43, 0.12);
   border-radius: 8px;
   background: rgba(255, 252, 247, 0.96);
   box-shadow: var(--shadow-popover);
+}
+
+.note-find-row {
+  grid-area: find;
+  display: grid;
+  grid-template-columns: 18px minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 6px;
+  min-height: 28px;
+}
+
+.note-replace-row {
+  grid-area: replace;
+  display: grid;
+  grid-template-columns: 18px minmax(0, 1fr) auto auto;
+  align-items: center;
+  gap: 6px;
+  min-height: 28px;
+}
+
+.note-find-controls {
+  grid-area: controls;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 28px;
+}
+
+.note-find-row-spacer {
+  width: 18px;
 }
 
 .note-find-bar input {
@@ -2537,6 +2569,16 @@ html[data-theme="dark"] .tab-list-separator {
 .note-find-bar button:disabled {
   cursor: default;
   opacity: 0.45;
+}
+
+.note-replace-row button {
+  width: auto;
+  padding: 0 9px;
+  font-size: 12px;
+}
+
+.image-file-button input {
+  display: none;
 }
 
 .find-count {

@@ -54,6 +54,7 @@ import {
   acquireNoteEditLock,
   ensureWelcomeNote,
   ensureWorkspace,
+  exportTextFile,
   focusNotebookWindow,
   isTauri,
   listFolders,
@@ -65,6 +66,7 @@ import {
   readAppPreferences,
   readLinkIndex,
   readNote,
+  readAssetDataUrl,
   readNoteVersion,
   releaseNoteEditLock,
   restoreNoteVersion,
@@ -73,7 +75,9 @@ import {
   readWorkspaceMetadata,
   registerNotebookWindow,
   SAMPLE_WORKSPACE,
+  saveAsset,
   saveNote,
+  printCurrentWebview,
   decodeTitleFromFilename,
   trashFolder,
   trashNote,
@@ -81,11 +85,13 @@ import {
   validateNoteTitle,
   watchWorkspace,
   writeAppPreferences,
+  updateAppMenuState,
   writeWorkspaceMetadata,
   defaultWorkspaceMetadata,
 } from "./lib/notesApi";
-import type { NoteVersionEntry, TrashEntry } from "./lib/notesApi";
+import type { AppMenuState, NoteVersionEntry, TrashEntry } from "./lib/notesApi";
 import { normalizeMarkdownImageLines } from "./lib/markdown";
+import { buildNoteExportHtml, noteExportFileStem } from "./lib/exportNote";
 import {
   composeMarkdown,
   extractOutline,
@@ -174,6 +180,7 @@ const rightPaneWidthKey = "tigrana-right-pane-width";
 const recentNotebooksKey = "tigrana-recent-notebooks";
 const lastPathKey = "tigrana-last-path";
 const accentTitlebarKey = "tigrana-accent-titlebar";
+const spellcheckKey = "tigrana-spellcheck";
 const windowSizeKey = "tigrana-window-size";
 const windowPositionKey = "tigrana-window-position";
 const sessionKeyPrefix = "tigrana-session:";
@@ -301,6 +308,42 @@ type NoteTab = {
   path: string | null;
 };
 
+type EditorCommand =
+  | "bold"
+  | "italic"
+  | "strike"
+  | "code"
+  | "highlight"
+  | "link"
+  | "clear"
+  | "paragraph"
+  | "h1"
+  | "h2"
+  | "h3"
+  | "h4"
+  | "h5"
+  | "h6"
+  | "bulletList"
+  | "orderedList"
+  | "taskList"
+  | "quote"
+  | "codeBlock"
+  | "divider"
+  | "table"
+  | "image"
+  | "findNext"
+  | "findPrevious"
+  | "replace";
+
+type EditorCommandRequest = {
+  id: number;
+  command: EditorCommand;
+  src?: string;
+  alt?: string;
+};
+
+type ImageInsertResult = { src: string; alt?: string };
+
 type ThemeTokens = {
   surface: string;
   surfaceSoft: string;
@@ -397,6 +440,7 @@ export default function App() {
   const [appFontSize, setAppFontSize] = useState(defaultAppFontSize);
   const [editorFontFamily, setEditorFontFamily] = useState(defaultEditorFontFamily);
   const [editorFontSize, setEditorFontSize] = useState(defaultEditorFontSize);
+  const [spellcheckEnabled, setSpellcheckEnabled] = useState(() => readStoredSpellcheckEnabled());
   const [folders, setFolders] = useState<FolderEntry[]>([]);
   const [notes, setNotes] = useState<NoteEntry[]>([]);
   const [contents, setContents] = useState(() => new Map<string, string>());
@@ -456,6 +500,7 @@ export default function App() {
   const emojiPickerResolverRef = useRef<((result: string | null) => void) | null>(null);
   const [linkPickerOpen, setLinkPickerOpen] = useState(false);
   const linkPickerResolverRef = useRef<((result: LinkPickerResult | null) => void) | null>(null);
+  const imagePickerResolverRef = useRef<((result: ImageInsertResult | null) => void) | null>(null);
   const [draggingItem, setDraggingItem] = useState<DragItem>(null);
   const [dropTargetFolder, setDropTargetFolder] = useState<string | null>(null);
   const [noteDragPreview, setNoteDragPreview] = useState<NoteDragPreview | null>(null);
@@ -465,6 +510,12 @@ export default function App() {
   const [editorFocusRequest, setEditorFocusRequest] = useState(0);
   const [editorFocusAtEndRequest, setEditorFocusAtEndRequest] = useState(0);
   const [editorReloadRequest, setEditorReloadRequest] = useState(0);
+  const [editorCommandRequest, setEditorCommandRequest] = useState<EditorCommandRequest | null>(null);
+  const [rawFindOpen, setRawFindOpen] = useState(false);
+  const [rawReplaceOpen, setRawReplaceOpen] = useState(false);
+  const [rawFindQuery, setRawFindQuery] = useState("");
+  const [rawReplaceText, setRawReplaceText] = useState("");
+  const [imageDialogOpen, setImageDialogOpen] = useState(false);
   const [titleFocusRequest, setTitleFocusRequest] = useState(0);
   const noteSurfaceRef = useRef<HTMLElement | null>(null);
   const titleInputRef = useRef<HTMLTextAreaElement | null>(null);
@@ -547,6 +598,10 @@ export default function App() {
   const rawMarkdownDraft = useMemo(
     () => (rawMarkdownVisible || frontmatterError ? rawMarkdownText : composeMarkdown(frontmatterDraft, draft)),
     [draft, frontmatterDraft, frontmatterError, rawMarkdownText, rawMarkdownVisible],
+  );
+  const rawFindMatchCount = useMemo(
+    () => countPlainTextMatches(rawMarkdownDraft, rawFindQuery),
+    [rawFindQuery, rawMarkdownDraft],
   );
   useLayoutEffect(() => {
     if (!rawMarkdownVisible && !frontmatterError) return;
@@ -661,16 +716,33 @@ export default function App() {
   useEffect(() => {
     if (!workspace) return;
     setRecentNotebooks((current) => writeRecentNotebooks(touchRecentNotebook(current, workspace)));
-    void writeAppPreferences({ lastWorkspace: workspace }).catch((error) => {
+    void writeAppPreferences({ lastWorkspace: workspace, spellcheckEnabled }).catch((error) => {
       console.warn("write_app_preferences failed", error);
     });
-  }, [workspace]);
+  }, [spellcheckEnabled, workspace]);
+
+  useEffect(() => {
+    localStorage.setItem(spellcheckKey, String(spellcheckEnabled));
+    if (!isTauri()) return;
+    void readAppPreferences()
+      .then((preferences) => writeAppPreferences({
+        ...preferences,
+        spellcheckEnabled,
+      }))
+      .catch((error) => {
+        console.warn("write_app_preferences failed", error);
+      });
+  }, [spellcheckEnabled]);
 
   useEffect(() => {
     if (workspace || !isTauri()) return;
     let disposed = false;
     void readAppPreferences()
       .then((preferences) => {
+        if (!disposed && typeof preferences.spellcheckEnabled === "boolean") {
+          setSpellcheckEnabled(preferences.spellcheckEnabled);
+          localStorage.setItem(spellcheckKey, String(preferences.spellcheckEnabled));
+        }
         const lastWorkspace = preferences.lastWorkspace;
         if (disposed || !lastWorkspace) return;
         localStorage.setItem(workspaceKey, lastWorkspace);
@@ -683,6 +755,23 @@ export default function App() {
       disposed = true;
     };
   }, [workspace]);
+
+  useEffect(() => {
+    if (!isTauri()) return;
+    let disposed = false;
+    void readAppPreferences()
+      .then((preferences) => {
+        if (disposed || typeof preferences.spellcheckEnabled !== "boolean") return;
+        setSpellcheckEnabled(preferences.spellcheckEnabled);
+        localStorage.setItem(spellcheckKey, String(preferences.spellcheckEnabled));
+      })
+      .catch((error) => {
+        console.warn("read_app_preferences failed", error);
+      });
+    return () => {
+      disposed = true;
+    };
+  }, []);
 
   // Keep a per-workspace "last opened note" in localStorage so the location can
   // be restored even if the notebook's metadata.json is reset (e.g. by cloud sync).
@@ -861,6 +950,51 @@ export default function App() {
     });
     return () => unlisten?.();
   }, [refreshTrash]);
+
+  useEffect(() => {
+    if (!isTauri()) return;
+    const handleCommand = (event: Event) => {
+      const command = (event as CustomEvent<unknown>).detail;
+      if (typeof command === "string") void handleMenuCommand(command);
+    };
+    window.addEventListener("tigrana-menu-command", handleCommand);
+    return () => window.removeEventListener("tigrana-menu-command", handleCommand);
+  });
+
+  useEffect(() => {
+    if (!isTauri()) return;
+    const label = getCurrentWindow().label;
+    const state: AppMenuState = {
+      hasWorkspace: Boolean(workspace),
+      hasOpenNote,
+      activeNoteEditable,
+      hasUnsavedChanges,
+      rawMarkdownVisible: rawMarkdownVisible || Boolean(frontmatterError),
+      leftVisible,
+      outlineVisible,
+      spellcheckEnabled,
+      editorWidthMode,
+      noteAlignment,
+    };
+    const handle = window.setTimeout(() => {
+      void updateAppMenuState(label, state).catch((error) => {
+        console.warn("update_app_menu_state failed", error);
+      });
+    }, 50);
+    return () => window.clearTimeout(handle);
+  }, [
+    activeNoteEditable,
+    editorWidthMode,
+    frontmatterError,
+    hasOpenNote,
+    hasUnsavedChanges,
+    leftVisible,
+    noteAlignment,
+    outlineVisible,
+    rawMarkdownVisible,
+    spellcheckEnabled,
+    workspace,
+  ]);
 
   useEffect(() => {
     if (!workspace) return;
@@ -1424,6 +1558,196 @@ export default function App() {
       ...current,
       [mode]: { ...current[mode], ...patch },
     }));
+  }
+
+  function requestEditorCommand(command: EditorCommand) {
+    setEditorCommandRequest({ id: Date.now() + Math.random(), command });
+  }
+
+  function insertEditorImage(src: string, alt = "Image") {
+    setEditorCommandRequest({ id: Date.now() + Math.random(), command: "image", src, alt });
+  }
+
+  async function exportCurrentNote(format: "markdown" | "html") {
+    if (!noteOpen) return;
+    try {
+      if (hasUnsavedChanges) await persistDraft();
+      const markdown = rawMarkdownDraft;
+      const stem = noteExportFileStem(titleDraft);
+      if (format === "markdown") {
+        await exportTextFile(`${stem}.md`, markdown, [{ name: "Markdown", extensions: ["md"] }]);
+        return;
+      }
+      const html = await buildNoteExportHtml(titleDraft, parseNoteMarkdown(markdown).body, {
+        resolveImageSrc: async (src) => {
+          if (!workspace) return src;
+          if (/^(https?:|data:|blob:)/i.test(src)) return src;
+          return readAssetDataUrl(workspace, src);
+        },
+      });
+      await exportTextFile(`${stem}.html`, html, [{ name: "HTML", extensions: ["html", "htm"] }]);
+    } catch (error) {
+      setAppError(error instanceof Error ? error.message : String(error));
+    }
+  }
+
+  async function printCurrentNote() {
+    if (!noteOpen) return;
+    try {
+      if (hasUnsavedChanges) await persistDraft();
+      const html = await buildNoteExportHtml(titleDraft, parseNoteMarkdown(rawMarkdownDraft).body, {
+        resolveImageSrc: async (src) => {
+          if (!workspace) return src;
+          if (/^(https?:|data:|blob:)/i.test(src)) return src;
+          return readAssetDataUrl(workspace, src);
+        },
+      });
+      const printWindow = window.open("", "_blank", "noopener,noreferrer,width=820,height=920");
+      if (printWindow) {
+        printWindow.document.open();
+        printWindow.document.write(html);
+        printWindow.document.close();
+        printWindow.focus();
+        printWindow.setTimeout(() => printWindow.print(), 100);
+      } else {
+        await printCurrentWebview();
+      }
+    } catch (error) {
+      setAppError(error instanceof Error ? error.message : String(error));
+    }
+  }
+
+  async function handleMenuCommand(command: string) {
+    switch (command) {
+      case "new_notebook":
+        await chooseWorkspace("new", true);
+        break;
+      case "new_note":
+        await requestCreateNote(selectedFolder);
+        break;
+      case "new_folder":
+        requestCreateFolder(selectedFolder);
+        break;
+      case "new_tab":
+        await addEmptyTab();
+        break;
+      case "save_note":
+        await persistDraft();
+        break;
+      case "export_markdown":
+        await exportCurrentNote("markdown");
+        break;
+      case "export_html":
+        await exportCurrentNote("html");
+        break;
+      case "print_note":
+        await printCurrentNote();
+        break;
+      case "find_note":
+        if (rawMarkdownVisible || frontmatterError) setRawFindOpen((value) => !value);
+        else setNoteFindRequest((value) => value + 1);
+        break;
+      case "find_next":
+        if (rawMarkdownVisible || frontmatterError) selectRawFindMatch(1);
+        else requestEditorCommand("findNext");
+        break;
+      case "find_previous":
+        if (rawMarkdownVisible || frontmatterError) selectRawFindMatch(-1);
+        else requestEditorCommand("findPrevious");
+        break;
+      case "replace_note":
+        if (rawMarkdownVisible || frontmatterError) {
+          setRawFindOpen(true);
+          setRawReplaceOpen(true);
+        } else {
+          requestEditorCommand("replace");
+        }
+        break;
+      case "search_notebook":
+        setLeftVisible(true);
+        setSearchOpen(true);
+        setSearchFocusRequest((value) => value + 1);
+        break;
+      case "toggle_spellcheck":
+        setSpellcheckEnabled((value) => !value);
+        break;
+      case "toggle_sidebar":
+        setLeftVisible((value) => !value);
+        break;
+      case "toggle_outline":
+        setOutlineVisible((value) => !value);
+        break;
+      case "toggle_raw_markdown":
+        if (!rawMarkdownVisible) setRawMarkdownText(composeMarkdown(frontmatterDraft, draft));
+        setRawMarkdownVisible((value) => !value);
+        break;
+      case "width_comfortable":
+        setEditorWidthMode("comfortable");
+        break;
+      case "width_narrow":
+        setEditorWidthMode("narrow");
+        break;
+      case "width_full":
+        setEditorWidthMode("full");
+        break;
+      case "align_left":
+        setNoteAlignment("left");
+        break;
+      case "align_center":
+        setNoteAlignment("center");
+        break;
+      case "format_image":
+        void requestImage().then((pick) => {
+          if (pick) insertEditorImage(pick.src, pick.alt);
+        });
+        break;
+      default:
+        if (command.startsWith("format_")) {
+          const editorCommand = menuFormatCommandToEditorCommand(command);
+          if (editorCommand) requestEditorCommand(editorCommand);
+        }
+        break;
+    }
+  }
+
+  function selectRawFindMatch(direction: 1 | -1) {
+    const input = rawMarkdownInputRef.current;
+    if (!input || !rawFindQuery) return;
+    const haystack = rawMarkdownDraft.toLowerCase();
+    const needle = rawFindQuery.toLowerCase();
+    const start = direction > 0 ? input.selectionEnd : Math.max(0, input.selectionStart - 1);
+    let index = direction > 0
+      ? haystack.indexOf(needle, start)
+      : haystack.lastIndexOf(needle, start);
+    if (index === -1) {
+      index = direction > 0 ? haystack.indexOf(needle) : haystack.lastIndexOf(needle);
+    }
+    if (index === -1) return;
+    input.focus();
+    input.setSelectionRange(index, index + rawFindQuery.length);
+  }
+
+  function replaceRawCurrent() {
+    const input = rawMarkdownInputRef.current;
+    if (!input || !activeNoteEditable || !rawFindQuery) return;
+    const selected = rawMarkdownDraft.slice(input.selectionStart, input.selectionEnd);
+    if (selected.toLowerCase() !== rawFindQuery.toLowerCase()) {
+      selectRawFindMatch(1);
+      return;
+    }
+    const next = `${rawMarkdownDraft.slice(0, input.selectionStart)}${rawReplaceText}${rawMarkdownDraft.slice(input.selectionEnd)}`;
+    const nextSelection = input.selectionStart + rawReplaceText.length;
+    handleRawMarkdownChange(next);
+    requestAnimationFrame(() => {
+      rawMarkdownInputRef.current?.focus();
+      rawMarkdownInputRef.current?.setSelectionRange(nextSelection, nextSelection);
+    });
+  }
+
+  function replaceRawAll() {
+    if (!activeNoteEditable || !rawFindQuery) return;
+    const escaped = rawFindQuery.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+    handleRawMarkdownChange(rawMarkdownDraft.replace(new RegExp(escaped, "gi"), rawReplaceText));
   }
 
   useEffect(() => {
@@ -2413,6 +2737,13 @@ export default function App() {
     return new Promise((resolve) => {
       emojiPickerResolverRef.current = resolve;
       setEmojiPickerOpen(true);
+    });
+  }
+
+  function requestImage(): Promise<ImageInsertResult | null> {
+    return new Promise((resolve) => {
+      imagePickerResolverRef.current = resolve;
+      setImageDialogOpen(true);
     });
   }
 
@@ -3587,6 +3918,65 @@ export default function App() {
             </div>
             {rawMarkdownVisible || frontmatterError ? (
               <div className="raw-markdown-shell">
+                {rawFindOpen ? (
+                  <div className={rawReplaceOpen ? "note-find-bar raw-find-bar has-replace" : "note-find-bar raw-find-bar"}>
+                    <div className="note-find-row">
+                      <Search size={15} />
+                      <input
+                        value={rawFindQuery}
+                        onChange={(event) => setRawFindQuery(event.target.value)}
+                        onKeyDown={(event) => {
+                          if (event.key === "Enter") {
+                            event.preventDefault();
+                            selectRawFindMatch(event.shiftKey ? -1 : 1);
+                          }
+                          if (event.key === "Escape") {
+                            event.preventDefault();
+                            setRawFindOpen(false);
+                            setRawReplaceOpen(false);
+                          }
+                        }}
+                        placeholder="Find in note"
+                        aria-label="Find in raw Markdown"
+                        autoCapitalize="off"
+                        autoCorrect="off"
+                        spellCheck={false}
+                      />
+                      <span className="find-count">{rawFindQuery.trim() ? `${rawFindMatchCount}` : ""}</span>
+                    </div>
+                    {rawReplaceOpen ? (
+                      <div className="note-replace-row">
+                        <span className="note-find-row-spacer" aria-hidden="true" />
+                        <input
+                          value={rawReplaceText}
+                          onChange={(event) => setRawReplaceText(event.target.value)}
+                          placeholder="Replace"
+                          aria-label="Replace in raw Markdown"
+                          autoCapitalize="off"
+                          autoCorrect="off"
+                          spellCheck={false}
+                        />
+                        <button type="button" disabled={!rawFindMatchCount || !activeNoteEditable} onClick={replaceRawCurrent}>
+                          Replace
+                        </button>
+                        <button type="button" disabled={!rawFindMatchCount || !activeNoteEditable} onClick={replaceRawAll}>
+                          All
+                        </button>
+                      </div>
+                    ) : null}
+                    <div className="note-find-controls">
+                      <button type="button" title="Previous match" disabled={!rawFindMatchCount} onClick={() => selectRawFindMatch(-1)}>
+                        <ChevronUp size={14} />
+                      </button>
+                      <button type="button" title="Next match" disabled={!rawFindMatchCount} onClick={() => selectRawFindMatch(1)}>
+                        <ChevronDown size={14} />
+                      </button>
+                      <button type="button" title="Close find" onClick={() => { setRawFindOpen(false); setRawReplaceOpen(false); }}>
+                        <X size={14} />
+                      </button>
+                    </div>
+                  </div>
+                ) : null}
                 <textarea
                   ref={rawMarkdownInputRef}
                   aria-label="Raw Markdown"
@@ -3610,7 +4000,7 @@ export default function App() {
                     const input = event.currentTarget;
                     setSelectedEditorText(input.value.slice(input.selectionStart, input.selectionEnd));
                   }}
-                  spellCheck={false}
+                  spellCheck={spellcheckEnabled}
                 />
               </div>
             ) : (
@@ -3621,9 +4011,11 @@ export default function App() {
                   focusAtEndRequest={editorFocusAtEndRequest}
                   findRequest={noteFindRequest}
                   reloadRequest={editorReloadRequest}
+                  commandRequest={editorCommandRequest}
                   notePath={activePath}
                   restorePosition={editorRestorePosition}
                   editable={activeNoteEditable}
+                  spellcheckEnabled={spellcheckEnabled}
                   workspace={workspace}
                   onChange={(markdown) => {
                     if (noteLoadTokenRef.current !== 0) return;
@@ -3635,6 +4027,7 @@ export default function App() {
                   onInternalLinkClick={handleInternalLinkClick}
                   onRequestEmoji={requestEmoji}
                   onRequestLink={requestLink}
+                  onRequestImage={requestImage}
                 />
               </EditorErrorBoundary>
             )}
@@ -3854,6 +4247,27 @@ export default function App() {
         />
       ) : null}
 
+      {imageDialogOpen ? (
+        <ImageInsertDialog
+          workspace={workspace}
+          onClose={() => {
+            imagePickerResolverRef.current?.(null);
+            imagePickerResolverRef.current = null;
+            setImageDialogOpen(false);
+          }}
+          onInsert={(src, alt) => {
+            if (imagePickerResolverRef.current) {
+              imagePickerResolverRef.current({ src, alt });
+              imagePickerResolverRef.current = null;
+            } else {
+              insertEditorImage(src, alt);
+            }
+            setImageDialogOpen(false);
+          }}
+          onError={(message) => setAppError(message)}
+        />
+      ) : null}
+
       {settingsOpen ? (
           <SettingsModal
             accentColor={accentColor}
@@ -3869,6 +4283,7 @@ export default function App() {
             editorFontSize={editorFontSize}
             navigationStyle={navigationStyle}
             resolvedTheme={resolvedTheme}
+            spellcheckEnabled={spellcheckEnabled}
             themePresetId={themePreset.id}
             onAccentChange={(color) => updateThemeColor(resolvedTheme, { accentColor: color })}
             onAccentReset={() => updateThemeColor(resolvedTheme, { accentColor: null })}
@@ -3880,6 +4295,7 @@ export default function App() {
             onEditorFontFamilyChange={setEditorFontFamily}
             onEditorFontSizeChange={setEditorFontSize}
             onNavigationStyleChange={setNavigationStyle}
+            onSpellcheckEnabledChange={setSpellcheckEnabled}
             onThemePresetChange={setThemePresetId}
             onTitlebarColorChange={(color) => updateThemeColor(resolvedTheme, { titlebarColor: color })}
             onTitlebarUseAccentChange={(value) => updateThemeColor(resolvedTheme, { titlebarUseAccent: value })}
@@ -5969,6 +6385,7 @@ function SettingsModal({
   effectiveTitlebarColor,
   navigationStyle,
   resolvedTheme,
+  spellcheckEnabled,
   themePresetId,
   accentTitlebar,
   titlebarColor,
@@ -5983,6 +6400,7 @@ function SettingsModal({
   onEditorFontFamilyChange,
   onEditorFontSizeChange,
   onNavigationStyleChange,
+  onSpellcheckEnabledChange,
   onThemePresetChange,
   onTitlebarColorChange,
   onTitlebarUseAccentChange,
@@ -5998,6 +6416,7 @@ function SettingsModal({
   effectiveTitlebarColor: string;
   navigationStyle: NavigationStyle;
   resolvedTheme: "light" | "dark";
+  spellcheckEnabled: boolean;
   themePresetId: ThemePresetId;
   titlebarColor: string | null;
   titlebarUseAccent: boolean;
@@ -6011,6 +6430,7 @@ function SettingsModal({
   onEditorFontFamilyChange: (family: string) => void;
   onEditorFontSizeChange: (size: number) => void;
   onNavigationStyleChange: (style: NavigationStyle) => void;
+  onSpellcheckEnabledChange: (value: boolean) => void;
   onThemePresetChange: (theme: ThemePresetId) => void;
   onTitlebarColorChange: (color: string) => void;
   onTitlebarUseAccentChange: (value: boolean) => void;
@@ -6206,6 +6626,20 @@ function SettingsModal({
                 onBlur={(event) => commitEditorFontSize(event.target.value)}
               />
             </div>
+          </div>
+          <div className="setting-row">
+            <span>
+              <strong>Check spelling while typing</strong>
+              <small>Only applies inside note body editors.</small>
+            </span>
+            <label className="switch">
+              <input
+                type="checkbox"
+                checked={spellcheckEnabled}
+                onChange={(event) => onSpellcheckEnabledChange(event.target.checked)}
+              />
+              <span className="switch-track" />
+            </label>
           </div>
         </div>
       ),
@@ -7342,6 +7776,105 @@ function normalizeExternalUrl(text: string) {
   return `https://${value}`;
 }
 
+function ImageInsertDialog({
+  workspace,
+  onClose,
+  onError,
+  onInsert,
+}: {
+  workspace: string;
+  onClose: () => void;
+  onError: (message: string) => void;
+  onInsert: (src: string, alt?: string) => void;
+}) {
+  const [url, setUrl] = useState("");
+  const [alt, setAlt] = useState("");
+  const [saving, setSaving] = useState(false);
+
+  async function insertFile(file: File | null | undefined) {
+    if (!file) return;
+    if (!workspace) {
+      onError("Open a notebook before inserting local images.");
+      return;
+    }
+    setSaving(true);
+    try {
+      const src = await saveAsset(workspace, file);
+      onInsert(src, alt || file.name || "Image");
+    } catch (error) {
+      onError(error instanceof Error ? error.message : String(error));
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  return (
+    <div className="dialog-backdrop" onMouseDown={onClose}>
+      <form
+        className="dialog"
+        onMouseDown={(event) => event.stopPropagation()}
+        onSubmit={(event) => {
+          event.preventDefault();
+          if (url.trim()) onInsert(url.trim(), alt || "Image");
+        }}
+      >
+        <div className="dialog-header">
+          <span className="dialog-icon">
+            <FileText size={18} />
+          </span>
+          <div>
+            <h2>Insert image</h2>
+            <p>Add an image URL or choose a local file.</p>
+          </div>
+          <button className="icon-button" type="button" title="Close" onClick={onClose}>
+            <X size={17} />
+          </button>
+        </div>
+        <label className="field-label" htmlFor="image-url">Image URL</label>
+        <input
+          id="image-url"
+          className="dialog-input"
+          value={url}
+          onChange={(event) => setUrl(event.target.value)}
+          placeholder="https://example.com/image.png"
+          autoCapitalize="off"
+          autoCorrect="off"
+          spellCheck={false}
+          autoFocus
+        />
+        <label className="field-label" htmlFor="image-alt">Alt text</label>
+        <input
+          id="image-alt"
+          className="dialog-input"
+          value={alt}
+          onChange={(event) => setAlt(event.target.value)}
+          placeholder="Image"
+          spellCheck={false}
+        />
+        <label className="toolbar-button image-file-button">
+          Choose Local Image
+          <input
+            type="file"
+            accept="image/*"
+            disabled={saving}
+            onChange={(event) => {
+              void insertFile(event.currentTarget.files?.[0]);
+            }}
+          />
+        </label>
+        <div className="dialog-actions">
+          <button className="toolbar-button" type="button" onClick={onClose}>
+            Cancel
+          </button>
+          <button className="primary-button" type="submit" disabled={!url.trim() || saving}>
+            Insert
+          </button>
+        </div>
+      </form>
+    </div>
+  );
+}
+
 function LinkPicker({
   folders,
   notes,
@@ -7540,6 +8073,51 @@ function readStoredNumber(key: string, fallback: number) {
   if (rawValue === null) return fallback;
   const value = Number(rawValue);
   return Number.isFinite(value) && value > 0 ? value : fallback;
+}
+
+function readStoredSpellcheckEnabled() {
+  const value = localStorage.getItem(spellcheckKey);
+  return value === null ? true : value === "true";
+}
+
+function countPlainTextMatches(text: string, query: string) {
+  const needle = query.trim().toLowerCase();
+  if (!needle) return 0;
+  const haystack = text.toLowerCase();
+  let count = 0;
+  let index = haystack.indexOf(needle);
+  while (index !== -1) {
+    count += 1;
+    index = haystack.indexOf(needle, index + needle.length);
+  }
+  return count;
+}
+
+function menuFormatCommandToEditorCommand(command: string): EditorCommand | null {
+  const map: Record<string, EditorCommand> = {
+    format_bold: "bold",
+    format_italic: "italic",
+    format_strike: "strike",
+    format_code: "code",
+    format_highlight: "highlight",
+    format_link: "link",
+    format_clear: "clear",
+    format_paragraph: "paragraph",
+    format_h1: "h1",
+    format_h2: "h2",
+    format_h3: "h3",
+    format_h4: "h4",
+    format_h5: "h5",
+    format_h6: "h6",
+    format_bullet_list: "bulletList",
+    format_ordered_list: "orderedList",
+    format_task_list: "taskList",
+    format_quote: "quote",
+    format_code_block: "codeBlock",
+    format_divider: "divider",
+    format_table: "table",
+  };
+  return map[command] ?? null;
 }
 
 function readStoredEditorWidthMode(): EditorWidthMode {

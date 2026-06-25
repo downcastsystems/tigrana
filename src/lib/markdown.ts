@@ -30,6 +30,7 @@ const inlineMarkdownToHtml = (value: string, options: MarkdownOptions = {}) => {
   });
   html = html.replace(/\[([^\]]+)\]\(([^)]+)\)/g, '<a href="$2">$1</a>');
   html = html.replace(/`([^`]+)`/g, "<code>$1</code>");
+  html = html.replace(/==([^=]+)==/g, "<mark>$1</mark>");
   html = html.replace(/~~([^~]+)~~/g, "<s>$1</s>");
   html = html.replace(/\*\*([^*]+)\*\*/g, "<strong>$1</strong>");
   html = html.replace(/\*([^*]+)\*/g, "<em>$1</em>");
@@ -483,6 +484,7 @@ function inlineHtmlToMarkdown(element: Element): string {
     if (tag === "strong" || tag === "b") value += `**${content}**`;
     else if (tag === "em" || tag === "i") value += `*${content}*`;
     else if (tag === "s" || tag === "strike" || tag === "del") value += `~~${content}~~`;
+    else if (tag === "mark") value += `==${content}==`;
     else if (tag === "code") value += `\`${content}\``;
     else if (tag === "a") value += `[${content}](${node.getAttribute("href") ?? ""})`;
     else if (tag === "img") value += imageElementToMarkdown(node);
