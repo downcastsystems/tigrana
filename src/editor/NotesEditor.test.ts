@@ -1,0 +1,92 @@
+import { Schema } from "@tiptap/pm/model";
+import { TextSelection } from "@tiptap/pm/state";
+import { describe, expect, it } from "vitest";
+import { getTaskLineCutDeleteRange } from "./NotesEditor";
+
+const schema = new Schema({
+  nodes: {
+    doc: { content: "block+" },
+    text: { group: "inline" },
+    paragraph: { content: "inline*", group: "block" },
+    taskList: { content: "taskItem+", group: "block" },
+    taskItem: {
+      content: "paragraph block*",
+      attrs: { checked: { default: false } },
+    },
+  },
+});
+
+function paragraph(text: string) {
+  return schema.nodes.paragraph.create(null, text ? schema.text(text) : null);
+}
+
+function taskItem(text: string) {
+  return schema.nodes.taskItem.create({ checked: false }, paragraph(text));
+}
+
+function taskDoc(items: string[]) {
+  return schema.nodes.doc.create(null, schema.nodes.taskList.create(null, items.map(taskItem)));
+}
+
+type TaskItemTestRange = {
+  from: number;
+  to: number;
+  textFrom: number;
+  textTo: number;
+};
+
+function taskItemRange(doc: ReturnType<typeof taskDoc>, targetIndex: number) {
+  const ranges: TaskItemTestRange[] = [];
+
+  doc.descendants((node, pos) => {
+    if (node.type.name !== "taskItem") return true;
+
+    const firstParagraph = node.firstChild;
+    if (!firstParagraph) throw new Error("Expected task item paragraph");
+    const textFrom = pos + 2;
+    ranges.push({
+      from: pos,
+      to: pos + node.nodeSize,
+      textFrom,
+      textTo: textFrom + firstParagraph.content.size,
+    });
+    return false;
+  });
+
+  const range = ranges[targetIndex];
+  if (!range) throw new Error(`Missing task item ${targetIndex}`);
+  return range;
+}
+
+describe("task line cut ranges", () => {
+  it("expands a full single task text selection to remove the checkbox line", () => {
+    const doc = taskDoc(["Buy milk"]);
+    const item = taskItemRange(doc, 0);
+    const selection = TextSelection.create(doc, item.textFrom, item.textTo);
+
+    expect(getTaskLineCutDeleteRange(selection)).toEqual({
+      from: 0,
+      to: doc.firstChild?.nodeSize,
+    });
+  });
+
+  it("leaves partial task text selections to the default cut behavior", () => {
+    const doc = taskDoc(["Buy milk"]);
+    const item = taskItemRange(doc, 0);
+    const selection = TextSelection.create(doc, item.textFrom + 1, item.textTo);
+
+    expect(getTaskLineCutDeleteRange(selection)).toBeNull();
+  });
+
+  it("removes selected task item siblings without deleting the whole list", () => {
+    const doc = taskDoc(["Buy milk", "Write note", "Call Sam"]);
+    const first = taskItemRange(doc, 0);
+    const second = taskItemRange(doc, 1);
+    const selection = TextSelection.create(doc, first.textFrom, second.textTo);
+
+    expect(getTaskLineCutDeleteRange(selection)).toEqual({
+      from: first.from,
+      to: second.to,
+    });
+  });
+});

@@ -2412,6 +2412,9 @@ export function NotesEditor({ content, focusRequest, focusAtEndRequest, findRequ
         copy(view, event) {
           return writeEditorSelectionToClipboard(view, event);
         },
+        cut(view, event) {
+          return cutSelectedTaskLines(view, event);
+        },
       },
       handlePaste(view, event) {
         const file = getClipboardImageFile(event.clipboardData);
@@ -3208,6 +3211,104 @@ function writeEditorSelectionToClipboard(view: EditorView, event: ClipboardEvent
   event.clipboardData.setData("text/plain", markdown);
   event.clipboardData.setData("text/html", html || markdownToHtml(markdown));
   return true;
+}
+
+function cutSelectedTaskLines(view: EditorView, event: ClipboardEvent) {
+  const deleteRange = getTaskLineCutDeleteRange(view.state.selection);
+  if (!deleteRange) return false;
+  if (!writeEditorSelectionToClipboard(view, event)) return false;
+
+  view.dispatch(
+    view.state.tr
+      .deleteRange(deleteRange.from, deleteRange.to)
+      .scrollIntoView()
+      .setMeta("uiEvent", "cut"),
+  );
+  return true;
+}
+
+export function getTaskLineCutDeleteRange(selection: Selection) {
+  if (selection.empty) return null;
+
+  const firstItem = findTaskItemAtEndpoint(selection, "from");
+  const lastItem = findTaskItemAtEndpoint(selection, "to");
+  if (!firstItem || !lastItem) return null;
+  if (firstItem.parentFrom !== lastItem.parentFrom) return null;
+
+  const firstTextStart = findFirstTextblockContentStart(firstItem.node, firstItem.from);
+  const lastTextEnd = findLastTextblockContentEnd(lastItem.node, lastItem.from);
+  if (firstTextStart === null || lastTextEnd === null) return null;
+
+  const startsAtLineStart = selection.from === firstTextStart || selection.from === firstItem.from;
+  const endsAtLineEnd = selection.to === lastTextEnd || selection.to === lastItem.from + lastItem.node.nodeSize;
+  if (!startsAtLineStart || !endsAtLineEnd) return null;
+
+  const firstIndex = getChildIndexAtPos(firstItem.parentNode, firstItem.parentFrom, firstItem.from);
+  const lastIndex = getChildIndexAtPos(lastItem.parentNode, lastItem.parentFrom, lastItem.from);
+  if (firstIndex === null || lastIndex === null || lastIndex < firstIndex) return null;
+
+  if (firstIndex === 0 && lastIndex === firstItem.parentNode.childCount - 1) {
+    return {
+      from: firstItem.parentFrom,
+      to: firstItem.parentFrom + firstItem.parentNode.nodeSize,
+    };
+  }
+
+  return {
+    from: firstItem.from,
+    to: lastItem.from + lastItem.node.nodeSize,
+  };
+}
+
+function findTaskItemAtEndpoint(selection: Selection, endpoint: "from" | "to") {
+  const doc = selection.$from.doc;
+  const position = endpoint === "from" ? selection.from : selection.to;
+  const primary = findListItemAtSelection(doc.resolve(position));
+  if (primary?.node.type.name === "taskItem") return primary;
+
+  if (endpoint === "to" && position > 0) {
+    const previous = findListItemAtSelection(doc.resolve(position - 1));
+    if (previous?.node.type.name === "taskItem") return previous;
+  }
+
+  if (endpoint === "from" && position < doc.content.size) {
+    const next = findListItemAtSelection(doc.resolve(position + 1));
+    if (next?.node.type.name === "taskItem") return next;
+  }
+
+  return null;
+}
+
+function findFirstTextblockContentStart(node: ProseMirrorNode, pos: number): number | null {
+  if (node.isTextblock) return pos + 1;
+
+  let found: number | null = null;
+  node.forEach((child, offset) => {
+    if (found !== null) return;
+    found = findFirstTextblockContentStart(child, pos + 1 + offset);
+  });
+  return found;
+}
+
+function findLastTextblockContentEnd(node: ProseMirrorNode, pos: number): number | null {
+  if (node.isTextblock) return pos + 1 + node.content.size;
+
+  let found: number | null = null;
+  node.forEach((child, offset) => {
+    const childEnd = findLastTextblockContentEnd(child, pos + 1 + offset);
+    if (childEnd !== null) found = childEnd;
+  });
+  return found;
+}
+
+function getChildIndexAtPos(parent: ProseMirrorNode, parentFrom: number, childFrom: number) {
+  let childPos = parentFrom + 1;
+  for (let index = 0; index < parent.childCount; index += 1) {
+    const child = parent.child(index);
+    if (childPos === childFrom) return index;
+    childPos += child.nodeSize;
+  }
+  return null;
 }
 
 function serializeClipboardHtmlFragment(view: EditorView, fragment: ProseMirrorFragment) {
