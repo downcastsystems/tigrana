@@ -18,6 +18,8 @@ import { Decoration, DecorationSet, type EditorView, type NodeView, type ViewMut
 import { EditorContent, NodeViewContent, NodeViewWrapper, Range, ReactNodeViewRenderer, useEditor, type Editor } from "@tiptap/react";
 import StarterKit from "@tiptap/starter-kit";
 import { convertFileSrc } from "@tauri-apps/api/core";
+import dictionaryAff from "/node_modules/dictionary-en/index.aff?raw";
+import dictionaryDic from "/node_modules/dictionary-en/index.dic?raw";
 import {
   Bold,
   Check,
@@ -48,6 +50,7 @@ import {
   X,
 } from "lucide-react";
 import { common, createLowlight } from "lowlight";
+import nspell from "nspell";
 import { type CSSProperties, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { ensureParagraphAfterCurrentTable, filterSlashCommands, markCurrentTableAsTigranaHtml } from "./slashCommands";
 import { htmlToMarkdown, markdownToHtml, normalizeMarkdownImageLines } from "../lib/markdown";
@@ -100,13 +103,16 @@ export type EditorCommand =
   | "image"
   | "findNext"
   | "findPrevious"
-  | "replace";
+  | "replace"
+  | "insertText";
 
 export type EditorCommandRequest = {
   id: number;
   command: EditorCommand;
   src?: string;
   alt?: string;
+  selectionFrom?: number;
+  selectionTo?: number;
 };
 
 type SlashState = {
@@ -117,7 +123,27 @@ type SlashState = {
 
 const lowlight = createLowlight(common);
 const searchHighlightKey = new PluginKey<SearchHighlightState>("searchHighlight");
+const spellcheckDecorationKey = new PluginKey<SpellcheckDecorationState>("spellcheckDecoration");
 const notebookImagePreviewCache = new Map<string, string>();
+const spellchecker = nspell(dictionaryAff, dictionaryDic);
+
+[
+  "Tigrana",
+  "Markdown",
+  "ProseMirror",
+  "Tiptap",
+  "AutoPay",
+  "GEICO",
+  "Hulu",
+  "Everlake",
+  "Xfinity",
+  "ATT",
+  "WiFi",
+  "Roku",
+  "Mint",
+  "CIT",
+  "ETF",
+].forEach((word) => spellchecker.add(word));
 
 type SearchHighlightState = {
   activeIndex: number;
@@ -128,6 +154,15 @@ type SearchHighlightState = {
 type SearchHighlightMeta = {
   activeIndex: number;
   query: string;
+};
+
+type SpellcheckDecorationState = {
+  decorations: DecorationSet;
+  enabled: boolean;
+};
+
+type SpellcheckDecorationMeta = {
+  enabled: boolean;
 };
 
 const EM_SPACE = " ";
@@ -214,6 +249,44 @@ const SearchHighlight = Extension.create({
         props: {
           decorations(state) {
             return searchHighlightKey.getState(state)?.decorations ?? DecorationSet.empty;
+          },
+        },
+      }),
+    ];
+  },
+});
+
+const SpellcheckDecoration = Extension.create({
+  name: "spellcheckDecoration",
+  addProseMirrorPlugins() {
+    return [
+      new Plugin<SpellcheckDecorationState>({
+        key: spellcheckDecorationKey,
+        state: {
+          init: (_config, state) => ({
+            decorations: buildSpellcheckDecorations(state.doc, true),
+            enabled: true,
+          }),
+          apply(transaction, value, _oldState, newState) {
+            const meta = transaction.getMeta(spellcheckDecorationKey) as SpellcheckDecorationMeta | undefined;
+            const enabled = meta?.enabled ?? value.enabled;
+            if (!enabled) {
+              return value.enabled || value.decorations !== DecorationSet.empty
+                ? { decorations: DecorationSet.empty, enabled }
+                : value;
+            }
+            if (meta || transaction.docChanged) {
+              return {
+                decorations: buildSpellcheckDecorations(newState.doc, enabled),
+                enabled,
+              };
+            }
+            return value;
+          },
+        },
+        props: {
+          decorations(state) {
+            return spellcheckDecorationKey.getState(state)?.decorations ?? DecorationSet.empty;
           },
         },
       }),
@@ -2320,6 +2393,7 @@ export function NotesEditor({ content, commandRequest, focusRequest, focusAtEndR
       }),
       Highlight,
       SearchHighlight,
+      SpellcheckDecoration,
       EmSpaceIndent,
       ListItemSeparator,
       MarkdownImage.configure({
@@ -2512,6 +2586,9 @@ export function NotesEditor({ content, commandRequest, focusRequest, focusAtEndR
 
   useEffect(() => {
     editor?.view.dom.setAttribute("spellcheck", spellcheckEnabled ? "true" : "false");
+    if (editor) {
+      editor.view.dispatch(editor.state.tr.setMeta(spellcheckDecorationKey, { enabled: spellcheckEnabled }));
+    }
   }, [editor, spellcheckEnabled]);
 
   useEffect(() => {
@@ -2700,6 +2777,18 @@ export function NotesEditor({ content, commandRequest, focusRequest, focusAtEndR
     if (request.command === "replace") {
       setFindOpen(true);
       setReplaceOpen(true);
+      return;
+    }
+    if (request.command === "insertText") {
+      if (!editor.isEditable || !request.src) return;
+      if (typeof request.selectionFrom === "number") {
+        const docSize = editor.state.doc.content.size;
+        const from = Math.min(Math.max(1, request.selectionFrom), docSize);
+        const to = Math.min(Math.max(from, request.selectionTo ?? from), docSize);
+        editor.chain().focus().insertContentAt({ from, to }, request.src).setTextSelection(from + request.src.length).run();
+        return;
+      }
+      editor.chain().focus().insertContent(request.src).run();
       return;
     }
     if (!editor.isEditable) return;
@@ -3264,6 +3353,38 @@ function FormattingBubbleMenu({
 
 function getEditorMatches(editor: Editor, query: string) {
   return getDocumentMatches(editor.state.doc, query);
+}
+
+function buildSpellcheckDecorations(doc: ProseMirrorNode, enabled: boolean) {
+  if (!enabled) return DecorationSet.empty;
+  const decorations: Decoration[] = [];
+
+  doc.descendants((node, pos, parent) => {
+    if (!node.isText || !node.text) return;
+    if (parent?.type.name === "codeBlock" || parent?.type.spec.code) return false;
+    if (node.marks.some((mark) => mark.type.name === "code")) return;
+
+    for (const match of node.text.matchAll(/[A-Za-z][A-Za-z'’-]*/g)) {
+      const word = match[0];
+      const index = match.index ?? 0;
+      if (shouldIgnoreSpellcheckWord(word)) continue;
+      if (spellchecker.correct(normalizeSpellcheckWord(word))) continue;
+      decorations.push(Decoration.inline(pos + index, pos + index + word.length, { class: "spellcheck-error" }));
+    }
+  });
+
+  return DecorationSet.create(doc, decorations);
+}
+
+function normalizeSpellcheckWord(word: string) {
+  return word.replace(/[’]/g, "'");
+}
+
+function shouldIgnoreSpellcheckWord(word: string) {
+  if (word.length <= 1) return true;
+  if (/^[A-Z]{2,}$/.test(word)) return true;
+  if (/^[A-Za-z]+['’]s$/.test(word)) return spellchecker.correct(normalizeSpellcheckWord(word.slice(0, -2)));
+  return false;
 }
 
 function getDocumentMatches(doc: ProseMirrorNode, query: string) {

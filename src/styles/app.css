@@ -3059,6 +3059,14 @@ html[data-theme="dark"] .tab-list-separator {
   box-shadow: 0 0 0 1px rgba(171, 101, 11, 0.35);
 }
 
+.ProseMirror .spellcheck-error {
+  text-decoration-line: underline;
+  text-decoration-style: wavy;
+  text-decoration-color: #d33b2f;
+  text-decoration-thickness: 1.4px;
+  text-underline-offset: 3px;
+}
+
 .ProseMirror ul,
 .ProseMirror ol {
   padding-left: 1.35em;
@@ -3791,6 +3799,88 @@ html[data-theme="dark"] .table-column-handle.is-visible:hover {
   color: var(--text);
   background: var(--surface-strong);
   box-shadow: var(--shadow-modal-strong);
+}
+
+.dictation-popover {
+  position: fixed;
+  top: 72px;
+  left: 50%;
+  z-index: 2147483647;
+  width: min(380px, calc(100vw - 56px));
+  padding: 14px;
+  transform: translateX(-50%);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  color: var(--text);
+  background: var(--surface-strong);
+  box-shadow: var(--shadow-modal-strong);
+}
+
+.dictation-header {
+  display: grid;
+  grid-template-columns: 38px minmax(0, 1fr) 30px;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 14px;
+}
+
+.dictation-header h2 {
+  margin: 0;
+  font-size: 17px;
+  letter-spacing: 0;
+}
+
+.dictation-header p {
+  margin: 2px 0 0;
+  color: var(--text-muted);
+  font-size: 13px;
+}
+
+.dictation-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 38px;
+  height: 38px;
+  border-radius: 999px;
+  color: var(--accent);
+  background: var(--accent-soft);
+}
+
+.dictation-icon.is-recording {
+  color: #ffffff;
+  background: #b5473d;
+}
+
+.dictation-select {
+  height: 38px;
+}
+
+.dictation-meter {
+  height: 8px;
+  margin: 10px 0;
+  overflow: hidden;
+  border-radius: 999px;
+  background: rgba(52, 48, 43, 0.1);
+}
+
+.dictation-meter span {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+  background: var(--accent);
+  transition: width 120ms ease;
+}
+
+.dictation-live-text {
+  min-height: 20px;
+  margin: 8px 0 0;
+  overflow: hidden;
+  color: var(--text-muted);
+  font-size: 13px;
+  line-height: 1.45;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .icon-browser {

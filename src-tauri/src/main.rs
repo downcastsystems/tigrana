@@ -40,7 +40,9 @@ use std::path::{Path, PathBuf};
 use std::process::Command;
 use std::sync::Mutex;
 use std::{collections::hash_map::DefaultHasher, process};
-use tauri::menu::{AboutMetadataBuilder, CheckMenuItem, Menu, MenuItem, PredefinedMenuItem, Submenu};
+use tauri::menu::{
+    AboutMetadataBuilder, CheckMenuItem, Menu, MenuItem, PredefinedMenuItem, Submenu,
+};
 use tauri::{AppHandle, Emitter, Manager, WebviewWindow, WindowEvent, Wry};
 use tauri_plugin_dialog::DialogExt;
 use time::OffsetDateTime;
@@ -668,7 +670,10 @@ fn register_notebook_window(
         );
     }
     {
-        let mut menu_states = state.menu_states.lock().map_err(|error| error.to_string())?;
+        let mut menu_states = state
+            .menu_states
+            .lock()
+            .map_err(|error| error.to_string())?;
         menu_states.entry(label).or_default().has_workspace = true;
     }
     rebuild_app_menu(&app, &state)
@@ -685,7 +690,10 @@ fn unregister_notebook_window(
         windows.remove(&label);
     }
     {
-        let mut menu_states = state.menu_states.lock().map_err(|error| error.to_string())?;
+        let mut menu_states = state
+            .menu_states
+            .lock()
+            .map_err(|error| error.to_string())?;
         menu_states.remove(&label);
     }
     rebuild_app_menu(&app, &state)
@@ -699,7 +707,10 @@ fn update_app_menu_state(
     state: AppMenuState,
 ) -> Result<(), String> {
     {
-        let mut menu_states = notebook_state.menu_states.lock().map_err(|error| error.to_string())?;
+        let mut menu_states = notebook_state
+            .menu_states
+            .lock()
+            .map_err(|error| error.to_string())?;
         menu_states.insert(label, state);
     }
     rebuild_app_menu(&app, &notebook_state)
@@ -950,7 +961,13 @@ fn build_app_menu(
     // instead of calling app.exit() directly, which would skip the
     // frontend's metadata-flush handler.
     let quit_item = MenuItem::with_id(handle, "request_quit", "Quit Tigrana", true, Some("Cmd+Q"))?;
-    let new_notebook = MenuItem::with_id(handle, "new_notebook", "New Notebook...", true, Some("Cmd+Shift+O"))?;
+    let new_notebook = MenuItem::with_id(
+        handle,
+        "new_notebook",
+        "New Notebook...",
+        true,
+        Some("Cmd+Shift+O"),
+    )?;
     let recently_deleted = MenuItem::with_id(
         handle,
         "open_recently_deleted",
@@ -973,18 +990,85 @@ fn build_app_menu(
         None::<&str>,
     )?;
     let new_note = MenuItem::with_id(handle, "new_note", "New Note", has_workspace, Some("Cmd+N"))?;
-    let new_folder = MenuItem::with_id(handle, "new_folder", "New Folder/Section", has_workspace, Some("Cmd+Shift+N"))?;
+    let new_folder = MenuItem::with_id(
+        handle,
+        "new_folder",
+        "New Folder/Section",
+        has_workspace,
+        Some("Cmd+Shift+N"),
+    )?;
     let new_tab = MenuItem::with_id(handle, "new_tab", "New Tab", true, Some("Cmd+T"))?;
-    let save_note = MenuItem::with_id(handle, "save_note", "Save", editable_note && state.has_unsaved_changes, Some("Cmd+S"))?;
-    let export_markdown = MenuItem::with_id(handle, "export_markdown", "Export Current Note as Markdown...", has_open_note, None::<&str>)?;
-    let export_html = MenuItem::with_id(handle, "export_html", "Export Current Note as HTML...", has_open_note, None::<&str>)?;
-    let print_note = MenuItem::with_id(handle, "print_note", "Print Current Note...", has_open_note, Some("Cmd+P"))?;
+    let save_note = MenuItem::with_id(
+        handle,
+        "save_note",
+        "Save",
+        editable_note && state.has_unsaved_changes,
+        Some("Cmd+S"),
+    )?;
+    let export_markdown = MenuItem::with_id(
+        handle,
+        "export_markdown",
+        "Export Current Note as Markdown...",
+        has_open_note,
+        None::<&str>,
+    )?;
+    let export_html = MenuItem::with_id(
+        handle,
+        "export_html",
+        "Export Current Note as HTML...",
+        has_open_note,
+        None::<&str>,
+    )?;
+    let print_note = MenuItem::with_id(
+        handle,
+        "print_note",
+        "Print Current Note...",
+        has_open_note,
+        Some("Cmd+P"),
+    )?;
 
-    let find_note = MenuItem::with_id(handle, "find_note", "Find in Note", has_open_note, Some("Cmd+F"))?;
-    let find_next = MenuItem::with_id(handle, "find_next", "Find Next", has_open_note, Some("Cmd+G"))?;
-    let find_previous = MenuItem::with_id(handle, "find_previous", "Find Previous", has_open_note, Some("Cmd+Shift+G"))?;
-    let replace_note = MenuItem::with_id(handle, "replace_note", "Replace in Note", editable_note, None::<&str>)?;
-    let search_notebook = MenuItem::with_id(handle, "search_notebook", "Search Notebook", has_workspace, Some("Cmd+K"))?;
+    let find_note = MenuItem::with_id(
+        handle,
+        "find_note",
+        "Find in Note",
+        has_open_note,
+        Some("Cmd+F"),
+    )?;
+    let find_next = MenuItem::with_id(
+        handle,
+        "find_next",
+        "Find Next",
+        has_open_note,
+        Some("Cmd+G"),
+    )?;
+    let find_previous = MenuItem::with_id(
+        handle,
+        "find_previous",
+        "Find Previous",
+        has_open_note,
+        Some("Cmd+Shift+G"),
+    )?;
+    let replace_note = MenuItem::with_id(
+        handle,
+        "replace_note",
+        "Replace in Note",
+        editable_note,
+        None::<&str>,
+    )?;
+    let start_dictation = MenuItem::with_id(
+        handle,
+        "start_dictation",
+        "Start Dictation...",
+        editable_note,
+        None::<&str>,
+    )?;
+    let search_notebook = MenuItem::with_id(
+        handle,
+        "search_notebook",
+        "Search Notebook",
+        has_workspace,
+        Some("Cmd+K"),
+    )?;
     let spellcheck = CheckMenuItem::with_id(
         handle,
         "toggle_spellcheck",
@@ -994,39 +1078,237 @@ fn build_app_menu(
         None::<&str>,
     )?;
 
-    let toggle_sidebar = CheckMenuItem::with_id(handle, "toggle_sidebar", "Show Sidebar", true, state.left_visible, Some("Cmd+\\"))?;
-    let toggle_outline = CheckMenuItem::with_id(handle, "toggle_outline", "Show Outline", has_open_note, state.outline_visible, None::<&str>)?;
-    let toggle_raw = CheckMenuItem::with_id(handle, "toggle_raw_markdown", "Show Raw Markdown", has_open_note, state.raw_markdown_visible, Some("Cmd+Alt+R"))?;
-    let width_comfortable = CheckMenuItem::with_id(handle, "width_comfortable", "Comfortable Width", has_open_note, state.editor_width_mode == "comfortable", None::<&str>)?;
-    let width_narrow = CheckMenuItem::with_id(handle, "width_narrow", "Narrow Width", has_open_note, state.editor_width_mode == "narrow", None::<&str>)?;
-    let width_full = CheckMenuItem::with_id(handle, "width_full", "Full Width", has_open_note, state.editor_width_mode == "full", None::<&str>)?;
-    let width_menu = Submenu::with_items(handle, "Editor Width", has_open_note, &[&width_comfortable, &width_narrow, &width_full])?;
-    let align_left = CheckMenuItem::with_id(handle, "align_left", "Left", has_open_note, state.note_alignment == "left", None::<&str>)?;
-    let align_center = CheckMenuItem::with_id(handle, "align_center", "Center", has_open_note, state.note_alignment == "center", None::<&str>)?;
-    let alignment_menu = Submenu::with_items(handle, "Note Alignment", has_open_note, &[&align_left, &align_center])?;
+    let toggle_sidebar = CheckMenuItem::with_id(
+        handle,
+        "toggle_sidebar",
+        "Show Sidebar",
+        true,
+        state.left_visible,
+        Some("Cmd+\\"),
+    )?;
+    let toggle_outline = CheckMenuItem::with_id(
+        handle,
+        "toggle_outline",
+        "Show Outline",
+        has_open_note,
+        state.outline_visible,
+        None::<&str>,
+    )?;
+    let toggle_raw = CheckMenuItem::with_id(
+        handle,
+        "toggle_raw_markdown",
+        "Show Raw Markdown",
+        has_open_note,
+        state.raw_markdown_visible,
+        Some("Cmd+Alt+R"),
+    )?;
+    let width_comfortable = CheckMenuItem::with_id(
+        handle,
+        "width_comfortable",
+        "Comfortable Width",
+        has_open_note,
+        state.editor_width_mode == "comfortable",
+        None::<&str>,
+    )?;
+    let width_narrow = CheckMenuItem::with_id(
+        handle,
+        "width_narrow",
+        "Narrow Width",
+        has_open_note,
+        state.editor_width_mode == "narrow",
+        None::<&str>,
+    )?;
+    let width_full = CheckMenuItem::with_id(
+        handle,
+        "width_full",
+        "Full Width",
+        has_open_note,
+        state.editor_width_mode == "full",
+        None::<&str>,
+    )?;
+    let width_menu = Submenu::with_items(
+        handle,
+        "Editor Width",
+        has_open_note,
+        &[&width_comfortable, &width_narrow, &width_full],
+    )?;
+    let align_left = CheckMenuItem::with_id(
+        handle,
+        "align_left",
+        "Left",
+        has_open_note,
+        state.note_alignment == "left",
+        None::<&str>,
+    )?;
+    let align_center = CheckMenuItem::with_id(
+        handle,
+        "align_center",
+        "Center",
+        has_open_note,
+        state.note_alignment == "center",
+        None::<&str>,
+    )?;
+    let alignment_menu = Submenu::with_items(
+        handle,
+        "Note Alignment",
+        has_open_note,
+        &[&align_left, &align_center],
+    )?;
 
-    let format_bold = MenuItem::with_id(handle, "format_bold", "Bold", rich_editable_note, Some("Cmd+B"))?;
-    let format_italic = MenuItem::with_id(handle, "format_italic", "Italic", rich_editable_note, Some("Cmd+I"))?;
-    let format_strike = MenuItem::with_id(handle, "format_strike", "Strikethrough", rich_editable_note, None::<&str>)?;
-    let format_code = MenuItem::with_id(handle, "format_code", "Inline Code", rich_editable_note, None::<&str>)?;
-    let format_highlight = MenuItem::with_id(handle, "format_highlight", "Highlight", rich_editable_note, None::<&str>)?;
-    let format_link = MenuItem::with_id(handle, "format_link", "Link", rich_editable_note, Some("Cmd+Shift+K"))?;
-    let format_clear = MenuItem::with_id(handle, "format_clear", "Clear Formatting", rich_editable_note, None::<&str>)?;
-    let format_paragraph = MenuItem::with_id(handle, "format_paragraph", "Paragraph", rich_editable_note, None::<&str>)?;
-    let format_h1 = MenuItem::with_id(handle, "format_h1", "Heading 1", rich_editable_note, None::<&str>)?;
-    let format_h2 = MenuItem::with_id(handle, "format_h2", "Heading 2", rich_editable_note, None::<&str>)?;
-    let format_h3 = MenuItem::with_id(handle, "format_h3", "Heading 3", rich_editable_note, None::<&str>)?;
-    let format_h4 = MenuItem::with_id(handle, "format_h4", "Heading 4", rich_editable_note, None::<&str>)?;
-    let format_h5 = MenuItem::with_id(handle, "format_h5", "Heading 5", rich_editable_note, None::<&str>)?;
-    let format_h6 = MenuItem::with_id(handle, "format_h6", "Heading 6", rich_editable_note, None::<&str>)?;
-    let format_bullet_list = MenuItem::with_id(handle, "format_bullet_list", "Bulleted List", rich_editable_note, None::<&str>)?;
-    let format_ordered_list = MenuItem::with_id(handle, "format_ordered_list", "Numbered List", rich_editable_note, None::<&str>)?;
-    let format_task_list = MenuItem::with_id(handle, "format_task_list", "Task List", rich_editable_note, None::<&str>)?;
-    let format_quote = MenuItem::with_id(handle, "format_quote", "Quote", rich_editable_note, None::<&str>)?;
-    let format_code_block = MenuItem::with_id(handle, "format_code_block", "Code Block", rich_editable_note, None::<&str>)?;
-    let format_divider = MenuItem::with_id(handle, "format_divider", "Divider", rich_editable_note, None::<&str>)?;
-    let format_table = MenuItem::with_id(handle, "format_table", "Table", rich_editable_note, None::<&str>)?;
-    let format_image = MenuItem::with_id(handle, "format_image", "Image...", rich_editable_note, None::<&str>)?;
+    let format_bold = MenuItem::with_id(
+        handle,
+        "format_bold",
+        "Bold",
+        rich_editable_note,
+        Some("Cmd+B"),
+    )?;
+    let format_italic = MenuItem::with_id(
+        handle,
+        "format_italic",
+        "Italic",
+        rich_editable_note,
+        Some("Cmd+I"),
+    )?;
+    let format_strike = MenuItem::with_id(
+        handle,
+        "format_strike",
+        "Strikethrough",
+        rich_editable_note,
+        None::<&str>,
+    )?;
+    let format_code = MenuItem::with_id(
+        handle,
+        "format_code",
+        "Inline Code",
+        rich_editable_note,
+        None::<&str>,
+    )?;
+    let format_highlight = MenuItem::with_id(
+        handle,
+        "format_highlight",
+        "Highlight",
+        rich_editable_note,
+        None::<&str>,
+    )?;
+    let format_link = MenuItem::with_id(
+        handle,
+        "format_link",
+        "Link",
+        rich_editable_note,
+        Some("Cmd+Shift+K"),
+    )?;
+    let format_clear = MenuItem::with_id(
+        handle,
+        "format_clear",
+        "Clear Formatting",
+        rich_editable_note,
+        None::<&str>,
+    )?;
+    let format_paragraph = MenuItem::with_id(
+        handle,
+        "format_paragraph",
+        "Paragraph",
+        rich_editable_note,
+        None::<&str>,
+    )?;
+    let format_h1 = MenuItem::with_id(
+        handle,
+        "format_h1",
+        "Heading 1",
+        rich_editable_note,
+        None::<&str>,
+    )?;
+    let format_h2 = MenuItem::with_id(
+        handle,
+        "format_h2",
+        "Heading 2",
+        rich_editable_note,
+        None::<&str>,
+    )?;
+    let format_h3 = MenuItem::with_id(
+        handle,
+        "format_h3",
+        "Heading 3",
+        rich_editable_note,
+        None::<&str>,
+    )?;
+    let format_h4 = MenuItem::with_id(
+        handle,
+        "format_h4",
+        "Heading 4",
+        rich_editable_note,
+        None::<&str>,
+    )?;
+    let format_h5 = MenuItem::with_id(
+        handle,
+        "format_h5",
+        "Heading 5",
+        rich_editable_note,
+        None::<&str>,
+    )?;
+    let format_h6 = MenuItem::with_id(
+        handle,
+        "format_h6",
+        "Heading 6",
+        rich_editable_note,
+        None::<&str>,
+    )?;
+    let format_bullet_list = MenuItem::with_id(
+        handle,
+        "format_bullet_list",
+        "Bulleted List",
+        rich_editable_note,
+        None::<&str>,
+    )?;
+    let format_ordered_list = MenuItem::with_id(
+        handle,
+        "format_ordered_list",
+        "Numbered List",
+        rich_editable_note,
+        None::<&str>,
+    )?;
+    let format_task_list = MenuItem::with_id(
+        handle,
+        "format_task_list",
+        "Task List",
+        rich_editable_note,
+        None::<&str>,
+    )?;
+    let format_quote = MenuItem::with_id(
+        handle,
+        "format_quote",
+        "Quote",
+        rich_editable_note,
+        None::<&str>,
+    )?;
+    let format_code_block = MenuItem::with_id(
+        handle,
+        "format_code_block",
+        "Code Block",
+        rich_editable_note,
+        None::<&str>,
+    )?;
+    let format_divider = MenuItem::with_id(
+        handle,
+        "format_divider",
+        "Divider",
+        rich_editable_note,
+        None::<&str>,
+    )?;
+    let format_table = MenuItem::with_id(
+        handle,
+        "format_table",
+        "Table",
+        rich_editable_note,
+        None::<&str>,
+    )?;
+    let format_image = MenuItem::with_id(
+        handle,
+        "format_image",
+        "Image...",
+        rich_editable_note,
+        None::<&str>,
+    )?;
 
     let open_notebooks = Submenu::new(handle, "Open Notebooks", true)?;
     if notebook_windows.is_empty() {
@@ -1109,6 +1391,7 @@ fn build_app_menu(
             &find_next,
             &find_previous,
             &replace_note,
+            &start_dictation,
             &search_notebook,
             &PredefinedMenuItem::separator(handle)?,
             &spellcheck,
@@ -1200,9 +1483,17 @@ fn rebuild_app_menu(app: &AppHandle, state: &NotebookWindowState) -> Result<(), 
         .values()
         .find(|window| window.is_focused().unwrap_or(false))
         .map(|window| window.label().to_string())
-        .or_else(|| app.webview_windows().values().next().map(|window| window.label().to_string()));
+        .or_else(|| {
+            app.webview_windows()
+                .values()
+                .next()
+                .map(|window| window.label().to_string())
+        });
     let active_state = {
-        let mut menu_states = state.menu_states.lock().map_err(|error| error.to_string())?;
+        let mut menu_states = state
+            .menu_states
+            .lock()
+            .map_err(|error| error.to_string())?;
         menu_states.retain(|label, _| live_labels.contains(label));
         active_label
             .as_ref()
@@ -1212,9 +1503,80 @@ fn rebuild_app_menu(app: &AppHandle, state: &NotebookWindowState) -> Result<(), 
     };
     notebooks.sort_by(|a, b| a.name.cmp(&b.name).then(a.workspace.cmp(&b.workspace)));
     let menu = build_app_menu(app, &notebooks, &active_state).map_err(|error| error.to_string())?;
-    app.set_menu(menu)
-        .map(|_| ())
-        .map_err(|error| error.to_string())
+    app.set_menu(menu).map_err(|error| error.to_string())?;
+    remove_macos_system_dictation_menu_item(app);
+    Ok(())
+}
+
+#[cfg(target_os = "macos")]
+fn remove_macos_system_dictation_menu_item(app: &AppHandle) {
+    let _ = app.run_on_main_thread(|| {
+        remove_macos_system_dictation_menu_item_on_main_thread();
+    });
+}
+
+#[cfg(not(target_os = "macos"))]
+fn remove_macos_system_dictation_menu_item(_app: &AppHandle) {}
+
+#[cfg(target_os = "macos")]
+fn remove_macos_system_dictation_menu_item_on_main_thread() {
+    use objc2::MainThreadMarker;
+    use objc2_app_kit::NSApplication;
+
+    let Some(mtm) = MainThreadMarker::new() else {
+        return;
+    };
+    let Some(main_menu) = NSApplication::sharedApplication(mtm).mainMenu() else {
+        return;
+    };
+    let Some(edit_menu) = find_macos_submenu(&main_menu, "Edit") else {
+        return;
+    };
+
+    let count = edit_menu.numberOfItems();
+    let mut lower_system_cluster_start = None;
+    for index in 0..count {
+        let Some(item) = edit_menu.itemAtIndex(index) else {
+            continue;
+        };
+        let title = item.title().to_string();
+        if title == "AutoFill" || title == "Emoji & Symbols" {
+            lower_system_cluster_start = Some(index);
+            break;
+        }
+    }
+
+    let Some(cluster_start) = lower_system_cluster_start else {
+        return;
+    };
+    for index in (cluster_start..count).rev() {
+        let Some(item) = edit_menu.itemAtIndex(index) else {
+            continue;
+        };
+        if is_macos_system_dictation_title(&item.title().to_string()) {
+            edit_menu.removeItemAtIndex(index);
+        }
+    }
+}
+
+#[cfg(target_os = "macos")]
+fn find_macos_submenu(
+    menu: &objc2_app_kit::NSMenu,
+    title: &str,
+) -> Option<objc2::rc::Retained<objc2_app_kit::NSMenu>> {
+    let count = menu.numberOfItems();
+    for index in 0..count {
+        let item = menu.itemAtIndex(index)?;
+        if item.title().to_string() == title {
+            return item.submenu();
+        }
+    }
+    None
+}
+
+#[cfg(target_os = "macos")]
+fn is_macos_system_dictation_title(title: &str) -> bool {
+    matches!(title, "Start Dictation..." | "Start Dictation…")
 }
 
 fn emit_menu_action(app: &AppHandle, event: &str) {
@@ -1398,6 +1760,7 @@ pub fn run() {
             "find_next" => emit_menu_command(app, "find_next"),
             "find_previous" => emit_menu_command(app, "find_previous"),
             "replace_note" => emit_menu_command(app, "replace_note"),
+            "start_dictation" => emit_menu_command(app, "start_dictation"),
             "search_notebook" => emit_menu_command(app, "search_notebook"),
             "toggle_spellcheck" => emit_menu_command(app, "toggle_spellcheck"),
             "toggle_sidebar" => emit_menu_command(app, "toggle_sidebar"),
