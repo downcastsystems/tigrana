@@ -930,23 +930,15 @@ export default function App() {
 
   useEffect(() => {
     if (!isTauri()) return;
-    let unlisten: (() => void) | undefined;
-    void listen("open-settings", () => setSettingsOpen(true)).then((callback) => {
-      unlisten = callback;
-    });
-    return () => unlisten?.();
-  }, []);
-
-  useEffect(() => {
-    if (!isTauri()) return;
     let unlistenOpen: (() => void) | undefined;
     let unlistenManage: (() => void) | undefined;
-    void listen("open-notebook", () => {
+    const currentWindow = getCurrentWindow();
+    void currentWindow.listen("open-notebook", () => {
       chooseWorkspaceRef.current("open");
     }).then((callback) => {
       unlistenOpen = callback;
     });
-    void listen("manage-notebooks", () => {
+    void currentWindow.listen("manage-notebooks", () => {
       setNotebooksManageOpen(true);
     }).then((callback) => {
       unlistenManage = callback;
@@ -987,18 +979,6 @@ export default function App() {
       setTrashLoading(false);
     }
   }, [workspace]);
-
-  useEffect(() => {
-    if (!isTauri()) return;
-    let unlisten: (() => void) | undefined;
-    void listen("open-recently-deleted", () => {
-      setRecentlyDeletedOpen(true);
-      void refreshTrash();
-    }).then((callback) => {
-      unlisten = callback;
-    });
-    return () => unlisten?.();
-  }, [refreshTrash]);
 
   useEffect(() => {
     if (!isTauri()) return;
@@ -1682,6 +1662,13 @@ export default function App() {
 
   async function handleMenuCommand(command: string) {
     switch (command) {
+      case "open_settings":
+        setSettingsOpen(true);
+        break;
+      case "open_recently_deleted":
+        setRecentlyDeletedOpen(true);
+        void refreshTrash();
+        break;
       case "new_notebook":
         await chooseWorkspace("new", true);
         break;

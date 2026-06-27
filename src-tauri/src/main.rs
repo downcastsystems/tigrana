@@ -1579,14 +1579,6 @@ fn is_macos_system_dictation_title(title: &str) -> bool {
     matches!(title, "Start Dictation..." | "Start Dictation…")
 }
 
-fn emit_menu_action(app: &AppHandle, event: &str) {
-    if let Some(window) = active_menu_window(app) {
-        let _ = window.emit(event, ());
-        return;
-    }
-    let _ = app.emit(event, ());
-}
-
 fn active_menu_window(app: &AppHandle) -> Option<WebviewWindow<Wry>> {
     let windows = app.webview_windows();
     windows
@@ -1737,7 +1729,7 @@ pub fn run() {
         })
         .on_menu_event(|app, event| match event.id().as_ref() {
             "open_settings" => {
-                emit_menu_action(app, "open-settings");
+                emit_menu_command(app, "open_settings");
             }
             "open_notebook" => {
                 open_notebook_from_menu(app);
@@ -1746,7 +1738,7 @@ pub fn run() {
                 manage_notebooks_from_menu(app);
             }
             "open_recently_deleted" => {
-                emit_menu_action(app, "open-recently-deleted");
+                emit_menu_command(app, "open_recently_deleted");
             }
             "new_notebook" => emit_menu_command(app, "new_notebook"),
             "new_note" => emit_menu_command(app, "new_note"),
