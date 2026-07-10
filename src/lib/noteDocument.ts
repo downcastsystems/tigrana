@@ -137,12 +137,28 @@ export function extractOutline(title: string, body: string) {
   const headings = title.trim() ? [{ level: 1, text: title.trim() }] : [];
   body.split("\n").forEach((line) => {
     const match = /^(#{1,6})\s+(.+)$/.exec(line);
-    if (match) headings.push({ level: match[1].length, text: match[2].trim() });
+    if (match) headings.push({ level: match[1].length, text: inlineMarkdownToPlainText(match[2]) });
   });
   return headings.map((heading, index) => ({
     ...heading,
     id: `heading-${index}`,
   }));
+}
+
+export function inlineMarkdownToPlainText(value: string) {
+  return value
+    .replace(/!\[([^\]]*)]\([^)]*\)/g, "$1")
+    .replace(/\[([^\]]+)]\([^)]*\)/g, "$1")
+    .replace(/`([^`]+)`/g, "$1")
+    .replace(/==([^=]+)==/g, "$1")
+    .replace(/~~([^~]+)~~/g, "$1")
+    .replace(/\*\*([^*]+)\*\*/g, "$1")
+    .replace(/__([^_]+)__/g, "$1")
+    .replace(/\*([^*]+)\*/g, "$1")
+    .replace(/(^|[\s([{])_([^_\s][^_]*[^_\s]|[^_\s])_(?=$|[\s)\]}.,;:!?])/g, "$1$2")
+    .replace(/\\([\\`*{}[\]()#+\-.!_>])/g, "$1")
+    .replace(/\s+/g, " ")
+    .trim();
 }
 
 function normalizeFrontmatterClosingFence(markdown: string) {
