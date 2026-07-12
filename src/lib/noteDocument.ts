@@ -1,3 +1,5 @@
+import { gitHubEmojis, shortcodeToEmoji } from "@tiptap/extension-emoji";
+
 export type ParsedNoteMarkdown = {
   body: string;
   frontmatter: string;
@@ -147,6 +149,7 @@ export function extractOutline(title: string, body: string) {
 
 export function inlineMarkdownToPlainText(value: string) {
   return value
+    .replace(/:([a-zA-Z0-9_+-]+):/g, (match, shortcode: string) => shortcodeToEmoji(shortcode, gitHubEmojis)?.emoji ?? match)
     .replace(/!\[([^\]]*)]\([^)]*\)/g, "$1")
     .replace(/\[([^\]]+)]\([^)]*\)/g, "$1")
     .replace(/`([^`]+)`/g, "$1")

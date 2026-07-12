@@ -15,4 +15,11 @@ describe("note document outline", () => {
       "Docs and code with marked text",
     );
   });
+
+  it("shows known emoji shortcodes in heading text", () => {
+    expect(extractOutline("", "# :x: Discover\n## :unknown_shortcode: Fallback")).toEqual([
+      { id: "heading-0", level: 1, text: "\u274c Discover" },
+      { id: "heading-1", level: 2, text: ":unknown_shortcode: Fallback" },
+    ]);
+  });
 });
