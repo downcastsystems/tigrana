@@ -1,10 +1,5 @@
 import type { Dispatch, MutableRefObject, SetStateAction } from "react";
-import {
-  moveFolder as moveFolderOnDisk,
-  moveNote as moveNoteOnDisk,
-  renameFolder as renameFolderOnDisk,
-  renameNote as renameNoteOnDisk,
-} from "./notesApi";
+import { notebookStorage, type FolderSiblingPlacement, type NotebookStorage } from "./notebookStorage";
 import {
   moveFolderInMetadata,
   moveNoteInMetadata,
@@ -25,7 +20,10 @@ type NoteEditLock = {
   windowLabel: string;
 };
 
-type UpdateMetadata = (updater: (current: WorkspaceMetadata) => WorkspaceMetadata) => void;
+type UpdateMetadata = (
+  updater: (current: WorkspaceMetadata) => WorkspaceMetadata,
+  options?: { persist?: boolean },
+) => void;
 
 type NotebookPathMutationOptions = {
   activePath: string | null;
@@ -40,14 +38,13 @@ type NotebookPathMutationOptions = {
   setSelectedFolder: Dispatch<SetStateAction<string>>;
   updateMetadata: UpdateMetadata;
   workspace: string;
+  storage?: Pick<NotebookStorage, "capabilities" | "moveFolder" | "moveNote" | "renameFolder" | "renameNote">;
+  runDurableMutation?: <T>(operation: () => Promise<T>) => Promise<T>;
 };
 
 type MoveFolderOptions = {
   selectMovedFolder?: boolean;
-  siblingPlacement?: {
-    targetPath: string;
-    placement: "before" | "after";
-  };
+  siblingPlacement?: FolderSiblingPlacement;
 };
 
 export function createNotebookPathMutations({
@@ -63,7 +60,12 @@ export function createNotebookPathMutations({
   setSelectedFolder,
   updateMetadata,
   workspace,
+  storage = notebookStorage,
+  runDurableMutation = (operation) => operation(),
 }: NotebookPathMutationOptions) {
+  const metadataRepairOptions = {
+    persist: !storage.capabilities.atomicPathMutations,
+  };
   const replaceOpenTabPath = (oldPath: string, newPath: string) => {
     setOpenTabs((current) => current.map((tab) => (tab.path === oldPath ? { ...tab, path: newPath } : tab)));
   };
@@ -95,8 +97,14 @@ export function createNotebookPathMutations({
     const sourceNote = notes.find((entry) => entry.path === path);
     if (!sourceNote || sourceNote.parent_path === targetParentPath) return null;
 
-    const moved = await moveNoteOnDisk(workspace, path, targetParentPath);
-    updateMetadata((current) => moveNoteInMetadata(current, path, moved.path, sourceNote.parent_path, moved.parent_path));
+    const moved = await runDurableMutation(async () => {
+      const result = await storage.moveNote(workspace, path, targetParentPath);
+      updateMetadata(
+        (current) => moveNoteInMetadata(current, path, result.path, sourceNote.parent_path, result.parent_path),
+        metadataRepairOptions,
+      );
+      return result;
+    });
     repairActiveNotePath(path, moved.path);
     replaceOpenTabPath(path, moved.path);
     setSelectedFolder(moved.parent_path);
@@ -105,8 +113,11 @@ export function createNotebookPathMutations({
   };
 
   const renameNote = async (path: string, title: string) => {
-    const renamed = await renameNoteOnDisk(workspace, path, title);
-    updateMetadata((current) => replaceOrderedPath(current, path, renamed.path));
+    const renamed = await runDurableMutation(async () => {
+      const result = await storage.renameNote(workspace, path, title);
+      updateMetadata((current) => replaceOrderedPath(current, path, result.path), metadataRepairOptions);
+      return result;
+    });
     repairActiveNotePath(path, renamed.path);
     replaceOpenTabPath(path, renamed.path);
     await refreshWorkspace(workspace);
@@ -117,38 +128,41 @@ export function createNotebookPathMutations({
     const sourceFolder = folders.find((entry) => entry.path === path);
     if (!sourceFolder || !sourceFolder.path || sourceFolder.parent_path === targetParentPath) return null;
 
-    const moved = await moveFolderOnDisk(workspace, path, targetParentPath);
-    updateMetadata((current) => {
-      const relocated = moveFolderInMetadata(current, path, moved.path, sourceFolder.parent_path, moved.parent_path);
-      if (!options.siblingPlacement) return relocated;
+    const moved = await runDurableMutation(async () => {
+      const result = await storage.moveFolder(workspace, path, targetParentPath, options.siblingPlacement);
+      updateMetadata((current) => {
+        const relocated = moveFolderInMetadata(current, path, result.path, sourceFolder.parent_path, result.parent_path);
+        if (!options.siblingPlacement) return relocated;
 
-      const targetFolder = folders.find((entry) => entry.path === options.siblingPlacement?.targetPath);
-      if (!targetFolder) return relocated;
+        const targetFolder = folders.find((entry) => entry.path === options.siblingPlacement?.targetPath);
+        if (!targetFolder) return relocated;
 
-      const siblingPaths = folders
-        .filter((folder) => folder.parent_path === targetFolder.parent_path && folder.path !== sourceFolder.path)
-        .map((folder) => folder.path)
-        .filter((siblingPath) => siblingPath !== moved.path)
-        .sort((a, b) => {
-          const order = relocated.folderOrder[targetFolder.parent_path] ?? [];
-          const aIndex = order.indexOf(a);
-          const bIndex = order.indexOf(b);
-          if (aIndex !== -1 || bIndex !== -1) {
-            return (aIndex === -1 ? Number.MAX_SAFE_INTEGER : aIndex) - (bIndex === -1 ? Number.MAX_SAFE_INTEGER : bIndex);
-          }
-          const aName = folders.find((folder) => folder.path === a)?.name ?? a;
-          const bName = folders.find((folder) => folder.path === b)?.name ?? b;
-          return aName.localeCompare(bName);
-        });
-      const targetIndex = Math.max(0, siblingPaths.indexOf(targetFolder.path));
-      siblingPaths.splice(targetIndex + (options.siblingPlacement.placement === "after" ? 1 : 0), 0, moved.path);
-      return {
-        ...relocated,
-        folderOrder: {
-          ...relocated.folderOrder,
-          [targetFolder.parent_path]: siblingPaths,
-        },
-      };
+        const siblingPaths = folders
+          .filter((folder) => folder.parent_path === targetFolder.parent_path && folder.path !== sourceFolder.path)
+          .map((folder) => folder.path)
+          .filter((siblingPath) => siblingPath !== result.path)
+          .sort((a, b) => {
+            const order = relocated.folderOrder[targetFolder.parent_path] ?? [];
+            const aIndex = order.indexOf(a);
+            const bIndex = order.indexOf(b);
+            if (aIndex !== -1 || bIndex !== -1) {
+              return (aIndex === -1 ? Number.MAX_SAFE_INTEGER : aIndex) - (bIndex === -1 ? Number.MAX_SAFE_INTEGER : bIndex);
+            }
+            const aName = folders.find((folder) => folder.path === a)?.name ?? a;
+            const bName = folders.find((folder) => folder.path === b)?.name ?? b;
+            return aName.localeCompare(bName);
+          });
+        const targetIndex = Math.max(0, siblingPaths.indexOf(targetFolder.path));
+        siblingPaths.splice(targetIndex + (options.siblingPlacement.placement === "after" ? 1 : 0), 0, result.path);
+        return {
+          ...relocated,
+          folderOrder: {
+            ...relocated.folderOrder,
+            [targetFolder.parent_path]: siblingPaths,
+          },
+        };
+      }, metadataRepairOptions);
+      return result;
     });
 
     if (selectedFolder === path || selectedFolder.startsWith(`${path}/`)) {
@@ -163,8 +177,14 @@ export function createNotebookPathMutations({
   };
 
   const renameFolder = async (path: string, name: string) => {
-    const renamed = await renameFolderOnDisk(workspace, path, name);
-    updateMetadata((current) => replaceFolderPathPrefix(current, path, renamed.path));
+    const renamed = await runDurableMutation(async () => {
+      const result = await storage.renameFolder(workspace, path, name);
+      updateMetadata(
+        (current) => replaceFolderPathPrefix(current, path, result.path),
+        metadataRepairOptions,
+      );
+      return result;
+    });
     if (selectedFolder === path || selectedFolder.startsWith(`${path}/`)) {
       setSelectedFolder(replacePathPrefix(selectedFolder, path, renamed.path));
     }

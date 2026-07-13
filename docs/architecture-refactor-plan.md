@@ -94,7 +94,7 @@ For each phase:
 
 - [x] Deepen the Note document module
 - [x] Unify Markdown round-trip policy
-- [ ] Separate Native and demo storage adapters
-- [ ] Deepen Notebook path mutation
-- [ ] Consolidate the active Note lifecycle
-- [ ] Streamline and document
+- [x] Separate Native and demo storage adapters
+- [x] Deepen Notebook path mutation
+- [x] Consolidate the active Note lifecycle
+- [x] Streamline and document

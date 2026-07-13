@@ -49,6 +49,13 @@ pub struct LinkIndex {
     pub inbound: HashMap<String, Vec<LinkRef>>,
 }
 
+#[derive(Debug, Clone)]
+pub struct NoteContentMutation {
+    pub path: String,
+    pub original: String,
+    pub updated: String,
+}
+
 impl Default for LinkIndex {
     fn default() -> Self {
         Self {
@@ -97,7 +104,13 @@ pub fn write_link_index_file(root: &Path, index: &LinkIndex) -> Result<(), Strin
     let app_metadata_dir = app_dir(root);
     fs::create_dir_all(&app_metadata_dir).map_err(|error| error.to_string())?;
     let json = serde_json::to_string_pretty(index).map_err(|error| error.to_string())?;
-    fs::write(link_index_path(root), format!("{json}\n")).map_err(|error| error.to_string())
+    let path = link_index_path(root);
+    let temp_path = path.with_extension(format!("tmp-{}", Uuid::new_v4()));
+    fs::write(&temp_path, format!("{json}\n")).map_err(|error| error.to_string())?;
+    fs::rename(&temp_path, &path).map_err(|error| {
+        let _ = fs::remove_file(&temp_path);
+        error.to_string()
+    })
 }
 
 fn read_folder_sidecar(root: &Path, relative: &str) -> Option<FolderSidecar> {
@@ -702,12 +715,13 @@ fn rewrite_links_in_content(content: &str, old_path: &str, new_path: &str) -> (S
     (final_content, count)
 }
 
-pub fn repair_inbound_links(
+pub fn plan_inbound_link_repairs(
     root: &Path,
     index: &mut LinkIndex,
     target_id: &str,
     old_path: &str,
     new_path: &str,
+    content_mutations: &mut HashMap<String, NoteContentMutation>,
 ) -> Result<u32, String> {
     let mut rewritten = 0u32;
     let sources: HashSet<String> = index
@@ -720,13 +734,24 @@ pub fn repair_inbound_links(
             continue;
         };
         let source_abs = root.join(&source_record.path);
-        let original = match fs::read_to_string(&source_abs) {
-            Ok(s) => s,
-            Err(_) => continue,
+        let current = if let Some(change) = content_mutations.get(&source_id) {
+            change.updated.clone()
+        } else {
+            match fs::read_to_string(&source_abs) {
+                Ok(content) => content,
+                Err(_) => continue,
+            }
         };
-        let (new_content, count) = rewrite_links_in_content(&original, old_path, new_path);
+        let (new_content, count) = rewrite_links_in_content(&current, old_path, new_path);
         if count > 0 {
-            fs::write(&source_abs, &new_content).map_err(|error| error.to_string())?;
+            content_mutations
+                .entry(source_id.clone())
+                .and_modify(|change| change.updated = new_content.clone())
+                .or_insert_with(|| NoteContentMutation {
+                    path: source_record.path.clone(),
+                    original: current,
+                    updated: new_content.clone(),
+                });
             rewritten += count;
             let refs = parse_links_for_note(&source_id, &new_content, index);
             update_index_links_for_source(index, &source_id, refs);
@@ -762,11 +787,12 @@ pub fn move_index_path(
     }
 }
 
-pub fn repair_subtree_paths(
+pub fn plan_subtree_path_repairs(
     root: &Path,
     index: &mut LinkIndex,
     old_folder_path: &str,
     new_folder_path: &str,
+    content_mutations: &mut HashMap<String, NoteContentMutation>,
 ) -> Result<(), String> {
     if old_folder_path == new_folder_path {
         return Ok(());
@@ -799,12 +825,64 @@ pub fn repair_subtree_paths(
         affected.push((id, kind, old_path, new_path));
     }
 
+    // Capture every source before reparsing any rewritten Note. During a Folder
+    // move, reparsing after only the parent path changed can temporarily make a
+    // descendant link look broken and erase the inbound edge needed to repair it.
+    let repairs: Vec<(String, String, HashSet<String>)> = affected
+        .iter()
+        .map(|(id, _kind, old_path, new_path)| {
+            let sources = index
+                .inbound
+                .get(id)
+                .map(|links| links.iter().map(|link| link.source_id.clone()).collect())
+                .unwrap_or_default();
+            (old_path.clone(), new_path.clone(), sources)
+        })
+        .collect();
+
     for (id, kind, old_path, new_path) in &affected {
         move_index_path(index, old_path, new_path, id, kind);
     }
 
-    for (id, _kind, old_path, new_path) in &affected {
-        repair_inbound_links(root, index, id, old_path, new_path)?;
+    for (old_path, new_path, sources) in repairs {
+        for source_id in sources {
+            let Some(source_record) = index.notes_by_id.get(&source_id).cloned() else {
+                continue;
+            };
+            let current = if let Some(change) = content_mutations.get(&source_id) {
+                change.updated.clone()
+            } else {
+                match fs::read_to_string(root.join(&source_record.path)) {
+                    Ok(content) => content,
+                    Err(_) => continue,
+                }
+            };
+            let (updated, count) = rewrite_links_in_content(&current, &old_path, &new_path);
+            if count == 0 {
+                continue;
+            }
+            content_mutations
+                .entry(source_id)
+                .and_modify(|change| change.updated = updated.clone())
+                .or_insert(NoteContentMutation {
+                    path: source_record.path,
+                    original: current,
+                    updated,
+                });
+        }
+    }
+
+    let reparsed: Vec<(String, Vec<LinkRef>)> = content_mutations
+        .iter()
+        .map(|(source_id, mutation)| {
+            (
+                source_id.clone(),
+                parse_links_for_note(source_id, &mutation.updated, index),
+            )
+        })
+        .collect();
+    for (source_id, links) in reparsed {
+        update_index_links_for_source(index, &source_id, links);
     }
     Ok(())
 }

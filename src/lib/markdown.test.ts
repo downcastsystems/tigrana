@@ -47,4 +47,10 @@ describe("Markdown round trips", () => {
 
     expect(htmlToMarkdown(html).trimEnd()).toBe("| Character | Role |\n| --- | --- |\n| Mina | Lead |");
   });
+
+  it("serializes headerless copied tables as valid GFM Markdown", () => {
+    const html = "<table><tbody><tr><td>Character</td><td>Role</td></tr><tr><td>Mina</td><td>Lead</td></tr></tbody></table>";
+
+    expect(htmlToMarkdown(html).trimEnd()).toBe("| Character | Role |\n| --- | --- |\n| Mina | Lead |");
+  });
 });

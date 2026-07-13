@@ -1,15 +1,20 @@
 use crate::link_index::{
     ensure_note_id_in_content, forget_path_from_index, forget_subtree_from_index, move_index_path,
-    parse_links_for_note, read_link_index_file, reindex_note_after_save, repair_inbound_links,
-    repair_subtree_paths, set_note_id_in_content, unique_note_relative,
-    update_index_links_for_source, write_folder_sidecar, write_link_index_file, FolderRecord,
-    FolderSidecar, NoteRecord,
+    parse_links_for_note, plan_inbound_link_repairs, plan_subtree_path_repairs,
+    read_link_index_file, rebuild_index_for_root, reindex_note_after_save, set_note_id_in_content,
+    unique_note_relative, update_index_links_for_source, write_folder_sidecar,
+    write_link_index_file, FolderRecord, FolderSidecar, LinkIndex, NoteContentMutation, NoteRecord,
 };
 use crate::note_history::{create_note_version_snapshot, note_history_reason, NoteSnapshotMode};
+use crate::notebook_metadata::{
+    read_workspace_metadata, repair_folder_path, repair_note_path, write_workspace_metadata,
+    FolderPlacement, FolderSiblingPlacement, WorkspaceMetadata,
+};
 use crate::notebook_paths::{
     is_hidden_entry, normalize_relative, note_title_from_path, relative_path, validate_note_title,
 };
 use serde::Serialize;
+use std::collections::HashMap;
 use std::fs;
 use std::path::{Path, PathBuf};
 use uuid::Uuid;
@@ -256,14 +261,46 @@ pub fn rename_note(root: &Path, path: &str, title: &str) -> Result<NoteEntry, St
         if new_path.exists() {
             return Err("A note with that title already exists in this folder.".to_string());
         }
+        let original_index = complete_index_for_path(root, &old_rel_str)?;
+        let original_metadata = read_workspace_metadata(root)?;
+        let id = original_index
+            .path_to_id
+            .get(&old_rel_str)
+            .cloned()
+            .ok_or_else(|| "The Note is missing its stable identity.".to_string())?;
         fs::rename(&old_path, &new_path).map_err(|error| error.to_string())?;
 
-        let mut index = read_link_index_file(root);
-        if let Some(id) = index.path_to_id.get(&old_rel_str).cloned() {
-            move_index_path(&mut index, &old_rel_str, &new_rel_str, &id, "note");
-            repair_inbound_links(root, &mut index, &id, &old_rel_str, &new_rel_str)?;
-            write_link_index_file(root, &index)?;
+        let mut next_index = original_index.clone();
+        move_index_path(&mut next_index, &old_rel_str, &new_rel_str, &id, "note");
+        let mut content_mutations = HashMap::new();
+        if let Err(error) = plan_inbound_link_repairs(
+            root,
+            &mut next_index,
+            &id,
+            &old_rel_str,
+            &new_rel_str,
+            &mut content_mutations,
+        ) {
+            return rollback_uncommitted_path(&old_path, &new_path, error);
         }
+        let mut next_metadata = original_metadata.clone();
+        repair_note_path(
+            &mut next_metadata,
+            &old_rel_str,
+            &new_rel_str,
+            &parent_path_for(&old_rel_str),
+            &parent_path_for(&new_rel_str),
+        );
+        commit_path_mutation(
+            root,
+            &old_path,
+            &new_path,
+            &original_index,
+            &next_index,
+            &original_metadata,
+            &next_metadata,
+            &content_mutations,
+        )?;
     }
 
     Ok(NoteEntry {
@@ -341,11 +378,40 @@ pub fn rename_folder(root: &Path, path: &str, name: &str) -> Result<FolderEntry,
         if new_path.exists() {
             return Err("A folder with that name already exists here.".to_string());
         }
+        let original_index = complete_index_for_path(root, &old_rel_str)?;
+        let original_metadata = read_workspace_metadata(root)?;
         fs::rename(&old_path, &new_path).map_err(|error| error.to_string())?;
 
-        let mut index = read_link_index_file(root);
-        repair_subtree_paths(root, &mut index, &old_rel_str, &new_rel_str)?;
-        write_link_index_file(root, &index)?;
+        let mut next_index = original_index.clone();
+        let mut content_mutations = HashMap::new();
+        if let Err(error) = plan_subtree_path_repairs(
+            root,
+            &mut next_index,
+            &old_rel_str,
+            &new_rel_str,
+            &mut content_mutations,
+        ) {
+            return rollback_uncommitted_path(&old_path, &new_path, error);
+        }
+        let mut next_metadata = original_metadata.clone();
+        repair_folder_path(
+            &mut next_metadata,
+            &old_rel_str,
+            &new_rel_str,
+            &parent_path_for(&old_rel_str),
+            &parent_path_for(&new_rel_str),
+            None,
+        );
+        commit_path_mutation(
+            root,
+            &old_path,
+            &new_path,
+            &original_index,
+            &next_index,
+            &original_metadata,
+            &next_metadata,
+            &content_mutations,
+        )?;
     }
 
     Ok(FolderEntry {
@@ -390,14 +456,46 @@ pub fn move_note(root: &Path, path: &str, target_parent_path: &str) -> Result<No
         if let Some(parent) = new_path.parent() {
             fs::create_dir_all(parent).map_err(|error| error.to_string())?;
         }
+        let original_index = complete_index_for_path(root, &old_rel_str)?;
+        let original_metadata = read_workspace_metadata(root)?;
+        let id = original_index
+            .path_to_id
+            .get(&old_rel_str)
+            .cloned()
+            .ok_or_else(|| "The Note is missing its stable identity.".to_string())?;
         fs::rename(&old_path, &new_path).map_err(|error| error.to_string())?;
 
-        let mut index = read_link_index_file(root);
-        if let Some(id) = index.path_to_id.get(&old_rel_str).cloned() {
-            move_index_path(&mut index, &old_rel_str, &new_rel_str, &id, "note");
-            repair_inbound_links(root, &mut index, &id, &old_rel_str, &new_rel_str)?;
-            write_link_index_file(root, &index)?;
+        let mut next_index = original_index.clone();
+        move_index_path(&mut next_index, &old_rel_str, &new_rel_str, &id, "note");
+        let mut content_mutations = HashMap::new();
+        if let Err(error) = plan_inbound_link_repairs(
+            root,
+            &mut next_index,
+            &id,
+            &old_rel_str,
+            &new_rel_str,
+            &mut content_mutations,
+        ) {
+            return rollback_uncommitted_path(&old_path, &new_path, error);
         }
+        let mut next_metadata = original_metadata.clone();
+        repair_note_path(
+            &mut next_metadata,
+            &old_rel_str,
+            &new_rel_str,
+            &parent_path_for(&old_rel_str),
+            &parent_path_for(&new_rel_str),
+        );
+        commit_path_mutation(
+            root,
+            &old_path,
+            &new_path,
+            &original_index,
+            &next_index,
+            &original_metadata,
+            &next_metadata,
+            &content_mutations,
+        )?;
     }
 
     let title = note_title_from_path(&new_rel_str);
@@ -413,6 +511,8 @@ pub fn move_folder(
     root: &Path,
     path: &str,
     target_parent_path: &str,
+    sibling_target_path: Option<&str>,
+    sibling_placement: Option<FolderPlacement>,
 ) -> Result<FolderEntry, String> {
     let old_relative = normalize_relative(path)?;
     let target_parent = normalize_relative(target_parent_path)?;
@@ -422,6 +522,23 @@ pub fn move_folder(
     if target_parent == old_relative || target_parent.starts_with(&old_relative) {
         return Err("A folder cannot be moved inside itself.".to_string());
     }
+    let sibling_placement = match (sibling_target_path, sibling_placement) {
+        (None, None) => None,
+        (Some(target_path), Some(placement)) => {
+            let target = normalize_relative(target_path)?;
+            let target_path = target.to_string_lossy().replace('\\', "/");
+            if parent_path_for(&target_path) != target_parent_path {
+                return Err(
+                    "The sibling placement target must be in the destination folder.".to_string(),
+                );
+            }
+            if !root.join(&target).is_dir() {
+                return Err("The sibling placement target does not exist.".to_string());
+            }
+            Some((target_path, placement))
+        }
+        _ => return Err("Folder sibling placement is incomplete.".to_string()),
+    };
 
     let name = old_relative
         .file_name()
@@ -444,11 +561,45 @@ pub fn move_folder(
         if let Some(parent) = new_path.parent() {
             fs::create_dir_all(parent).map_err(|error| error.to_string())?;
         }
+        let original_index = complete_index_for_path(root, &old_rel_str)?;
+        let original_metadata = read_workspace_metadata(root)?;
         fs::rename(&old_path, &new_path).map_err(|error| error.to_string())?;
 
-        let mut index = read_link_index_file(root);
-        repair_subtree_paths(root, &mut index, &old_rel_str, &new_rel_str)?;
-        write_link_index_file(root, &index)?;
+        let mut next_index = original_index.clone();
+        let mut content_mutations = HashMap::new();
+        if let Err(error) = plan_subtree_path_repairs(
+            root,
+            &mut next_index,
+            &old_rel_str,
+            &new_rel_str,
+            &mut content_mutations,
+        ) {
+            return rollback_uncommitted_path(&old_path, &new_path, error);
+        }
+        let mut next_metadata = original_metadata.clone();
+        repair_folder_path(
+            &mut next_metadata,
+            &old_rel_str,
+            &new_rel_str,
+            &parent_path_for(&old_rel_str),
+            &parent_path_for(&new_rel_str),
+            sibling_placement
+                .as_ref()
+                .map(|(target_path, placement)| FolderSiblingPlacement {
+                    target_path,
+                    placement: *placement,
+                }),
+        );
+        commit_path_mutation(
+            root,
+            &old_path,
+            &new_path,
+            &original_index,
+            &next_index,
+            &original_metadata,
+            &next_metadata,
+            &content_mutations,
+        )?;
     }
 
     Ok(FolderEntry {
@@ -484,6 +635,119 @@ pub fn delete_folder(root: &Path, path: &str) -> Result<(), String> {
     Ok(())
 }
 
+fn complete_index_for_path(root: &Path, path: &str) -> Result<LinkIndex, String> {
+    let index = read_link_index_file(root);
+    if index.path_to_id.contains_key(path) {
+        return Ok(index);
+    }
+    let rebuilt = rebuild_index_for_root(root)?;
+    if rebuilt.path_to_id.contains_key(path) {
+        Ok(rebuilt)
+    } else {
+        Err(format!(
+            "The Notebook path '{path}' is missing its stable identity."
+        ))
+    }
+}
+
+#[allow(clippy::too_many_arguments)]
+fn commit_path_mutation(
+    root: &Path,
+    old_path: &Path,
+    new_path: &Path,
+    original_index: &LinkIndex,
+    next_index: &LinkIndex,
+    original_metadata: &WorkspaceMetadata,
+    next_metadata: &WorkspaceMetadata,
+    content_mutations: &HashMap<String, NoteContentMutation>,
+) -> Result<(), String> {
+    let commit_result = (|| {
+        for mutation in content_mutations.values() {
+            write_note_content_atomic(&root.join(&mutation.path), &mutation.updated)?;
+        }
+        write_link_index_file(root, next_index)?;
+        write_workspace_metadata(root, next_metadata)
+    })();
+
+    if let Err(error) = commit_result {
+        return rollback_path_mutation(
+            root,
+            old_path,
+            new_path,
+            original_index,
+            original_metadata,
+            content_mutations,
+            error,
+        );
+    }
+    Ok(())
+}
+
+fn rollback_uncommitted_path<T>(
+    old_path: &Path,
+    new_path: &Path,
+    original_error: String,
+) -> Result<T, String> {
+    match fs::rename(new_path, old_path) {
+        Ok(()) => Err(format!("Notebook path mutation was rolled back: {original_error}")),
+        Err(rollback_error) => Err(format!(
+            "Notebook path mutation needs recovery: {original_error}; could not restore the original path: {rollback_error}"
+        )),
+    }
+}
+
+fn rollback_path_mutation(
+    root: &Path,
+    old_path: &Path,
+    new_path: &Path,
+    original_index: &LinkIndex,
+    original_metadata: &WorkspaceMetadata,
+    content_mutations: &HashMap<String, NoteContentMutation>,
+    original_error: String,
+) -> Result<(), String> {
+    let mut rollback_errors = Vec::new();
+    for mutation in content_mutations.values() {
+        if let Err(error) =
+            write_note_content_atomic(&root.join(&mutation.path), &mutation.original)
+        {
+            rollback_errors.push(format!("restore {}: {error}", mutation.path));
+        }
+    }
+    if let Err(error) = fs::rename(new_path, old_path) {
+        rollback_errors.push(format!("restore path: {error}"));
+    }
+    if let Err(error) = write_link_index_file(root, original_index) {
+        rollback_errors.push(format!("restore Link index: {error}"));
+    }
+    if let Err(error) = write_workspace_metadata(root, original_metadata) {
+        rollback_errors.push(format!("restore Notebook metadata: {error}"));
+    }
+
+    if rollback_errors.is_empty() {
+        Err(format!(
+            "Notebook path mutation was rolled back: {original_error}"
+        ))
+    } else {
+        Err(format!(
+            "Notebook path mutation needs recovery: {original_error}; {}",
+            rollback_errors.join("; ")
+        ))
+    }
+}
+
+fn write_note_content_atomic(path: &Path, content: &str) -> Result<(), String> {
+    let file_name = path
+        .file_name()
+        .and_then(|name| name.to_str())
+        .unwrap_or("note.md");
+    let temp_path = path.with_file_name(format!(".{file_name}.tmp-{}", Uuid::new_v4()));
+    fs::write(&temp_path, content).map_err(|error| error.to_string())?;
+    fs::rename(&temp_path, path).map_err(|error| {
+        let _ = fs::remove_file(&temp_path);
+        error.to_string()
+    })
+}
+
 fn note_path(root: &Path, relative: &str) -> Result<PathBuf, String> {
     let relative = normalize_relative(relative)?;
     let path = root.join(relative);
@@ -498,4 +762,172 @@ fn parent_path_for(path: &str) -> String {
         .parent()
         .map(|parent| parent.to_string_lossy().replace('\\', "/"))
         .unwrap_or_default()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::link_index::{read_frontmatter_field, split_frontmatter};
+    use serde_json::json;
+
+    struct TestNotebook(PathBuf);
+
+    impl TestNotebook {
+        fn new() -> Self {
+            let path =
+                std::env::temp_dir().join(format!("tigrana-path-mutation-{}", Uuid::new_v4()));
+            fs::create_dir_all(&path).unwrap();
+            Self(path)
+        }
+    }
+
+    impl Drop for TestNotebook {
+        fn drop(&mut self) {
+            let _ = fs::remove_dir_all(&self.0);
+        }
+    }
+
+    fn write_note(root: &Path, path: &str, id: &str, body: &str) {
+        let absolute = root.join(path);
+        fs::create_dir_all(absolute.parent().unwrap()).unwrap();
+        fs::write(absolute, format!("---\nid: {id}\n---\n\n{body}\n")).unwrap();
+    }
+
+    fn note_id(root: &Path, path: &str) -> String {
+        let content = fs::read_to_string(root.join(path)).unwrap();
+        read_frontmatter_field(&split_frontmatter(&content).0, "id").unwrap()
+    }
+
+    #[test]
+    fn renaming_a_note_commits_links_index_metadata_and_identity_together() {
+        let notebook = TestNotebook::new();
+        let root = &notebook.0;
+        write_note(root, "Notes/Target.md", "target-id", "# Target");
+        write_note(
+            root,
+            "Source.md",
+            "source-id",
+            "Read [Target](Notes/Target.md).",
+        );
+        rebuild_index_for_root(root).unwrap();
+
+        let metadata: WorkspaceMetadata = serde_json::from_value(json!({
+            "noteOrder": { "Notes": ["Notes/Target.md"] },
+            "pinnedNotes": { "Notes/Target.md": true },
+            "noteIcons": { "Notes/Target.md": "lucide:FileText" },
+            "notePositions": {
+                "Notes/Target.md": { "path": "Notes/Target.md", "lastOpenedAt": 1, "scrollTop": 2, "contentLength": 3 }
+            },
+            "bookmarks": [{ "id": "target", "kind": "note", "path": "Notes/Target.md", "createdAt": 1 }]
+        })).unwrap();
+        write_workspace_metadata(root, &metadata).unwrap();
+
+        let renamed = rename_note(root, "Notes/Target.md", "Renamed").unwrap();
+
+        assert_eq!(renamed.path, "Notes/Renamed.md");
+        assert!(!root.join("Notes/Target.md").exists());
+        assert_eq!(note_id(root, "Notes/Renamed.md"), "target-id");
+        assert!(fs::read_to_string(root.join("Source.md"))
+            .unwrap()
+            .contains("[Target](Notes/Renamed.md)"));
+
+        let index = read_link_index_file(root);
+        assert_eq!(
+            index.path_to_id.get("Notes/Renamed.md").map(String::as_str),
+            Some("target-id")
+        );
+        assert!(!index.path_to_id.contains_key("Notes/Target.md"));
+
+        let persisted = serde_json::to_value(read_workspace_metadata(root).unwrap()).unwrap();
+        assert_eq!(persisted["noteOrder"]["Notes"], json!(["Notes/Renamed.md"]));
+        assert_eq!(persisted["pinnedNotes"]["Notes/Renamed.md"], json!(true));
+        assert_eq!(
+            persisted["notePositions"]["Notes/Renamed.md"]["path"],
+            json!("Notes/Renamed.md")
+        );
+        assert_eq!(persisted["bookmarks"][0]["path"], json!("Notes/Renamed.md"));
+    }
+
+    #[test]
+    fn moving_a_folder_commits_descendants_links_metadata_and_stable_ids_together() {
+        let notebook = TestNotebook::new();
+        let root = &notebook.0;
+        fs::create_dir_all(root.join("Archive/Epilogue")).unwrap();
+        write_note(root, "Book/Part/Scene.md", "scene-id", "# Scene");
+        write_note(
+            root,
+            "References.md",
+            "references-id",
+            "Open [Part](Book/Part) and [Scene](Book/Part/Scene.md).",
+        );
+        rebuild_index_for_root(root).unwrap();
+        let folder_sidecar =
+            fs::read_to_string(root.join("Book/Part/.tigrana/folder.json")).unwrap();
+
+        let metadata: WorkspaceMetadata = serde_json::from_value(json!({
+            "folderOrder": {
+                "Book": ["Book/Part"],
+                "Book/Part": [],
+                "Archive": ["Archive/Epilogue"]
+            },
+            "noteOrder": { "Book/Part": ["Book/Part/Scene.md"] },
+            "folderIcons": { "Book/Part": "lucide:BookOpen" },
+            "noteIcons": { "Book/Part/Scene.md": "lucide:FileText" },
+            "expandedFolders": { "Book/Part": true },
+            "bookmarks": [
+                { "id": "part", "kind": "folder", "path": "Book/Part", "createdAt": 1 },
+                { "id": "scene", "kind": "note", "path": "Book/Part/Scene.md", "createdAt": 2 }
+            ]
+        }))
+        .unwrap();
+        write_workspace_metadata(root, &metadata).unwrap();
+
+        let moved = move_folder(
+            root,
+            "Book/Part",
+            "Archive",
+            Some("Archive/Epilogue"),
+            Some(FolderPlacement::Before),
+        )
+        .unwrap();
+
+        assert_eq!(moved.path, "Archive/Part");
+        assert!(!root.join("Book/Part").exists());
+        assert_eq!(note_id(root, "Archive/Part/Scene.md"), "scene-id");
+        assert_eq!(
+            fs::read_to_string(root.join("Archive/Part/.tigrana/folder.json")).unwrap(),
+            folder_sidecar,
+        );
+        let references = fs::read_to_string(root.join("References.md")).unwrap();
+        assert!(references.contains("[Part](Archive/Part)"));
+        assert!(references.contains("[Scene](Archive/Part/Scene.md)"));
+
+        let index = read_link_index_file(root);
+        assert_eq!(
+            index
+                .path_to_id
+                .get("Archive/Part/Scene.md")
+                .map(String::as_str),
+            Some("scene-id")
+        );
+        assert!(!index.path_to_id.contains_key("Book/Part/Scene.md"));
+
+        let persisted = serde_json::to_value(read_workspace_metadata(root).unwrap()).unwrap();
+        assert_eq!(
+            persisted["folderOrder"]["Archive"],
+            json!(["Archive/Part", "Archive/Epilogue"])
+        );
+        assert_eq!(
+            persisted["noteOrder"]["Archive/Part"],
+            json!(["Archive/Part/Scene.md"])
+        );
+        assert_eq!(
+            persisted["folderIcons"]["Archive/Part"],
+            json!("lucide:BookOpen")
+        );
+        assert_eq!(
+            persisted["bookmarks"][1]["path"],
+            json!("Archive/Part/Scene.md")
+        );
+    }
 }

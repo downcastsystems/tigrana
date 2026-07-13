@@ -1,4 +1,8 @@
 import { replaceEmojiShortcodes } from "./emoji";
+import { measureNoteText, type NoteTextStats } from "./noteTextStats";
+
+export { measureNoteText } from "./noteTextStats";
+export type { NoteTextStats } from "./noteTextStats";
 
 export type FrontmatterField = {
   editable: boolean;
@@ -11,11 +15,6 @@ export type NoteOutlineEntry = {
   id: string;
   level: number;
   text: string;
-};
-
-export type NoteTextStats = {
-  words: number;
-  characters: number;
 };
 
 export type NoteDocument = {
@@ -38,6 +37,7 @@ type NoteDocumentRevision = Partial<NoteDocumentContent> & {
 
 type ParsedMarkdown = {
   body: string;
+  canonicalMarkdown: string | null;
   frontmatter: string;
   frontmatterError: string | null;
 };
@@ -46,11 +46,15 @@ export function readNoteDocument(markdown: string, title: string): NoteDocument 
   const parsed = parseMarkdown(markdown);
   return buildNoteDocument({
     title,
-    markdown,
+    markdown: parsed.canonicalMarkdown ?? markdown,
     body: parsed.body,
     frontmatter: parsed.frontmatter,
     frontmatterError: parsed.frontmatterError,
   });
+}
+
+export function readNotePreview(markdown: string) {
+  return previewBody(parseMarkdown(markdown, false).body);
 }
 
 export function createNoteDocument({ title, frontmatter, body }: NoteDocumentContent): NoteDocument {
@@ -84,19 +88,6 @@ export function normalizeNoteMarkdown(value: string) {
   return value.replace(/\r\n/g, "\n").replace(/\s+$/, "");
 }
 
-export function measureNoteText(text: string): NoteTextStats {
-  const plain = text
-    .replace(/!\[[^\]]*]\([^)]*\)/g, "")
-    .replace(/\[([^\]]+)]\([^)]*\)/g, "$1")
-    .replace(/[`*_>#-]/g, " ")
-    .replace(/\s+/g, " ")
-    .trim();
-  return {
-    words: plain ? plain.split(/\s+/).length : 0,
-    characters: plain.length,
-  };
-}
-
 function buildNoteDocument({
   title,
   markdown,
@@ -104,30 +95,35 @@ function buildNoteDocument({
   body,
   frontmatterError,
 }: NoteDocumentContent & Pick<NoteDocument, "markdown" | "frontmatterError">): NoteDocument {
+  const frontmatterFields = lazyValue(() => readFrontmatterFields(frontmatter));
+  const outline = lazyValue(() => extractNoteOutline(title, body));
+  const preview = lazyValue(() => previewBody(body));
+  const stats = lazyValue(() => measureNoteText(body));
   return {
     title,
     markdown,
     frontmatter,
     body,
     frontmatterError,
-    frontmatterFields: readFrontmatterFields(frontmatter),
-    outline: extractOutline(title, body),
-    preview: previewBody(body),
-    stats: measureNoteText(body),
+    get frontmatterFields() { return frontmatterFields(); },
+    get outline() { return outline(); },
+    get preview() { return preview(); },
+    get stats() { return stats(); },
   };
 }
 
-function parseMarkdown(markdown: string): ParsedMarkdown {
+function parseMarkdown(markdown: string, includeCanonicalMarkdown = true): ParsedMarkdown {
   const normalized = normalizeFrontmatterClosingFence(markdown).replace(/\r\n/g, "\n");
   const lines = normalized.split("\n");
   if (lines[0].trim() !== "---") {
-    return { body: markdown, frontmatter: "", frontmatterError: null };
+    return { body: markdown, canonicalMarkdown: null, frontmatter: "", frontmatterError: null };
   }
 
   const closingIndex = lines.findIndex((line, index) => index > 0 && line.trim() === "---");
   if (closingIndex === -1) {
     return {
       body: markdown,
+      canonicalMarkdown: null,
       frontmatter: "",
       frontmatterError: "This note starts with frontmatter, but the closing --- line is missing. Opened as raw Markdown.",
     };
@@ -140,12 +136,30 @@ function parseMarkdown(markdown: string): ParsedMarkdown {
   if (validationError) {
     return {
       body: markdown,
+      canonicalMarkdown: null,
       frontmatter: "",
       frontmatterError: `This note has malformed frontmatter: ${validationError}. Opened as raw Markdown.`,
     };
   }
 
-  return { body, frontmatter, frontmatterError: null };
+  return {
+    body,
+    canonicalMarkdown: includeCanonicalMarkdown ? composeMarkdown(frontmatter, body) : null,
+    frontmatter,
+    frontmatterError: null,
+  };
+}
+
+function lazyValue<T>(create: () => T) {
+  let initialized = false;
+  let value: T;
+  return () => {
+    if (!initialized) {
+      value = create();
+      initialized = true;
+    }
+    return value;
+  };
 }
 
 function composeMarkdown(frontmatter: string, body: string) {
@@ -205,7 +219,7 @@ function previewBody(body: string) {
     .slice(0, 110);
 }
 
-function extractOutline(title: string, body: string): NoteOutlineEntry[] {
+export function extractNoteOutline(title: string, body: string): NoteOutlineEntry[] {
   const headings = title.trim() ? [{ level: 1, text: title.trim() }] : [];
   body.split("\n").forEach((line) => {
     const match = /^(#{1,6})\s+(.+)$/.exec(line);

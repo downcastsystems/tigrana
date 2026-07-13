@@ -4,6 +4,7 @@ import {
   measureNoteText,
   normalizeNoteMarkdown,
   readNoteDocument,
+  readNotePreview,
   reviseNoteDocument,
   updateNoteDocumentFrontmatterField,
 } from "./noteDocument";
@@ -33,6 +34,14 @@ describe("Note document", () => {
     ]);
   });
 
+  it("keeps expensive derived values lazy and exposes a lightweight preview path", () => {
+    const markdown = "---\nid: note-1\n---\n\n# Heading\n\nA quiet opening.";
+    const document = readNoteDocument(markdown, "Draft");
+
+    expect(Object.getOwnPropertyDescriptor(document, "preview")?.get).toBeTypeOf("function");
+    expect(readNotePreview(markdown)).toBe("A quiet opening.");
+  });
+
   it("preserves malformed frontmatter as raw Markdown", () => {
     const markdown = "---\nid: note-1\nmissing value\n\nDraft";
 
@@ -42,6 +51,16 @@ describe("Note document", () => {
     expect(document.body).toBe(markdown);
     expect(document.frontmatter).toBe("");
     expect(document.frontmatterError).toContain("closing --- line is missing");
+  });
+
+  it("uses canonical Markdown as the saved baseline for valid frontmatter", () => {
+    const markdown = "---\r\nid: note-1\r\n—\r\nBody";
+
+    const document = readNoteDocument(markdown, "Draft");
+
+    expect(document.frontmatterError).toBeNull();
+    expect(document.markdown).toBe("---\nid: note-1\n---\n\nBody");
+    expect(document.markdown).toBe(createNoteDocument(document).markdown);
   });
 
   it("revises structured content without making callers reassemble derived values", () => {

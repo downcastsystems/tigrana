@@ -47,3 +47,11 @@ _Avoid_: Preferences, settings
 **Native notebook storage**:
 The Rust-side storage boundary that validates notebook paths, owns note and folder lifecycle operations, reads and writes durable note files, maintains stable identities and link indexes, manages note history/trash/assets, and exposes narrow Tauri command adapters to React.
 _Avoid_: Backend blob, filesystem helpers, Tauri handlers
+
+**Notebook storage interface**:
+The frontend interface implemented by the Native and demo storage adapters. Its capability flags make non-durable demo limitations explicit while keeping storage selection out of callers.
+_Avoid_: API wrapper, backend service, Tauri switch
+
+**Active Note lifecycle**:
+The concurrency seam for the currently edited note: load generations, edit-lock ownership, accepted disk content, queued saves, serialized path changes, and filesystem-watcher reconciliation.
+_Avoid_: Editor state, save handlers, active note refs

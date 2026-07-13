@@ -2,6 +2,7 @@ use fs2::FileExt;
 mod assets;
 mod link_index;
 mod note_history;
+mod notebook_metadata;
 mod notebook_paths;
 mod notebook_storage;
 mod trash;
@@ -18,8 +19,12 @@ use note_history::{
     read_note_version as read_note_version_content,
     restore_note_version as restore_note_version_content, NoteVersionEntry,
 };
+use notebook_metadata::{
+    read_workspace_metadata as read_metadata_for_notebook,
+    write_workspace_metadata as write_metadata_for_notebook, FolderPlacement, WorkspaceMetadata,
+};
 use notebook_paths::{
-    app_dir, is_hidden_entry, metadata_path, normalize_relative, safe_note_path, safe_workspace,
+    app_dir, is_hidden_entry, normalize_relative, safe_note_path, safe_workspace,
 };
 use notebook_storage::{
     create_folder as create_folder_in_notebook, create_note as create_note_in_notebook,
@@ -35,7 +40,7 @@ use serde::{Deserialize, Serialize};
 use std::collections::{HashMap, HashSet};
 use std::fs::{self, File, OpenOptions};
 use std::hash::{Hash, Hasher};
-use std::io::Write;
+use std::io::{Seek, SeekFrom, Write};
 use std::path::{Path, PathBuf};
 use std::process::Command;
 use std::sync::Mutex;
@@ -122,6 +127,8 @@ struct MovePathPayload {
     workspace: String,
     path: String,
     target_parent_path: String,
+    sibling_target_path: Option<String>,
+    sibling_placement: Option<String>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -246,41 +253,13 @@ struct NoteEditLock {
     workspace: String,
     path: String,
     window_label: String,
-    _file: File,
+    acquired_at: u64,
+    file: File,
 }
 
 #[derive(Default)]
 struct NoteEditLockState {
     locks: Mutex<HashMap<String, NoteEditLock>>,
-}
-
-#[derive(Debug, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-struct WorkspaceMetadata {
-    #[serde(default)]
-    folder_order: serde_json::Map<String, serde_json::Value>,
-    #[serde(default)]
-    note_order: serde_json::Map<String, serde_json::Value>,
-    #[serde(default)]
-    pinned_notes: serde_json::Map<String, serde_json::Value>,
-    #[serde(default)]
-    folder_icons: serde_json::Map<String, serde_json::Value>,
-    #[serde(default)]
-    folder_colors: serde_json::Map<String, serde_json::Value>,
-    #[serde(default)]
-    note_icons: serde_json::Map<String, serde_json::Value>,
-    #[serde(default)]
-    note_positions: serde_json::Map<String, serde_json::Value>,
-    #[serde(default)]
-    bookmarks: Vec<serde_json::Value>,
-    #[serde(default = "default_true")]
-    bookmarks_expanded: bool,
-    #[serde(default)]
-    expanded_folders: serde_json::Map<String, serde_json::Value>,
-    #[serde(default)]
-    welcome_note_added: bool,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    appearance: Option<serde_json::Value>,
 }
 
 #[tauri::command]
@@ -296,15 +275,23 @@ fn list_folders(workspace: String) -> Result<Vec<FolderEntry>, String> {
 }
 
 #[tauri::command]
-fn read_note(workspace: String, path: String) -> Result<String, String> {
-    let root = safe_workspace(&workspace)?;
-    read_note_from_notebook(&root, &path)
+async fn read_note(workspace: String, path: String) -> Result<String, String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        let root = safe_workspace(&workspace)?;
+        read_note_from_notebook(&root, &path)
+    })
+    .await
+    .map_err(|error| error.to_string())?
 }
 
 #[tauri::command]
-fn save_note(payload: SaveNotePayload) -> Result<String, String> {
-    let root = safe_workspace(&payload.workspace)?;
-    save_note_to_notebook(&root, &payload.path, &payload.content)
+async fn save_note(payload: SaveNotePayload) -> Result<String, String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        let root = safe_workspace(&payload.workspace)?;
+        save_note_to_notebook(&root, &payload.path, &payload.content)
+    })
+    .await
+    .map_err(|error| error.to_string())?
 }
 
 #[tauri::command]
@@ -320,9 +307,20 @@ fn duplicate_note(payload: DuplicateNotePayload) -> Result<NoteEntry, String> {
 }
 
 #[tauri::command]
-fn rename_note(payload: RenameNotePayload) -> Result<NoteEntry, String> {
+fn rename_note(
+    state: tauri::State<NoteEditLockState>,
+    payload: RenameNotePayload,
+) -> Result<NoteEntry, String> {
     let root = safe_workspace(&payload.workspace)?;
-    rename_note_in_notebook(&root, &payload.path, &payload.title)
+    let renamed = rename_note_in_notebook(&root, &payload.path, &payload.title)?;
+    repair_note_edit_lock_paths(
+        &state,
+        &payload.workspace,
+        &payload.path,
+        &renamed.path,
+        false,
+    );
+    Ok(renamed)
 }
 
 #[tauri::command]
@@ -332,21 +330,60 @@ fn create_folder(payload: FolderPayload) -> Result<FolderEntry, String> {
 }
 
 #[tauri::command]
-fn rename_folder(payload: RenameFolderPayload) -> Result<FolderEntry, String> {
+fn rename_folder(
+    state: tauri::State<NoteEditLockState>,
+    payload: RenameFolderPayload,
+) -> Result<FolderEntry, String> {
     let root = safe_workspace(&payload.workspace)?;
-    rename_folder_in_notebook(&root, &payload.path, &payload.name)
+    let renamed = rename_folder_in_notebook(&root, &payload.path, &payload.name)?;
+    repair_note_edit_lock_paths(
+        &state,
+        &payload.workspace,
+        &payload.path,
+        &renamed.path,
+        true,
+    );
+    Ok(renamed)
 }
 
 #[tauri::command]
-fn move_note(payload: MovePathPayload) -> Result<NoteEntry, String> {
+fn move_note(
+    state: tauri::State<NoteEditLockState>,
+    payload: MovePathPayload,
+) -> Result<NoteEntry, String> {
     let root = safe_workspace(&payload.workspace)?;
-    move_note_in_notebook(&root, &payload.path, &payload.target_parent_path)
+    let moved = move_note_in_notebook(&root, &payload.path, &payload.target_parent_path)?;
+    repair_note_edit_lock_paths(
+        &state,
+        &payload.workspace,
+        &payload.path,
+        &moved.path,
+        false,
+    );
+    Ok(moved)
 }
 
 #[tauri::command]
-fn move_folder(payload: MovePathPayload) -> Result<FolderEntry, String> {
+fn move_folder(
+    state: tauri::State<NoteEditLockState>,
+    payload: MovePathPayload,
+) -> Result<FolderEntry, String> {
     let root = safe_workspace(&payload.workspace)?;
-    move_folder_in_notebook(&root, &payload.path, &payload.target_parent_path)
+    let sibling_placement = match payload.sibling_placement.as_deref() {
+        None => None,
+        Some("before") => Some(FolderPlacement::Before),
+        Some("after") => Some(FolderPlacement::After),
+        Some(_) => return Err("Folder sibling placement must be before or after.".to_string()),
+    };
+    let moved = move_folder_in_notebook(
+        &root,
+        &payload.path,
+        &payload.target_parent_path,
+        payload.sibling_target_path.as_deref(),
+        sibling_placement,
+    )?;
+    repair_note_edit_lock_paths(&state, &payload.workspace, &payload.path, &moved.path, true);
+    Ok(moved)
 }
 
 #[tauri::command]
@@ -371,13 +408,17 @@ fn ensure_workspace_identity(payload: EnsureIdentityPayload) -> Result<(), Strin
 }
 
 #[tauri::command]
-fn read_link_index(workspace: String) -> Result<LinkIndex, String> {
-    let root = safe_workspace(&workspace)?;
-    let path = link_index_path(&root);
-    if !path.exists() {
-        return rebuild_index_for_root(&root);
-    }
-    Ok(read_link_index_file(&root))
+async fn read_link_index(workspace: String) -> Result<LinkIndex, String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        let root = safe_workspace(&workspace)?;
+        let path = link_index_path(&root);
+        if !path.exists() {
+            return rebuild_index_for_root(&root);
+        }
+        Ok(read_link_index_file(&root))
+    })
+    .await
+    .map_err(|error| error.to_string())?
 }
 
 #[tauri::command]
@@ -595,26 +636,20 @@ fn watch_workspace(
 #[tauri::command]
 fn read_workspace_metadata(workspace: String) -> Result<WorkspaceMetadata, String> {
     let root = safe_workspace(&workspace)?;
-    let path = metadata_path(&root);
-    if !path.exists() {
-        return Ok(default_workspace_metadata());
-    }
-
-    let contents = fs::read_to_string(path).map_err(|error| error.to_string())?;
-    serde_json::from_str(&contents).map_err(|error| error.to_string())
+    read_metadata_for_notebook(&root)
 }
 
 #[tauri::command]
-fn write_workspace_metadata(workspace: String, metadata: WorkspaceMetadata) -> Result<(), String> {
-    let root = safe_workspace(&workspace)?;
-    let app_metadata_dir = app_dir(&root);
-    fs::create_dir_all(&app_metadata_dir).map_err(|error| error.to_string())?;
-    let contents = serde_json::to_string_pretty(&metadata).map_err(|error| error.to_string())?;
-    fs::write(
-        app_metadata_dir.join("metadata.json"),
-        format!("{contents}\n"),
-    )
-    .map_err(|error| error.to_string())
+async fn write_workspace_metadata(
+    workspace: String,
+    metadata: WorkspaceMetadata,
+) -> Result<(), String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        let root = safe_workspace(&workspace)?;
+        write_metadata_for_notebook(&root, &metadata)
+    })
+    .await
+    .map_err(|error| error.to_string())?
 }
 
 fn app_preferences_path(app: &AppHandle) -> Result<PathBuf, String> {
@@ -828,7 +863,8 @@ fn acquire_note_edit_lock(
             workspace: payload.workspace,
             path: payload.path,
             window_label: payload.window_label,
-            _file: file,
+            acquired_at: owner.acquired_at,
+            file,
         },
     );
 
@@ -861,6 +897,49 @@ fn release_note_edit_lock(
 fn release_note_edit_locks_for_window(state: &NoteEditLockState, window_label: &str) {
     if let Ok(mut locks) = state.locks.lock() {
         locks.retain(|_, lock| lock.window_label != window_label);
+    }
+}
+
+fn repair_note_edit_lock_paths(
+    state: &NoteEditLockState,
+    workspace: &str,
+    old_path: &str,
+    new_path: &str,
+    include_descendants: bool,
+) {
+    let Ok(mut locks) = state.locks.lock() else {
+        return;
+    };
+    for lock in locks.values_mut() {
+        if lock.workspace != workspace {
+            continue;
+        }
+        let next_path = if lock.path == old_path {
+            Some(new_path.to_string())
+        } else if include_descendants {
+            lock.path
+                .strip_prefix(&format!("{old_path}/"))
+                .map(|suffix| format!("{new_path}/{suffix}"))
+        } else {
+            None
+        };
+        let Some(next_path) = next_path else {
+            continue;
+        };
+        lock.path = next_path.clone();
+        let owner = NoteEditLockOwner {
+            window_label: lock.window_label.clone(),
+            pid: process::id(),
+            acquired_at: lock.acquired_at,
+            workspace: lock.workspace.clone(),
+            path: next_path,
+        };
+        let Ok(metadata) = serde_json::to_string_pretty(&owner) else {
+            continue;
+        };
+        if lock.file.set_len(0).is_ok() && lock.file.seek(SeekFrom::Start(0)).is_ok() {
+            let _ = lock.file.write_all(format!("{metadata}\n").as_bytes());
+        }
     }
 }
 
@@ -908,31 +987,14 @@ fn sanitize_lock_key(value: &str) -> String {
         .collect()
 }
 
+fn default_true() -> bool {
+    true
+}
+
 fn read_note_edit_lock_owner(path: &Path) -> Option<NoteEditLockOwner> {
     fs::read_to_string(path)
         .ok()
         .and_then(|content| serde_json::from_str::<NoteEditLockOwner>(&content).ok())
-}
-
-fn default_workspace_metadata() -> WorkspaceMetadata {
-    WorkspaceMetadata {
-        folder_order: serde_json::Map::new(),
-        note_order: serde_json::Map::new(),
-        pinned_notes: serde_json::Map::new(),
-        folder_icons: serde_json::Map::new(),
-        folder_colors: serde_json::Map::new(),
-        note_icons: serde_json::Map::new(),
-        note_positions: serde_json::Map::new(),
-        bookmarks: Vec::new(),
-        bookmarks_expanded: true,
-        expanded_folders: serde_json::Map::new(),
-        welcome_note_added: false,
-        appearance: None,
-    }
-}
-
-fn default_true() -> bool {
-    true
 }
 
 fn build_app_menu(

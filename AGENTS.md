@@ -26,8 +26,12 @@ Do not add features that make Markdown unreadable outside the app unless explici
 - `src/App.tsx`: main app state, layout, workspace/note/folder flows
 - `src/editor/NotesEditor.tsx`: Tiptap editor, paste handling, slash command wiring
 - `src/editor/slashCommands.ts`: slash command definitions
-- `src/lib/notesApi.ts`: frontend API wrapper for Tauri/browser fallback
+- `src/lib/notebookStorage.ts`: Native/demo Notebook storage interface and implementations
+- `src/lib/activeNoteLifecycle.ts`: active Note loads, locks, save queues, and watcher reconciliation
+- `src/lib/notebookPathMutations.ts`: ephemeral session repair after durable path mutations
+- `src/lib/noteDocument.ts`: Note document parsing, validation, outline, preview, and stats
 - `src/lib/markdown.ts`: Markdown-to-HTML and HTML-to-Markdown conversion
+- `src/lib/desktop.ts`: window, menu, preferences, export, and print behavior
 - `src/styles/app.css`: global app styling, light/dark themes
 - `src-tauri/src/main.rs`: native filesystem commands
 - `src-tauri/capabilities/default.json`: Tauri permissions
@@ -274,7 +278,7 @@ Good next steps:
 
 - Move search to native SQLite FTS5.
 - Add file watching and background reindexing.
-- Improve Markdown round-trip reliability with tests.
+- Expand Markdown round-trip fixtures when adding editor shapes.
 - Add real app icons and signing.
 - Improve context menus and confirmation flows for destructive actions.
 

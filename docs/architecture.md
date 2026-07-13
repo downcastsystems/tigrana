@@ -1,63 +1,137 @@
 # Architecture
 
-Tigrana is local-first and file-native. The source of truth is a user-selected
-folder containing Markdown files. The app may cache indexes or UI state, but it
-must be able to rebuild those artifacts from the folder.
+Tigrana is local-first and file-native. A user-selected Notebook is the source
+of truth. Markdown Notes, Folders, Notebook assets, and stable identities move
+with that Notebook; every index is rebuildable.
 
-## Frontend
+The architecture favors a small number of deep modules. React renders the
+writing experience and holds ephemeral view state. The modules below own the
+rules that must remain consistent across UI flows.
 
-- Vite
-- React
-- Tiptap
-- Fuse.js for the browser-demo search path
+## Frontend modules
 
-The frontend owns the writing experience, note tree rendering, command palette,
-slash menu, and editor interactions.
+| Module | Interface | Implementation responsibility |
+| --- | --- | --- |
+| `noteDocument.ts` | Read, create, revise, and measure a Note document | Frontmatter, body composition, validation, outline, preview, stats, and persistence normalization |
+| `useNoteTextStats.ts` | Live Note word and character counts | Debounces edits, discards stale results, and moves whole-Note text measurement to a web worker |
+| `useNoteOutline.ts` | Live Note outline | Computes immediately on Note switches, then defers edits and skips work while the outline is hidden |
+| `deferredCommit.ts` | Flushable idle work | Keeps whole-document serialization off the input transaction while allowing navigation and shutdown to flush synchronously |
+| `pendingNoteContents.ts` | In-flight autosave content | Keeps navigation ahead of disk without publishing save-start updates through React and preserves newer drafts across older save completions |
+| `markdown.ts` | Convert readable Markdown and editor HTML | One round-trip policy shared by Note persistence and clipboard fragments |
+| `notebookStorage.ts` | `NotebookStorage` | Selects one Native or demo adapter and exposes explicit capability differences |
+| `activeNoteLifecycle.ts` | `ActiveNoteLifecycle` | Load generations, edit-lock ownership, accepted-disk baselines, save queues, and serialized path changes |
+| `notebookPathMutations.ts` | Completed Note/Folder move and rename operations | Repairs ephemeral tabs, selection, active lock paths, and React metadata after Native storage commits |
+| `desktop.ts` | Desktop behavior | Menus, windows, preferences, export, print, external links, and Tauri detection |
 
-## Desktop Backend
+`App.tsx` composes these interfaces with view state. It should not duplicate
+their persistence, concurrency, or conversion rules.
 
-- Tauri 2
-- Rust commands for trusted filesystem access
-- Future SQLite FTS5 index under `.tigrana/search.sqlite`
+## Notebook storage adapters
 
-The backend owns file reads and writes, workspace validation, asset writes, native
-folder picking, file watching, and packaging.
+The storage adapter is selected once when the frontend starts.
 
-## File Contract
+- The Native implementation invokes narrow Tauri commands. It supports durable
+  Link indexes, Note history, Recently Deleted, file watching, and atomic
+  Notebook path mutation repair.
+- The demo implementation persists Notes, Folders, and Notebook metadata in
+  browser storage. Its missing capabilities are declared on the interface,
+  including Note history, Recently Deleted, file watching, and durable Link
+  indexing.
 
-The app should only write:
+Desktop behavior is intentionally outside the storage interface. Exporting a
+file or focusing a window is not Notebook persistence.
 
-- Markdown note files selected or created by the user
-- Attachment files under `.assets`
-- Disposable app state under `.tigrana`
+## Native notebook storage
 
-The hidden `.tigrana` directory must never become the canonical note store.
+Rust is organized by durable concern:
 
-## Editor Contract
+- `notebook_storage.rs`: Note and Folder lifecycle plus path-mutation commit and
+  recovery.
+- `notebook_metadata.rs`: Notebook metadata representation, path repair, and
+  atomic writes.
+- `link_index.rs`: stable identities, Markdown link parsing, backlink repair,
+  and Link index writes.
+- `note_history.rs`, `trash.rs`, and `assets.rs`: Note history, Recently
+  Deleted, and Notebook assets.
+- `notebook_paths.rs`: trusted Notebook path validation.
+- `main.rs`: narrow Tauri command adapters and desktop integration.
 
-The editor uses Tiptap internally but persists Markdown. Any new block type must
-round-trip to readable Markdown before it is accepted into the core product.
+Tauri commands should translate input and delegate. Durable rules belong in
+the modules above, where they can be tested without a webview.
 
-Current supported Markdown shapes:
+## Notebook path mutation
 
-- Paragraphs
-- Headings 1-3
-- Bullet lists
-- Numbered lists
-- Task lists
-- Blockquotes
-- Code blocks
-- Horizontal rules
-- Links
-- Images
+A Native Note or Folder rename/move is planned and committed as one mutation:
 
-## Search Plan
+1. Ensure the target and descendants have stable identities.
+2. Rename the physical Note or Folder.
+3. Plan every backlink rewrite and the next Link index in memory.
+4. Repair Notebook metadata in memory.
+5. Atomically replace affected Markdown files, the Link index, and Notebook
+   metadata.
+6. If a commit write fails, restore original Markdown, the original path, the
+   prior Link index, and prior Notebook metadata. An incomplete rollback is
+   reported explicitly as requiring recovery.
+7. Repair Native edit-lock owner paths, then return the completed path to
+   React for ephemeral session repair.
 
-The current frontend search is suitable for the browser demo. The production
-desktop path should use SQLite FTS5 from the Tauri backend:
+Frontend Notebook metadata writes and Native path mutations share a
+per-Notebook queue. A mutation therefore reads all prior metadata changes,
+and queued writes read the latest in-memory metadata only when they begin, so
+they cannot restore stale pre-mutation paths.
 
-1. Scan the workspace for Markdown files.
-2. Store path, title, normalized body, and modified time in SQLite.
-3. Use FTS5 for content search.
-4. Reindex changed files through a file watcher.
-5. Treat the database as disposable and rebuildable.
+Folder mutations capture all inbound sources before rewriting anything. This
+prevents an intermediate parent-path rewrite from temporarily breaking a
+descendant edge and hiding a backlink that still needs repair.
+
+## File contract
+
+Tigrana writes only:
+
+- Markdown Note files selected or created by the user.
+- Attachment files under `.assets/`.
+- Rebuildable or app-specific state under `.tigrana/`.
+
+The hidden `.tigrana` directory never becomes the canonical Note store.
+
+## Editor and Markdown contract
+
+Tiptap is an implementation detail; persisted content is readable Markdown.
+The editor receives a Note's content only when switching or explicitly
+reloading that Note, never as an echo of each keystroke.
+
+Every supported shape has round-trip fixtures. A new editor shape is accepted
+only after `markdown.ts` can round-trip it without making the Note unreadable
+outside Tigrana. Clipboard fragment serialization uses the same conversion
+policy as whole-Note persistence.
+
+Derived Note values are lazy. Sidebar previews are memoized by Note content,
+whole-Note text statistics run off the main thread, and outline extraction is
+deferred until typing is idle. Markdown serialization is also deferred, but
+navigation, raw-mode entry, export, printing, external-change reconciliation,
+and window shutdown flush the pending editor snapshot before continuing.
+
+The hot typing path must remain local to ProseMirror. Native webview
+spellchecking handles incremental spelling feedback; cursor and scroll
+positions update refs and persist after idle without changing workspace React
+state. Image hydration runs when a Note loads or an image is inserted, not in
+response to the editor's own serialized Markdown.
+
+Autosave must be invisible to input. Starting a save stages content outside
+React rather than replacing the workspace content cache. Save completion and
+filesystem-watcher echo updates are transitions, and the Link index is reread
+only when Backlinks is visible. Native Note reads and saves, metadata writes,
+and Link index reads are async Tauri commands whose blocking filesystem and
+history/index work runs on the blocking worker pool instead of the webview
+command executor.
+
+## Search plan
+
+The current frontend Fuse.js search supports the demo. Native search can move
+to a disposable SQLite FTS5 index under `.tigrana/search.sqlite`:
+
+1. Scan Markdown Notes.
+2. Store stable identity, path, title, normalized body, and modified time.
+3. Query content through FTS5.
+4. Reindex filesystem changes in the background.
+5. Rebuild the database whenever its schema or contents are invalid.

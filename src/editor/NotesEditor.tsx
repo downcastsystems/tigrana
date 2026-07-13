@@ -17,8 +17,6 @@ import { Decoration, DecorationSet, type EditorView, type NodeView, type ViewMut
 import { EditorContent, NodeViewContent, NodeViewWrapper, Range, ReactNodeViewRenderer, useEditor, type Editor } from "@tiptap/react";
 import StarterKit from "@tiptap/starter-kit";
 import { convertFileSrc } from "@tauri-apps/api/core";
-import dictionaryAff from "/node_modules/dictionary-en/index.aff?raw";
-import dictionaryDic from "/node_modules/dictionary-en/index.dic?raw";
 import {
   Bold,
   Check,
@@ -49,13 +47,16 @@ import {
   X,
 } from "lucide-react";
 import { common, createLowlight } from "lowlight";
-import nspell from "nspell";
 import { type CSSProperties, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { ensureParagraphAfterCurrentTable, filterSlashCommands, markCurrentTableAsTigranaHtml } from "./slashCommands";
+import { createDeferredCommit, type DeferredCommit } from "../lib/deferredCommit";
 import { emojiShortcodeToText } from "../lib/emoji";
 import { htmlToMarkdown, markdownToHtml } from "../lib/markdown";
-import { isTauri, openExternal, readAssetDataUrl, saveAsset, saveClipboardImageAsset } from "../lib/notesApi";
+import { isTauri, openExternal } from "../lib/desktop";
+import { notebookStorage } from "../lib/notebookStorage";
 import type { NotePositionMetadata } from "../types";
+
+const { readAssetDataUrl, saveAsset, saveClipboardImageAsset } = notebookStorage;
 
 type NotesEditorProps = {
   content: string;
@@ -70,12 +71,22 @@ type NotesEditorProps = {
   spellcheckEnabled: boolean;
   workspace: string;
   onChange: (markdown: string, sourceNotePath: string | null) => void;
+  onPendingChange: (change: PendingEditorChange | null) => void;
   onLoadError: (error: unknown) => void;
   onPositionChange: (position: { selectedText: string; selectionFrom: number; selectionTo: number }) => void;
   onInternalLinkClick?: (href: string) => void;
   onRequestEmoji?: () => Promise<string | null>;
   onRequestLink?: () => Promise<{ href: string; title: string } | null>;
   onRequestImage?: () => Promise<{ src: string; alt?: string } | null>;
+};
+
+export type EditorMarkdownSnapshot = {
+  markdown: string;
+  sourceNotePath: string | null;
+};
+
+export type PendingEditorChange = {
+  flush(): EditorMarkdownSnapshot | null;
 };
 
 export type EditorCommand =
@@ -134,27 +145,8 @@ type SlashState = {
 
 const lowlight = createLowlight(common);
 const searchHighlightKey = new PluginKey<SearchHighlightState>("searchHighlight");
-const spellcheckDecorationKey = new PluginKey<SpellcheckDecorationState>("spellcheckDecoration");
 const notebookImagePreviewCache = new Map<string, string>();
-const spellchecker = nspell(dictionaryAff, dictionaryDic);
-
-[
-  "Tigrana",
-  "Markdown",
-  "ProseMirror",
-  "Tiptap",
-  "AutoPay",
-  "GEICO",
-  "Hulu",
-  "Everlake",
-  "Xfinity",
-  "ATT",
-  "WiFi",
-  "Roku",
-  "Mint",
-  "CIT",
-  "ETF",
-].forEach((word) => spellchecker.add(word));
+const markdownCommitDelayMs = 80;
 
 type SearchHighlightState = {
   activeIndex: number;
@@ -165,15 +157,6 @@ type SearchHighlightState = {
 type SearchHighlightMeta = {
   activeIndex: number;
   query: string;
-};
-
-type SpellcheckDecorationState = {
-  decorations: DecorationSet;
-  enabled: boolean;
-};
-
-type SpellcheckDecorationMeta = {
-  enabled: boolean;
 };
 
 const EM_SPACE = " ";
@@ -292,44 +275,6 @@ const SearchHighlight = Extension.create({
         props: {
           decorations(state) {
             return searchHighlightKey.getState(state)?.decorations ?? DecorationSet.empty;
-          },
-        },
-      }),
-    ];
-  },
-});
-
-const SpellcheckDecoration = Extension.create({
-  name: "spellcheckDecoration",
-  addProseMirrorPlugins() {
-    return [
-      new Plugin<SpellcheckDecorationState>({
-        key: spellcheckDecorationKey,
-        state: {
-          init: (_config, state) => ({
-            decorations: buildSpellcheckDecorations(state.doc, true),
-            enabled: true,
-          }),
-          apply(transaction, value, _oldState, newState) {
-            const meta = transaction.getMeta(spellcheckDecorationKey) as SpellcheckDecorationMeta | undefined;
-            const enabled = meta?.enabled ?? value.enabled;
-            if (!enabled) {
-              return value.enabled || value.decorations !== DecorationSet.empty
-                ? { decorations: DecorationSet.empty, enabled }
-                : value;
-            }
-            if (meta || transaction.docChanged) {
-              return {
-                decorations: buildSpellcheckDecorations(newState.doc, enabled),
-                enabled,
-              };
-            }
-            return value;
-          },
-        },
-        props: {
-          decorations(state) {
-            return spellcheckDecorationKey.getState(state)?.decorations ?? DecorationSet.empty;
           },
         },
       }),
@@ -2386,7 +2331,7 @@ const MarkdownImage = Image.extend({
   },
 });
 
-export function NotesEditor({ content, commandRequest, focusRequest, focusAtEndRequest, findRequest, reloadRequest, notePath, restorePosition, editable, spellcheckEnabled, workspace, onChange, onLoadError, onPositionChange, onInternalLinkClick, onRequestEmoji, onRequestLink, onRequestImage }: NotesEditorProps) {
+export function NotesEditor({ content, commandRequest, focusRequest, focusAtEndRequest, findRequest, reloadRequest, notePath, restorePosition, editable, spellcheckEnabled, workspace, onChange, onPendingChange, onLoadError, onPositionChange, onInternalLinkClick, onRequestEmoji, onRequestLink, onRequestImage }: NotesEditorProps) {
   const [slash, setSlash] = useState<SlashState | null>(null);
   const [findOpen, setFindOpen] = useState(false);
   const [replaceOpen, setReplaceOpen] = useState(false);
@@ -2402,21 +2347,41 @@ export function NotesEditor({ content, commandRequest, focusRequest, focusAtEndR
   const lastLoadedNote = useRef<string | null>(null);
   const handledReloadRequest = useRef(reloadRequest ?? 0);
   const notePathRef = useRef(notePath);
+  const onChangeRef = useRef(onChange);
+  const onPendingChangeRef = useRef(onPendingChange);
+  const deferredMarkdownRef = useRef<DeferredCommit<EditorMarkdownSnapshot> | null>(null);
+  const pendingChangeHandleRef = useRef<PendingEditorChange | null>(null);
+
+  onChangeRef.current = onChange;
+  onPendingChangeRef.current = onPendingChange;
+  if (!deferredMarkdownRef.current) {
+    deferredMarkdownRef.current = createDeferredCommit(markdownCommitDelayMs, (snapshot) => {
+      onPendingChangeRef.current(null);
+      onChangeRef.current(snapshot.markdown, snapshot.sourceNotePath);
+    });
+  }
+  if (!pendingChangeHandleRef.current) {
+    pendingChangeHandleRef.current = {
+      flush: () => deferredMarkdownRef.current?.flush() ?? null,
+    };
+  }
 
   useEffect(() => {
     notePathRef.current = notePath;
   }, [notePath]);
 
-  const initialContent = useMemo((): { error: unknown; html: string } => {
+  const initialContentRef = useRef<{ error: unknown; html: string } | null>(null);
+  if (!initialContentRef.current) {
     try {
-      return {
+      initialContentRef.current = {
         error: null,
         html: markdownToHtml(content, { resolveImageSrc: (src) => resolveNotebookImageSrc(workspace, src) }),
       };
     } catch (error) {
-      return { error, html: "" };
+      initialContentRef.current = { error, html: "" };
     }
-  }, [content, workspace]);
+  }
+  const initialContent = initialContentRef.current;
 
   useEffect(() => {
     if (initialContent.error) onLoadError(initialContent.error);
@@ -2434,7 +2399,6 @@ export function NotesEditor({ content, commandRequest, focusRequest, focusAtEndR
       Highlight,
       EmojiText,
       SearchHighlight,
-      SpellcheckDecoration,
       EmSpaceIndent,
       ListItemSeparator,
       MarkdownImage.configure({
@@ -2593,12 +2557,12 @@ export function NotesEditor({ content, commandRequest, focusRequest, focusAtEndR
       },
     },
     onUpdate({ editor }) {
-      onChange(htmlToMarkdown(editor.getHTML()), lastLoadedNote.current);
-      onPositionChange({
-        selectedText: getSelectedText(editor),
-        selectionFrom: editor.state.selection.from,
-        selectionTo: editor.state.selection.to,
-      });
+      const sourceNotePath = lastLoadedNote.current;
+      deferredMarkdownRef.current?.schedule(() => ({
+        markdown: htmlToMarkdown(editor.getHTML()),
+        sourceNotePath,
+      }));
+      onPendingChangeRef.current(pendingChangeHandleRef.current);
       const match = findSlashQuery(editor);
       const nextSlash = match ? { ...match, selected: 0 } : null;
       slashRef.current = nextSlash;
@@ -2627,20 +2591,19 @@ export function NotesEditor({ content, commandRequest, focusRequest, focusAtEndR
 
   useEffect(() => {
     editor?.view.dom.setAttribute("spellcheck", spellcheckEnabled ? "true" : "false");
-    if (editor) {
-      editor.view.dispatch(editor.state.tr.setMeta(spellcheckDecorationKey, { enabled: spellcheckEnabled }));
-    }
   }, [editor, spellcheckEnabled]);
 
-  useEffect(() => {
-    if (!editor) return;
-    void hydrateNotebookImageNodes(editor, workspace, notePath, () => notePathRef.current);
-  }, [content, editor, notePath, workspace]);
+  useEffect(() => () => {
+    deferredMarkdownRef.current?.flush();
+    onPendingChangeRef.current(null);
+  }, []);
 
   useEffect(() => {
     if (!editor) return;
     const requestedReload = (reloadRequest ?? 0) !== handledReloadRequest.current;
     if (lastLoadedNote.current === notePath && !requestedReload) return;
+    deferredMarkdownRef.current?.cancel();
+    onPendingChangeRef.current(null);
     let next = "";
     try {
       next = markdownToHtml(content, { resolveImageSrc: (src) => resolveNotebookImageSrc(workspace, src) });
@@ -2729,7 +2692,7 @@ export function NotesEditor({ content, commandRequest, focusRequest, focusAtEndR
   }, [findOpen]);
 
   useEffect(() => {
-    if (!editor) return;
+    if (!editor || !findOpen) return;
     const handleTransaction = ({ transaction }: { transaction: Transaction }) => {
       if (transaction.docChanged) setFindDocumentVersion((version) => version + 1);
     };
@@ -2737,14 +2700,14 @@ export function NotesEditor({ content, commandRequest, focusRequest, focusAtEndR
     return () => {
       editor.off("transaction", handleTransaction);
     };
-  }, [editor]);
+  }, [editor, findOpen]);
 
   const findMatches = useMemo(
     () => {
       void findDocumentVersion;
-      return editor && findQuery.trim() ? getEditorMatches(editor, findQuery.trim()) : [];
+      return editor && findOpen && findQuery.trim() ? getEditorMatches(editor, findQuery.trim()) : [];
     },
-    [editor, findDocumentVersion, findQuery],
+    [editor, findDocumentVersion, findOpen, findQuery],
   );
 
   const selectMatchFromList = useCallback((matches: Array<{ from: number; to: number }>, index: number) => {
@@ -3173,20 +3136,29 @@ function FormattingBubbleMenu({
   const [tick, setTick] = useState(0);
   const [pendingShow, setPendingShow] = useState(false);
   const showTimerRef = useRef<number | null>(null);
+  const hadTextSelectionRef = useRef(!editor.state.selection.empty);
 
   // Re-render the bubble when the editor's selection / document changes,
   // when focus changes, and on window resize/scroll so positioning stays sticky.
   useEffect(() => {
     const refresh = () => setTick((value) => value + 1);
-    editor.on("selectionUpdate", refresh);
-    editor.on("transaction", refresh);
+    const refreshSelection = () => {
+      const hasTextSelection = !editor.state.selection.empty;
+      if (hasTextSelection || hadTextSelectionRef.current) refresh();
+      hadTextSelectionRef.current = hasTextSelection;
+    };
+    const refreshSelectedTransaction = () => {
+      if (!editor.state.selection.empty) refresh();
+    };
+    editor.on("selectionUpdate", refreshSelection);
+    editor.on("transaction", refreshSelectedTransaction);
     editor.on("focus", refresh);
     editor.on("blur", refresh);
     window.addEventListener("resize", refresh);
     window.addEventListener("scroll", refresh, true);
     return () => {
-      editor.off("selectionUpdate", refresh);
-      editor.off("transaction", refresh);
+      editor.off("selectionUpdate", refreshSelection);
+      editor.off("transaction", refreshSelectedTransaction);
       editor.off("focus", refresh);
       editor.off("blur", refresh);
       window.removeEventListener("resize", refresh);
@@ -3394,38 +3366,6 @@ function FormattingBubbleMenu({
 
 function getEditorMatches(editor: Editor, query: string) {
   return getDocumentMatches(editor.state.doc, query);
-}
-
-function buildSpellcheckDecorations(doc: ProseMirrorNode, enabled: boolean) {
-  if (!enabled) return DecorationSet.empty;
-  const decorations: Decoration[] = [];
-
-  doc.descendants((node, pos, parent) => {
-    if (!node.isText || !node.text) return;
-    if (parent?.type.name === "codeBlock" || parent?.type.spec.code) return false;
-    if (node.marks.some((mark) => mark.type.name === "code")) return;
-
-    for (const match of node.text.matchAll(/[A-Za-z][A-Za-z'’-]*/g)) {
-      const word = match[0];
-      const index = match.index ?? 0;
-      if (shouldIgnoreSpellcheckWord(word)) continue;
-      if (spellchecker.correct(normalizeSpellcheckWord(word))) continue;
-      decorations.push(Decoration.inline(pos + index, pos + index + word.length, { class: "spellcheck-error" }));
-    }
-  });
-
-  return DecorationSet.create(doc, decorations);
-}
-
-function normalizeSpellcheckWord(word: string) {
-  return word.replace(/[’]/g, "'");
-}
-
-function shouldIgnoreSpellcheckWord(word: string) {
-  if (word.length <= 1) return true;
-  if (/^[A-Z]{2,}$/.test(word)) return true;
-  if (/^[A-Za-z]+['’]s$/.test(word)) return spellchecker.correct(normalizeSpellcheckWord(word.slice(0, -2)));
-  return false;
 }
 
 function getDocumentMatches(doc: ProseMirrorNode, query: string) {

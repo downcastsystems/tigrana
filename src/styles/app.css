@@ -3059,14 +3059,6 @@ html[data-theme="dark"] .tab-list-separator {
   box-shadow: 0 0 0 1px rgba(171, 101, 11, 0.35);
 }
 
-.ProseMirror .spellcheck-error {
-  text-decoration-line: underline;
-  text-decoration-style: wavy;
-  text-decoration-color: #d33b2f;
-  text-decoration-thickness: 1.4px;
-  text-underline-offset: 3px;
-}
-
 .ProseMirror ul,
 .ProseMirror ol {
   padding-left: 1.35em;

@@ -581,19 +581,13 @@ export function htmlToMarkdown(html: string) {
       if (allRows.length > 0) {
         const tableLines: string[] = [];
         const firstCells = Array.from(allRows[0].children);
-        const hasHeader = firstCells.some((c) => c.tagName.toLowerCase() === "th");
-        if (hasHeader) {
-          tableLines.push("| " + firstCells.map((c) => inlineHtmlToMarkdown(c).trim()).join(" | ") + " |");
-          tableLines.push("| " + firstCells.map(() => "---").join(" | ") + " |");
-          for (const row of allRows.slice(1)) {
-            const cells = Array.from(row.children);
-            tableLines.push("| " + cells.map((c) => inlineHtmlToMarkdown(c).trim()).join(" | ") + " |");
-          }
-        } else {
-          for (const row of allRows) {
-            const cells = Array.from(row.children);
-            tableLines.push("| " + cells.map((c) => inlineHtmlToMarkdown(c).trim()).join(" | ") + " |");
-          }
+        // GFM requires a delimiter row, so a headerless HTML table promotes
+        // its first row to a Markdown header instead of producing invalid syntax.
+        tableLines.push("| " + firstCells.map((c) => inlineHtmlToMarkdown(c).trim()).join(" | ") + " |");
+        tableLines.push("| " + firstCells.map(() => "---").join(" | ") + " |");
+        for (const row of allRows.slice(1)) {
+          const cells = Array.from(row.children);
+          tableLines.push("| " + cells.map((c) => inlineHtmlToMarkdown(c).trim()).join(" | ") + " |");
         }
         markdown.push(tableLines.join("\n"));
       }
