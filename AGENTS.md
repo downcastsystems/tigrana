@@ -277,3 +277,7 @@ Good next steps:
 - Improve Markdown round-trip reliability with tests.
 - Add real app icons and signing.
 - Improve context menus and confirmation flows for destructive actions.
+
+## User Artifact Preference
+
+Use a dark-mode theme by default for generated artifacts, including HTML reports, dashboards, diagrams, presentations, and documents. Use another theme only when the user explicitly requests it.

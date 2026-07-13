@@ -69,7 +69,7 @@ type NotesEditorProps = {
   editable: boolean;
   spellcheckEnabled: boolean;
   workspace: string;
-  onChange: (markdown: string) => void;
+  onChange: (markdown: string, sourceNotePath: string | null) => void;
   onLoadError: (error: unknown) => void;
   onPositionChange: (position: { selectedText: string; selectionFrom: number; selectionTo: number }) => void;
   onInternalLinkClick?: (href: string) => void;
@@ -105,6 +105,17 @@ export type EditorCommand =
   | "findPrevious"
   | "replace"
   | "insertText";
+
+type EditableEditor = {
+  setEditable(editable: boolean, emitUpdate?: boolean): void;
+};
+
+// Tiptap emits an `update` event by default when editability changes. The
+// document can still belong to the previous note at that point, so changing
+// read-only state must not look like a user edit.
+export function setEditorEditableSilently(editor: EditableEditor | null, editable: boolean) {
+  editor?.setEditable(editable, false);
+}
 
 export type EditorCommandRequest = {
   id: number;
@@ -2582,7 +2593,7 @@ export function NotesEditor({ content, commandRequest, focusRequest, focusAtEndR
       },
     },
     onUpdate({ editor }) {
-      onChange(htmlToMarkdown(editor.getHTML()));
+      onChange(htmlToMarkdown(editor.getHTML()), lastLoadedNote.current);
       onPositionChange({
         selectedText: getSelectedText(editor),
         selectionFrom: editor.state.selection.from,
@@ -2611,7 +2622,7 @@ export function NotesEditor({ content, commandRequest, focusRequest, focusAtEndR
   }, [editor]);
 
   useEffect(() => {
-    editor?.setEditable(editable);
+    setEditorEditableSilently(editor, editable);
   }, [editable, editor]);
 
   useEffect(() => {

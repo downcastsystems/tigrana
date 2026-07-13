@@ -1,7 +1,7 @@
 import { Schema } from "@tiptap/pm/model";
 import { EditorState, TextSelection } from "@tiptap/pm/state";
 import { describe, expect, it } from "vitest";
-import { findSlashQueryInState, getTaskLineCutDeleteRange } from "./NotesEditor";
+import { findSlashQueryInState, getTaskLineCutDeleteRange, setEditorEditableSilently } from "./NotesEditor";
 
 const schema = new Schema({
   nodes: {
@@ -113,5 +113,20 @@ describe("slash query detection", () => {
       query: "emoji",
       range: { from: 10, to: 16 },
     });
+  });
+});
+
+describe("editor editability", () => {
+  it("changes editability without emitting a document update", () => {
+    const calls: Array<[boolean, boolean | undefined]> = [];
+    const editor = {
+      setEditable(editable: boolean, emitUpdate?: boolean) {
+        calls.push([editable, emitUpdate]);
+      },
+    };
+
+    setEditorEditableSilently(editor, true);
+
+    expect(calls).toEqual([[true, false]]);
   });
 });

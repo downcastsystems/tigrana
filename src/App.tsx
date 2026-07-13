@@ -94,6 +94,7 @@ import {
 import type { AppMenuState, NoteVersionEntry, TrashEntry } from "./lib/notesApi";
 import { normalizeMarkdownImageLines } from "./lib/markdown";
 import { buildNoteExportHtml, noteExportFileStem } from "./lib/exportNote";
+import { shouldApplyEditorUpdate } from "./lib/noteEditorUpdates";
 import {
   composeMarkdown,
   extractOutline,
@@ -4113,9 +4114,9 @@ export default function App() {
                   editable={activeNoteEditable}
                   spellcheckEnabled={spellcheckEnabled}
                   workspace={workspace}
-                  onChange={(markdown) => {
+                  onChange={(markdown, sourceNotePath) => {
                     if (noteLoadTokenRef.current !== 0) return;
-                    if (!activeNoteEditable) return;
+                    if (!shouldApplyEditorUpdate(activePath, sourceNotePath, activeNoteEditable)) return;
                     setDraft(markdown);
                   }}
                   onLoadError={handleNoteLoadError}
