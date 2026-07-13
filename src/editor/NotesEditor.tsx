@@ -1,6 +1,5 @@
 import CodeBlockLowlight from "@tiptap/extension-code-block-lowlight";
-import { Extension } from "@tiptap/core";
-import Emoji, { gitHubEmojis } from "@tiptap/extension-emoji";
+import { Extension, InputRule, PasteRule } from "@tiptap/core";
 import Highlight from "@tiptap/extension-highlight";
 import Image from "@tiptap/extension-image";
 import Link from "@tiptap/extension-link";
@@ -53,6 +52,7 @@ import { common, createLowlight } from "lowlight";
 import nspell from "nspell";
 import { type CSSProperties, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { ensureParagraphAfterCurrentTable, filterSlashCommands, markCurrentTableAsTigranaHtml } from "./slashCommands";
+import { emojiShortcodeToText } from "../lib/emoji";
 import { htmlToMarkdown, markdownToHtml, normalizeMarkdownImageLines } from "../lib/markdown";
 import { isTauri, openExternal, readAssetDataUrl, saveAsset, saveClipboardImageAsset } from "../lib/notesApi";
 import type { NotePositionMetadata } from "../types";
@@ -213,6 +213,38 @@ const EmSpaceIndent = Extension.create({
         return this.editor.chain().deleteRange({ from: from - 1, to: from }).run();
       },
     };
+  },
+});
+
+const EmojiText = Extension.create({
+  name: "emojiText",
+
+  addInputRules() {
+    return [
+      new InputRule({
+        find: /:([a-zA-Z0-9_+-]+):$/,
+        handler: ({ state, range, match }) => {
+          const emoji = emojiShortcodeToText(match[1] ?? "");
+          if (!emoji) return null;
+          state.tr.insertText(emoji, range.from, range.to);
+          return undefined;
+        },
+      }),
+    ];
+  },
+
+  addPasteRules() {
+    return [
+      new PasteRule({
+        find: /:([a-zA-Z0-9_+-]+):/g,
+        handler: ({ state, range, match }) => {
+          const emoji = emojiShortcodeToText(match[1] ?? "");
+          if (!emoji) return null;
+          state.tr.insertText(emoji, range.from, range.to);
+          return undefined;
+        },
+      }),
+    ];
   },
 });
 
@@ -2388,10 +2420,8 @@ export function NotesEditor({ content, commandRequest, focusRequest, focusAtEndR
         },
       }),
       CodeBlockWithControls.configure({ lowlight }),
-      Emoji.configure({
-        emojis: gitHubEmojis,
-      }),
       Highlight,
+      EmojiText,
       SearchHighlight,
       SpellcheckDecoration,
       EmSpaceIndent,

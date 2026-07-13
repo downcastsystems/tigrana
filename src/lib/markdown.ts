@@ -1,4 +1,4 @@
-import { gitHubEmojis, shortcodeToEmoji } from "@tiptap/extension-emoji";
+import { replaceEmojiShortcodes } from "./emoji";
 
 const escapeHtml = (value: string) =>
   value
@@ -19,11 +19,7 @@ export const HARD_BREAK_PLACEHOLDER = "";
 const inlineMarkdownToHtml = (value: string, options: MarkdownOptions = {}) => {
   let html = escapeHtml(value);
   html = html.replace(new RegExp(HARD_BREAK_PLACEHOLDER, "g"), "<br>");
-  html = html.replace(/:([a-zA-Z0-9_+-]+):/g, (match, shortcode: string) => {
-    const emoji = shortcodeToEmoji(shortcode, gitHubEmojis);
-    if (!emoji) return match;
-    return `<span data-type="emoji" data-name="${escapeHtml(emoji.name)}"></span>`;
-  });
+  html = replaceEmojiShortcodes(html);
   html = html.replace(/!\[([^\]]*)\]\(([^)]+)\)/g, (_match, alt: string, src: string) => {
     const resolvedSrc = options.resolveImageSrc?.(src) ?? src;
     return `<img src="${escapeHtml(resolvedSrc)}" alt="${escapeHtml(alt)}" data-markdown-src="${escapeHtml(src)}" />`;

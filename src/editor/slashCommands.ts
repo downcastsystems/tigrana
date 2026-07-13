@@ -21,6 +21,7 @@ import {
   Type,
   type LucideIcon,
 } from "lucide-react";
+import { emojiShortcodeToText } from "../lib/emoji";
 
 export type SlashCommandContext = {
   requestEmoji?: () => Promise<string | null>;
@@ -155,7 +156,7 @@ export const slashCommands: SlashCommand[] = [
           editor.chain().focus().deleteRange(range).run();
           return;
         }
-        editor.chain().focus().deleteRange(range).setEmoji(shortcode).run();
+        editor.chain().focus().deleteRange(range).insertContent(emojiShortcodeToText(shortcode) ?? `:${shortcode}:`).run();
       });
     },
   },
