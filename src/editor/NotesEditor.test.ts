@@ -1,13 +1,18 @@
 import { Schema } from "@tiptap/pm/model";
-import { TextSelection } from "@tiptap/pm/state";
+import { EditorState, TextSelection } from "@tiptap/pm/state";
 import { describe, expect, it } from "vitest";
-import { getTaskLineCutDeleteRange } from "./NotesEditor";
+import { findSlashQueryInState, getTaskLineCutDeleteRange } from "./NotesEditor";
 
 const schema = new Schema({
   nodes: {
     doc: { content: "block+" },
     text: { group: "inline" },
     paragraph: { content: "inline*", group: "block" },
+    heading: {
+      attrs: { level: { default: 1 } },
+      content: "inline*",
+      group: "block",
+    },
     taskList: { content: "taskItem+", group: "block" },
     taskItem: {
       content: "paragraph block*",
@@ -18,6 +23,10 @@ const schema = new Schema({
 
 function paragraph(text: string) {
   return schema.nodes.paragraph.create(null, text ? schema.text(text) : null);
+}
+
+function heading(text: string) {
+  return schema.nodes.heading.create({ level: 1 }, text ? schema.text(text) : null);
 }
 
 function taskItem(text: string) {
@@ -87,6 +96,22 @@ describe("task line cut ranges", () => {
     expect(getTaskLineCutDeleteRange(selection)).toEqual({
       from: first.from,
       to: second.to,
+    });
+  });
+});
+
+describe("slash query detection", () => {
+  it("finds slash commands in headings", () => {
+    const text = "Accounts /emoji";
+    const doc = schema.nodes.doc.create(null, heading(text));
+    const state = EditorState.create({
+      doc,
+      selection: TextSelection.create(doc, 1 + text.length),
+    });
+
+    expect(findSlashQueryInState(state)).toEqual({
+      query: "emoji",
+      range: { from: 10, to: 16 },
     });
   });
 });

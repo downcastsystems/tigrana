@@ -12,7 +12,7 @@ import { TableRow } from "@tiptap/extension-table-row";
 import TaskItem from "@tiptap/extension-task-item";
 import TaskList from "@tiptap/extension-task-list";
 import { DOMSerializer, type Fragment as ProseMirrorFragment, type Node as ProseMirrorNode, type ResolvedPos } from "@tiptap/pm/model";
-import { NodeSelection, Plugin, PluginKey, Selection, TextSelection, type Transaction } from "@tiptap/pm/state";
+import { NodeSelection, Plugin, PluginKey, Selection, TextSelection, type EditorState, type Transaction } from "@tiptap/pm/state";
 import { addColumnAfter, addColumnBefore, addRowAfter, addRowBefore, CellSelection, deleteColumn, deleteRow, TableMap } from "@tiptap/pm/tables";
 import { Decoration, DecorationSet, type EditorView, type NodeView, type ViewMutationRecord } from "@tiptap/pm/view";
 import { EditorContent, NodeViewContent, NodeViewWrapper, Range, ReactNodeViewRenderer, useEditor, type Editor } from "@tiptap/react";
@@ -4055,9 +4055,13 @@ async function hydrateNotebookImageNodes(
 }
 
 function findSlashQuery(editor: NonNullable<ReturnType<typeof useEditor>>) {
-  const { state } = editor;
+  return findSlashQueryInState(editor.state);
+}
+
+export function findSlashQueryInState(state: EditorState) {
   const { from } = state.selection;
-  if (state.selection.$from.parent.type.name !== "paragraph") return null;
+  const parentName = state.selection.$from.parent.type.name;
+  if (parentName !== "paragraph" && parentName !== "heading") return null;
   const textBefore = state.doc.textBetween(Math.max(0, from - 48), from, "\n", "\0");
   const match = /(?:^|\s)\/([a-z0-9 -]*)$/i.exec(textBefore);
   if (!match) return null;
