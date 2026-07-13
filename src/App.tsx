@@ -96,16 +96,12 @@ import { normalizeMarkdownImageLines } from "./lib/markdown";
 import { buildNoteExportHtml, noteExportFileStem } from "./lib/exportNote";
 import { shouldApplyEditorUpdate } from "./lib/noteEditorUpdates";
 import {
-  composeMarkdown,
-  extractOutline,
-  getFrontmatterFields,
-  getTextStats,
-  normalizeNoteContentForWatcher,
-  parseNoteMarkdown,
-  previewNote,
-  splitMarkdownTitle,
-  updateFrontmatterField,
-  validateFrontmatter,
+  createNoteDocument,
+  measureNoteText,
+  normalizeNoteMarkdown,
+  readNoteDocument,
+  reviseNoteDocument,
+  updateNoteDocumentFrontmatterField,
   type FrontmatterField,
 } from "./lib/noteDocument";
 import {
@@ -496,9 +492,7 @@ export default function App() {
   const [titleDraft, setTitleDraft] = useState("");
   const [savedTitle, setSavedTitle] = useState("");
   const [draft, setDraft] = useState("");
-  const [, setSavedDraft] = useState("");
   const [frontmatterDraft, setFrontmatterDraft] = useState("");
-  const [, setSavedFrontmatter] = useState("");
   const [rawMarkdownText, setRawMarkdownText] = useState("");
   const [savedRawMarkdownText, setSavedRawMarkdownText] = useState("");
   const [frontmatterError, setFrontmatterError] = useState<string | null>(null);
@@ -642,11 +636,15 @@ export default function App() {
     () => orderNotes(notes.filter((note) => note.parent_path === selectedFolder), selectedFolder, metadata),
     [metadata, notes, selectedFolder],
   );
-  const outline = useMemo(() => extractOutline(titleDraft, draft), [draft, titleDraft]);
-  const noteStats = useMemo(() => getTextStats(selectedEditorText || draft), [draft, selectedEditorText]);
+  const noteDocument = useMemo(
+    () => createNoteDocument({ title: titleDraft, body: draft, frontmatter: frontmatterDraft }),
+    [draft, frontmatterDraft, titleDraft],
+  );
+  const outline = noteDocument.outline;
+  const noteStats = selectedEditorText ? measureNoteText(selectedEditorText) : noteDocument.stats;
   const rawMarkdownDraft = useMemo(
-    () => (rawMarkdownVisible || frontmatterError ? rawMarkdownText : composeMarkdown(frontmatterDraft, draft)),
-    [draft, frontmatterDraft, frontmatterError, rawMarkdownText, rawMarkdownVisible],
+    () => (rawMarkdownVisible || frontmatterError ? rawMarkdownText : noteDocument.markdown),
+    [frontmatterError, noteDocument.markdown, rawMarkdownText, rawMarkdownVisible],
   );
   const rawFindMatchCount = useMemo(
     () => countPlainTextMatches(rawMarkdownDraft, rawFindQuery),
@@ -1407,7 +1405,7 @@ export default function App() {
         if (access === "editable") await releaseActiveNoteLock();
         return { access, content, note };
       }
-      acceptedDiskContentRef.current.set(path, normalizeNoteContentForWatcher(content));
+      acceptedDiskContentRef.current.set(path, normalizeNoteMarkdown(content));
       disarmUndoableNewNote(path);
       setActivePath(path);
       setPendingNote(null);
@@ -1440,9 +1438,7 @@ export default function App() {
     setTitleDraft("");
     setSavedTitle("");
     setDraft("");
-    setSavedDraft("");
     setFrontmatterDraft("");
-    setSavedFrontmatter("");
     setRawMarkdownText("");
     setSavedRawMarkdownText("");
     setFrontmatterError(null);
@@ -1622,7 +1618,7 @@ export default function App() {
         await exportTextFile(`${stem}.md`, markdown, [{ name: "Markdown", extensions: ["md"] }]);
         return;
       }
-      const html = await buildNoteExportHtml(titleDraft, parseNoteMarkdown(markdown).body, {
+      const html = await buildNoteExportHtml(titleDraft, readNoteDocument(markdown, titleDraft).body, {
         resolveImageSrc: async (src) => {
           if (!workspace) return src;
           if (/^(https?:|data:|blob:)/i.test(src)) return src;
@@ -1639,7 +1635,7 @@ export default function App() {
     if (!noteOpen) return;
     try {
       if (hasUnsavedChanges) await persistDraft();
-      const html = await buildNoteExportHtml(titleDraft, parseNoteMarkdown(rawMarkdownDraft).body, {
+      const html = await buildNoteExportHtml(titleDraft, readNoteDocument(rawMarkdownDraft, titleDraft).body, {
         resolveImageSrc: async (src) => {
           if (!workspace) return src;
           if (/^(https?:|data:|blob:)/i.test(src)) return src;
@@ -1741,7 +1737,7 @@ export default function App() {
         setOutlineVisible((value) => !value);
         break;
       case "toggle_raw_markdown":
-        if (!rawMarkdownVisible) setRawMarkdownText(composeMarkdown(frontmatterDraft, draft));
+        if (!rawMarkdownVisible) setRawMarkdownText(noteDocument.markdown);
         setRawMarkdownVisible((value) => !value);
         break;
       case "width_comfortable":
@@ -1993,7 +1989,7 @@ export default function App() {
     try {
       const nextContent = await readNote(workspace, path);
 
-      const nextNormalized = normalizeNoteContentForWatcher(nextContent);
+      const nextNormalized = normalizeNoteMarkdown(nextContent);
 
       // The filesystem watcher fires for Tigrana's own writes too, sometimes
       // after the editor has already moved on. Compare against the latest disk
@@ -2011,9 +2007,9 @@ export default function App() {
       // source of truth. A move that rewrote inbound links on disk also calls
       // refreshWorkspace, which has already updated the contents map; without this
       // check we'd short-circuit and the editor would keep showing the stale link.
-      const sameAsEditor = activePath === path && nextNormalized === normalizeNoteContentForWatcher(currentMarkdownSnapshot());
+      const sameAsEditor = activePath === path && nextNormalized === normalizeNoteMarkdown(currentMarkdownSnapshot());
       const currentContent = contents.get(path);
-      if (activePath !== path && currentContent !== undefined && normalizeNoteContentForWatcher(currentContent) === nextNormalized) return;
+      if (activePath !== path && currentContent !== undefined && normalizeNoteMarkdown(currentContent) === nextNormalized) return;
       if (sameAsEditor) {
         acceptedDiskContentRef.current.set(path, nextNormalized);
         setContents((current) => {
@@ -2062,9 +2058,9 @@ export default function App() {
   externalNoteChangeRef.current = (path: string) => void handleExternalNoteChange(path);
 
   const acceptSavedMarkdown = useCallback((savedPath: string, written: string, snapshot: PersistDraftSnapshot) => {
-    const parsed = parseNoteMarkdown(written);
-    const nextBody = parsed.frontmatterError ? snapshot.body : parsed.body;
-    const nextFrontmatter = parsed.frontmatterError ? snapshot.frontmatter : parsed.frontmatter;
+    const savedDocument = readNoteDocument(written, snapshot.title);
+    const nextBody = savedDocument.frontmatterError ? snapshot.body : savedDocument.body;
+    const nextFrontmatter = savedDocument.frontmatterError ? snapshot.frontmatter : savedDocument.frontmatter;
     const currentDraft = activeDraftStateRef.current;
     const sameDraft =
       currentDraft.draft === snapshot.body &&
@@ -2080,12 +2076,10 @@ export default function App() {
     if (!sameNote || !sameDraft) return;
 
     setSavedTitle(snapshot.title);
-    setSavedDraft(nextBody);
-    setSavedFrontmatter(nextFrontmatter);
     setDraft(nextBody);
     setFrontmatterDraft(nextFrontmatter);
     setRawMarkdownText(written);
-    if (!parsed.frontmatterError) setFrontmatterError(null);
+    if (!savedDocument.frontmatterError) setFrontmatterError(null);
   }, []);
 
   const persistDraft = useCallback(async () => {
@@ -2136,7 +2130,7 @@ export default function App() {
             // disk" warning before our own saveNote runs.
             try {
               const initial = await readNote(snapshot.workspace, note.path);
-              acceptedDiskContentRef.current.set(note.path, normalizeNoteContentForWatcher(initial));
+              acceptedDiskContentRef.current.set(note.path, normalizeNoteMarkdown(initial));
             } catch {
               // Best-effort; the saveNote below will overwrite the entry anyway.
             }
@@ -2159,7 +2153,7 @@ export default function App() {
           const savedPath = nextPath;
           const written = await saveNote(snapshot.workspace, savedPath, snapshot.markdown);
           if (snapshot.path && snapshot.path !== savedPath) acceptedDiskContentRef.current.delete(snapshot.path);
-          acceptedDiskContentRef.current.set(savedPath, normalizeNoteContentForWatcher(written));
+          acceptedDiskContentRef.current.set(savedPath, normalizeNoteMarkdown(written));
           recordNotePosition(savedPath, written);
           acceptSavedMarkdown(savedPath, written, snapshot);
           setContents((current) => {
@@ -2199,7 +2193,7 @@ export default function App() {
 
     enqueueNoteSave(snapshot.path, async () => {
       const written = await saveNote(snapshot.workspace, snapshot.path as string, snapshot.markdown);
-      acceptedDiskContentRef.current.set(snapshot.path as string, normalizeNoteContentForWatcher(written));
+      acceptedDiskContentRef.current.set(snapshot.path as string, normalizeNoteMarkdown(written));
       recordNotePosition(snapshot.path as string, written);
       acceptSavedMarkdown(snapshot.path as string, written, snapshot);
       setContents((current) => {
@@ -2398,7 +2392,7 @@ export default function App() {
 
       const content = await readNote(workspace, createdNote.path);
       const access = await acquireActiveNoteLock(createdNote.path);
-      acceptedDiskContentRef.current.set(createdNote.path, normalizeNoteContentForWatcher(content));
+      acceptedDiskContentRef.current.set(createdNote.path, normalizeNoteMarkdown(content));
       undoableNewNoteRef.current = access === "editable" ? { workspace, path: createdNote.path } : null;
       setNotes((current) => current.some((entry) => entry.path === createdNote.path) ? current : [...current, createdNote]);
       setContents((current) => {
@@ -2692,7 +2686,7 @@ export default function App() {
       const duplicated = await duplicateNote(workspace, path);
       const content = await readNote(workspace, duplicated.path);
       const access = await acquireActiveNoteLock(duplicated.path);
-      acceptedDiskContentRef.current.set(duplicated.path, normalizeNoteContentForWatcher(content));
+      acceptedDiskContentRef.current.set(duplicated.path, normalizeNoteMarkdown(content));
       setNotes((current) => current.some((entry) => entry.path === duplicated.path) ? current : [...current, duplicated]);
       setContents((current) => {
         const next = new Map(current);
@@ -2760,7 +2754,7 @@ export default function App() {
         await waitForPendingNoteSaves();
       }
       const restored = await restoreNoteVersion(workspace, path, id);
-      acceptedDiskContentRef.current.set(path, normalizeNoteContentForWatcher(restored));
+      acceptedDiskContentRef.current.set(path, normalizeNoteMarkdown(restored));
       setContents((current) => {
         const next = new Map(current);
         next.set(path, restored);
@@ -2957,24 +2951,20 @@ export default function App() {
   }
 
   function loadContentIntoEditor(note: NoteEntry | null, markdown: string, restorePosition: NotePositionMetadata | null = null) {
-    const parsed = splitMarkdownTitle(markdown, note?.title ?? "");
-    const noteMarkdown = parseNoteMarkdown(parsed.body);
-    const rawMarkdown = composeMarkdown(noteMarkdown.frontmatter, noteMarkdown.body, Boolean(noteMarkdown.frontmatterError && !noteMarkdown.frontmatter));
+    const loadedDocument = readNoteDocument(markdown, note?.title ?? "");
     setEditorRestorePosition(restorePosition);
-    setTitleDraft(parsed.title);
-    setSavedTitle(parsed.title);
-    setDraft(noteMarkdown.body);
-    setSavedDraft(noteMarkdown.body);
-    setFrontmatterDraft(noteMarkdown.frontmatter);
-    setSavedFrontmatter(noteMarkdown.frontmatter);
-    setRawMarkdownText(rawMarkdown);
-    setSavedRawMarkdownText(rawMarkdown);
-    setFrontmatterError(noteMarkdown.frontmatterError);
+    setTitleDraft(loadedDocument.title);
+    setSavedTitle(loadedDocument.title);
+    setDraft(loadedDocument.body);
+    setFrontmatterDraft(loadedDocument.frontmatter);
+    setRawMarkdownText(loadedDocument.markdown);
+    setSavedRawMarkdownText(loadedDocument.markdown);
+    setFrontmatterError(loadedDocument.frontmatterError);
     setSelectedEditorText("");
-    if (noteMarkdown.frontmatterError) {
+    if (loadedDocument.frontmatterError) {
       setRawMarkdownVisible(true);
       setRightSidebarMode("frontmatter");
-      setAppError(noteMarkdown.frontmatterError);
+      setAppError(loadedDocument.frontmatterError);
     } else {
       setRawMarkdownVisible(false);
       setAppError(null);
@@ -2982,21 +2972,21 @@ export default function App() {
   }
 
   function handleRawMarkdownChange(markdown: string) {
-    setRawMarkdownText(markdown);
-    const parsed = parseNoteMarkdown(markdown);
-    setDraft(normalizeMarkdownImageLines(parsed.body));
-    setFrontmatterDraft(parsed.frontmatter);
-    setFrontmatterError(parsed.frontmatterError);
-    if (parsed.frontmatterError) setAppError(parsed.frontmatterError);
+    const revisedDocument = readNoteDocument(markdown, titleDraft);
+    setRawMarkdownText(revisedDocument.markdown);
+    setDraft(normalizeMarkdownImageLines(revisedDocument.body));
+    setFrontmatterDraft(revisedDocument.frontmatter);
+    setFrontmatterError(revisedDocument.frontmatterError);
+    if (revisedDocument.frontmatterError) setAppError(revisedDocument.frontmatterError);
     else setAppError(null);
   }
 
   function handleFrontmatterChange(frontmatter: string) {
-    setFrontmatterDraft(frontmatter);
-    setRawMarkdownText(composeMarkdown(frontmatter, draft));
-    const error = validateFrontmatter(frontmatter);
-    setFrontmatterError(error ? `This note has malformed frontmatter: ${error}.` : null);
-    if (error) setAppError(`This note has malformed frontmatter: ${error}.`);
+    const revisedDocument = reviseNoteDocument(noteDocument, { frontmatter });
+    setFrontmatterDraft(revisedDocument.frontmatter);
+    setRawMarkdownText(revisedDocument.markdown);
+    setFrontmatterError(revisedDocument.frontmatterError);
+    if (revisedDocument.frontmatterError) setAppError(revisedDocument.frontmatterError);
     else setAppError(null);
   }
 
@@ -3897,7 +3887,7 @@ export default function App() {
                   setAppError(frontmatterError);
                   return;
                 }
-                if (!rawMarkdownVisible) setRawMarkdownText(composeMarkdown(frontmatterDraft, draft));
+                if (!rawMarkdownVisible) setRawMarkdownText(noteDocument.markdown);
                 setRawMarkdownVisible((value) => !value);
               }}
             >
@@ -5701,7 +5691,7 @@ function NotesPane({
             metadata={metadata}
             note={note}
             pinned
-            preview={previewNote(contents.get(note.path) ?? "")}
+            preview={readNoteDocument(contents.get(note.path) ?? "", note.title).preview}
             onContextMenu={onContextMenu}
             onPin={onPin}
             onPointerDragStart={onPointerDragStart}
@@ -5717,7 +5707,7 @@ function NotesPane({
             metadata={metadata}
             note={note}
             pinned={false}
-            preview={previewNote(contents.get(note.path) ?? "")}
+            preview={readNoteDocument(contents.get(note.path) ?? "", note.title).preview}
             onContextMenu={onContextMenu}
             onPin={onPin}
             onPointerDragStart={onPointerDragStart}
@@ -6373,7 +6363,11 @@ function FrontmatterPane({
   frontmatterError: string | null;
   onChange: (frontmatter: string) => void;
 }) {
-  const fields = getFrontmatterFields(frontmatter).filter((field) => field.value.trim() !== "");
+  const document = useMemo(
+    () => createNoteDocument({ title: activeNote?.title ?? "", frontmatter, body: "" }),
+    [activeNote?.title, frontmatter],
+  );
+  const fields = document.frontmatterFields.filter((field) => field.value.trim() !== "");
   const hasFrontmatter = frontmatter.trim().length > 0;
   const [showRaw, setShowRaw] = useState(hasFrontmatter);
   const rawRef = useRef<HTMLTextAreaElement | null>(null);
@@ -6383,7 +6377,7 @@ function FrontmatterPane({
   }, [hasFrontmatter]);
 
   function updateField(field: FrontmatterField, value: string) {
-    onChange(updateFrontmatterField(frontmatter, field, value));
+    onChange(updateNoteDocumentFrontmatterField(document, field, value).frontmatter);
   }
 
   if (!activeNote && !frontmatter) {
