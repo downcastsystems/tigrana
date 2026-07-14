@@ -19,6 +19,7 @@ function storageSeam(overrides: Partial<NotebookStorage>): NotebookStorage {
       recentlyDeleted: true,
       workspaceWatching: true,
     },
+    readWorkspaceMetadata: vi.fn(async () => defaultWorkspaceMetadata()),
     ...overrides,
   } as NotebookStorage;
 }
@@ -39,12 +40,14 @@ describe("Notebook path mutations", () => {
     } as MutableRefObject<{ workspace: string; path: string; windowLabel: string } | null>;
     const storage = storageSeam({
       renameNote: vi.fn(async () => ({ path: "Drafts/New.md", title: "New", parent_path: "Drafts" })),
+      readWorkspaceMetadata: vi.fn(async () => { throw new Error("read failed"); }),
     });
 
     const mutations = createNotebookPathMutations({
       activePath,
       activeNoteLockRef: lock,
       folders: [{ path: "", name: "Notebook", parent_path: "" }],
+      getMetadata: () => metadata,
       navigationStyle: "dual-pane",
       notes: [{ path: "Drafts/Old.md", title: "Old", parent_path: "Drafts" }],
       refreshWorkspace: vi.fn(async () => {}),
@@ -67,7 +70,113 @@ describe("Notebook path mutations", () => {
     expect(tabs[0].path).toBe("Drafts/New.md");
     expect(metadata.noteOrder.Drafts).toEqual(["Drafts/New.md"]);
     expect(metadata.pinnedNotes).toEqual({ "Drafts/New.md": true });
+    expect(metadata.revision).toBe(0);
     expect(persistence).toBe(false);
+  });
+
+  it("rebases metadata changed during a Native Note rename onto the repaired path", async () => {
+    let releaseRename!: () => void;
+    let markRenameStarted!: () => void;
+    const renameGate = new Promise<void>((resolve) => { releaseRename = resolve; });
+    const renameStarted = new Promise<void>((resolve) => { markRenameStarted = resolve; });
+    let metadata: WorkspaceMetadata = {
+      ...defaultWorkspaceMetadata(),
+      noteOrder: { Drafts: ["Drafts/Old.md"] },
+    };
+    const storage = storageSeam({
+      renameNote: vi.fn(async () => {
+        markRenameStarted();
+        await renameGate;
+        return { path: "Drafts/New.md", title: "New", parent_path: "Drafts" };
+      }),
+      readWorkspaceMetadata: vi.fn(async () => ({
+        ...defaultWorkspaceMetadata(),
+        revision: 1,
+        noteOrder: { Drafts: ["Drafts/New.md"] },
+      })),
+    });
+    const mutations = createNotebookPathMutations({
+      activePath: null,
+      activeNoteLockRef: { current: null },
+      folders: [{ path: "", name: "Notebook", parent_path: "" }],
+      getMetadata: () => metadata,
+      navigationStyle: "dual-pane",
+      notes: [{ path: "Drafts/Old.md", title: "Old", parent_path: "Drafts" }],
+      refreshWorkspace: vi.fn(async () => {}),
+      selectedFolder: "Drafts",
+      setActivePath: vi.fn(),
+      setOpenTabs: vi.fn(),
+      setSelectedFolder: vi.fn(),
+      updateMetadata: (updater) => { metadata = updater(metadata); },
+      workspace: "/Notebook",
+      storage,
+    });
+
+    const rename = mutations.renameNote("Drafts/Old.md", "New");
+    await renameStarted;
+    metadata = {
+      ...metadata,
+      pinnedNotes: { "Drafts/Old.md": true },
+      bookmarksExpanded: false,
+    };
+    releaseRename();
+    await rename;
+
+    expect(metadata.revision).toBe(1);
+    expect(metadata.noteOrder.Drafts).toEqual(["Drafts/New.md"]);
+    expect(metadata.pinnedNotes).toEqual({ "Drafts/New.md": true });
+    expect(metadata.bookmarksExpanded).toBe(false);
+  });
+
+  it("preserves metadata deletions made during a Native Note rename", async () => {
+    let releaseRename!: () => void;
+    let markRenameStarted!: () => void;
+    const renameGate = new Promise<void>((resolve) => { releaseRename = resolve; });
+    const renameStarted = new Promise<void>((resolve) => { markRenameStarted = resolve; });
+    let metadata: WorkspaceMetadata = {
+      ...defaultWorkspaceMetadata(),
+      pinnedNotes: { "Drafts/Old.md": true },
+      noteIcons: { "Drafts/Old.md": "lucide:Star" },
+    };
+    const storage = storageSeam({
+      renameNote: vi.fn(async () => {
+        markRenameStarted();
+        await renameGate;
+        return { path: "Drafts/New.md", title: "New", parent_path: "Drafts" };
+      }),
+      readWorkspaceMetadata: vi.fn(async () => ({
+        ...defaultWorkspaceMetadata(),
+        revision: 1,
+        pinnedNotes: { "Drafts/New.md": true },
+        noteIcons: { "Drafts/New.md": "lucide:Star" },
+      })),
+    });
+    const mutations = createNotebookPathMutations({
+      activePath: null,
+      activeNoteLockRef: { current: null },
+      folders: [{ path: "", name: "Notebook", parent_path: "" }],
+      getMetadata: () => metadata,
+      navigationStyle: "dual-pane",
+      notes: [{ path: "Drafts/Old.md", title: "Old", parent_path: "Drafts" }],
+      refreshWorkspace: vi.fn(async () => {}),
+      selectedFolder: "Drafts",
+      setActivePath: vi.fn(),
+      setOpenTabs: vi.fn(),
+      setSelectedFolder: vi.fn(),
+      updateMetadata: (updater) => { metadata = updater(metadata); },
+      workspace: "/Notebook",
+      storage,
+    });
+
+    const rename = mutations.renameNote("Drafts/Old.md", "New");
+    await renameStarted;
+    metadata = { ...metadata, pinnedNotes: {}, noteIcons: {} };
+    releaseRename();
+    await rename;
+
+    expect(metadata.revision).toBe(1);
+    expect(metadata.pinnedNotes).toEqual({});
+    expect(metadata.noteIcons).toEqual({});
   });
 
   it("repairs every session path under a moved Folder", async () => {
@@ -83,6 +192,11 @@ describe("Notebook path mutations", () => {
     } as MutableRefObject<{ workspace: string; path: string; windowLabel: string } | null>;
     const storage = storageSeam({
       moveFolder: vi.fn(async () => ({ path: "Archive/Part", name: "Part", parent_path: "Archive" })),
+      readWorkspaceMetadata: vi.fn(async () => ({
+        ...defaultWorkspaceMetadata(),
+        revision: 1,
+        noteOrder: { "Archive/Part": ["Archive/Part/Scene.md"] },
+      })),
     });
 
     const mutations = createNotebookPathMutations({
@@ -92,6 +206,7 @@ describe("Notebook path mutations", () => {
         { path: "Book/Part", name: "Part", parent_path: "Book" },
         { path: "Archive", name: "Archive", parent_path: "" },
       ],
+      getMetadata: () => metadata,
       navigationStyle: "dual-pane",
       notes: [{ path: "Book/Part/Scene.md", title: "Scene", parent_path: "Book/Part" }],
       refreshWorkspace: vi.fn(async () => {}),
@@ -114,6 +229,7 @@ describe("Notebook path mutations", () => {
   });
 
   it("passes requested sibling placement to the durable Folder move", async () => {
+    const metadata = defaultWorkspaceMetadata();
     const storage = storageSeam({
       moveFolder: vi.fn(async () => ({ path: "Archive/Part", name: "Part", parent_path: "Archive" })),
     });
@@ -131,6 +247,7 @@ describe("Notebook path mutations", () => {
         { path: "Book/Part", name: "Part", parent_path: "Book" },
         { path: "Archive/Epilogue", name: "Epilogue", parent_path: "Archive" },
       ],
+      getMetadata: () => metadata,
       navigationStyle: "dual-pane",
       notes: [],
       refreshWorkspace: vi.fn(async () => {}),

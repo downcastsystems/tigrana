@@ -5,6 +5,7 @@ mod note_history;
 mod notebook_metadata;
 mod notebook_paths;
 mod notebook_storage;
+mod notebook_write_coordinator;
 mod trash;
 use assets::{
     read_asset_data_url as read_asset_data_url_for_notebook, save_asset as save_asset_for_notebook,
@@ -20,8 +21,8 @@ use note_history::{
     restore_note_version as restore_note_version_content, NoteVersionEntry,
 };
 use notebook_metadata::{
-    read_workspace_metadata as read_metadata_for_notebook,
-    write_workspace_metadata as write_metadata_for_notebook, FolderPlacement, WorkspaceMetadata,
+    compare_and_swap_workspace_metadata, read_workspace_metadata as read_metadata_for_notebook,
+    FolderPlacement, WorkspaceMetadata, WorkspaceMetadataWriteResult,
 };
 use notebook_paths::{
     app_dir, is_hidden_entry, normalize_relative, safe_note_path, safe_workspace,
@@ -35,6 +36,7 @@ use notebook_storage::{
     rename_folder as rename_folder_in_notebook, rename_note as rename_note_in_notebook,
     save_note as save_note_to_notebook, FolderEntry, NoteEntry,
 };
+use notebook_write_coordinator::NotebookWriteCoordinator;
 use notify::{Config, EventKind, RecommendedWatcher, RecursiveMode, Watcher};
 use serde::{Deserialize, Serialize};
 use std::collections::{HashMap, HashSet};
@@ -262,6 +264,24 @@ struct NoteEditLockState {
     locks: Mutex<HashMap<String, NoteEditLock>>,
 }
 
+async fn run_notebook_write<T, F>(
+    state: tauri::State<'_, NotebookWriteCoordinator>,
+    workspace: String,
+    operation: F,
+) -> Result<T, String>
+where
+    T: Send + 'static,
+    F: FnOnce(&Path) -> Result<T, String> + Send + 'static,
+{
+    let coordinator = state.inner().clone();
+    tauri::async_runtime::spawn_blocking(move || {
+        let root = safe_workspace(&workspace)?;
+        coordinator.run(&root, || operation(&root))
+    })
+    .await
+    .map_err(|error| error.to_string())?
+}
+
 #[tauri::command]
 fn list_notes(workspace: String) -> Result<Vec<NoteEntry>, String> {
     let root = safe_workspace(&workspace)?;
@@ -275,165 +295,246 @@ fn list_folders(workspace: String) -> Result<Vec<FolderEntry>, String> {
 }
 
 #[tauri::command]
-async fn read_note(workspace: String, path: String) -> Result<String, String> {
-    tauri::async_runtime::spawn_blocking(move || {
-        let root = safe_workspace(&workspace)?;
-        read_note_from_notebook(&root, &path)
+async fn read_note(
+    state: tauri::State<'_, NotebookWriteCoordinator>,
+    workspace: String,
+    path: String,
+) -> Result<String, String> {
+    let read_workspace = workspace.clone();
+    run_notebook_write(state, read_workspace, move |root| {
+        read_note_from_notebook(root, &path)
     })
     .await
-    .map_err(|error| error.to_string())?
 }
 
 #[tauri::command]
-async fn save_note(payload: SaveNotePayload) -> Result<String, String> {
-    tauri::async_runtime::spawn_blocking(move || {
-        let root = safe_workspace(&payload.workspace)?;
-        save_note_to_notebook(&root, &payload.path, &payload.content)
+async fn save_note(
+    state: tauri::State<'_, NotebookWriteCoordinator>,
+    payload: SaveNotePayload,
+) -> Result<String, String> {
+    let workspace = payload.workspace.clone();
+    run_notebook_write(state, workspace, move |root| {
+        save_note_to_notebook(root, &payload.path, &payload.content)
     })
     .await
-    .map_err(|error| error.to_string())?
 }
 
 #[tauri::command]
-fn create_note(payload: CreateNotePayload) -> Result<NoteEntry, String> {
-    let root = safe_workspace(&payload.workspace)?;
-    create_note_in_notebook(&root, &payload.parent_path, &payload.title)
+async fn create_note(
+    state: tauri::State<'_, NotebookWriteCoordinator>,
+    payload: CreateNotePayload,
+) -> Result<NoteEntry, String> {
+    let workspace = payload.workspace.clone();
+    run_notebook_write(state, workspace, move |root| {
+        create_note_in_notebook(root, &payload.parent_path, &payload.title)
+    })
+    .await
 }
 
 #[tauri::command]
-fn duplicate_note(payload: DuplicateNotePayload) -> Result<NoteEntry, String> {
-    let root = safe_workspace(&payload.workspace)?;
-    duplicate_note_in_notebook(&root, &payload.path)
+async fn duplicate_note(
+    state: tauri::State<'_, NotebookWriteCoordinator>,
+    payload: DuplicateNotePayload,
+) -> Result<NoteEntry, String> {
+    let workspace = payload.workspace.clone();
+    run_notebook_write(state, workspace, move |root| {
+        duplicate_note_in_notebook(root, &payload.path)
+    })
+    .await
 }
 
 #[tauri::command]
-fn rename_note(
-    state: tauri::State<NoteEditLockState>,
+async fn rename_note(
+    app: AppHandle,
+    state: tauri::State<'_, NotebookWriteCoordinator>,
     payload: RenameNotePayload,
 ) -> Result<NoteEntry, String> {
-    let root = safe_workspace(&payload.workspace)?;
-    let renamed = rename_note_in_notebook(&root, &payload.path, &payload.title)?;
-    repair_note_edit_lock_paths(
-        &state,
-        &payload.workspace,
-        &payload.path,
-        &renamed.path,
-        false,
-    );
-    Ok(renamed)
+    let workspace = payload.workspace.clone();
+    run_notebook_write(state, workspace, move |root| {
+        let renamed = rename_note_in_notebook(root, &payload.path, &payload.title)?;
+        let lock_state = app.state::<NoteEditLockState>();
+        repair_note_edit_lock_paths(
+            &lock_state,
+            &payload.workspace,
+            &payload.path,
+            &renamed.path,
+            false,
+        );
+        Ok(renamed)
+    })
+    .await
 }
 
 #[tauri::command]
-fn create_folder(payload: FolderPayload) -> Result<FolderEntry, String> {
-    let root = safe_workspace(&payload.workspace)?;
-    create_folder_in_notebook(&root, &payload.parent_path, &payload.name)
+async fn create_folder(
+    state: tauri::State<'_, NotebookWriteCoordinator>,
+    payload: FolderPayload,
+) -> Result<FolderEntry, String> {
+    let workspace = payload.workspace.clone();
+    run_notebook_write(state, workspace, move |root| {
+        create_folder_in_notebook(root, &payload.parent_path, &payload.name)
+    })
+    .await
 }
 
 #[tauri::command]
-fn rename_folder(
-    state: tauri::State<NoteEditLockState>,
+async fn rename_folder(
+    app: AppHandle,
+    state: tauri::State<'_, NotebookWriteCoordinator>,
     payload: RenameFolderPayload,
 ) -> Result<FolderEntry, String> {
-    let root = safe_workspace(&payload.workspace)?;
-    let renamed = rename_folder_in_notebook(&root, &payload.path, &payload.name)?;
-    repair_note_edit_lock_paths(
-        &state,
-        &payload.workspace,
-        &payload.path,
-        &renamed.path,
-        true,
-    );
-    Ok(renamed)
+    let workspace = payload.workspace.clone();
+    run_notebook_write(state, workspace, move |root| {
+        let renamed = rename_folder_in_notebook(root, &payload.path, &payload.name)?;
+        let lock_state = app.state::<NoteEditLockState>();
+        repair_note_edit_lock_paths(
+            &lock_state,
+            &payload.workspace,
+            &payload.path,
+            &renamed.path,
+            true,
+        );
+        Ok(renamed)
+    })
+    .await
 }
 
 #[tauri::command]
-fn move_note(
-    state: tauri::State<NoteEditLockState>,
+async fn move_note(
+    app: AppHandle,
+    state: tauri::State<'_, NotebookWriteCoordinator>,
     payload: MovePathPayload,
 ) -> Result<NoteEntry, String> {
-    let root = safe_workspace(&payload.workspace)?;
-    let moved = move_note_in_notebook(&root, &payload.path, &payload.target_parent_path)?;
-    repair_note_edit_lock_paths(
-        &state,
-        &payload.workspace,
-        &payload.path,
-        &moved.path,
-        false,
-    );
-    Ok(moved)
+    let workspace = payload.workspace.clone();
+    run_notebook_write(state, workspace, move |root| {
+        let moved = move_note_in_notebook(root, &payload.path, &payload.target_parent_path)?;
+        let lock_state = app.state::<NoteEditLockState>();
+        repair_note_edit_lock_paths(
+            &lock_state,
+            &payload.workspace,
+            &payload.path,
+            &moved.path,
+            false,
+        );
+        Ok(moved)
+    })
+    .await
 }
 
 #[tauri::command]
-fn move_folder(
-    state: tauri::State<NoteEditLockState>,
+async fn move_folder(
+    app: AppHandle,
+    state: tauri::State<'_, NotebookWriteCoordinator>,
     payload: MovePathPayload,
 ) -> Result<FolderEntry, String> {
-    let root = safe_workspace(&payload.workspace)?;
-    let sibling_placement = match payload.sibling_placement.as_deref() {
-        None => None,
-        Some("before") => Some(FolderPlacement::Before),
-        Some("after") => Some(FolderPlacement::After),
-        Some(_) => return Err("Folder sibling placement must be before or after.".to_string()),
-    };
-    let moved = move_folder_in_notebook(
-        &root,
-        &payload.path,
-        &payload.target_parent_path,
-        payload.sibling_target_path.as_deref(),
-        sibling_placement,
-    )?;
-    repair_note_edit_lock_paths(&state, &payload.workspace, &payload.path, &moved.path, true);
-    Ok(moved)
+    let workspace = payload.workspace.clone();
+    run_notebook_write(state, workspace, move |root| {
+        let sibling_placement = match payload.sibling_placement.as_deref() {
+            None => None,
+            Some("before") => Some(FolderPlacement::Before),
+            Some("after") => Some(FolderPlacement::After),
+            Some(_) => return Err("Folder sibling placement must be before or after.".to_string()),
+        };
+        let moved = move_folder_in_notebook(
+            root,
+            &payload.path,
+            &payload.target_parent_path,
+            payload.sibling_target_path.as_deref(),
+            sibling_placement,
+        )?;
+        let lock_state = app.state::<NoteEditLockState>();
+        repair_note_edit_lock_paths(
+            &lock_state,
+            &payload.workspace,
+            &payload.path,
+            &moved.path,
+            true,
+        );
+        Ok(moved)
+    })
+    .await
 }
 
 #[tauri::command]
-fn delete_note(payload: DeletePathPayload) -> Result<(), String> {
-    let root = safe_workspace(&payload.workspace)?;
-    delete_note_from_notebook(&root, &payload.path)
+async fn delete_note(
+    state: tauri::State<'_, NotebookWriteCoordinator>,
+    payload: DeletePathPayload,
+) -> Result<(), String> {
+    let workspace = payload.workspace.clone();
+    run_notebook_write(state, workspace, move |root| {
+        delete_note_from_notebook(root, &payload.path)
+    })
+    .await
 }
 
 #[tauri::command]
-fn delete_folder(payload: DeletePathPayload) -> Result<(), String> {
-    let root = safe_workspace(&payload.workspace)?;
-    delete_folder_from_notebook(&root, &payload.path)
+async fn delete_folder(
+    state: tauri::State<'_, NotebookWriteCoordinator>,
+    payload: DeletePathPayload,
+) -> Result<(), String> {
+    let workspace = payload.workspace.clone();
+    run_notebook_write(state, workspace, move |root| {
+        delete_folder_from_notebook(root, &payload.path)
+    })
+    .await
 }
 
 // ---------- Identity + link index ----------
 #[tauri::command]
-fn ensure_workspace_identity(payload: EnsureIdentityPayload) -> Result<(), String> {
-    let root = safe_workspace(&payload.workspace)?;
-    fs::create_dir_all(app_dir(&root)).map_err(|error| error.to_string())?;
-    let _ = rebuild_index_for_root(&root)?;
-    Ok(())
-}
-
-#[tauri::command]
-async fn read_link_index(workspace: String) -> Result<LinkIndex, String> {
-    tauri::async_runtime::spawn_blocking(move || {
-        let root = safe_workspace(&workspace)?;
-        let path = link_index_path(&root);
-        if !path.exists() {
-            return rebuild_index_for_root(&root);
-        }
-        Ok(read_link_index_file(&root))
+async fn ensure_workspace_identity(
+    state: tauri::State<'_, NotebookWriteCoordinator>,
+    payload: EnsureIdentityPayload,
+) -> Result<(), String> {
+    let workspace = payload.workspace.clone();
+    run_notebook_write(state, workspace, move |root| {
+        fs::create_dir_all(app_dir(root)).map_err(|error| error.to_string())?;
+        let _ = rebuild_index_for_root(root)?;
+        Ok(())
     })
     .await
-    .map_err(|error| error.to_string())?
 }
 
 #[tauri::command]
-fn rebuild_link_index(workspace: String) -> Result<LinkIndex, String> {
-    let root = safe_workspace(&workspace)?;
-    rebuild_index_for_root(&root)
+async fn read_link_index(
+    state: tauri::State<'_, NotebookWriteCoordinator>,
+    workspace: String,
+) -> Result<LinkIndex, String> {
+    let write_workspace = workspace.clone();
+    run_notebook_write(state, write_workspace, move |root| {
+        let path = link_index_path(root);
+        if !path.exists() {
+            return rebuild_index_for_root(root);
+        }
+        Ok(read_link_index_file(root))
+    })
+    .await
+}
+
+#[tauri::command]
+async fn rebuild_link_index(
+    state: tauri::State<'_, NotebookWriteCoordinator>,
+    workspace: String,
+) -> Result<LinkIndex, String> {
+    let write_workspace = workspace.clone();
+    run_notebook_write(state, write_workspace, move |root| {
+        rebuild_index_for_root(root)
+    })
+    .await
 }
 
 // ---------- Note Version History ----------
 
 #[tauri::command]
-fn list_note_versions(payload: NoteVersionsPayload) -> Result<Vec<NoteVersionEntry>, String> {
-    let root = safe_workspace(&payload.workspace)?;
-    let note_path = safe_note_path(&payload.workspace, &payload.path)?;
-    list_note_versions_for_note(&root, &payload.path, &note_path)
+async fn list_note_versions(
+    state: tauri::State<'_, NotebookWriteCoordinator>,
+    payload: NoteVersionsPayload,
+) -> Result<Vec<NoteVersionEntry>, String> {
+    let workspace = payload.workspace.clone();
+    run_notebook_write(state, workspace, move |root| {
+        let note_path = safe_note_path(&payload.workspace, &payload.path)?;
+        list_note_versions_for_note(root, &payload.path, &note_path)
+    })
+    .await
 }
 
 #[tauri::command]
@@ -443,24 +544,42 @@ fn read_note_version(payload: NoteVersionPayload) -> Result<String, String> {
 }
 
 #[tauri::command]
-fn restore_note_version(payload: NoteVersionPayload) -> Result<String, String> {
-    let root = safe_workspace(&payload.workspace)?;
-    let note_path = safe_note_path(&payload.workspace, &payload.path)?;
-    restore_note_version_content(&root, &payload.path, &note_path, &payload.id)
+async fn restore_note_version(
+    state: tauri::State<'_, NotebookWriteCoordinator>,
+    payload: NoteVersionPayload,
+) -> Result<String, String> {
+    let workspace = payload.workspace.clone();
+    run_notebook_write(state, workspace, move |root| {
+        let note_path = safe_note_path(&payload.workspace, &payload.path)?;
+        restore_note_version_content(root, &payload.path, &note_path, &payload.id)
+    })
+    .await
 }
 
 // ---------- Recently Deleted (trash) ----------
 
 #[tauri::command]
-fn trash_note(payload: DeletePathPayload) -> Result<TrashEntry, String> {
-    let root = safe_workspace(&payload.workspace)?;
-    trash_item(&root, &payload.path, "note")
+async fn trash_note(
+    state: tauri::State<'_, NotebookWriteCoordinator>,
+    payload: DeletePathPayload,
+) -> Result<TrashEntry, String> {
+    let workspace = payload.workspace.clone();
+    run_notebook_write(state, workspace, move |root| {
+        trash_item(root, &payload.path, "note")
+    })
+    .await
 }
 
 #[tauri::command]
-fn trash_folder(payload: DeletePathPayload) -> Result<TrashEntry, String> {
-    let root = safe_workspace(&payload.workspace)?;
-    trash_item(&root, &payload.path, "folder")
+async fn trash_folder(
+    state: tauri::State<'_, NotebookWriteCoordinator>,
+    payload: DeletePathPayload,
+) -> Result<TrashEntry, String> {
+    let workspace = payload.workspace.clone();
+    run_notebook_write(state, workspace, move |root| {
+        trash_item(root, &payload.path, "folder")
+    })
+    .await
 }
 
 #[tauri::command]
@@ -470,27 +589,51 @@ fn list_trash(workspace: String) -> Result<Vec<TrashEntry>, String> {
 }
 
 #[tauri::command]
-fn restore_trash(payload: TrashIdPayload) -> Result<String, String> {
-    let root = safe_workspace(&payload.workspace)?;
-    restore_trash_entry(&root, &payload.id)
+async fn restore_trash(
+    state: tauri::State<'_, NotebookWriteCoordinator>,
+    payload: TrashIdPayload,
+) -> Result<String, String> {
+    let workspace = payload.workspace.clone();
+    run_notebook_write(state, workspace, move |root| {
+        restore_trash_entry(root, &payload.id)
+    })
+    .await
 }
 
 #[tauri::command]
-fn purge_trash(payload: TrashIdPayload) -> Result<(), String> {
-    let root = safe_workspace(&payload.workspace)?;
-    purge_trash_entry(&root, &payload.id)
+async fn purge_trash(
+    state: tauri::State<'_, NotebookWriteCoordinator>,
+    payload: TrashIdPayload,
+) -> Result<(), String> {
+    let workspace = payload.workspace.clone();
+    run_notebook_write(state, workspace, move |root| {
+        purge_trash_entry(root, &payload.id)
+    })
+    .await
 }
 
 #[tauri::command]
-fn purge_trash_all(workspace: String) -> Result<(), String> {
-    let root = safe_workspace(&workspace)?;
-    purge_all_trash_for_notebook(&root)
+async fn purge_trash_all(
+    state: tauri::State<'_, NotebookWriteCoordinator>,
+    workspace: String,
+) -> Result<(), String> {
+    let write_workspace = workspace.clone();
+    run_notebook_write(state, write_workspace, move |root| {
+        purge_all_trash_for_notebook(root)
+    })
+    .await
 }
 
 #[tauri::command]
-fn cleanup_trash(workspace: String) -> Result<u32, String> {
-    let root = safe_workspace(&workspace)?;
-    cleanup_trash_for_notebook(&root)
+async fn cleanup_trash(
+    state: tauri::State<'_, NotebookWriteCoordinator>,
+    workspace: String,
+) -> Result<u32, String> {
+    let write_workspace = workspace.clone();
+    run_notebook_write(state, write_workspace, move |root| {
+        cleanup_trash_for_notebook(root)
+    })
+    .await
 }
 
 #[tauri::command]
@@ -634,22 +777,28 @@ fn watch_workspace(
 }
 
 #[tauri::command]
-fn read_workspace_metadata(workspace: String) -> Result<WorkspaceMetadata, String> {
-    let root = safe_workspace(&workspace)?;
-    read_metadata_for_notebook(&root)
+async fn read_workspace_metadata(
+    state: tauri::State<'_, NotebookWriteCoordinator>,
+    workspace: String,
+) -> Result<WorkspaceMetadata, String> {
+    let read_workspace = workspace.clone();
+    run_notebook_write(state, read_workspace, move |root| {
+        read_metadata_for_notebook(root)
+    })
+    .await
 }
 
 #[tauri::command]
 async fn write_workspace_metadata(
+    state: tauri::State<'_, NotebookWriteCoordinator>,
     workspace: String,
     metadata: WorkspaceMetadata,
-) -> Result<(), String> {
-    tauri::async_runtime::spawn_blocking(move || {
-        let root = safe_workspace(&workspace)?;
-        write_metadata_for_notebook(&root, &metadata)
+) -> Result<WorkspaceMetadataWriteResult, String> {
+    let write_workspace = workspace.clone();
+    run_notebook_write(state, write_workspace, move |root| {
+        compare_and_swap_workspace_metadata(root, &metadata)
     })
     .await
-    .map_err(|error| error.to_string())?
 }
 
 fn app_preferences_path(app: &AppHandle) -> Result<PathBuf, String> {
@@ -1763,6 +1912,7 @@ pub fn run() {
         .manage(WatchState::default())
         .manage(NotebookWindowState::default())
         .manage(NoteEditLockState::default())
+        .manage(NotebookWriteCoordinator::default())
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_fs::init())
         .plugin(tauri_plugin_shell::init())

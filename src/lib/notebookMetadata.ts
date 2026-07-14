@@ -10,6 +10,36 @@ export type BookmarkView = BookmarkEntry & {
   missing: boolean;
 };
 
+export function mergeWorkspaceMetadataChanges(
+  base: WorkspaceMetadata,
+  local: WorkspaceMetadata,
+  durable: WorkspaceMetadata,
+): WorkspaceMetadata {
+  return {
+    ...(mergeJsonChanges(base, local, durable) as WorkspaceMetadata),
+    revision: durable.revision,
+  };
+}
+
+function mergeJsonChanges(base: unknown, local: unknown, durable: unknown): unknown {
+  if (JSON.stringify(local) === JSON.stringify(base)) return durable;
+  if (!isJsonObject(base) || !isJsonObject(local) || !isJsonObject(durable)) return local;
+
+  const result: Record<string, unknown> = { ...durable };
+  for (const key of new Set([...Object.keys(base), ...Object.keys(local)])) {
+    if (!(key in local)) {
+      delete result[key];
+      continue;
+    }
+    result[key] = mergeJsonChanges(base[key], local[key], durable[key]);
+  }
+  return result;
+}
+
+function isJsonObject(value: unknown): value is Record<string, unknown> {
+  return Boolean(value) && typeof value === "object" && !Array.isArray(value);
+}
+
 export function getNotebookName(workspace: string) {
   return workspace.split("/").filter(Boolean).at(-1) || "Notebook";
 }
@@ -116,17 +146,17 @@ export function replaceOrderedPath(metadata: WorkspaceMetadata, oldPath: string,
     Object.entries(metadata.noteOrder).map(([folder, paths]) => [folder, paths.map((path) => (path === oldPath ? newPath : path))]),
   );
   const pinnedNotes = { ...metadata.pinnedNotes };
-  if (pinnedNotes[oldPath]) {
+  if (Object.prototype.hasOwnProperty.call(pinnedNotes, oldPath)) {
     delete pinnedNotes[oldPath];
-    pinnedNotes[newPath] = true;
+    pinnedNotes[newPath] = metadata.pinnedNotes[oldPath];
   }
   const noteIcons = { ...metadata.noteIcons };
-  if (noteIcons[oldPath]) {
+  if (Object.prototype.hasOwnProperty.call(noteIcons, oldPath)) {
     noteIcons[newPath] = noteIcons[oldPath];
     delete noteIcons[oldPath];
   }
   const notePositions = { ...metadata.notePositions };
-  if (notePositions[oldPath]) {
+  if (Object.prototype.hasOwnProperty.call(notePositions, oldPath)) {
     notePositions[newPath] = { ...notePositions[oldPath], path: newPath };
     delete notePositions[oldPath];
   }

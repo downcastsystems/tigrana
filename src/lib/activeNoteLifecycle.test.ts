@@ -79,6 +79,102 @@ describe("active Note lifecycle", () => {
     expect(order).toEqual(["save:start", "save:end", "rename"]);
   });
 
+  it("asks an overlapping path change to retry without running stale work", async () => {
+    const { subject } = lifecycle();
+    const first = deferred();
+    const order: string[] = [];
+    const firstChange = subject.runPathChange("First.md", "First.md", async () => {
+      order.push("first:start");
+      await first.promise;
+      order.push("first:end");
+    });
+    const secondChange = subject.runPathChange("Second.md", "Second.md", async () => {
+      order.push("second");
+    });
+
+    await Promise.resolve();
+    await Promise.resolve();
+    expect(order).toEqual(["first:start"]);
+    first.resolve();
+    await expect(firstChange).resolves.toBe("completed");
+    await expect(secondChange).resolves.toBe("retry");
+    expect(order).toEqual(["first:start", "first:end"]);
+
+    await expect(subject.runPathChange("Second.md", "Second.md", async () => {
+      order.push("second:fresh");
+    })).resolves.toBe("completed");
+    expect(order).toEqual(["first:start", "first:end", "second:fresh"]);
+  });
+
+  it("reports and rejects a failed path change", async () => {
+    const { errors, subject } = lifecycle();
+    const failure = new Error("rename failed");
+
+    await expect(subject.runPathChange("Note.md", "Note.md", async () => {
+      throw failure;
+    })).rejects.toBe(failure);
+    expect(errors).toEqual([failure]);
+    expect(subject.hasPathChange).toBe(false);
+  });
+
+  it("coalesces overlapping persistence requests onto the latest work", async () => {
+    const { subject } = lifecycle();
+    const first = deferred();
+    const order: string[] = [];
+    const firstRequest = subject.requestPersistence(async () => {
+      order.push("first:start");
+      await first.promise;
+      order.push("first:end");
+      return "first";
+    });
+    const secondRequest = subject.requestPersistence(async () => {
+      order.push("second");
+      return "second";
+    });
+    const thirdRequest = subject.requestPersistence(async () => {
+      order.push("third");
+      return "third";
+    });
+
+    await Promise.resolve();
+    expect(order).toEqual(["first:start"]);
+    first.resolve();
+    await expect(Promise.all([firstRequest, secondRequest, thirdRequest]))
+      .resolves.toEqual(["third", "third", "third"]);
+    expect(order).toEqual(["first:start", "first:end", "third"]);
+  });
+
+  it("recovers after a failed persistence request", async () => {
+    const { subject } = lifecycle();
+    const failure = new Error("save failed");
+
+    await expect(subject.requestPersistence(async () => {
+      throw failure;
+    })).rejects.toBe(failure);
+    await expect(subject.requestPersistence(async () => "saved")).resolves.toBe("saved");
+  });
+
+  it("runs a newer persistence request after the active attempt fails", async () => {
+    const { subject } = lifecycle();
+    const first = deferred();
+    const failure = new Error("first save failed");
+    const order: string[] = [];
+    const firstRequest = subject.requestPersistence(async () => {
+      order.push("first:start");
+      await first.promise;
+      throw failure;
+    });
+    const secondRequest = subject.requestPersistence(async () => {
+      order.push("second");
+      return "saved latest";
+    });
+
+    first.resolve();
+    await expect(Promise.all([firstRequest, secondRequest]))
+      .resolves.toEqual(["saved latest", "saved latest"]);
+    expect(order).toEqual(["first:start", "second"]);
+  });
+
   it("distinguishes watcher echoes, editor matches, and external changes", () => {
     const { subject } = lifecycle();
     subject.acceptDiskContent("Note.md", "saved\n");

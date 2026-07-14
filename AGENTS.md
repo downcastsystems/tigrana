@@ -98,10 +98,15 @@ Workspace metadata is stored in `.tigrana/metadata.json` via Tauri commands:
 - `read_workspace_metadata`
 - `write_workspace_metadata`
 
+`revision` is a monotonic compare-and-swap token. Native metadata writes must
+not replace a file whose revision has advanced; stale callers adopt the newer
+durable metadata, replay their queued semantic updates, and then write again.
+
 The TypeScript shape is `WorkspaceMetadata` in `src/types.ts`:
 
 ```ts
 {
+  revision: number;
   folderOrder: Record<string, string[]>;
   noteOrder: Record<string, string[]>;
   pinnedNotes: Record<string, boolean>;

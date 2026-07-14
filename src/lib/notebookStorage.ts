@@ -1,5 +1,5 @@
 import { invoke } from "@tauri-apps/api/core";
-import type { FolderEntry, LinkIndex, NoteEntry, WorkspaceMetadata } from "../types";
+import type { FolderEntry, LinkIndex, NoteEntry, WorkspaceMetadata, WorkspaceMetadataWriteResult } from "../types";
 import {
   decodeFolderEntry,
   decodeNoteEntry,
@@ -115,7 +115,7 @@ export type NotebookStorage = {
   readAssetDataUrl(workspace: string, path: string): Promise<string>;
   revealPath(workspace: string, path: string, kind: "folder" | "note"): Promise<void>;
   readWorkspaceMetadata(workspace: string): Promise<WorkspaceMetadata>;
-  writeWorkspaceMetadata(workspace: string, metadata: WorkspaceMetadata): Promise<void>;
+  writeWorkspaceMetadata(workspace: string, metadata: WorkspaceMetadata): Promise<WorkspaceMetadataWriteResult>;
   ensureWelcomeNote(workspace: string, metadata: WorkspaceMetadata): Promise<{ metadata: WorkspaceMetadata; created: boolean }>;
 };
 
@@ -129,6 +129,7 @@ const initialDemo: DemoStore = {
 };
 
 export const defaultWorkspaceMetadata = (): WorkspaceMetadata => ({
+  revision: 0,
   folderOrder: {},
   noteOrder: {},
   pinnedNotes: {},
@@ -348,7 +349,7 @@ export function createNativeNotebookStorage(invokeCommand: InvokeCommand = invok
     },
 
     async writeWorkspaceMetadata(workspace, metadata) {
-      await invokeCommand<void>("write_workspace_metadata", { workspace, metadata });
+      return invokeCommand<WorkspaceMetadataWriteResult>("write_workspace_metadata", { workspace, metadata });
     },
   };
 
@@ -587,7 +588,16 @@ export function createDemoNotebookStorage(persistence: KeyValueStorage): Noteboo
     },
 
     async writeWorkspaceMetadata(workspace, metadata) {
-      persistence.setItem(metadataKey(workspace), JSON.stringify(metadata));
+      const raw = persistence.getItem(metadataKey(workspace));
+      const current = raw
+        ? normalizeWorkspaceMetadata(JSON.parse(raw) as Partial<WorkspaceMetadata>)
+        : defaultWorkspaceMetadata();
+      if (metadata.revision !== current.revision) {
+        return { applied: false, metadata: current };
+      }
+      const next = { ...metadata, revision: current.revision + 1 };
+      persistence.setItem(metadataKey(workspace), JSON.stringify(next));
+      return { applied: true, metadata: next };
     },
   };
 
@@ -602,8 +612,14 @@ function addSharedNotebookBehavior(storage: Omit<NotebookStorage, "ensureWelcome
       const hasWelcomeNote = (await storage.listNotes(workspace)).some((note) => note.path === WELCOME_NOTE_PATH);
       if (!hasWelcomeNote) await storage.saveNote(workspace, WELCOME_NOTE_PATH, WELCOME_NOTE_CONTENT);
       const nextMetadata = { ...metadata, welcomeNoteAdded: true };
-      await storage.writeWorkspaceMetadata(workspace, nextMetadata);
-      return { metadata: nextMetadata, created: !hasWelcomeNote };
+      let result = await storage.writeWorkspaceMetadata(workspace, nextMetadata);
+      if (!result.applied && !result.metadata.welcomeNoteAdded) {
+        result = await storage.writeWorkspaceMetadata(workspace, {
+          ...result.metadata,
+          welcomeNoteAdded: true,
+        });
+      }
+      return { metadata: result.metadata, created: !hasWelcomeNote };
     },
   };
 }

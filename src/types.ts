@@ -94,6 +94,7 @@ export type LinkIndex = {
 };
 
 export type WorkspaceMetadata = {
+  revision: number;
   folderOrder: Record<string, string[]>;
   noteOrder: Record<string, string[]>;
   pinnedNotes: Record<string, boolean>;
@@ -106,4 +107,9 @@ export type WorkspaceMetadata = {
   expandedFolders: Record<string, boolean>;
   welcomeNoteAdded: boolean;
   appearance?: NotebookAppearance;
+};
+
+export type WorkspaceMetadataWriteResult = {
+  applied: boolean;
+  metadata: WorkspaceMetadata;
 };

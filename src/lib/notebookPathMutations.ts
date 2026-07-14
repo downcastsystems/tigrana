@@ -3,6 +3,7 @@ import { notebookStorage, type FolderSiblingPlacement, type NotebookStorage } fr
 import {
   moveFolderInMetadata,
   moveNoteInMetadata,
+  mergeWorkspaceMetadataChanges,
   replaceFolderPathPrefix,
   replaceOrderedPath,
   replacePathPrefix,
@@ -29,6 +30,7 @@ type NotebookPathMutationOptions = {
   activePath: string | null;
   activeNoteLockRef: MutableRefObject<NoteEditLock | null>;
   folders: FolderEntry[];
+  getMetadata: () => WorkspaceMetadata;
   navigationStyle: NavigationStyle;
   notes: NoteEntry[];
   refreshWorkspace: (workspace: string) => Promise<void>;
@@ -38,7 +40,11 @@ type NotebookPathMutationOptions = {
   setSelectedFolder: Dispatch<SetStateAction<string>>;
   updateMetadata: UpdateMetadata;
   workspace: string;
-  storage?: Pick<NotebookStorage, "capabilities" | "moveFolder" | "moveNote" | "renameFolder" | "renameNote">;
+  storage?: Pick<NotebookStorage, "capabilities" | "moveFolder" | "moveNote" | "readWorkspaceMetadata" | "renameFolder" | "renameNote">;
+  rebasePendingMetadata?: (
+    forward: (current: WorkspaceMetadata) => WorkspaceMetadata,
+    reverse: (current: WorkspaceMetadata) => WorkspaceMetadata,
+  ) => void;
   runDurableMutation?: <T>(operation: () => Promise<T>) => Promise<T>;
 };
 
@@ -51,6 +57,7 @@ export function createNotebookPathMutations({
   activePath,
   activeNoteLockRef,
   folders,
+  getMetadata,
   navigationStyle,
   notes,
   refreshWorkspace,
@@ -61,10 +68,28 @@ export function createNotebookPathMutations({
   updateMetadata,
   workspace,
   storage = notebookStorage,
+  rebasePendingMetadata = () => {},
   runDurableMutation = (operation) => operation(),
 }: NotebookPathMutationOptions) {
-  const metadataRepairOptions = {
-    persist: !storage.capabilities.atomicPathMutations,
+  const syncMetadataAfterPathMutation = async (
+    base: WorkspaceMetadata,
+    repair: (current: WorkspaceMetadata) => WorkspaceMetadata,
+    reverseRepair: (current: WorkspaceMetadata) => WorkspaceMetadata,
+  ) => {
+    if (storage.capabilities.atomicPathMutations) {
+      try {
+        const persisted = await storage.readWorkspaceMetadata(workspace);
+        updateMetadata(
+          (current) => mergeWorkspaceMetadataChanges(repair(base), repair(current), persisted),
+          { persist: false },
+        );
+      } catch {
+        updateMetadata(repair, { persist: false });
+      }
+      rebasePendingMetadata(repair, reverseRepair);
+      return;
+    }
+    updateMetadata(repair);
   };
   const replaceOpenTabPath = (oldPath: string, newPath: string) => {
     setOpenTabs((current) => current.map((tab) => (tab.path === oldPath ? { ...tab, path: newPath } : tab)));
@@ -98,10 +123,12 @@ export function createNotebookPathMutations({
     if (!sourceNote || sourceNote.parent_path === targetParentPath) return null;
 
     const moved = await runDurableMutation(async () => {
+      const metadataBeforeMutation = getMetadata();
       const result = await storage.moveNote(workspace, path, targetParentPath);
-      updateMetadata(
+      await syncMetadataAfterPathMutation(
+        metadataBeforeMutation,
         (current) => moveNoteInMetadata(current, path, result.path, sourceNote.parent_path, result.parent_path),
-        metadataRepairOptions,
+        (current) => moveNoteInMetadata(current, result.path, path, result.parent_path, sourceNote.parent_path),
       );
       return result;
     });
@@ -114,8 +141,13 @@ export function createNotebookPathMutations({
 
   const renameNote = async (path: string, title: string) => {
     const renamed = await runDurableMutation(async () => {
+      const metadataBeforeMutation = getMetadata();
       const result = await storage.renameNote(workspace, path, title);
-      updateMetadata((current) => replaceOrderedPath(current, path, result.path), metadataRepairOptions);
+      await syncMetadataAfterPathMutation(
+        metadataBeforeMutation,
+        (current) => replaceOrderedPath(current, path, result.path),
+        (current) => replaceOrderedPath(current, result.path, path),
+      );
       return result;
     });
     repairActiveNotePath(path, renamed.path);
@@ -129,8 +161,9 @@ export function createNotebookPathMutations({
     if (!sourceFolder || !sourceFolder.path || sourceFolder.parent_path === targetParentPath) return null;
 
     const moved = await runDurableMutation(async () => {
+      const metadataBeforeMutation = getMetadata();
       const result = await storage.moveFolder(workspace, path, targetParentPath, options.siblingPlacement);
-      updateMetadata((current) => {
+      const repair = (current: WorkspaceMetadata) => {
         const relocated = moveFolderInMetadata(current, path, result.path, sourceFolder.parent_path, result.parent_path);
         if (!options.siblingPlacement) return relocated;
 
@@ -161,7 +194,12 @@ export function createNotebookPathMutations({
             [targetFolder.parent_path]: siblingPaths,
           },
         };
-      }, metadataRepairOptions);
+      };
+      await syncMetadataAfterPathMutation(
+        metadataBeforeMutation,
+        repair,
+        (current) => moveFolderInMetadata(current, result.path, path, result.parent_path, sourceFolder.parent_path),
+      );
       return result;
     });
 
@@ -178,10 +216,12 @@ export function createNotebookPathMutations({
 
   const renameFolder = async (path: string, name: string) => {
     const renamed = await runDurableMutation(async () => {
+      const metadataBeforeMutation = getMetadata();
       const result = await storage.renameFolder(workspace, path, name);
-      updateMetadata(
+      await syncMetadataAfterPathMutation(
+        metadataBeforeMutation,
         (current) => replaceFolderPathPrefix(current, path, result.path),
-        metadataRepairOptions,
+        (current) => replaceFolderPathPrefix(current, result.path, path),
       );
       return result;
     });

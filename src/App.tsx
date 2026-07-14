@@ -572,7 +572,13 @@ export default function App() {
   const suppressNextFolderClickRef = useRef(false);
   const suppressNextSectionClickRef = useRef(false);
   const autoSelectedWorkspaceRef = useRef<string | null>(null);
+  const workspaceRef = useRef<string | null>(null);
   const metadataRef = useRef(metadata);
+  const acceptPersistedMetadata = useCallback((persistedWorkspace: string, next: WorkspaceMetadata) => {
+    if (workspaceRef.current !== persistedWorkspace) return;
+    metadataRef.current = next;
+    setMetadata(next);
+  }, []);
   const positionWriteTimerRef = useRef<number | null>(null);
   const pendingEditorChangeRef = useRef<PendingEditorChange | null>(null);
   const pendingNoteContentsRef = useRef(new PendingNoteContents());
@@ -580,7 +586,6 @@ export default function App() {
   const restoredTabsWorkspaceRef = useRef<string | null>(null);
   const openTabsRef = useRef<NoteTab[]>([]);
   const activeTabIdRef = useRef<string | null>(null);
-  const workspaceRef = useRef<string | null>(null);
   const chooseWorkspaceRef = useRef<(intent: "open" | "new", openInNewWindow?: boolean) => void>(() => {});
   const externalNoteChangeRef = useRef<(path: string) => void>(() => {});
   const undoableNewNoteRef = useRef<{ workspace: string; path: string } | null>(null);
@@ -589,9 +594,13 @@ export default function App() {
     activePath: null as string | null,
     draft: "",
     frontmatterDraft: "",
+    pendingNote: null as DraftNote | null,
     rawMarkdownText: "",
+    savedRawMarkdownText: "",
+    savedTitle: "",
     titleDraft: "",
   });
+  const persistDraftAttemptRef = useRef<() => Promise<string | undefined>>(async () => undefined);
   const flushPendingSavesRef = useRef<() => Promise<void>>(async () => {});
   const rawMarkdownInputRef = useRef<HTMLTextAreaElement | null>(null);
   const dictationTargetRef = useRef<DictationTarget | null>(null);
@@ -769,15 +778,18 @@ export default function App() {
     metadataRef.current = metadata;
   }, [metadata]);
 
-  useEffect(() => {
+  useLayoutEffect(() => {
     activeDraftStateRef.current = {
       activePath,
       draft,
       frontmatterDraft,
+      pendingNote,
       rawMarkdownText,
+      savedRawMarkdownText,
+      savedTitle,
       titleDraft,
     };
-  }, [activePath, draft, frontmatterDraft, rawMarkdownText, titleDraft]);
+  }, [activePath, draft, frontmatterDraft, pendingNote, rawMarkdownText, savedRawMarkdownText, savedTitle, titleDraft]);
 
   useEffect(() => {
     if (!workspace) return;
@@ -1198,7 +1210,17 @@ export default function App() {
 
   useEffect(() => { openTabsRef.current = openTabs; }, [openTabs]);
   useEffect(() => { activeTabIdRef.current = activeTabId; }, [activeTabId]);
-  useEffect(() => {
+  useLayoutEffect(() => {
+    const previousWorkspace = workspaceRef.current;
+    if (previousWorkspace && previousWorkspace !== workspace) {
+      if (positionWriteTimerRef.current !== null) {
+        window.clearTimeout(positionWriteTimerRef.current);
+        positionWriteTimerRef.current = null;
+      }
+      void notebookMetadataPersistence.flush(previousWorkspace).catch((error) => {
+        setAppError(error instanceof Error ? error.message : String(error));
+      });
+    }
     workspaceRef.current = workspace;
     activeNoteLifecycle.resetWorkspace();
   }, [activeNoteLifecycle, workspace]);
@@ -1223,7 +1245,6 @@ export default function App() {
           if (positionWriteTimerRef.current !== null) {
             window.clearTimeout(positionWriteTimerRef.current);
             positionWriteTimerRef.current = null;
-            await notebookMetadataPersistence.write(workspacePath, () => metadataRef.current);
           }
           await notebookMetadataPersistence.flush(workspacePath);
         };
@@ -1241,7 +1262,7 @@ export default function App() {
       disposed = true;
       unlisten?.();
     };
-  }, []);
+  }, [acceptPersistedMetadata]);
 
   useEffect(() => {
     const onClick = (event: MouseEvent) => {
@@ -1310,22 +1331,32 @@ export default function App() {
       selectionTo: existing?.selectionTo,
       ...patch,
     };
-    const next: WorkspaceMetadata = {
-      ...current,
+    const updater = (value: WorkspaceMetadata): WorkspaceMetadata => ({
+      ...value,
       notePositions: {
-        ...current.notePositions,
+        ...value.notePositions,
         [path]: nextPosition,
       },
-    };
+    });
 
-    metadataRef.current = next;
+    metadataRef.current = updater(current);
+    void notebookMetadataPersistence.mutate(
+      workspace,
+      updater,
+      metadataRef.current,
+      acceptPersistedMetadata,
+      { defer: true, coalesceKey: `note-position:${path}` },
+    ).catch((error) => {
+      setAppError(error instanceof Error ? error.message : String(error));
+    });
     if (positionWriteTimerRef.current) window.clearTimeout(positionWriteTimerRef.current);
     positionWriteTimerRef.current = window.setTimeout(() => {
-      void notebookMetadataPersistence.write(workspace, () => metadataRef.current).catch((error) => {
+      positionWriteTimerRef.current = null;
+      void notebookMetadataPersistence.flush(workspace).catch((error) => {
         setAppError(error instanceof Error ? error.message : String(error));
       });
     }, 300);
-  }, [workspace]);
+  }, [acceptPersistedMetadata, workspace]);
 
   const releaseActiveNoteLock = useCallback(async () => {
     await activeNoteLifecycle.releaseLock();
@@ -1520,16 +1551,19 @@ export default function App() {
     metadataRef.current = next;
     setMetadata(next);
     if (workspace && options.persist !== false) {
-      void notebookMetadataPersistence.write(workspace, () => metadataRef.current).catch((error) => {
-        setAppError(error instanceof Error ? error.message : String(error));
-      });
+      void notebookMetadataPersistence
+        .mutate(workspace, updater, metadataRef.current, acceptPersistedMetadata)
+        .catch((error) => {
+          setAppError(error instanceof Error ? error.message : String(error));
+        });
     }
-  }, [workspace]);
+  }, [acceptPersistedMetadata, workspace]);
 
   const notebookPathMutations = useMemo(() => createNotebookPathMutations({
     activePath,
     activeNoteLockRef,
     folders,
+    getMetadata: () => metadataRef.current,
     navigationStyle,
     notes,
     refreshWorkspace,
@@ -1539,6 +1573,9 @@ export default function App() {
     setSelectedFolder,
     updateMetadata,
     workspace,
+    rebasePendingMetadata: (forward, reverse) => {
+      notebookMetadataPersistence.rebasePending(workspace, forward, reverse, metadataRef.current);
+    },
     runDurableMutation: (operation) => notebookMetadataPersistence.runExclusive(workspace, operation),
   }), [activeNoteLockRef, activePath, folders, navigationStyle, notes, refreshWorkspace, selectedFolder, updateMetadata, workspace]);
 
@@ -1939,7 +1976,13 @@ export default function App() {
       showReadOnlyNoteWarning();
       return;
     }
-    updateMetadata((current) => ({ ...current, pinnedNotes: { ...current.pinnedNotes, [path]: !current.pinnedNotes[path] } }));
+    const shouldPin = !metadataRef.current.pinnedNotes[path];
+    updateMetadata((current) => {
+      const pinnedNotes = { ...current.pinnedNotes };
+      if (shouldPin) pinnedNotes[path] = true;
+      else delete pinnedNotes[path];
+      return { ...current, pinnedNotes };
+    });
   }
 
   const disarmPendingTitleFocus = useCallback(() => {
@@ -1947,7 +1990,7 @@ export default function App() {
   }, []);
 
   async function selectNote(path: string, options: { preserveSelectedFolder?: boolean; skipPersist?: boolean } = {}) {
-    if (!options.skipPersist) await persistDraftForNavigation();
+    if (!options.skipPersist && !await persistDraftForNavigation()) return;
     placePathInActiveTab(path);
     await loadExistingNoteIntoEditor(path, options);
     setSearchQuery("");
@@ -1970,7 +2013,7 @@ export default function App() {
   }
 
   async function selectSection(sectionPath: string) {
-    await persistDraftForNavigation();
+    if (!await persistDraftForNavigation()) return;
 
     setSelectedFolder(sectionPath);
     const lastOpenedNote = findLastOpenedNoteInSection(sectionPath);
@@ -1983,7 +2026,7 @@ export default function App() {
   }
 
   async function selectFolderForNewNote(folderPath: string) {
-    await persistDraftForNavigation();
+    if (!await persistDraftForNavigation()) return;
     setSelectedFolder(folderPath);
     clearCurrentNote();
   }
@@ -2084,17 +2127,19 @@ export default function App() {
       (snapshot.pendingNote !== null && currentDraft.activePath === null);
 
     if (!sameNote) return;
+    currentDraft.savedRawMarkdownText = written;
+    currentDraft.savedTitle = snapshot.title;
     setSavedRawMarkdownText(written);
+    setSavedTitle(snapshot.title);
     if (!sameDraft) return;
 
-    setSavedTitle(snapshot.title);
     setDraft(nextBody);
     setFrontmatterDraft(nextFrontmatter);
     setRawMarkdownText(written);
     if (!savedDocument.frontmatterError) setFrontmatterError(null);
   }, []);
 
-  const persistDraft = useCallback(async () => {
+  const persistDraftAttempt = useCallback(async () => {
     setAppError(null);
     if (!workspace || !noteOpen) return;
     if (activeNoteLifecycle.isLoading) return;
@@ -2106,7 +2151,8 @@ export default function App() {
     const markdown = rawMode
       ? rawMarkdownDraft
       : createNoteDocument({ title: titleDraft, body, frontmatter: frontmatterDraft }).markdown;
-    const bodyHasUnsavedChanges = markdown !== savedRawMarkdownText;
+    const currentLifecycleState = activeDraftStateRef.current;
+    const bodyHasUnsavedChanges = markdown !== currentLifecycleState.savedRawMarkdownText;
 
     const title = titleDraft.trim();
     try {
@@ -2118,10 +2164,10 @@ export default function App() {
 
     const snapshot = {
       workspace,
-      path: activePath,
-      pendingNote,
+      path: currentLifecycleState.activePath,
+      pendingNote: currentLifecycleState.activePath ? null : currentLifecycleState.pendingNote,
       title,
-      savedTitle,
+      savedTitle: currentLifecycleState.savedTitle,
       body,
       frontmatter: frontmatterDraft,
       rawMode,
@@ -2147,6 +2193,8 @@ export default function App() {
           } catch {
             // Best-effort; the saveNote below will overwrite the entry anyway.
           }
+          activeDraftStateRef.current.activePath = note.path;
+          activeDraftStateRef.current.pendingNote = null;
           setNotes((current) => current.some((entry) => entry.path === note.path) ? current : [...current, note]);
           setActivePath(note.path);
           setPendingNote(null);
@@ -2159,6 +2207,7 @@ export default function App() {
         } else if (snapshot.path && snapshot.title !== snapshot.savedTitle) {
           const renamed = await notebookPathMutations.renameActiveNote(snapshot.path, snapshot.title);
           nextPath = renamed.path;
+          activeDraftStateRef.current.activePath = renamed.path;
         }
 
         if (!nextPath) return;
@@ -2214,7 +2263,16 @@ export default function App() {
       }
     });
     return snapshot.markdown;
-  }, [acceptSavedMarkdown, acquireActiveNoteLock, activeNoteEditable, activeNoteLifecycle, activePath, applyNoteAccess, draft, enqueueNoteSave, flushPendingEditorBody, frontmatterDraft, frontmatterError, navigationStyle, noteOpen, notebookPathMutations, pendingNote, placePathInActiveTab, rawMarkdownDraft, rawMarkdownVisible, recordNotePosition, refreshWorkspace, savedRawMarkdownText, savedTitle, titleDraft, updateMetadata, workspace]);
+  }, [acceptSavedMarkdown, acquireActiveNoteLock, activeNoteEditable, activeNoteLifecycle, applyNoteAccess, draft, enqueueNoteSave, flushPendingEditorBody, frontmatterDraft, frontmatterError, navigationStyle, noteOpen, notebookPathMutations, placePathInActiveTab, rawMarkdownDraft, rawMarkdownVisible, recordNotePosition, refreshWorkspace, titleDraft, updateMetadata, workspace]);
+
+  persistDraftAttemptRef.current = persistDraftAttempt;
+  const persistDraft = useCallback(
+    () => activeNoteLifecycle.requestPersistence(() => persistDraftAttemptRef.current()),
+    [activeNoteLifecycle],
+  );
+  const persistDraftInBackground = useCallback(() => {
+    void persistDraft().catch(() => undefined);
+  }, [persistDraft]);
 
   const commitTitleAndFocusEditor = useCallback(async () => {
     if (!activeNoteEditable) return;
@@ -2242,16 +2300,22 @@ export default function App() {
         }, 150);
       });
       clearInFinally = false;
+    } catch {
+      // The lifecycle already surfaced the storage error. Keep focus in the
+      // title so the unsaved change remains obvious and retryable.
     } finally {
       if (clearInFinally) titleCommitInFlightRef.current = false;
     }
   }, [activeNoteEditable, disarmPendingTitleFocus, hasUnsavedChanges, persistDraft, titleDraft]);
 
   async function persistDraftForNavigation() {
-    if (!hasUnsavedChanges && !pendingEditorChangeRef.current) return;
-    const waitForPathChange = Boolean(pendingNote || titleDraft.trim() !== savedTitle);
-    const save = persistDraft();
-    if (waitForPathChange) await save;
+    if (!hasUnsavedChanges && !pendingEditorChangeRef.current) return true;
+    try {
+      await persistDraft();
+      return true;
+    } catch {
+      return false;
+    }
   }
 
   useEffect(() => {
@@ -2265,7 +2329,7 @@ export default function App() {
     addEmptyTab: () => void addEmptyTab(),
     chooseWorkspace: (intent: "open" | "new") => void chooseWorkspace(intent),
     hasOpenNote: () => Boolean(noteOpen),
-    persistDraft: () => void persistDraft(),
+    persistDraft: persistDraftInBackground,
     requestCreateNote,
     selectedFolder,
     toggleRawMarkdown: toggleRawMarkdownMode,
@@ -2354,10 +2418,10 @@ export default function App() {
     if (!hasUnsavedBody) return;
     if (pendingNote && !titleDraft.trim()) return;
     const handle = window.setTimeout(() => {
-      void persistDraft();
+      persistDraftInBackground();
     }, 650);
     return () => window.clearTimeout(handle);
-  }, [activeNoteEditable, activeNoteLifecycle, hasUnsavedBody, pendingNote, titleDraft, persistDraft]);
+  }, [activeNoteEditable, activeNoteLifecycle, hasUnsavedBody, pendingNote, persistDraftInBackground, titleDraft]);
 
 
   async function requestCreateNote(parentPath = selectedFolder) {
@@ -2366,7 +2430,7 @@ export default function App() {
       return;
     }
     try {
-      await persistDraftForNavigation();
+      if (!await persistDraftForNavigation()) return;
 
       cancelPendingNoteLoads();
       await releaseActiveNoteLock();
@@ -2489,7 +2553,7 @@ export default function App() {
   }, [noteOpen, titleDraft]);
 
   async function addEmptyTab() {
-    await persistDraftForNavigation();
+    if (!await persistDraftForNavigation()) return;
     const tabId = createTabId();
     setOpenTabs((current) => [...current, { id: tabId, path: null }]);
     setActiveTabId(tabId);
@@ -2500,7 +2564,7 @@ export default function App() {
     const tab = openTabs.find((entry) => entry.id === tabId);
     if (!tab) return;
 
-    await persistDraftForNavigation();
+    if (!await persistDraftForNavigation()) return;
 
     setActiveTabId(tab.id);
     if (tab.path) {
@@ -2512,7 +2576,7 @@ export default function App() {
   }
 
   async function openNoteInNewTab(path: string) {
-    await persistDraftForNavigation();
+    if (!await persistDraftForNavigation()) return;
     const tabId = createTabId();
     setOpenTabs((current) => [...current, { id: tabId, path }]);
     setActiveTabId(tabId);
@@ -2523,11 +2587,11 @@ export default function App() {
   async function closeTab(tabId: string) {
     const tab = openTabs.find((entry) => entry.id === tabId);
     const nextTabs = openTabs.filter((entry) => entry.id !== tabId);
+    const closesActiveNote = activeTabId === tabId || activePath === tab?.path;
+    if (closesActiveNote && !await persistDraftForNavigation()) return;
     setOpenTabs(nextTabs);
     setTabContextMenu(null);
-    if (activeTabId !== tabId && activePath !== tab?.path) return;
-
-    await persistDraftForNavigation();
+    if (!closesActiveNote) return;
 
     const nextTab = nextTabs.at(-1);
     if (nextTab) {
@@ -2545,7 +2609,7 @@ export default function App() {
   }
 
   async function closeAllTabs() {
-    await persistDraftForNavigation();
+    if (!await persistDraftForNavigation()) return;
     setOpenTabs([]);
     setActiveTabId(null);
     setTabContextMenu(null);
@@ -2559,7 +2623,7 @@ export default function App() {
 
   async function submitFolder() {
     if (!workspace || folderDialogParent === null) return;
-    await persistDraftForNavigation();
+    if (!await persistDraftForNavigation()) return;
     try {
       const folder = await createFolder(workspace, folderDialogParent, folderName);
       updateMetadata((current) => addFolderToOrder(current, folder.parent_path, folder.path));
@@ -2669,7 +2733,7 @@ export default function App() {
   async function handleDuplicateNote(path: string) {
     if (!workspace) return;
     try {
-      await persistDraftForNavigation();
+      if (!await persistDraftForNavigation()) return;
       const duplicated = await duplicateNote(workspace, path);
       const content = await readNote(workspace, duplicated.path);
       const access = await acquireActiveNoteLock(duplicated.path);
@@ -3497,15 +3561,27 @@ export default function App() {
       showReadOnlyNoteWarning();
       return;
     }
+    const shouldRemove = metadataRef.current.bookmarks.some(
+      (bookmark) => bookmark.kind === target.kind && bookmark.path === target.path,
+    );
+    const bookmark = shouldRemove
+      ? null
+      : { id: createBookmarkId(), kind: target.kind, path: target.path, createdAt: Date.now() };
     updateMetadata((current) => {
-      const exists = current.bookmarks.some((bookmark) => bookmark.kind === target.kind && bookmark.path === target.path);
       return {
         ...current,
-        bookmarks: exists
+        bookmarks: shouldRemove
           ? current.bookmarks.filter((bookmark) => bookmark.kind !== target.kind || bookmark.path !== target.path)
-          : [...current.bookmarks, { id: createBookmarkId(), kind: target.kind, path: target.path, createdAt: Date.now() }],
+          : current.bookmarks.some((entry) => entry.kind === target.kind && entry.path === target.path)
+            ? current.bookmarks
+            : [...current.bookmarks, bookmark!],
       };
     });
+  }
+
+  function toggleBookmarksExpanded() {
+    const expanded = !metadataRef.current.bookmarksExpanded;
+    updateMetadata((current) => ({ ...current, bookmarksExpanded: expanded }));
   }
 
   function removeBookmark(bookmarkId: string) {
@@ -3693,12 +3769,7 @@ export default function App() {
               onSelectNote={handleNoteSelectFromCard}
               onSetFolderExpanded={setFolderExpanded}
               onSelectSearchResult={selectNote}
-              onToggleBookmarksExpanded={() =>
-                updateMetadata((current) => ({
-                  ...current,
-                  bookmarksExpanded: !current.bookmarksExpanded,
-                }))
-              }
+              onToggleBookmarksExpanded={toggleBookmarksExpanded}
               onToggleMenu={(event) => {
                 event.stopPropagation();
                 setAppMenuOpen((value) => !value);
@@ -3739,12 +3810,7 @@ export default function App() {
                 onSelectFolder={(path) => void selectSection(path)}
                 onSelectNotebook={openNotebookInNewWindow}
                 onSelectSearchResult={selectNote}
-                onToggleBookmarksExpanded={() =>
-                  updateMetadata((current) => ({
-                    ...current,
-                    bookmarksExpanded: !current.bookmarksExpanded,
-                  }))
-                }
+                onToggleBookmarksExpanded={toggleBookmarksExpanded}
                 onToggleMenu={(event) => { event.stopPropagation(); setAppMenuOpen((v) => !v); }}
                 onToggleSearch={() => setSearchOpen((value) => !value)}
               />
@@ -3818,12 +3884,7 @@ export default function App() {
                 onSelectSearchResult={selectNote}
                 onSelectFolder={(path) => setSelectedFolder(path)}
                 onSetFolderExpanded={setFolderExpanded}
-                onToggleBookmarksExpanded={() =>
-                  updateMetadata((current) => ({
-                    ...current,
-                    bookmarksExpanded: !current.bookmarksExpanded,
-                  }))
-                }
+                onToggleBookmarksExpanded={toggleBookmarksExpanded}
                 onToggleSearch={() => setSearchOpen((value) => !value)}
                 onToggleMenu={(event) => {
                   event.stopPropagation();
@@ -3953,7 +4014,7 @@ export default function App() {
                   if (titleEscapeUndoInFlightRef.current) return;
                   if (titleCommitInFlightRef.current) return;
                   if (activeNoteEditable && (hasUnsavedChanges || pendingEditorChangeRef.current) && titleDraft.trim()) {
-                    void persistDraft();
+                    persistDraftInBackground();
                   }
                 }}
                 onKeyDown={(event) => {

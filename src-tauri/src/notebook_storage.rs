@@ -140,7 +140,7 @@ pub fn save_note(root: &Path, path: &str, content: &str) -> Result<String, Strin
             NoteSnapshotMode::Throttled,
         );
     }
-    fs::write(&note_path, &content_with_id).map_err(|error| error.to_string())?;
+    write_note_content_atomic(&note_path, &content_with_id)?;
     let _ = reindex_note_after_save(root, path);
     Ok(content_with_id)
 }

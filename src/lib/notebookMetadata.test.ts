@@ -5,6 +5,7 @@ import {
   buildBookmarkViews,
   buildFolderTree,
   getNotebookName,
+  mergeWorkspaceMetadataChanges,
   moveFolderInMetadata,
   moveNoteInMetadata,
   orderFolders,
@@ -19,6 +20,7 @@ import type { FolderEntry, NoteEntry, WorkspaceMetadata } from "../types";
 
 function metadata(overrides: Partial<WorkspaceMetadata> = {}): WorkspaceMetadata {
   return {
+    revision: 0,
     folderOrder: {},
     noteOrder: {},
     pinnedNotes: {},
@@ -43,6 +45,33 @@ function folder(path: string, name: string, parentPath = ""): FolderEntry {
 }
 
 describe("notebook metadata", () => {
+  it("rebases local metadata changes without discarding newer durable fields", () => {
+    const base = metadata({
+      revision: 1,
+      pinnedNotes: { "Drafts/Old.md": true },
+      appearance: { colorScheme: "light" },
+    });
+    const local = metadata({
+      ...base,
+      revision: 5,
+      pinnedNotes: {},
+      bookmarksExpanded: false,
+      appearance: { colorScheme: "dark" },
+    });
+    const durable = metadata({
+      ...base,
+      revision: 6,
+      folderColors: { Drafts: "#123456" },
+    });
+
+    expect(mergeWorkspaceMetadataChanges(base, local, durable)).toEqual({
+      ...durable,
+      pinnedNotes: {},
+      bookmarksExpanded: false,
+      appearance: { colorScheme: "dark" },
+    });
+  });
+
   it("gets the Notebook display name from the selected path", () => {
     expect(getNotebookName("/Users/dhaynes/Notes/Tigrana")).toBe("Tigrana");
     expect(getNotebookName("")).toBe("Notebook");

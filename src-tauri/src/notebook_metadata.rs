@@ -20,6 +20,8 @@ pub struct FolderSiblingPlacement<'a> {
 #[serde(rename_all = "camelCase")]
 pub struct WorkspaceMetadata {
     #[serde(default)]
+    pub revision: u64,
+    #[serde(default)]
     pub folder_order: Map<String, Value>,
     #[serde(default)]
     pub note_order: Map<String, Value>,
@@ -48,6 +50,7 @@ pub struct WorkspaceMetadata {
 impl Default for WorkspaceMetadata {
     fn default() -> Self {
         Self {
+            revision: 0,
             folder_order: Map::new(),
             note_order: Map::new(),
             pinned_notes: Map::new(),
@@ -73,10 +76,42 @@ pub fn read_workspace_metadata(root: &Path) -> Result<WorkspaceMetadata, String>
     serde_json::from_str(&contents).map_err(|error| error.to_string())
 }
 
-pub fn write_workspace_metadata(root: &Path, metadata: &WorkspaceMetadata) -> Result<(), String> {
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct WorkspaceMetadataWriteResult {
+    pub applied: bool,
+    pub metadata: WorkspaceMetadata,
+}
+
+pub fn write_workspace_metadata(
+    root: &Path,
+    metadata: &WorkspaceMetadata,
+) -> Result<WorkspaceMetadata, String> {
+    let current = read_workspace_metadata(root)?;
+    let mut next = metadata.clone();
+    next.revision = current.revision.saturating_add(1);
     fs::create_dir_all(app_dir(root)).map_err(|error| error.to_string())?;
-    let contents = serde_json::to_string_pretty(metadata).map_err(|error| error.to_string())?;
-    write_atomic(&metadata_path(root), &format!("{contents}\n"))
+    let contents = serde_json::to_string_pretty(&next).map_err(|error| error.to_string())?;
+    write_atomic(&metadata_path(root), &format!("{contents}\n"))?;
+    Ok(next)
+}
+
+pub fn compare_and_swap_workspace_metadata(
+    root: &Path,
+    metadata: &WorkspaceMetadata,
+) -> Result<WorkspaceMetadataWriteResult, String> {
+    let current = read_workspace_metadata(root)?;
+    if metadata.revision != current.revision {
+        return Ok(WorkspaceMetadataWriteResult {
+            applied: false,
+            metadata: current,
+        });
+    }
+    let metadata = write_workspace_metadata(root, metadata)?;
+    Ok(WorkspaceMetadataWriteResult {
+        applied: true,
+        metadata,
+    })
 }
 
 pub fn repair_note_path(
@@ -260,6 +295,60 @@ fn write_atomic(path: &Path, contents: &str) -> Result<(), String> {
         let _ = fs::remove_file(&temp_path);
         error.to_string()
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use serde_json::json;
+    use std::path::PathBuf;
+    use uuid::Uuid;
+
+    struct TestNotebook(PathBuf);
+
+    impl TestNotebook {
+        fn new() -> Self {
+            let path =
+                std::env::temp_dir().join(format!("tigrana-metadata-cas-{}", Uuid::new_v4()));
+            fs::create_dir_all(&path).unwrap();
+            Self(path)
+        }
+    }
+
+    impl Drop for TestNotebook {
+        fn drop(&mut self) {
+            let _ = fs::remove_dir_all(&self.0);
+        }
+    }
+
+    #[test]
+    fn stale_write_cannot_restore_paths_repaired_by_a_newer_mutation() {
+        let notebook = TestNotebook::new();
+        let initial: WorkspaceMetadata = serde_json::from_value(json!({
+            "noteOrder": { "": ["Old.md"] },
+            "pinnedNotes": { "Old.md": true }
+        }))
+        .unwrap();
+        let stale = write_workspace_metadata(&notebook.0, &initial).unwrap();
+
+        let mut renamed = stale.clone();
+        repair_note_path(&mut renamed, "Old.md", "New.md", "", "");
+        let renamed = write_workspace_metadata(&notebook.0, &renamed).unwrap();
+
+        let result = compare_and_swap_workspace_metadata(&notebook.0, &stale).unwrap();
+
+        assert!(!result.applied);
+        assert_eq!(result.metadata.revision, renamed.revision);
+        assert_eq!(
+            result.metadata.note_order[""][0],
+            Value::String("New.md".to_string())
+        );
+        assert!(!result.metadata.pinned_notes.contains_key("Old.md"));
+        assert!(read_workspace_metadata(&notebook.0)
+            .unwrap()
+            .pinned_notes
+            .contains_key("New.md"));
+    }
 }
 
 fn default_true() -> bool {

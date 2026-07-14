@@ -19,7 +19,7 @@ rules that must remain consistent across UI flows.
 | `pendingNoteContents.ts` | In-flight autosave content | Keeps navigation ahead of disk without publishing save-start updates through React and preserves newer drafts across older save completions |
 | `markdown.ts` | Convert readable Markdown and editor HTML | One round-trip policy shared by Note persistence and clipboard fragments |
 | `notebookStorage.ts` | `NotebookStorage` | Selects one Native or demo adapter and exposes explicit capability differences |
-| `activeNoteLifecycle.ts` | `ActiveNoteLifecycle` | Load generations, edit-lock ownership, accepted-disk baselines, save queues, and serialized path changes |
+| `activeNoteLifecycle.ts` | `ActiveNoteLifecycle` | Load generations, edit-lock ownership, accepted-disk baselines, save queues, latest-request persistence, and serialized path changes |
 | `notebookPathMutations.ts` | Completed Note/Folder move and rename operations | Repairs ephemeral tabs, selection, active lock paths, and React metadata after Native storage commits |
 | `desktop.ts` | Desktop behavior | Menus, windows, preferences, export, print, external links, and Tauri detection |
 
@@ -54,10 +54,20 @@ Rust is organized by durable concern:
 - `note_history.rs`, `trash.rs`, and `assets.rs`: Note history, Recently
   Deleted, and Notebook assets.
 - `notebook_paths.rs`: trusted Notebook path validation.
+- `notebook_write_coordinator.rs`: per-Notebook serialization for durable
+  writes that share Note paths, metadata, history, trash state, or the Link
+  index.
 - `main.rs`: narrow Tauri command adapters and desktop integration.
 
 Tauri commands should translate input and delegate. Durable rules belong in
 the modules above, where they can be tested without a webview.
+
+Notebook writes are serialized by canonical Notebook path. Lock contention
+and filesystem work both run on Tauri's blocking pool, so a save cannot overlap
+a move or lose another Note's Link index update, and waiting never occupies the
+webview command executor. Note replacement is atomic, and Native Note reads use
+the same lane so they cannot observe a partial save. Different Notebooks keep
+independent write lanes.
 
 ## Notebook path mutation
 
@@ -76,9 +86,17 @@ A Native Note or Folder rename/move is planned and committed as one mutation:
    React for ephemeral session repair.
 
 Frontend Notebook metadata writes and Native path mutations share a
-per-Notebook queue. A mutation therefore reads all prior metadata changes,
-and queued writes read the latest in-memory metadata only when they begin, so
-they cannot restore stale pre-mutation paths.
+per-Notebook queue. The queue retains idempotent metadata updaters rather than
+stale whole snapshots, coalesces deferred Note-position updates, and replays
+pending intent after a conflict or path repair. Path mutations translate both
+optimistic metadata and queued path-scoped updaters to the committed path, so
+a later write cannot restore the old path.
+
+Notebook metadata also carries a monotonic `revision`. Native whole-snapshot
+writes use compare-and-swap under the Native Notebook write lane. If another
+window or a path mutation has advanced the revision, the stale snapshot is not
+written; pending semantic updates are replayed over the newer durable metadata
+and retried with its revision.
 
 Folder mutations capture all inbound sources before rewriting anything. This
 prevents an intermediate parent-path rewrite from temporarily breaking a
