@@ -40,6 +40,10 @@ use notebook_storage::{
 };
 use notebook_write_coordinator::NotebookWriteCoordinator;
 use notify::{Config, EventKind, RecommendedWatcher, RecursiveMode, Watcher};
+#[cfg(target_os = "macos")]
+use objc2::{msg_send, runtime::AnyObject, sel};
+#[cfg(target_os = "macos")]
+use objc2_foundation::{NSString, NSUserDefaults};
 use serde::{Deserialize, Serialize};
 use std::collections::{HashMap, HashSet};
 use std::fs::{self, File, OpenOptions};
@@ -875,7 +879,40 @@ fn write_app_preferences(app: AppHandle, preferences: AppPreferences) -> Result<
         fs::create_dir_all(parent).map_err(|error| error.to_string())?;
     }
     let contents = serde_json::to_string_pretty(&preferences).map_err(|error| error.to_string())?;
-    fs::write(path, format!("{contents}\n")).map_err(|error| error.to_string())
+    fs::write(path, format!("{contents}\n")).map_err(|error| error.to_string())?;
+    sync_native_spellcheck(&app, preferences.spellcheck_enabled)
+}
+
+#[cfg(target_os = "macos")]
+fn sync_native_spellcheck(app: &AppHandle, enabled: bool) -> Result<(), String> {
+    let defaults = NSUserDefaults::standardUserDefaults();
+    let key = NSString::from_str("WebContinuousSpellCheckingEnabled");
+    if defaults.boolForKey(&key) == enabled {
+        return Ok(());
+    }
+
+    // Keep WebKit's launch preference aligned even if no window is available.
+    defaults.setBool_forKey(enabled, &key);
+    let callback_app = app.clone();
+    app.run_on_main_thread(move || {
+        // WebKit caches this preference after launch, so update the live
+        // WKWebView through its built-in responder action as well.
+        toggle_macos_continuous_spellcheck(&callback_app);
+
+        // Keep the preference durable if there was no active WebKit responder.
+        // The current or next webview will then adopt the requested value.
+        let defaults = NSUserDefaults::standardUserDefaults();
+        let key = NSString::from_str("WebContinuousSpellCheckingEnabled");
+        if defaults.boolForKey(&key) != enabled {
+            defaults.setBool_forKey(enabled, &key);
+        }
+    })
+    .map_err(|error| error.to_string())
+}
+
+#[cfg(not(target_os = "macos"))]
+fn sync_native_spellcheck(_app: &AppHandle, _enabled: bool) -> Result<(), String> {
+    Ok(())
 }
 
 #[tauri::command]
@@ -1838,6 +1875,48 @@ fn is_macos_system_dictation_title(title: &str) -> bool {
     matches!(title, "Start Dictation..." | "Start Dictation…")
 }
 
+#[cfg(target_os = "macos")]
+fn toggle_macos_spellcheck_in_view(view: &objc2_app_kit::NSView) -> bool {
+    let object: &AnyObject = view;
+    let responds: bool =
+        unsafe { msg_send![object, respondsToSelector: sel!(toggleContinuousSpellChecking:)] };
+    if responds {
+        let _: () = unsafe { msg_send![object, toggleContinuousSpellChecking: None::<&AnyObject>] };
+        return true;
+    }
+
+    view.subviews()
+        .iter()
+        .any(|subview| toggle_macos_spellcheck_in_view(&subview))
+}
+
+#[cfg(target_os = "macos")]
+fn toggle_macos_continuous_spellcheck(app: &AppHandle) {
+    use objc2::MainThreadMarker;
+    use objc2_app_kit::NSApplication;
+
+    let Some(mtm) = MainThreadMarker::new() else {
+        return;
+    };
+    if let Some(window) = active_menu_window(app) {
+        if let Ok(view) = window.ns_view() {
+            let view = view.cast::<objc2_app_kit::NSView>();
+            if let Some(view) = unsafe { view.as_ref() } {
+                if toggle_macos_spellcheck_in_view(view) {
+                    return;
+                }
+            }
+        }
+    }
+
+    let application = NSApplication::sharedApplication(mtm);
+    // This is WebKit's standard Cocoa responder action for continuous
+    // spellchecking, equivalent to the native Edit menu command.
+    unsafe {
+        application.sendAction_to_from(sel!(toggleContinuousSpellChecking:), None, None);
+    }
+}
+
 fn active_menu_window(app: &AppHandle) -> Option<WebviewWindow<Wry>> {
     let windows = app.webview_windows();
     windows
@@ -2014,7 +2093,11 @@ pub fn run() {
             "replace_note" => emit_menu_command(app, "replace_note"),
             "start_dictation" => emit_menu_command(app, "start_dictation"),
             "search_notebook" => emit_menu_command(app, "search_notebook"),
-            "toggle_spellcheck" => emit_menu_command(app, "toggle_spellcheck"),
+            "toggle_spellcheck" => {
+                #[cfg(target_os = "macos")]
+                toggle_macos_continuous_spellcheck(app);
+                emit_menu_command(app, "toggle_spellcheck");
+            }
             "toggle_sidebar" => emit_menu_command(app, "toggle_sidebar"),
             "toggle_outline" => emit_menu_command(app, "toggle_outline"),
             "toggle_raw_markdown" => emit_menu_command(app, "toggle_raw_markdown"),

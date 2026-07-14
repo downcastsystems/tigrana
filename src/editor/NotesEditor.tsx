@@ -13,7 +13,7 @@ import TaskList from "@tiptap/extension-task-list";
 import { DOMSerializer, type Fragment as ProseMirrorFragment, type Node as ProseMirrorNode, type ResolvedPos } from "@tiptap/pm/model";
 import { NodeSelection, Plugin, PluginKey, Selection, TextSelection, type EditorState, type Transaction } from "@tiptap/pm/state";
 import { addColumnAfter, addColumnBefore, addRowAfter, addRowBefore, CellSelection, deleteColumn, deleteRow, TableMap } from "@tiptap/pm/tables";
-import { Decoration, DecorationSet, type EditorView, type NodeView, type ViewMutationRecord } from "@tiptap/pm/view";
+import { Decoration, DecorationSet, type EditorProps, type EditorView, type NodeView, type ViewMutationRecord } from "@tiptap/pm/view";
 import { EditorContent, NodeViewContent, NodeViewWrapper, Range, ReactNodeViewRenderer, useEditor, type Editor } from "@tiptap/react";
 import StarterKit from "@tiptap/starter-kit";
 import { convertFileSrc } from "@tauri-apps/api/core";
@@ -121,11 +121,33 @@ type EditableEditor = {
   setEditable(editable: boolean, emitUpdate?: boolean): void;
 };
 
+type SpellcheckEditor = {
+  options: { editorProps?: EditorProps };
+  setOptions(options: { editorProps: EditorProps }): void;
+};
+
 // Tiptap emits an `update` event by default when editability changes. The
 // document can still belong to the previous note at that point, so changing
 // read-only state must not look like a user edit.
 export function setEditorEditableSilently(editor: EditableEditor | null, editable: boolean) {
   editor?.setEditable(editable, false);
+}
+
+// Update the editor through Tiptap so ProseMirror retains the attribute across
+// view redraws. This only runs when the preference changes, never while typing.
+export function setEditorSpellcheck(editor: SpellcheckEditor | null, enabled: boolean) {
+  if (!editor) return;
+  const editorProps = editor.options.editorProps ?? {};
+  const currentAttributes = editorProps.attributes;
+  const spellcheck = enabled ? "true" : "false";
+  editor.setOptions({
+    editorProps: {
+      ...editorProps,
+      attributes: typeof currentAttributes === "function"
+        ? (state) => ({ ...currentAttributes(state), spellcheck })
+        : { ...currentAttributes, spellcheck },
+    },
+  });
 }
 
 export type EditorCommandRequest = {
@@ -2590,7 +2612,7 @@ export function NotesEditor({ content, commandRequest, focusRequest, focusAtEndR
   }, [editable, editor]);
 
   useEffect(() => {
-    editor?.view.dom.setAttribute("spellcheck", spellcheckEnabled ? "true" : "false");
+    setEditorSpellcheck(editor, spellcheckEnabled);
   }, [editor, spellcheckEnabled]);
 
   useEffect(() => () => {

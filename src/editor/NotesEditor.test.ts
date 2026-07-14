@@ -1,7 +1,8 @@
 import { Schema } from "@tiptap/pm/model";
 import { EditorState, TextSelection } from "@tiptap/pm/state";
+import type { EditorProps } from "@tiptap/pm/view";
 import { describe, expect, it } from "vitest";
-import { findSlashQueryInState, getTaskLineCutDeleteRange, setEditorEditableSilently } from "./NotesEditor";
+import { findSlashQueryInState, getTaskLineCutDeleteRange, setEditorEditableSilently, setEditorSpellcheck } from "./NotesEditor";
 
 const schema = new Schema({
   nodes: {
@@ -128,5 +129,38 @@ describe("editor editability", () => {
     setEditorEditableSilently(editor, true);
 
     expect(calls).toEqual([[true, false]]);
+  });
+});
+
+describe("editor spellcheck", () => {
+  it("updates the ProseMirror attributes without dropping other editor props", () => {
+    const handlePaste = () => false;
+    const editor: {
+      options: { editorProps?: EditorProps };
+      setOptions(options: { editorProps: EditorProps }): void;
+    } = {
+      options: {
+        editorProps: {
+          attributes: {
+            autocorrect: "off",
+            spellcheck: "false",
+          },
+          handlePaste,
+        },
+      },
+      setOptions(options) {
+        editor.options = options;
+      },
+    };
+
+    setEditorSpellcheck(editor, true);
+
+    expect(editor.options.editorProps).toEqual({
+      attributes: {
+        autocorrect: "off",
+        spellcheck: "true",
+      },
+      handlePaste,
+    });
   });
 });
