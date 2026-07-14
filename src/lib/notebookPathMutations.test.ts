@@ -83,6 +83,7 @@ describe("Notebook path mutations", () => {
       ...defaultWorkspaceMetadata(),
       noteOrder: { Drafts: ["Drafts/Old.md"] },
     };
+    const adoptedMetadata: WorkspaceMetadata[] = [];
     const storage = storageSeam({
       renameNote: vi.fn(async () => {
         markRenameStarted();
@@ -93,6 +94,7 @@ describe("Notebook path mutations", () => {
         ...defaultWorkspaceMetadata(),
         revision: 1,
         noteOrder: { Drafts: ["Drafts/New.md"] },
+        appearance: { colorScheme: "dark" as const, editorFontSize: 20 },
       })),
     });
     const mutations = createNotebookPathMutations({
@@ -107,6 +109,10 @@ describe("Notebook path mutations", () => {
       setActivePath: vi.fn(),
       setOpenTabs: vi.fn(),
       setSelectedFolder: vi.fn(),
+      adoptMetadata: (next) => {
+        adoptedMetadata.push(next);
+        metadata = next;
+      },
       updateMetadata: (updater) => { metadata = updater(metadata); },
       workspace: "/Notebook",
       storage,
@@ -126,6 +132,74 @@ describe("Notebook path mutations", () => {
     expect(metadata.noteOrder.Drafts).toEqual(["Drafts/New.md"]);
     expect(metadata.pinnedNotes).toEqual({ "Drafts/New.md": true });
     expect(metadata.bookmarksExpanded).toBe(false);
+    expect(adoptedMetadata).toHaveLength(1);
+    expect(metadata.appearance).toEqual({ colorScheme: "dark", editorFontSize: 20 });
+  });
+
+  it("keeps a delayed Native rename scoped to its original Notebook", async () => {
+    let releaseRename!: () => void;
+    let markRenameStarted!: () => void;
+    const renameGate = new Promise<void>((resolve) => { releaseRename = resolve; });
+    const renameStarted = new Promise<void>((resolve) => { markRenameStarted = resolve; });
+    let activeWorkspace = "/Notebook A";
+    let visibleMetadata: WorkspaceMetadata = {
+      ...defaultWorkspaceMetadata(),
+      noteOrder: { Drafts: ["Drafts/Old.md"] },
+    };
+    const metadataByWorkspace = new Map<string, WorkspaceMetadata>([[activeWorkspace, visibleMetadata]]);
+    const rebasedLocalMetadata: WorkspaceMetadata[] = [];
+    const storage = storageSeam({
+      renameNote: vi.fn(async () => {
+        markRenameStarted();
+        await renameGate;
+        return { path: "Drafts/New.md", title: "New", parent_path: "Drafts" };
+      }),
+      readWorkspaceMetadata: vi.fn(async () => ({
+        ...defaultWorkspaceMetadata(),
+        revision: 1,
+        noteOrder: { Drafts: ["Drafts/New.md"] },
+      })),
+    });
+    const setActivePath = vi.fn();
+    const mutations = createNotebookPathMutations({
+      activePath: "Drafts/Old.md",
+      activeNoteLockRef: { current: null },
+      folders: [{ path: "", name: "Notebook A", parent_path: "" }],
+      getMetadata: () => metadataByWorkspace.get("/Notebook A")!,
+      navigationStyle: "dual-pane",
+      notes: [{ path: "Drafts/Old.md", title: "Old", parent_path: "Drafts" }],
+      refreshWorkspace: vi.fn(async () => {}),
+      selectedFolder: "Drafts",
+      setActivePath,
+      setOpenTabs: vi.fn(),
+      setSelectedFolder: vi.fn(),
+      adoptMetadata: (next) => {
+        metadataByWorkspace.set("/Notebook A", next);
+        if (activeWorkspace === "/Notebook A") visibleMetadata = next;
+      },
+      updateMetadata: vi.fn(),
+      workspace: "/Notebook A",
+      storage,
+      isWorkspaceActive: () => activeWorkspace === "/Notebook A",
+      rebasePendingMetadata: (_forward, _reverse, localMetadata) => {
+        rebasedLocalMetadata.push(localMetadata);
+      },
+    });
+
+    const rename = mutations.renameNote("Drafts/Old.md", "New");
+    await renameStarted;
+    activeWorkspace = "/Notebook B";
+    visibleMetadata = {
+      ...defaultWorkspaceMetadata(),
+      appearance: { colorScheme: "light" },
+    };
+    releaseRename();
+    await rename;
+
+    expect(visibleMetadata.appearance).toEqual({ colorScheme: "light" });
+    expect(metadataByWorkspace.get("/Notebook A")?.noteOrder.Drafts).toEqual(["Drafts/New.md"]);
+    expect(rebasedLocalMetadata.at(-1)?.noteOrder.Drafts).toEqual(["Drafts/New.md"]);
+    expect(setActivePath).not.toHaveBeenCalled();
   });
 
   it("preserves metadata deletions made during a Native Note rename", async () => {

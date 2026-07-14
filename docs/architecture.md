@@ -19,7 +19,10 @@ rules that must remain consistent across UI flows.
 | `pendingNoteContents.ts` | In-flight autosave content | Keeps navigation ahead of disk without publishing save-start updates through React and preserves newer drafts across older save completions |
 | `markdown.ts` | Convert readable Markdown and editor HTML | One round-trip policy shared by Note persistence and clipboard fragments |
 | `notebookStorage.ts` | `NotebookStorage` | Selects one Native or demo adapter and exposes explicit capability differences |
-| `activeNoteLifecycle.ts` | `ActiveNoteLifecycle` | Load generations, edit-lock ownership, accepted-disk baselines, save queues, latest-request persistence, and serialized path changes |
+| `notebookSnapshot.ts` | Latest-request Notebook refresh | Rejects stale and inactive refresh results before React state is replaced |
+| `notebookMetadataSession.ts` | Workspace-scoped metadata ownership | Prevents delayed work or pre-load settings changes from reading or writing another Notebook's metadata |
+| `notebookAppearance.ts` | Authoritative appearance adoption | Resolves legacy/partial values and updates metadata plus every mirrored appearance value through one seam |
+| `activeNoteLifecycle.ts` | `ActiveNoteLifecycle` | Load/navigation generations, serialized edit-lock transitions, accepted-disk baselines, save queues, latest-request persistence, and serialized path changes |
 | `notebookPathMutations.ts` | Completed Note/Folder move and rename operations | Repairs ephemeral tabs, selection, active lock paths, and React metadata after Native storage commits |
 | `desktop.ts` | Desktop behavior | Menus, windows, preferences, export, print, external links, and Tauri detection |
 
@@ -32,7 +35,11 @@ The storage adapter is selected once when the frontend starts.
 
 - The Native implementation invokes narrow Tauri commands. It supports durable
   Link indexes, Note history, Recently Deleted, file watching, and atomic
-  Notebook path mutation repair.
+  Notebook path mutation repair. A refresh returns Folders, Notes, Note
+  contents, and the Link index as one coordinated snapshot rather than joining
+  separately timed reads in React. Link-index maintenance is best-effort for a
+  refresh, so a read-only Notebook remains readable with a temporarily absent
+  index.
 - The demo implementation persists Notes, Folders, and Notebook metadata in
   browser storage. Its missing capabilities are declared on the interface,
   including Note history, Recently Deleted, file watching, and durable Link
@@ -62,12 +69,13 @@ Rust is organized by durable concern:
 Tauri commands should translate input and delegate. Durable rules belong in
 the modules above, where they can be tested without a webview.
 
-Notebook writes are serialized by canonical Notebook path. Lock contention
-and filesystem work both run on Tauri's blocking pool, so a save cannot overlap
-a move or lose another Note's Link index update, and waiting never occupies the
-webview command executor. Note replacement is atomic, and Native Note reads use
-the same lane so they cannot observe a partial save. Different Notebooks keep
-independent write lanes.
+Notebook writes and consistency-sensitive reads are serialized by canonical
+Notebook path. Lock contention and filesystem work both run on Tauri's
+blocking pool, so a save cannot overlap a move or lose another Note's Link
+index update, and waiting never occupies the webview command executor. Note
+replacement is atomic, and Native Note, snapshot, history, and Recently Deleted
+reads use the same lane so they cannot observe partial writes. Different
+Notebooks keep independent write lanes.
 
 ## Notebook path mutation
 
@@ -91,6 +99,12 @@ stale whole snapshots, coalesces deferred Note-position updates, and replays
 pending intent after a conflict or path repair. Path mutations translate both
 optimistic metadata and queued path-scoped updaters to the committed path, so
 a later write cannot restore the old path.
+
+Authoritative metadata remains scoped to the Notebook that produced it. A
+delayed mutation may update that Notebook's queued state after the user
+switches away, but it cannot replace the active Notebook's appearance,
+selection, tabs, or metadata. Settings mutations are accepted only after the
+active Notebook's metadata has loaded.
 
 Notebook metadata also carries a monotonic `revision`. Native whole-snapshot
 writes use compare-and-swap under the Native Notebook write lane. If another

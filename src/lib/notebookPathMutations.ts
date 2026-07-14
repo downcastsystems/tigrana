@@ -38,14 +38,17 @@ type NotebookPathMutationOptions = {
   setActivePath: Dispatch<SetStateAction<string | null>>;
   setOpenTabs: Dispatch<SetStateAction<NoteTab[]>>;
   setSelectedFolder: Dispatch<SetStateAction<string>>;
+  adoptMetadata?: (metadata: WorkspaceMetadata) => void;
   updateMetadata: UpdateMetadata;
   workspace: string;
   storage?: Pick<NotebookStorage, "capabilities" | "moveFolder" | "moveNote" | "readWorkspaceMetadata" | "renameFolder" | "renameNote">;
   rebasePendingMetadata?: (
     forward: (current: WorkspaceMetadata) => WorkspaceMetadata,
     reverse: (current: WorkspaceMetadata) => WorkspaceMetadata,
+    localMetadata: WorkspaceMetadata,
   ) => void;
   runDurableMutation?: <T>(operation: () => Promise<T>) => Promise<T>;
+  isWorkspaceActive?: () => boolean;
 };
 
 type MoveFolderOptions = {
@@ -65,28 +68,32 @@ export function createNotebookPathMutations({
   setActivePath,
   setOpenTabs,
   setSelectedFolder,
+  adoptMetadata,
   updateMetadata,
   workspace,
   storage = notebookStorage,
   rebasePendingMetadata = () => {},
   runDurableMutation = (operation) => operation(),
+  isWorkspaceActive = () => true,
 }: NotebookPathMutationOptions) {
+  const applyAuthoritativeMetadata = adoptMetadata ?? ((next: WorkspaceMetadata) => {
+    updateMetadata(() => next, { persist: false });
+  });
   const syncMetadataAfterPathMutation = async (
     base: WorkspaceMetadata,
     repair: (current: WorkspaceMetadata) => WorkspaceMetadata,
     reverseRepair: (current: WorkspaceMetadata) => WorkspaceMetadata,
   ) => {
     if (storage.capabilities.atomicPathMutations) {
+      let reconciled: WorkspaceMetadata;
       try {
         const persisted = await storage.readWorkspaceMetadata(workspace);
-        updateMetadata(
-          (current) => mergeWorkspaceMetadataChanges(repair(base), repair(current), persisted),
-          { persist: false },
-        );
+        reconciled = mergeWorkspaceMetadataChanges(repair(base), repair(getMetadata()), persisted);
       } catch {
-        updateMetadata(repair, { persist: false });
+        reconciled = repair(getMetadata());
       }
-      rebasePendingMetadata(repair, reverseRepair);
+      applyAuthoritativeMetadata(reconciled);
+      rebasePendingMetadata(repair, reverseRepair, reconciled);
       return;
     }
     updateMetadata(repair);
@@ -132,6 +139,7 @@ export function createNotebookPathMutations({
       );
       return result;
     });
+    if (!isWorkspaceActive()) return moved;
     repairActiveNotePath(path, moved.path);
     replaceOpenTabPath(path, moved.path);
     setSelectedFolder(moved.parent_path);
@@ -150,6 +158,7 @@ export function createNotebookPathMutations({
       );
       return result;
     });
+    if (!isWorkspaceActive()) return renamed;
     repairActiveNotePath(path, renamed.path);
     replaceOpenTabPath(path, renamed.path);
     await refreshWorkspace(workspace);
@@ -203,6 +212,7 @@ export function createNotebookPathMutations({
       return result;
     });
 
+    if (!isWorkspaceActive()) return moved;
     if (selectedFolder === path || selectedFolder.startsWith(`${path}/`)) {
       setSelectedFolder(replacePathPrefix(selectedFolder, path, moved.path));
     } else if (options.selectMovedFolder) {
@@ -225,6 +235,7 @@ export function createNotebookPathMutations({
       );
       return result;
     });
+    if (!isWorkspaceActive()) return renamed;
     if (selectedFolder === path || selectedFolder.startsWith(`${path}/`)) {
       setSelectedFolder(replacePathPrefix(selectedFolder, path, renamed.path));
     }
@@ -236,6 +247,7 @@ export function createNotebookPathMutations({
 
   const renameActiveNote = async (path: string, title: string) => {
     const renamed = await renameNote(path, title);
+    if (!isWorkspaceActive()) return renamed;
     setSelectedFolder(navigationStyle === "section-view" ? getTopLevelFolderPath(renamed.parent_path) : renamed.parent_path);
     return renamed;
   };

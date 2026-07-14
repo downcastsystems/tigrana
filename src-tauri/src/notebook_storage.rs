@@ -14,8 +14,9 @@ use crate::notebook_paths::{
     is_hidden_entry, normalize_relative, note_title_from_path, relative_path, validate_note_title,
 };
 use serde::Serialize;
-use std::collections::HashMap;
-use std::fs;
+use std::collections::{BTreeMap, HashMap};
+use std::fs::{self, OpenOptions};
+use std::io::Write;
 use std::path::{Path, PathBuf};
 use uuid::Uuid;
 use walkdir::WalkDir;
@@ -33,6 +34,34 @@ pub struct FolderEntry {
     pub path: String,
     pub name: String,
     pub parent_path: String,
+}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct NotebookSnapshot {
+    pub folders: Vec<FolderEntry>,
+    pub notes: Vec<NoteEntry>,
+    pub contents: BTreeMap<String, String>,
+    pub link_index: Option<LinkIndex>,
+}
+
+pub fn read_notebook_snapshot(root: &Path) -> Result<NotebookSnapshot, String> {
+    // Identity/index maintenance is best-effort during reads. A read-only or
+    // temporarily full Notebook must remain openable even when its cache
+    // cannot be refreshed.
+    let link_index = rebuild_index_for_root(root).ok();
+    let folders = list_folders(root)?;
+    let notes = list_notes(root)?;
+    let mut contents = BTreeMap::new();
+    for note in &notes {
+        contents.insert(note.path.clone(), read_note(root, &note.path)?);
+    }
+    Ok(NotebookSnapshot {
+        folders,
+        notes,
+        contents,
+        link_index,
+    })
 }
 
 pub fn list_notes(root: &Path) -> Result<Vec<NoteEntry>, String> {
@@ -125,8 +154,8 @@ pub fn read_note(root: &Path, path: &str) -> Result<String, String> {
 
 pub fn save_note(root: &Path, path: &str, content: &str) -> Result<String, String> {
     let note_path = note_path(root, path)?;
-    if let Some(parent) = note_path.parent() {
-        fs::create_dir_all(parent).map_err(|error| error.to_string())?;
+    if !note_path.is_file() {
+        return Err("The Note no longer exists at that path.".to_string());
     }
     let (_id, content_with_id, _mutated) = ensure_note_id_in_content(content);
     if let Ok(existing) = fs::read_to_string(&note_path) {
@@ -146,6 +175,15 @@ pub fn save_note(root: &Path, path: &str, content: &str) -> Result<String, Strin
 }
 
 pub fn create_note(root: &Path, parent_path: &str, title: &str) -> Result<NoteEntry, String> {
+    create_note_with_content(root, parent_path, title, "")
+}
+
+pub fn create_note_with_content(
+    root: &Path,
+    parent_path: &str,
+    title: &str,
+    body: &str,
+) -> Result<NoteEntry, String> {
     validate_note_title(title)?;
     let file_name = title.trim();
     let parent = normalize_relative(parent_path)?;
@@ -160,13 +198,24 @@ pub fn create_note(root: &Path, parent_path: &str, title: &str) -> Result<NoteEn
         fs::create_dir_all(parent).map_err(|error| error.to_string())?;
     }
 
-    if absolute.exists() {
-        return Err("A note with that title already exists in this folder.".to_string());
-    }
-
     let new_id = Uuid::new_v4().to_string();
-    let initial_content = format!("---\nid: {new_id}\n---\n\n");
-    fs::write(&absolute, &initial_content).map_err(|error| error.to_string())?;
+    let initial_content = format!("---\nid: {new_id}\n---\n\n{body}");
+    let mut file = OpenOptions::new()
+        .write(true)
+        .create_new(true)
+        .open(&absolute)
+        .map_err(|error| {
+            if error.kind() == std::io::ErrorKind::AlreadyExists {
+                "A note with that title already exists in this folder.".to_string()
+            } else {
+                error.to_string()
+            }
+        })?;
+    if let Err(error) = file.write_all(initial_content.as_bytes()) {
+        drop(file);
+        let _ = fs::remove_file(&absolute);
+        return Err(error.to_string());
+    }
 
     let path = relative.to_string_lossy().replace('\\', "/");
     let mut index = read_link_index_file(root);
@@ -929,5 +978,139 @@ mod tests {
             persisted["bookmarks"][1]["path"],
             json!("Archive/Part/Scene.md")
         );
+    }
+
+    #[test]
+    fn stale_save_after_move_does_not_recreate_the_old_note_path() {
+        let notebook = TestNotebook::new();
+        let root = &notebook.0;
+        fs::create_dir_all(root.join("Archive")).unwrap();
+        write_note(root, "Draft.md", "draft-id", "original");
+        rebuild_index_for_root(root).unwrap();
+
+        move_note(root, "Draft.md", "Archive").unwrap();
+        let result = save_note(
+            root,
+            "Draft.md",
+            "---\nid: draft-id\n---\n\nstale content\n",
+        );
+
+        assert!(result.is_err());
+        assert!(!root.join("Draft.md").exists());
+        assert!(fs::read_to_string(root.join("Archive/Draft.md"))
+            .unwrap()
+            .contains("original"));
+        let index = read_link_index_file(root);
+        assert!(!index.path_to_id.contains_key("Draft.md"));
+        assert_eq!(
+            index.path_to_id.get("Archive/Draft.md").map(String::as_str),
+            Some("draft-id")
+        );
+    }
+
+    #[test]
+    fn stale_save_after_delete_does_not_restore_the_deleted_note() {
+        let notebook = TestNotebook::new();
+        let root = &notebook.0;
+        write_note(root, "Draft.md", "draft-id", "original");
+        rebuild_index_for_root(root).unwrap();
+
+        delete_note(root, "Draft.md").unwrap();
+        let result = save_note(
+            root,
+            "Draft.md",
+            "---\nid: draft-id\n---\n\nstale content\n",
+        );
+
+        assert!(result.is_err());
+        assert!(!root.join("Draft.md").exists());
+        assert!(!read_link_index_file(root)
+            .path_to_id
+            .contains_key("Draft.md"));
+    }
+
+    #[test]
+    fn notebook_snapshot_keeps_paths_contents_and_link_index_together() {
+        let notebook = TestNotebook::new();
+        let root = &notebook.0;
+        write_note(
+            root,
+            "Book/Scene.md",
+            "scene-id",
+            "Read [Notes](../Notes.md).",
+        );
+        write_note(root, "Notes.md", "notes-id", "# Notes");
+
+        let before = read_notebook_snapshot(root).unwrap();
+        let before_paths = before
+            .notes
+            .iter()
+            .map(|note| note.path.as_str())
+            .collect::<Vec<_>>();
+        assert_eq!(before_paths, vec!["Book/Scene.md", "Notes.md"]);
+        assert_eq!(
+            before.contents.keys().cloned().collect::<Vec<_>>(),
+            vec!["Book/Scene.md", "Notes.md"]
+        );
+        assert_eq!(
+            before
+                .link_index
+                .as_ref()
+                .unwrap()
+                .notes_by_id
+                .get("scene-id")
+                .map(|note| note.path.as_str()),
+            Some("Book/Scene.md")
+        );
+
+        let moved = move_note(root, "Book/Scene.md", "").unwrap();
+        let after = read_notebook_snapshot(root).unwrap();
+        assert_eq!(moved.path, "Scene.md");
+        assert!(!after.contents.contains_key("Book/Scene.md"));
+        assert!(after.contents.contains_key("Scene.md"));
+        assert!(!after
+            .link_index
+            .as_ref()
+            .unwrap()
+            .path_to_id
+            .contains_key("Book/Scene.md"));
+        assert_eq!(
+            after
+                .link_index
+                .as_ref()
+                .unwrap()
+                .path_to_id
+                .get("Scene.md")
+                .map(String::as_str),
+            Some("scene-id")
+        );
+    }
+
+    #[test]
+    fn notebook_snapshot_remains_readable_when_the_link_index_cannot_be_written() {
+        let notebook = TestNotebook::new();
+        let root = &notebook.0;
+        write_note(root, "Readable.md", "readable-id", "Still readable");
+        fs::write(root.join(".tigrana"), "not a directory").unwrap();
+
+        let snapshot = read_notebook_snapshot(root).unwrap();
+
+        assert_eq!(snapshot.notes.len(), 1);
+        assert!(snapshot.contents["Readable.md"].contains("Still readable"));
+        assert!(snapshot.link_index.is_none());
+    }
+
+    #[test]
+    fn note_creation_can_commit_identity_and_initial_body_together() {
+        let notebook = TestNotebook::new();
+        let root = &notebook.0;
+
+        let created = create_note_with_content(root, "", "Welcome", "Welcome body\n").unwrap();
+        let content = read_note(root, &created.path).unwrap();
+
+        assert!(content.starts_with("---\nid: "));
+        assert!(content.ends_with("Welcome body\n"));
+        assert!(create_note_with_content(root, "", "Welcome", "replacement").is_err());
+        assert_eq!(read_note(root, &created.path).unwrap(), content);
     }
 }

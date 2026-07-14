@@ -93,6 +93,13 @@ export type LinkIndex = {
   inbound: Record<string, LinkRef[]>;
 };
 
+export type NotebookSnapshot = {
+  folders: FolderEntry[];
+  notes: NoteEntry[];
+  contents: Record<string, string>;
+  linkIndex: LinkIndex | null;
+};
+
 export type WorkspaceMetadata = {
   revision: number;
   folderOrder: Record<string, string[]>;

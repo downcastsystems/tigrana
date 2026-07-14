@@ -41,6 +41,89 @@ describe("active Note lifecycle", () => {
     expect(subject.isLoading).toBe(false);
   });
 
+  it("keeps only the latest Note navigation intent current", () => {
+    const { subject } = lifecycle();
+    const first = subject.beginNavigation("First.md");
+    const second = subject.beginNavigation("Second.md");
+
+    expect(subject.isCurrentNavigation(first)).toBe(false);
+    expect(subject.isCurrentNavigation(second)).toBe(true);
+    expect(subject.captureNavigation()).toBe(second);
+
+    subject.cancelNavigation();
+    expect(subject.isCurrentNavigation(second)).toBe(false);
+  });
+
+  it("preserves newer navigation away from a target being deleted", () => {
+    const { subject } = lifecycle();
+    const deletion = subject.beginNavigation();
+    subject.beginNavigation("Second.md");
+
+    expect(subject.deletedTargetDisposition(
+      deletion,
+      "First.md",
+      (path) => path === "First.md",
+    )).toBe("clearAndPreserveNavigation");
+  });
+
+  it("cancels newer navigation onto a target being deleted", () => {
+    const { subject } = lifecycle();
+    subject.beginNavigation("Deleted.md");
+
+    expect(subject.deletedTargetDisposition(
+      null,
+      "Current.md",
+      (path) => path === "Deleted.md",
+    )).toBe("clearAndCancelNavigation");
+  });
+
+  it("clears the active target when its deletion intent is still current", () => {
+    const { subject } = lifecycle();
+    const deletion = subject.beginNavigation();
+
+    expect(subject.deletedTargetDisposition(
+      deletion,
+      "Deleted.md",
+      () => false,
+    )).toBe("clearAndCancelNavigation");
+  });
+
+  it("ignores deletion after newer navigation has already opened another Note", () => {
+    const { subject } = lifecycle();
+    const deletion = subject.beginNavigation();
+    subject.beginNavigation("Second.md");
+
+    expect(subject.deletedTargetDisposition(
+      deletion,
+      "Second.md",
+      (path) => path === "First.md",
+    )).toBe("ignore");
+  });
+
+  it("fully clears a deleted active Note when no navigation remains in flight", () => {
+    const { subject } = lifecycle();
+    const navigation = subject.beginNavigation("Deleted.md");
+    subject.settleNavigation(navigation);
+
+    expect(subject.deletedTargetDisposition(
+      null,
+      "Deleted.md",
+      (path) => path === "Deleted.md",
+    )).toBe("clearAndCancelNavigation");
+  });
+
+  it("does not retain a loaded path as a stale deletion target after a move", () => {
+    const { subject } = lifecycle();
+    const navigation = subject.beginNavigation("Folder/Note.md");
+    subject.settleNavigation(navigation);
+
+    expect(subject.deletedTargetDisposition(
+      null,
+      "Other/Note.md",
+      (path) => path === "Folder" || path.startsWith("Folder/"),
+    )).toBe("ignore");
+  });
+
   it("serializes overlapping saves for the same Note", async () => {
     const { subject } = lifecycle();
     const first = deferred();
@@ -192,5 +275,98 @@ describe("active Note lifecycle", () => {
     await expect(acquired.subject.acquireLock("Note.md")).resolves.toBe("editable");
     await acquired.subject.releaseLock();
     expect(acquired.storage.releaseNoteEditLock).toHaveBeenCalledWith("/Notebook", "Note.md", "main");
+  });
+
+  it("does not let an older lock request replace a newer Note lock", async () => {
+    let resolveFirst!: (result: { acquired: boolean }) => void;
+    const firstResult = new Promise<{ acquired: boolean }>((resolve) => { resolveFirst = resolve; });
+    const acquireNoteEditLock = vi.fn()
+      .mockImplementationOnce(() => firstResult)
+      .mockResolvedValueOnce({ acquired: true });
+    const { storage, subject } = lifecycle({ acquireNoteEditLock });
+
+    const first = subject.acquireLock("First.md");
+    while (acquireNoteEditLock.mock.calls.length === 0) await Promise.resolve();
+    const second = subject.acquireLock("Second.md");
+    resolveFirst({ acquired: true });
+
+    await expect(first).resolves.toBe("readOnlyLocked");
+    await expect(second).resolves.toBe("editable");
+    expect(subject.activeLockRef.current?.path).toBe("Second.md");
+    expect(storage.releaseNoteEditLock).toHaveBeenCalledWith("/Notebook", "First.md", "main");
+  });
+
+  it("releases a stale same-Note acquisition before reacquiring it", async () => {
+    let resolveFirst!: (result: { acquired: boolean }) => void;
+    const firstResult = new Promise<{ acquired: boolean }>((resolve) => { resolveFirst = resolve; });
+    const acquireNoteEditLock = vi.fn()
+      .mockImplementationOnce(() => firstResult)
+      .mockResolvedValueOnce({ acquired: true });
+    const { storage, subject } = lifecycle({ acquireNoteEditLock });
+
+    const first = subject.acquireLock("Note.md");
+    while (acquireNoteEditLock.mock.calls.length === 0) await Promise.resolve();
+    const second = subject.acquireLock("Note.md");
+    resolveFirst({ acquired: true });
+
+    await expect(first).resolves.toBe("readOnlyLocked");
+    await expect(second).resolves.toBe("editable");
+    expect(subject.activeLockRef.current?.path).toBe("Note.md");
+    expect(storage.releaseNoteEditLock).toHaveBeenCalledWith("/Notebook", "Note.md", "main");
+  });
+
+  it("releases a lock request invalidated by newer Note navigation", async () => {
+    let resolveAcquire!: (result: { acquired: boolean }) => void;
+    const result = new Promise<{ acquired: boolean }>((resolve) => { resolveAcquire = resolve; });
+    const acquireNoteEditLock = vi.fn(() => result);
+    const { storage, subject } = lifecycle({ acquireNoteEditLock });
+
+    const acquisition = subject.acquireLock("First.md");
+    while (acquireNoteEditLock.mock.calls.length === 0) await Promise.resolve();
+    subject.beginNavigation();
+    resolveAcquire({ acquired: true });
+
+    await expect(acquisition).resolves.toBe("readOnlyLocked");
+    expect(subject.activeLockRef.current).toBeNull();
+    expect(storage.releaseNoteEditLock).toHaveBeenCalledWith("/Notebook", "First.md", "main");
+  });
+
+  it("finishes a requested release before reacquiring the same Note", async () => {
+    const release = deferred();
+    const events: string[] = [];
+    const acquireNoteEditLock = vi.fn(async () => {
+      events.push("acquire");
+      return { acquired: true };
+    });
+    const releaseNoteEditLock = vi.fn(async () => {
+      events.push("release:start");
+      await release.promise;
+      events.push("release:end");
+    });
+    const { subject } = lifecycle({ acquireNoteEditLock, releaseNoteEditLock });
+
+    await expect(subject.acquireLock("Note.md")).resolves.toBe("editable");
+    const requestedRelease = subject.releaseLock();
+    const reacquisition = subject.acquireLock("Note.md");
+    await Promise.resolve();
+    await Promise.resolve();
+    expect(events).toEqual(["acquire", "release:start"]);
+
+    release.resolve();
+    await requestedRelease;
+    await expect(reacquisition).resolves.toBe("editable");
+    expect(events).toEqual(["acquire", "release:start", "release:end", "acquire"]);
+  });
+
+  it("releases only a deleted-path lock without cancelling newer navigation", async () => {
+    const { storage, subject } = lifecycle();
+    await expect(subject.acquireLock("Deleted.md")).resolves.toBe("editable");
+    const newerNavigation = subject.beginNavigation("Next.md");
+
+    await subject.releaseLockMatching("/Notebook", (path) => path === "Deleted.md");
+
+    expect(subject.activeLockRef.current).toBeNull();
+    expect(subject.isCurrentNavigation(newerNavigation)).toBe(true);
+    expect(storage.releaseNoteEditLock).toHaveBeenCalledWith("/Notebook", "Deleted.md", "main");
   });
 });

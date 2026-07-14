@@ -1,5 +1,5 @@
 import { invoke } from "@tauri-apps/api/core";
-import type { FolderEntry, LinkIndex, NoteEntry, WorkspaceMetadata, WorkspaceMetadataWriteResult } from "../types";
+import type { FolderEntry, LinkIndex, NotebookSnapshot, NoteEntry, WorkspaceMetadata, WorkspaceMetadataWriteResult } from "../types";
 import {
   decodeFolderEntry,
   decodeNoteEntry,
@@ -80,13 +80,14 @@ export type NotebookStorage = {
   readLinkIndex(workspace: string): Promise<LinkIndex | null>;
   rebuildLinkIndex(workspace: string): Promise<LinkIndex | null>;
   watchWorkspace(workspace: string): Promise<void>;
+  readNotebookSnapshot(workspace: string): Promise<NotebookSnapshot>;
   listNotes(workspace: string): Promise<NoteEntry[]>;
   listFolders(workspace: string): Promise<FolderEntry[]>;
   readNote(workspace: string, path: string): Promise<string>;
   acquireNoteEditLock(workspace: string, path: string, windowLabel: string): Promise<NoteEditLockResult>;
   releaseNoteEditLock(workspace: string, path: string, windowLabel: string): Promise<void>;
   saveNote(workspace: string, path: string, content: string): Promise<string>;
-  createNote(workspace: string, parentPath: string, title: string): Promise<NoteEntry>;
+  createNote(workspace: string, parentPath: string, title: string, initialContent?: string): Promise<NoteEntry>;
   duplicateNote(workspace: string, path: string): Promise<NoteEntry>;
   createFolder(workspace: string, parentPath: string, name: string): Promise<FolderEntry>;
   renameFolder(workspace: string, path: string, name: string): Promise<FolderEntry>;
@@ -184,6 +185,15 @@ export function createNativeNotebookStorage(invokeCommand: InvokeCommand = invok
       await invokeCommand<void>("watch_workspace", { workspace });
     },
 
+    async readNotebookSnapshot(workspace) {
+      const snapshot = await invokeCommand<NotebookSnapshot>("read_notebook_snapshot", { workspace });
+      return {
+        ...snapshot,
+        folders: snapshot.folders.map(decodeFolderEntry),
+        notes: snapshot.notes.map(decodeNoteEntry),
+      };
+    },
+
     async listNotes(workspace) {
       return (await invokeCommand<NoteEntry[]>("list_notes", { workspace })).map(decodeNoteEntry);
     },
@@ -212,10 +222,15 @@ export function createNativeNotebookStorage(invokeCommand: InvokeCommand = invok
       return invokeCommand<string>("save_note", { payload: { workspace, path, content } });
     },
 
-    async createNote(workspace, parentPath, title) {
+    async createNote(workspace, parentPath, title, initialContent) {
       validateNoteTitle(title);
       const entry = await invokeCommand<NoteEntry>("create_note", {
-        payload: { workspace, parent_path: parentPath, title: encodeTitleForFilename(title.trim()) },
+        payload: {
+          workspace,
+          parent_path: parentPath,
+          title: encodeTitleForFilename(title.trim()),
+          content: initialContent,
+        },
       });
       return decodeNoteEntry(entry);
     },
@@ -371,6 +386,31 @@ export function createDemoNotebookStorage(persistence: KeyValueStorage): Noteboo
   };
   const writeStore = (store: DemoStore) => persistence.setItem(DEMO_STORAGE_KEY, JSON.stringify(store));
   const metadataKey = (workspace: string) => `tigrana-meta:${workspace}`;
+  const noteEntries = (store: DemoStore): NoteEntry[] => Object.keys(store.notes).map((path) => {
+    const parts = path.split("/");
+    const fileStem = parts.at(-1)?.replace(/\.md$/, "") ?? "Untitled";
+    return {
+      path,
+      title: decodeTitleFromFilename(fileStem),
+      parent_path: parts.slice(0, -1).join("/"),
+      updated_at: Date.now() / 1000,
+    };
+  });
+  const folderEntries = (workspace: string, store: DemoStore): FolderEntry[] => {
+    const folderSet = new Set<string>(["", ...store.folders]);
+    Object.keys(store.notes).forEach((path) => {
+      const parts = path.split("/").slice(0, -1);
+      let current = "";
+      for (const part of parts) {
+        current = current ? `${current}/${part}` : part;
+        folderSet.add(current);
+      }
+    });
+    return Array.from(folderSet).map((path) => {
+      const rawName = path ? path.split("/").at(-1) ?? "Untitled" : workspace.split("/").at(-1) || "Notebook";
+      return { path, name: decodeTitleFromFilename(rawName), parent_path: path.split("/").slice(0, -1).join("/") };
+    });
+  };
 
   const storage: Omit<NotebookStorage, "ensureWelcomeNote"> = {
     capabilities: {
@@ -386,34 +426,22 @@ export function createDemoNotebookStorage(persistence: KeyValueStorage): Noteboo
     async rebuildLinkIndex() { return null; },
     async watchWorkspace() {},
 
+    async readNotebookSnapshot(workspace) {
+      const store = readStore();
+      return {
+        folders: folderEntries(workspace, store),
+        notes: noteEntries(store),
+        contents: { ...store.notes },
+        linkIndex: null,
+      };
+    },
+
     async listNotes() {
-      return Object.keys(readStore().notes).map((path) => {
-        const parts = path.split("/");
-        const fileStem = parts.at(-1)?.replace(/\.md$/, "") ?? "Untitled";
-        return {
-          path,
-          title: decodeTitleFromFilename(fileStem),
-          parent_path: parts.slice(0, -1).join("/"),
-          updated_at: Date.now() / 1000,
-        };
-      });
+      return noteEntries(readStore());
     },
 
     async listFolders(workspace) {
-      const store = readStore();
-      const folderSet = new Set<string>(["", ...store.folders]);
-      Object.keys(store.notes).forEach((path) => {
-        const parts = path.split("/").slice(0, -1);
-        let current = "";
-        for (const part of parts) {
-          current = current ? `${current}/${part}` : part;
-          folderSet.add(current);
-        }
-      });
-      return Array.from(folderSet).map((path) => {
-        const rawName = path ? path.split("/").at(-1) ?? "Untitled" : workspace.split("/").at(-1) || "Notebook";
-        return { path, name: decodeTitleFromFilename(rawName), parent_path: path.split("/").slice(0, -1).join("/") };
-      });
+      return folderEntries(workspace, readStore());
     },
 
     async readNote(_workspace, path) {
@@ -425,19 +453,24 @@ export function createDemoNotebookStorage(persistence: KeyValueStorage): Noteboo
 
     async saveNote(_workspace, path, content) {
       const store = readStore();
+      if (!Object.prototype.hasOwnProperty.call(store.notes, path)) {
+        throw new Error("The Note no longer exists at that path.");
+      }
       store.notes[path] = content;
       writeStore(store);
       return content;
     },
 
-    async createNote(_workspace, parentPath, title) {
+    async createNote(_workspace, parentPath, title, initialContent = "") {
       validateNoteTitle(title);
       const store = readStore();
       const encodedTitle = encodeTitleForFilename(title.trim());
       const fileName = `${encodedTitle || "Untitled"}.md`;
       const path = parentPath ? `${parentPath}/${fileName}` : fileName;
-      if (store.notes[path]) throw new Error("A note with that title already exists in this folder.");
-      store.notes[path] = "";
+      if (Object.prototype.hasOwnProperty.call(store.notes, path)) {
+        throw new Error("A note with that title already exists in this folder.");
+      }
+      store.notes[path] = initialContent;
       writeStore(store);
       return { path, title: title.trim() || "Untitled", parent_path: parentPath, updated_at: Date.now() / 1000 };
     },
@@ -492,7 +525,9 @@ export function createDemoNotebookStorage(persistence: KeyValueStorage): Noteboo
       const parentPath = path.split("/").slice(0, -1).join("/");
       const encodedTitle = encodeTitleForFilename(title.trim());
       const nextPath = parentPath ? `${parentPath}/${encodedTitle}.md` : `${encodedTitle}.md`;
-      if (path !== nextPath && store.notes[nextPath]) throw new Error("A note with that title already exists in this folder.");
+      if (path !== nextPath && Object.prototype.hasOwnProperty.call(store.notes, nextPath)) {
+        throw new Error("A note with that title already exists in this folder.");
+      }
       store.notes[nextPath] = store.notes[path] ?? "";
       if (path !== nextPath) delete store.notes[path];
       writeStore(store);
@@ -504,7 +539,7 @@ export function createDemoNotebookStorage(persistence: KeyValueStorage): Noteboo
       const fileName = path.split("/").at(-1) ?? path;
       const fileStem = fileName.replace(/\.md$/, "");
       const requestedPath = targetParentPath ? `${targetParentPath}/${fileName}` : fileName;
-      const nextPath = path === requestedPath || !store.notes[requestedPath]
+      const nextPath = path === requestedPath || !Object.prototype.hasOwnProperty.call(store.notes, requestedPath)
         ? requestedPath
         : uniqueDemoNotePath(store, targetParentPath, fileStem);
       store.notes[nextPath] = store.notes[path] ?? "";
@@ -610,7 +645,17 @@ function addSharedNotebookBehavior(storage: Omit<NotebookStorage, "ensureWelcome
     async ensureWelcomeNote(workspace, metadata) {
       if (metadata.welcomeNoteAdded) return { metadata, created: false };
       const hasWelcomeNote = (await storage.listNotes(workspace)).some((note) => note.path === WELCOME_NOTE_PATH);
-      if (!hasWelcomeNote) await storage.saveNote(workspace, WELCOME_NOTE_PATH, WELCOME_NOTE_CONTENT);
+      let refreshNeeded = false;
+      if (!hasWelcomeNote) {
+        try {
+          await storage.createNote(workspace, "", "Welcome", WELCOME_NOTE_CONTENT);
+        } catch (error) {
+          const createdByAnotherWindow = (await storage.listNotes(workspace))
+            .some((note) => note.path === WELCOME_NOTE_PATH);
+          if (!createdByAnotherWindow) throw error;
+        }
+        refreshNeeded = true;
+      }
       const nextMetadata = { ...metadata, welcomeNoteAdded: true };
       let result = await storage.writeWorkspaceMetadata(workspace, nextMetadata);
       if (!result.applied && !result.metadata.welcomeNoteAdded) {
@@ -619,7 +664,7 @@ function addSharedNotebookBehavior(storage: Omit<NotebookStorage, "ensureWelcome
           welcomeNoteAdded: true,
         });
       }
-      return { metadata: result.metadata, created: !hasWelcomeNote };
+      return { metadata: result.metadata, created: refreshNeeded };
     },
   };
 }
@@ -640,7 +685,7 @@ function uniqueDemoNotePath(store: DemoStore, parentPath: string, encodedStem: s
   for (let suffix = 0; ; suffix += 1) {
     const stem = suffix === 0 ? encodedStem : `${encodedStem} ${suffix}`;
     const candidate = parentPath ? `${parentPath}/${stem}.md` : `${stem}.md`;
-    if (!store.notes[candidate]) return candidate;
+    if (!Object.prototype.hasOwnProperty.call(store.notes, candidate)) return candidate;
   }
 }
 

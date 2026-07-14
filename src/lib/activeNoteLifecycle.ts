@@ -10,6 +10,7 @@ export type ActiveNoteLock = {
 };
 
 export type DiskChangeKind = "acceptedWrite" | "matchesEditor" | "externalChange";
+export type DeletedTargetDisposition = "clearAndCancelNavigation" | "clearAndPreserveNavigation" | "ignore";
 
 type ActiveNoteLifecycleOptions = {
   storage: Pick<NotebookStorage, "acquireNoteEditLock" | "releaseNoteEditLock">;
@@ -23,7 +24,11 @@ export class ActiveNoteLifecycle {
   readonly activeLockRef: { current: ActiveNoteLock | null } = { current: null };
 
   private acceptedDiskContent = new Map<string, string>();
+  private lockGeneration = 0;
   private loadGeneration = 0;
+  private navigationGeneration = 0;
+  private navigationTarget: string | null = null;
+  private lockOperationTail: Promise<void> = Promise.resolve();
   private activeLoadToken = 0;
   private saveQueues = new Map<string, Promise<void>>();
   private savingPathCounts = new Map<string, number>();
@@ -35,8 +40,62 @@ export class ActiveNoteLifecycle {
   constructor(private readonly options: ActiveNoteLifecycleOptions) {}
 
   resetWorkspace() {
+    this.lockGeneration += 1;
+    this.navigationGeneration += 1;
+    this.navigationTarget = null;
     this.acceptedDiskContent.clear();
     this.cancelLoads();
+  }
+
+  beginNavigation(target: string | null = null) {
+    this.lockGeneration += 1;
+    this.navigationGeneration += 1;
+    this.navigationTarget = target;
+    return this.navigationGeneration;
+  }
+
+  setNavigationTarget(token: number, target: string) {
+    if (!this.isCurrentNavigation(token)) return false;
+    this.navigationTarget = target;
+    return true;
+  }
+
+  settleNavigation(token: number) {
+    if (!this.isCurrentNavigation(token)) return;
+    this.navigationTarget = null;
+  }
+
+  captureNavigation() {
+    return this.navigationGeneration;
+  }
+
+  isCurrentNavigation(token: number) {
+    return this.navigationGeneration === token;
+  }
+
+  deletedTargetDisposition(
+    token: number | null,
+    activePath: string | null,
+    matchesDeletedPath: (path: string) => boolean,
+  ): DeletedTargetDisposition {
+    if (
+      (token !== null && this.isCurrentNavigation(token))
+      || (this.navigationTarget !== null && matchesDeletedPath(this.navigationTarget))
+    ) {
+      return "clearAndCancelNavigation";
+    }
+    if (activePath !== null && matchesDeletedPath(activePath)) {
+      return this.navigationTarget === null
+        ? "clearAndCancelNavigation"
+        : "clearAndPreserveNavigation";
+    }
+    return "ignore";
+  }
+
+  cancelNavigation() {
+    this.lockGeneration += 1;
+    this.navigationGeneration += 1;
+    this.navigationTarget = null;
   }
 
   beginLoad() {
@@ -88,22 +147,54 @@ export class ActiveNoteLifecycle {
       return "editable";
     }
     const windowLabel = this.options.getWindowLabel();
-    const current = this.activeLockRef.current;
-    if (current?.workspace === workspace && current.path === path && current.windowLabel === windowLabel) {
-      return "editable";
-    }
+    const generation = ++this.lockGeneration;
+    return this.enqueueLockOperation(async () => {
+      if (generation !== this.lockGeneration || this.options.getWorkspace() !== workspace) {
+        return "readOnlyLocked";
+      }
+      const current = this.activeLockRef.current;
+      if (current?.workspace === workspace && current.path === path && current.windowLabel === windowLabel) {
+        return "editable";
+      }
 
-    await this.releaseLock();
-    const result = await this.options.storage.acquireNoteEditLock(workspace, path, windowLabel);
-    if (!result.acquired) {
-      this.activeLockRef.current = null;
-      return "readOnlyLocked";
-    }
-    this.activeLockRef.current = { workspace, path, windowLabel };
-    return "editable";
+      await this.releaseCurrentLock();
+      if (generation !== this.lockGeneration || this.options.getWorkspace() !== workspace) {
+        return "readOnlyLocked";
+      }
+      const result = await this.options.storage.acquireNoteEditLock(workspace, path, windowLabel);
+      if (generation !== this.lockGeneration || this.options.getWorkspace() !== workspace) {
+        if (result.acquired) {
+          try {
+            await this.options.storage.releaseNoteEditLock(workspace, path, windowLabel);
+          } catch (error) {
+            console.warn("release_note_edit_lock failed", error);
+          }
+        }
+        return "readOnlyLocked";
+      }
+      if (!result.acquired) {
+        this.activeLockRef.current = null;
+        return "readOnlyLocked";
+      }
+      this.activeLockRef.current = { workspace, path, windowLabel };
+      return "editable";
+    });
   }
 
   async releaseLock() {
+    this.lockGeneration += 1;
+    await this.enqueueLockOperation(() => this.releaseCurrentLock());
+  }
+
+  async releaseLockMatching(workspace: string, matchesPath: (path: string) => boolean) {
+    await this.enqueueLockOperation(async () => {
+      const lock = this.activeLockRef.current;
+      if (!lock || lock.workspace !== workspace || !matchesPath(lock.path)) return;
+      await this.releaseCurrentLock();
+    });
+  }
+
+  private async releaseCurrentLock() {
     const lock = this.activeLockRef.current;
     if (!lock) return;
     this.activeLockRef.current = null;
@@ -112,6 +203,14 @@ export class ActiveNoteLifecycle {
     } catch (error) {
       console.warn("release_note_edit_lock failed", error);
     }
+  }
+
+  private enqueueLockOperation<T>(operation: () => Promise<T>) {
+    const result = this.lockOperationTail
+      .catch(() => undefined)
+      .then(operation);
+    this.lockOperationTail = result.then(() => undefined, () => undefined);
+    return result;
   }
 
   enqueueSave(path: string, work: () => Promise<void>) {

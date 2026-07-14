@@ -33,9 +33,13 @@ describe("Notebook storage adapters", () => {
     expect(folder).toMatchObject({ path: "Part ／ One", name: "Part / One" });
     expect(await storage.readNote(workspace, moved.path)).toContain("Once upon a time.");
     expect((await storage.listNotes(workspace)).find((entry) => entry.path === moved.path)?.title).toBe("A New Start");
+    const snapshot = await storage.readNotebookSnapshot(workspace);
+    expect(snapshot.notes.map((entry) => entry.path).sort()).toEqual(Object.keys(snapshot.contents).sort());
+    expect(snapshot.linkIndex).toBeNull();
 
     await storage.trashFolder(workspace, folder.path);
     expect((await storage.listFolders(workspace)).some((entry) => entry.path === folder.path)).toBe(false);
+    await expect(storage.saveNote(workspace, "Missing.md", "stale")).rejects.toThrow("no longer exists");
   });
 
   it("persists Notebook metadata and initializes the welcome-note marker", async () => {
@@ -45,6 +49,51 @@ describe("Notebook storage adapters", () => {
 
     expect(ensured.metadata.welcomeNoteAdded).toBe(true);
     expect((await storage.readWorkspaceMetadata("/demo/Test")).welcomeNoteAdded).toBe(true);
+  });
+
+  it("does not mark the Welcome Note complete when atomic creation fails", async () => {
+    const invokeCommand = vi.fn(async (command: string) => {
+      if (command === "list_notes") return [];
+      if (command === "create_note") throw new Error("disk full");
+      if (command === "write_workspace_metadata") {
+        throw new Error("metadata must not be marked after a failed Welcome create");
+      }
+      return undefined;
+    });
+    const storage = createNativeNotebookStorage(
+      invokeCommand as unknown as Parameters<typeof createNativeNotebookStorage>[0],
+    );
+
+    await expect(storage.ensureWelcomeNote("/Notebook", defaultWorkspaceMetadata()))
+      .rejects.toThrow("disk full");
+    expect(invokeCommand).not.toHaveBeenCalledWith("write_workspace_metadata", expect.anything());
+  });
+
+  it("creates the Welcome Note with its body in the same Native command", async () => {
+    const invokeCommand = vi.fn(async (command: string) => {
+      if (command === "list_notes") return [];
+      if (command === "create_note") return { path: "Welcome.md", title: "Welcome", parent_path: "" };
+      if (command === "write_workspace_metadata") {
+        return { applied: true, metadata: { ...defaultWorkspaceMetadata(), revision: 1, welcomeNoteAdded: true } };
+      }
+      return undefined;
+    });
+    const storage = createNativeNotebookStorage(
+      invokeCommand as unknown as Parameters<typeof createNativeNotebookStorage>[0],
+    );
+
+    await expect(storage.ensureWelcomeNote("/Notebook", defaultWorkspaceMetadata())).resolves.toMatchObject({
+      created: true,
+      metadata: { welcomeNoteAdded: true },
+    });
+    expect(invokeCommand).toHaveBeenCalledWith("create_note", {
+      payload: expect.objectContaining({
+        workspace: "/Notebook",
+        title: "Welcome",
+        content: expect.stringContaining("Tigrana"),
+      }),
+    });
+    expect(invokeCommand).not.toHaveBeenCalledWith("save_note", expect.anything());
   });
 
   it("routes the native adapter through the Tauri command seam", async () => {
@@ -61,6 +110,35 @@ describe("Notebook storage adapters", () => {
     ]);
     expect(invokeCommand).toHaveBeenCalledWith("list_notes", { workspace: "/Notebook" });
     expect(storage.capabilities.durableLinkIndex).toBe(true);
+  });
+
+  it("reads a Native Notebook refresh as one decoded snapshot", async () => {
+    const invokeCommand = vi.fn(async (command: string) => {
+      if (command !== "read_notebook_snapshot") return undefined;
+      return {
+        folders: [{ path: "Drafts／Plan", name: "Drafts／Plan", parent_path: "" }],
+        notes: [{ path: "Drafts／Plan/Scene.md", title: "Scene／One", parent_path: "Drafts／Plan" }],
+        contents: { "Drafts／Plan/Scene.md": "# Scene" },
+        linkIndex: {
+          schemaVersion: 1,
+          notesById: {},
+          foldersById: {},
+          pathToId: {},
+          outbound: {},
+          inbound: {},
+        },
+      };
+    });
+    const storage = createNativeNotebookStorage(
+      invokeCommand as unknown as Parameters<typeof createNativeNotebookStorage>[0],
+    );
+    await expect(storage.readNotebookSnapshot("/Notebook")).resolves.toMatchObject({
+      folders: [{ path: "Drafts／Plan", name: "Drafts/Plan", parent_path: "" }],
+      notes: [{ path: "Drafts／Plan/Scene.md", title: "Scene/One", parent_path: "Drafts／Plan" }],
+      contents: { "Drafts／Plan/Scene.md": "# Scene" },
+    });
+    expect(invokeCommand).toHaveBeenCalledTimes(1);
+    expect(invokeCommand).toHaveBeenCalledWith("read_notebook_snapshot", { workspace: "/Notebook" });
   });
 
   it("passes Folder sibling placement through the native command seam", async () => {
