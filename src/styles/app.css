@@ -4701,7 +4701,7 @@ html[data-theme="dark"] .note-tab,
 html[data-theme="dark"] .note-tab-add,
 html[data-theme="dark"] .outline-item,
 html[data-theme="dark"] .welcome-surface {
-  color: #d8d0c5;
+  color: var(--text);
 }
 
 html[data-theme="dark"] .eyebrow,
@@ -4719,7 +4719,6 @@ html[data-theme="dark"] .recent-notebooks-empty,
 html[data-theme="dark"] .find-count,
 html[data-theme="dark"] .note-drag-preview small,
 html[data-theme="dark"] .list-label,
-html[data-theme="dark"] .section-header-button,
 html[data-theme="dark"] .empty-bookmarks,
 html[data-theme="dark"] .palette-result small,
 html[data-theme="dark"] .folder-search-results small,
@@ -4732,8 +4731,15 @@ html[data-theme="dark"] .palette-empty {
   color: #a9a096;
 }
 
+/* Pane headings identify navigational content, so they should carry the same
+ * contrast as the rows beneath them rather than read as disabled metadata. */
+html[data-theme="dark"] .section-header-button,
+html[data-theme="dark"] .list-label {
+  color: var(--text);
+}
+
 html[data-theme="dark"] .bookmark-item {
-  color: #d8d0c5;
+  color: var(--text);
   background: transparent;
 }
 
