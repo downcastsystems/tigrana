@@ -46,6 +46,7 @@ import type { LucideIcon } from "lucide-react";
 import type { CSSProperties, ReactNode } from "react";
 import { Component, startTransition, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { NotesEditor, type PendingEditorChange } from "./editor/NotesEditor";
+import { GlobalSearchModal } from "./components/GlobalSearchModal";
 import {
   exportTextFile,
   focusNotebookWindow,
@@ -97,8 +98,7 @@ import { LatestNotebookSnapshot } from "./lib/notebookSnapshot";
 import { PendingNoteContents } from "./lib/pendingNoteContents";
 import { useNoteTextStats } from "./lib/useNoteTextStats";
 import { useNoteOutline } from "./lib/useNoteOutline";
-import { searchNotes } from "./lib/search";
-import type { BookmarkEntry, FolderEntry, LinkIndex, NavigationStyle, NotebookSnapshot, NotebookThemeColors, NoteEntry, NotePositionMetadata, SearchResult, WorkspaceMetadata } from "./types";
+import type { BookmarkEntry, FolderEntry, LinkIndex, NavigationStyle, NotebookSnapshot, NotebookThemeColors, NoteEntry, NotePositionMetadata, WorkspaceMetadata } from "./types";
 
 const {
   cleanupTrash,
@@ -701,7 +701,6 @@ export default function App() {
   const transientActiveDraftOpen = Boolean(activePath && titleDraft.trim() && pathChangeSaveInFlight);
   const noteOpen = pendingNote || activeNote || transientActiveDraftOpen;
   const hasOpenNote = Boolean(noteOpen);
-  const results = useMemo(() => searchNotes(notes, contents, searchQuery), [contents, notes, searchQuery]);
   const folderTree = useMemo(() => buildFolderTree(folders, workspace, metadata), [folders, metadata, workspace]);
   const visibleNotes = useMemo(
     () => orderNotes(notes.filter((note) => note.parent_path === selectedFolder), selectedFolder, metadata),
@@ -918,6 +917,7 @@ export default function App() {
     root.setProperty("--border", tokens.border);
     root.setProperty("--text", tokens.text);
     root.setProperty("--text-muted", tokens.textMuted);
+    root.setProperty("--muted", tokens.textMuted);
     localStorage.setItem(themeKey, colorScheme);
     localStorage.setItem(themePresetKey, themePreset.id);
   }, [colorScheme, resolvedTheme, themePreset]);
@@ -1821,7 +1821,6 @@ export default function App() {
         }
         break;
       case "search_notebook":
-        setLeftVisible(true);
         setSearchOpen(true);
         setSearchFocusRequest((value) => value + 1);
         break;
@@ -2495,6 +2494,8 @@ export default function App() {
       const command = event.metaKey || event.ctrlKey;
       const key = event.key.toLowerCase();
       if (event.key === "Escape") {
+        setSearchOpen(false);
+        setSearchQuery("");
         setSettingsOpen(false);
         setNotebooksManageOpen(false);
         setAppMenuOpen(false);
@@ -2504,7 +2505,6 @@ export default function App() {
       }
       if (command && event.shiftKey && key === "f") {
         event.preventDefault();
-        setLeftVisible(true);
         setSearchOpen(true);
         setSearchFocusRequest((value) => value + 1);
         return;
@@ -4105,10 +4105,6 @@ export default function App() {
               notes={notes}
               recentNotebooks={recentNotebooks}
               rootPath=""
-              searchFocusRequest={searchFocusRequest}
-              searchOpen={searchOpen}
-              searchQuery={searchQuery}
-              searchResults={results}
               selectedFolderPath={activePath ? undefined : selectedFolder}
               showBookmarks
               showNotebookFooter
@@ -4131,13 +4127,11 @@ export default function App() {
               onPin={toggleNotePin}
               onPointerDragStart={beginNotePointerDrag}
               onRemoveBookmark={removeBookmark}
-              onSearchQueryChange={setSearchQuery}
               onSelectBookmark={selectBookmark}
               onSelectFolder={(path) => void selectFolderForNewNote(path)}
               onSelectNotebook={openNotebookInNewWindow}
               onSelectNote={handleNoteSelectFromCard}
               onSetFolderExpanded={setFolderExpanded}
-              onSelectSearchResult={selectNote}
               onToggleBookmarksExpanded={toggleBookmarksExpanded}
               onToggleMenu={(event) => {
                 event.stopPropagation();
@@ -4160,10 +4154,6 @@ export default function App() {
                 menuOpen={appMenuOpen}
                 recentNotebooks={recentNotebooks}
                 reorderHover={sectionReorderHover}
-                searchOpen={searchOpen}
-                searchFocusRequest={searchFocusRequest}
-                searchQuery={searchQuery}
-                searchResults={results}
                 onContextMenu={openContextMenu}
                 onCreateFolder={requestCreateFolder}
                 onDropOnFolder={(path, item) => void handleDropOnFolder(path, item)}
@@ -4174,11 +4164,9 @@ export default function App() {
                 onNewNotebook={() => void chooseWorkspace("new", true)}
                 onOpenWorkspace={() => void chooseWorkspace("open", true)}
                 onRemoveBookmark={removeBookmark}
-                onSearchQueryChange={setSearchQuery}
                 onSelectBookmark={selectBookmark}
                 onSelectFolder={(path) => void selectSection(path)}
                 onSelectNotebook={openNotebookInNewWindow}
-                onSelectSearchResult={selectNote}
                 onToggleBookmarksExpanded={toggleBookmarksExpanded}
                 onToggleMenu={(event) => { event.stopPropagation(); setAppMenuOpen((v) => !v); }}
                 onToggleSearch={() => setSearchOpen((value) => !value)}
@@ -4228,10 +4216,6 @@ export default function App() {
                 metadata={metadata}
                 menuOpen={appMenuOpen}
                 recentNotebooks={recentNotebooks}
-                searchOpen={searchOpen}
-                searchFocusRequest={searchFocusRequest}
-                searchQuery={searchQuery}
-                searchResults={results}
                 selectedFolder={selectedFolder}
                 workspace={workspace}
                 onCreateFolder={requestCreateFolder}
@@ -4247,10 +4231,8 @@ export default function App() {
                 onNewNotebook={() => void chooseWorkspace("new", true)}
                 onOpenWorkspace={() => void chooseWorkspace("open", true)}
                 onRemoveBookmark={removeBookmark}
-                onSearchQueryChange={setSearchQuery}
                 onSelectBookmark={selectBookmark}
                 onSelectNotebook={openNotebookInNewWindow}
-                onSelectSearchResult={selectNote}
                 onSelectFolder={(path) => setSelectedFolder(path)}
                 onSetFolderExpanded={setFolderExpanded}
                 onToggleBookmarksExpanded={toggleBookmarksExpanded}
@@ -4576,6 +4558,27 @@ export default function App() {
 
       {noteDragPreview ? <NoteDragPreviewLayer preview={noteDragPreview} /> : null}
 
+      {searchOpen ? (
+        <GlobalSearchModal
+          contents={contents}
+          focusRequest={searchFocusRequest}
+          folders={folders}
+          metadata={metadata}
+          notes={notes}
+          query={searchQuery}
+          onClose={() => {
+            setSearchOpen(false);
+            setSearchQuery("");
+          }}
+          onQueryChange={setSearchQuery}
+          onSelect={(path) => {
+            setSearchOpen(false);
+            setSearchQuery("");
+            void selectNote(path);
+          }}
+        />
+      ) : null}
+
       {contextMenu ? (
         (() => {
           const createParent =
@@ -4885,11 +4888,7 @@ function FolderPane({
   folders,
   menuOpen,
   metadata,
-  searchOpen,
   recentNotebooks,
-  searchFocusRequest,
-  searchQuery,
-  searchResults,
   selectedFolder,
   workspace,
   onCreateFolder,
@@ -4902,10 +4901,8 @@ function FolderPane({
   onNewNotebook,
   onOpenWorkspace,
   onRemoveBookmark,
-  onSearchQueryChange,
   onSelectBookmark,
   onSelectNotebook,
-  onSelectSearchResult,
   onSelectFolder,
   onSetFolderExpanded,
   onToggleBookmarksExpanded,
@@ -4922,10 +4919,6 @@ function FolderPane({
   menuOpen: boolean;
   metadata: WorkspaceMetadata;
   recentNotebooks: RecentNotebook[];
-  searchOpen: boolean;
-  searchFocusRequest: number;
-  searchQuery: string;
-  searchResults: SearchResult[];
   selectedFolder: string;
   workspace: string;
   onCreateFolder: (parentPath?: string) => void;
@@ -4938,10 +4931,8 @@ function FolderPane({
   onNewNotebook: () => void;
   onOpenWorkspace: () => void;
   onRemoveBookmark: (id: string) => void;
-  onSearchQueryChange: (query: string) => void;
   onSelectBookmark: (bookmark: BookmarkEntry) => void;
   onSelectNotebook: (path: string) => void;
-  onSelectSearchResult: (path: string) => void;
   onSelectFolder: (path: string) => void;
   onSetFolderExpanded: (path: string, expanded: boolean) => void;
   onToggleBookmarksExpanded: () => void;
@@ -4969,15 +4960,6 @@ function FolderPane({
           </button>
         </div>
       </div>
-      {searchOpen ? (
-        <FolderSearch
-          query={searchQuery}
-          focusRequest={searchFocusRequest}
-          results={searchResults}
-          onQueryChange={onSearchQueryChange}
-          onSelect={onSelectSearchResult}
-        />
-      ) : null}
       <BookmarksSection
         activeFolderPath={selectedFolder}
         activeNotePath={activePath}
@@ -5178,76 +5160,6 @@ function BookmarksSection({
   );
 }
 
-function FolderSearch({
-  focusRequest,
-  query,
-  results,
-  onQueryChange,
-  onSelect,
-}: {
-  focusRequest: number;
-  query: string;
-  results: SearchResult[];
-  onQueryChange: (query: string) => void;
-  onSelect: (path: string) => void;
-}) {
-  const inputRef = useRef<HTMLInputElement | null>(null);
-
-  useEffect(() => {
-    if (!focusRequest) return;
-    requestAnimationFrame(() => {
-      inputRef.current?.focus();
-      inputRef.current?.select();
-    });
-  }, [focusRequest]);
-
-  return (
-    <div className="folder-search">
-      <div className="folder-search-input">
-        <Search size={15} />
-        <input
-          ref={inputRef}
-          value={query}
-          onChange={(event) => onQueryChange(event.target.value)}
-          placeholder="Search notes"
-          autoCapitalize="off"
-          autoCorrect="off"
-          spellCheck={false}
-          autoFocus
-        />
-        {query ? (
-          <button
-            type="button"
-            className="folder-search-clear"
-            aria-label="Clear search"
-            title="Clear search"
-            onClick={() => {
-              onQueryChange("");
-              inputRef.current?.focus();
-            }}
-          >
-            <X size={13} />
-          </button>
-        ) : null}
-      </div>
-      {query.trim() ? (
-        <div className="folder-search-results">
-          {results.map((result) => (
-            <button key={result.path} type="button" onClick={() => onSelect(result.path)}>
-              <FileText size={15} />
-              <span>
-                <strong>{result.title}</strong>
-                <small>{result.snippet || result.path}</small>
-              </span>
-            </button>
-          ))}
-          {!results.length ? <p>No matching notes</p> : null}
-        </div>
-      ) : null}
-    </div>
-  );
-}
-
 function FolderRow({
   depth = 0,
   draggingItem,
@@ -5395,10 +5307,6 @@ function SectionViewFolderPane({
   metadata,
   recentNotebooks,
   reorderHover,
-  searchOpen,
-  searchFocusRequest,
-  searchQuery,
-  searchResults,
   selectedFolder,
   suppressClickRef,
   workspace,
@@ -5410,12 +5318,10 @@ function SectionViewFolderPane({
   onNewNotebook,
   onOpenWorkspace,
   onRemoveBookmark,
-  onSearchQueryChange,
   onSectionPointerDragStart,
   onSelectBookmark,
   onSelectFolder,
   onSelectNotebook,
-  onSelectSearchResult,
   onToggleBookmarksExpanded,
   onToggleMenu,
   onToggleSearch,
@@ -5430,10 +5336,6 @@ function SectionViewFolderPane({
   metadata: WorkspaceMetadata;
   recentNotebooks: RecentNotebook[];
   reorderHover: { path: string; placement: DropPlacement } | null;
-  searchOpen: boolean;
-  searchFocusRequest: number;
-  searchQuery: string;
-  searchResults: SearchResult[];
   selectedFolder: string;
   suppressClickRef: React.MutableRefObject<boolean>;
   workspace: string;
@@ -5445,12 +5347,10 @@ function SectionViewFolderPane({
   onNewNotebook: () => void;
   onOpenWorkspace: () => void;
   onRemoveBookmark: (id: string) => void;
-  onSearchQueryChange: (query: string) => void;
   onSectionPointerDragStart: (path: string, event: React.PointerEvent<HTMLElement>) => void;
   onSelectBookmark: (bookmark: BookmarkEntry) => void;
   onSelectFolder: (path: string) => void;
   onSelectNotebook: (path: string) => void;
-  onSelectSearchResult: (path: string) => void;
   onToggleBookmarksExpanded: () => void;
   onToggleMenu: (event: React.MouseEvent) => void;
   onToggleSearch: () => void;
@@ -5484,15 +5384,6 @@ function SectionViewFolderPane({
           </button>
         </div>
       </div>
-      {searchOpen ? (
-        <FolderSearch
-          query={searchQuery}
-          focusRequest={searchFocusRequest}
-          results={searchResults}
-          onQueryChange={onSearchQueryChange}
-          onSelect={onSelectSearchResult}
-        />
-      ) : null}
       <BookmarksSection
         activeFolderPath={selectedFolder}
         activeNotePath={activePath}
@@ -5880,10 +5771,6 @@ function UnifiedTreePane({
   notes,
   recentNotebooks = [],
   rootPath,
-  searchFocusRequest = 0,
-  searchOpen = false,
-  searchQuery = "",
-  searchResults = [],
   selectedFolderPath,
   showBookmarks = false,
   showNotebookFooter = false,
@@ -5903,12 +5790,10 @@ function UnifiedTreePane({
   onPin,
   onPointerDragStart,
   onRemoveBookmark,
-  onSearchQueryChange,
   onSelectBookmark,
   onSelectNotebook,
   onSelectFolder,
   onSelectNote,
-  onSelectSearchResult,
   onSetFolderExpanded,
   onToggleBookmarksExpanded,
   onToggleMenu,
@@ -5929,10 +5814,6 @@ function UnifiedTreePane({
   notes: NoteEntry[];
   recentNotebooks?: RecentNotebook[];
   rootPath: string;
-  searchFocusRequest?: number;
-  searchOpen?: boolean;
-  searchQuery?: string;
-  searchResults?: SearchResult[];
   selectedFolderPath?: string;
   showBookmarks?: boolean;
   showNotebookFooter?: boolean;
@@ -5951,12 +5832,10 @@ function UnifiedTreePane({
   onPin: (path: string) => void;
   onPointerDragStart: (path: string, event: React.PointerEvent<HTMLElement>) => void;
   onRemoveBookmark?: (id: string) => void;
-  onSearchQueryChange?: (query: string) => void;
   onSelectBookmark?: (bookmark: BookmarkEntry) => void;
   onSelectNotebook?: (path: string) => void;
   onSelectFolder?: (path: string) => void;
   onSelectNote: (path: string) => void;
-  onSelectSearchResult?: (path: string) => void;
   onSetFolderExpanded: (path: string, expanded: boolean) => void;
   onToggleBookmarksExpanded?: () => void;
   onToggleMenu?: (event: React.MouseEvent) => void;
@@ -5986,15 +5865,6 @@ function UnifiedTreePane({
           ) : null}
         </div>
       </div>
-      {showSearch && searchOpen && onSearchQueryChange && onSelectSearchResult ? (
-        <FolderSearch
-          query={searchQuery}
-          focusRequest={searchFocusRequest}
-          results={searchResults}
-          onQueryChange={onSearchQueryChange}
-          onSelect={onSelectSearchResult}
-        />
-      ) : null}
       {showBookmarks && onRemoveBookmark && onSelectBookmark && onToggleBookmarksExpanded ? (
         <BookmarksSection
           activeFolderPath={selectedFolderPath}
