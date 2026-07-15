@@ -1,4 +1,5 @@
 import { invoke } from "@tauri-apps/api/core";
+import { getCurrentWebview } from "@tauri-apps/api/webview";
 import { save } from "@tauri-apps/plugin-dialog";
 
 export type AppPreferences = {
@@ -65,6 +66,14 @@ export async function printCurrentWebview() {
     return;
   }
   window.print();
+}
+
+export async function setCurrentWebviewZoom(scaleFactor: number) {
+  if (isTauri()) {
+    await getCurrentWebview().setZoom(scaleFactor);
+    return;
+  }
+  document.documentElement.style.setProperty("zoom", String(scaleFactor));
 }
 
 export async function readAppPreferences(): Promise<AppPreferences> {

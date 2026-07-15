@@ -54,11 +54,13 @@ import {
   readAppPreferences,
   registerNotebookWindow,
   printCurrentWebview,
+  setCurrentWebviewZoom,
   unregisterNotebookWindow,
   writeAppPreferences,
   updateAppMenuState,
 } from "./lib/desktop";
 import type { AppMenuState } from "./lib/desktop";
+import { APP_ZOOM_STORAGE_KEY, readStoredAppZoom, resolveAppZoomCommand, writeStoredAppZoom, type AppZoomCommand } from "./lib/appZoom";
 import { decodeTitleFromFilename, validateNoteTitle } from "./lib/notebookNames";
 import { defaultWorkspaceMetadata, notebookStorage, SAMPLE_WORKSPACE } from "./lib/notebookStorage";
 import type { NoteVersionEntry, TrashEntry } from "./lib/notebookStorage";
@@ -628,6 +630,7 @@ export default function App() {
   const externalNoteChangeRef = useRef<(path: string) => void>(() => {});
   const undoableNewNoteRef = useRef<{ workspace: string; path: string } | null>(null);
   const titleEscapeUndoInFlightRef = useRef(false);
+  const appZoomRef = useRef(readStoredAppZoom());
   const activeDraftStateRef = useRef({
     activePath: null as string | null,
     draft: "",
@@ -1037,6 +1040,49 @@ export default function App() {
     window.addEventListener("tigrana-menu-command", handleCommand);
     return () => window.removeEventListener("tigrana-menu-command", handleCommand);
   });
+
+  const applyAppZoomCommand = useCallback((command: AppZoomCommand) => {
+    const nextZoom = resolveAppZoomCommand(appZoomRef.current, command);
+    appZoomRef.current = nextZoom;
+    writeStoredAppZoom(nextZoom);
+    void setCurrentWebviewZoom(nextZoom).catch((error) => {
+      setAppError(error instanceof Error ? error.message : String(error));
+    });
+  }, []);
+
+  useEffect(() => {
+    void setCurrentWebviewZoom(appZoomRef.current).catch((error) => {
+      console.warn("setCurrentWebviewZoom failed", error);
+    });
+
+    const syncStoredZoom = (event: StorageEvent) => {
+      if (event.key !== APP_ZOOM_STORAGE_KEY) return;
+      const nextZoom = readStoredAppZoom();
+      appZoomRef.current = nextZoom;
+      void setCurrentWebviewZoom(nextZoom).catch((error) => {
+        console.warn("setCurrentWebviewZoom failed", error);
+      });
+    };
+    window.addEventListener("storage", syncStoredZoom);
+    return () => window.removeEventListener("storage", syncStoredZoom);
+  }, []);
+
+  useEffect(() => {
+    const handleZoomKeyDown = (event: KeyboardEvent) => {
+      if (!(event.metaKey || event.ctrlKey) || event.altKey) return;
+      let command: AppZoomCommand | null = null;
+      if (event.key === "+" || event.key === "=") command = "in";
+      else if (event.key === "-") command = "out";
+      else if (event.key === "0") command = "reset";
+      if (!command) return;
+
+      event.preventDefault();
+      event.stopPropagation();
+      applyAppZoomCommand(command);
+    };
+    window.addEventListener("keydown", handleZoomKeyDown, true);
+    return () => window.removeEventListener("keydown", handleZoomKeyDown, true);
+  }, [applyAppZoomCommand]);
 
   useEffect(() => {
     if (!isTauri()) return;
@@ -1835,6 +1881,15 @@ export default function App() {
         break;
       case "toggle_raw_markdown":
         toggleRawMarkdownMode();
+        break;
+      case "zoom_in":
+        applyAppZoomCommand("in");
+        break;
+      case "zoom_out":
+        applyAppZoomCommand("out");
+        break;
+      case "zoom_reset":
+        applyAppZoomCommand("reset");
         break;
       case "width_comfortable":
         setEditorWidthMode("comfortable");

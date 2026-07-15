@@ -1398,6 +1398,15 @@ fn build_app_menu(
         state.raw_markdown_visible,
         Some("Cmd+Alt+R"),
     )?;
+    let zoom_in = MenuItem::with_id(handle, "zoom_in", "Zoom In", true, Some("CmdOrCtrl+="))?;
+    let zoom_out = MenuItem::with_id(handle, "zoom_out", "Zoom Out", true, Some("CmdOrCtrl+-"))?;
+    let zoom_reset = MenuItem::with_id(
+        handle,
+        "zoom_reset",
+        "Actual Size",
+        true,
+        Some("CmdOrCtrl+0"),
+    )?;
     let width_comfortable = CheckMenuItem::with_id(
         handle,
         "width_comfortable",
@@ -1701,6 +1710,10 @@ fn build_app_menu(
             &toggle_sidebar,
             &toggle_outline,
             &toggle_raw,
+            &PredefinedMenuItem::separator(handle)?,
+            &zoom_in,
+            &zoom_out,
+            &zoom_reset,
             &PredefinedMenuItem::separator(handle)?,
             &width_menu,
             &alignment_menu,
@@ -2101,6 +2114,9 @@ pub fn run() {
             "toggle_sidebar" => emit_menu_command(app, "toggle_sidebar"),
             "toggle_outline" => emit_menu_command(app, "toggle_outline"),
             "toggle_raw_markdown" => emit_menu_command(app, "toggle_raw_markdown"),
+            "zoom_in" => emit_menu_command(app, "zoom_in"),
+            "zoom_out" => emit_menu_command(app, "zoom_out"),
+            "zoom_reset" => emit_menu_command(app, "zoom_reset"),
             "width_comfortable" => emit_menu_command(app, "width_comfortable"),
             "width_narrow" => emit_menu_command(app, "width_narrow"),
             "width_full" => emit_menu_command(app, "width_full"),
