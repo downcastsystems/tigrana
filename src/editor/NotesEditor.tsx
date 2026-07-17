@@ -10,7 +10,7 @@ import { TableHeader } from "@tiptap/extension-table-header";
 import { TableRow } from "@tiptap/extension-table-row";
 import TaskItem from "@tiptap/extension-task-item";
 import TaskList from "@tiptap/extension-task-list";
-import { DOMSerializer, type Fragment as ProseMirrorFragment, type Node as ProseMirrorNode, type ResolvedPos } from "@tiptap/pm/model";
+import { DOMSerializer, Fragment as ProseMirrorFragment, type Node as ProseMirrorNode, type ResolvedPos } from "@tiptap/pm/model";
 import { NodeSelection, Plugin, PluginKey, Selection, TextSelection, type EditorState, type Transaction } from "@tiptap/pm/state";
 import { addColumnAfter, addColumnBefore, addRowAfter, addRowBefore, CellSelection, deleteColumn, deleteRow, TableMap } from "@tiptap/pm/tables";
 import { Decoration, DecorationSet, type EditorProps, type EditorView, type NodeView, type ViewMutationRecord } from "@tiptap/pm/view";
@@ -3581,16 +3581,90 @@ function findTextSelectionPosition(doc: ProseMirrorNode, from: number, paragraph
 }
 
 function writeEditorSelectionToClipboard(view: EditorView, event: ClipboardEvent) {
-  if (view.state.selection.empty || !event.clipboardData) return false;
-  const slice = view.state.selection.content();
-  const html = serializeClipboardHtmlFragment(view, slice.content);
-  const markdown = htmlToMarkdown(html).trimEnd();
-  if (!markdown && !html) return false;
+  if (!event.clipboardData) return false;
+  const payload = serializeEditorSelectionForClipboard(view);
+  if (!payload) return false;
 
   event.preventDefault();
-  event.clipboardData.setData("text/plain", markdown);
-  event.clipboardData.setData("text/html", html || markdownToHtml(markdown));
+  event.clipboardData.setData("text/plain", payload.plainText);
+  event.clipboardData.setData("text/html", payload.html);
   return true;
+}
+
+export function serializeEditorSelectionForClipboard(view: EditorView) {
+  if (view.state.selection.empty) return null;
+  const slice = view.state.selection.content();
+  const clipboardFragment = isPartialSelectionWithinSingleListLine(view.state.selection)
+    ? getSelectedTextblockFragment(slice.content)
+    : trimUnselectedListAncestorShells(slice.content);
+  const html = serializeClipboardHtmlFragment(view, clipboardFragment);
+  const markdown = htmlToMarkdown(html).trimEnd();
+  if (!markdown && !html) return null;
+
+  return {
+    plainText: markdown,
+    html: html || markdownToHtml(markdown),
+  };
+}
+
+function isPartialSelectionWithinSingleListLine(selection: Selection) {
+  const startItem = findListItemAtSelection(selection.$from);
+  const endItem = findListItemAtSelection(selection.$from.doc.resolve(Math.max(selection.from, selection.to - 1)));
+  if (!startItem || !endItem || startItem.from !== endItem.from) return false;
+
+  const startBlock = findTextblockRangeAtPos(selection.$from);
+  const endBlock = findTextblockRangeAtPos(selection.$from.doc.resolve(Math.max(selection.from, selection.to - 1)));
+  if (!startBlock || !endBlock || startBlock.from !== endBlock.from) return false;
+
+  return selection.from > startBlock.from || selection.to < startBlock.to;
+}
+
+function findTextblockRangeAtPos($pos: ResolvedPos) {
+  for (let depth = $pos.depth; depth > 0; depth -= 1) {
+    const node = $pos.node(depth);
+    if (!node.isTextblock) continue;
+    const from = $pos.before(depth) + 1;
+    return { from, to: from + node.content.size };
+  }
+  return null;
+}
+
+function getSelectedTextblockFragment(fragment: ProseMirrorFragment) {
+  const blocks: ProseMirrorNode[] = [];
+  const collect = (node: ProseMirrorNode) => {
+    if (node.isTextblock) {
+      blocks.push(node);
+      return;
+    }
+    node.forEach(collect);
+  };
+  fragment.forEach(collect);
+  return blocks.length > 0 ? ProseMirrorFragment.fromArray(blocks) : fragment;
+}
+
+function trimUnselectedListAncestorShells(fragment: ProseMirrorFragment) {
+  let current = fragment;
+  while (current.childCount === 1) {
+    const list = current.firstChild;
+    if (!list || !isClipboardListNode(list) || list.childCount !== 1) break;
+
+    const item = list.firstChild;
+    if (!item || (item.type.name !== "listItem" && item.type.name !== "taskItem")) break;
+
+    const nestedLists: ProseMirrorNode[] = [];
+    let hasSelectedItemContent = false;
+    item.forEach((child) => {
+      if (isClipboardListNode(child)) nestedLists.push(child);
+      else if (!child.isTextblock || child.textContent.trim()) hasSelectedItemContent = true;
+    });
+    if (hasSelectedItemContent || nestedLists.length !== 1) break;
+    current = ProseMirrorFragment.from(nestedLists[0]);
+  }
+  return current;
+}
+
+function isClipboardListNode(node: ProseMirrorNode) {
+  return node.type.name === "bulletList" || node.type.name === "orderedList" || node.type.name === "taskList";
 }
 
 function cutSelectedTaskLines(view: EditorView, event: ClipboardEvent) {
