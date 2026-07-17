@@ -2551,11 +2551,16 @@ kbd {
   min-width: 0;
   max-width: min(420px, 46%);
   flex: 1 1 280px;
+  margin-top: 1px;
+  padding: 0;
   overflow: hidden;
+  border: 0;
   color: var(--text);
+  background: transparent;
   font-size: 14px;
   font-weight: 700;
   line-height: 1.2;
+  text-align: left;
   opacity: 0;
   transform: translateY(10px);
   visibility: hidden;
@@ -2569,9 +2574,15 @@ kbd {
 }
 
 .topbar-note-title.is-visible {
+  cursor: pointer;
   opacity: 1;
   transform: translateY(0);
   visibility: visible;
+}
+
+.topbar-note-title.is-visible:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 3px;
 }
 
 .topbar-note-title.is-animated.is-visible {

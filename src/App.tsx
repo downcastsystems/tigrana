@@ -4420,6 +4420,7 @@ export default function App() {
           outlineVisible={outlineVisible}
           title={titleDraft}
           titleVisible={dockedTitleState.visible}
+          onTitleClick={() => noteSurfaceRef.current?.scrollTo({ top: 0, behavior: "smooth" })}
           onToggleLeft={() => setLeftVisible((value) => !value)}
           onToggleOutline={() => setOutlineVisible((value) => !value)}
         >
@@ -6515,6 +6516,7 @@ export function EditorTopbar({
   outlineVisible,
   title = "",
   titleVisible = false,
+  onTitleClick,
   onToggleLeft,
   onToggleOutline,
 }: {
@@ -6524,6 +6526,7 @@ export function EditorTopbar({
   outlineVisible: boolean;
   title?: string;
   titleVisible?: boolean;
+  onTitleClick?: () => void;
   onToggleLeft: () => void;
   onToggleOutline: () => void;
 }) {
@@ -6543,13 +6546,16 @@ export function EditorTopbar({
       >
         {leftVisible ? <PanelLeftClose size={17} /> : <PanelLeftOpen size={17} />}
       </button>
-      <div
+      <button
+        type="button"
         className={`topbar-note-title${titleVisible ? " is-visible" : ""}${animateTitle ? " is-animated" : ""}`}
         title={titleVisible ? title : undefined}
         aria-hidden={!titleVisible}
+        tabIndex={titleVisible ? 0 : -1}
+        onClick={onTitleClick}
       >
         <span>{title}</span>
-      </div>
+      </button>
       <div className="topbar-actions">
         {children}
         <button

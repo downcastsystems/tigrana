@@ -23,6 +23,7 @@ describe("Editor topbar", () => {
     const root = createRoot(container);
     const onToggleLeft = vi.fn();
     const onToggleOutline = vi.fn();
+    const onTitleClick = vi.fn();
 
     await act(async () => {
       root.render(
@@ -32,6 +33,7 @@ describe("Editor topbar", () => {
           outlineVisible
           title="A very long note title"
           titleVisible
+          onTitleClick={onTitleClick}
           onToggleLeft={onToggleLeft}
           onToggleOutline={onToggleOutline}
         >
@@ -54,13 +56,16 @@ describe("Editor topbar", () => {
     expect(dockedTitle?.classList.contains("is-visible")).toBe(true);
     expect(dockedTitle?.classList.contains("is-animated")).toBe(true);
     expect(dockedTitle?.getAttribute("aria-hidden")).toBe("false");
+    expect(dockedTitle?.getAttribute("tabindex")).toBe("0");
     expect(leftToggle?.getAttribute("aria-expanded")).toBe("true");
     expect(rightToggle?.getAttribute("aria-expanded")).toBe("true");
 
     leftToggle?.click();
     rightToggle?.click();
+    (dockedTitle as HTMLButtonElement | null)?.click();
     expect(onToggleLeft).toHaveBeenCalledOnce();
     expect(onToggleOutline).toHaveBeenCalledOnce();
+    expect(onTitleClick).toHaveBeenCalledOnce();
 
     await act(async () => {
       root.render(
@@ -76,6 +81,7 @@ describe("Editor topbar", () => {
     expect(container.querySelector("[aria-label='Show left sidebar']")).not.toBeNull();
     expect(container.querySelector("[aria-label='Show right sidebar']")).not.toBeNull();
     expect(container.querySelector(".topbar-note-title")?.getAttribute("aria-hidden")).toBe("true");
+    expect(container.querySelector(".topbar-note-title")?.getAttribute("tabindex")).toBe("-1");
 
     await act(async () => root.unmount());
   });
