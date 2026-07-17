@@ -66,6 +66,7 @@ import { defaultWorkspaceMetadata, notebookStorage, SAMPLE_WORKSPACE } from "./l
 import type { NoteVersionEntry, TrashEntry } from "./lib/notebookStorage";
 import { normalizeMarkdownImageLines } from "./lib/markdown";
 import { ActiveNoteLifecycle, type ActiveNoteAccess } from "./lib/activeNoteLifecycle";
+import { shouldDockNoteTitle } from "./lib/dockedTitle";
 import { buildNoteExportHtml, noteExportFileStem } from "./lib/exportNote";
 import { shouldApplyEditorUpdate } from "./lib/noteEditorUpdates";
 import { getScrollFadeVisibility, type ScrollFadeVisibility } from "./lib/scrollFade";
@@ -526,6 +527,7 @@ export default function App() {
   const [leftVisible, setLeftVisible] = useState(true);
   const [outlineVisible, setOutlineVisible] = useState(true);
   const [noteScrollFades, setNoteScrollFades] = useState<ScrollFadeVisibility>({ top: false, bottom: false });
+  const [dockedTitleState, setDockedTitleState] = useState({ visible: false, animate: false });
   const [rightSidebarMode, setRightSidebarMode] = useState<RightSidebarMode>("outline");
   const [linkIndex, setLinkIndex] = useState<LinkIndex | null>(null);
   const [rawMarkdownVisible, setRawMarkdownVisible] = useState(false);
@@ -567,7 +569,9 @@ export default function App() {
   const [dictationTarget, setDictationTarget] = useState<DictationTarget | null>(null);
   const [titleFocusRequest, setTitleFocusRequest] = useState(0);
   const noteSurfaceRef = useRef<HTMLElement | null>(null);
+  const titleShellRef = useRef<HTMLDivElement | null>(null);
   const titleInputRef = useRef<HTMLTextAreaElement | null>(null);
+  const dockedTitleAnimationReadyRef = useRef(false);
   const handledTitleFocusRequestRef = useRef(0);
   const armedTitleFocusRequestRef = useRef(0);
   const draggingItemRef = useRef<DragItem>(null);
@@ -2049,20 +2053,72 @@ export default function App() {
     );
   }, [frontmatterError, rawMarkdownVisible]);
 
+  const updateDockedNoteTitle = useCallback((animate: boolean) => {
+    const surface = noteSurfaceRef.current;
+    const titleShell = titleShellRef.current;
+    const visible = Boolean(
+      surface
+      && titleShell
+      && shouldDockNoteTitle(titleShell.getBoundingClientRect(), surface.getBoundingClientRect()),
+    );
+    setDockedTitleState((current) =>
+      current.visible === visible && current.animate === animate
+        ? current
+        : { visible, animate },
+    );
+  }, []);
+
+  useLayoutEffect(() => {
+    dockedTitleAnimationReadyRef.current = false;
+    setDockedTitleState({ visible: false, animate: false });
+  }, [activePath]);
+
   useEffect(() => {
     const surface = noteSurfaceRef.current;
     if (!surface || !activePath) return;
-    requestAnimationFrame(() => {
+    let readyFrame = 0;
+    const restoreFrame = requestAnimationFrame(() => {
       const target = editorRestorePosition?.scrollTop ?? 0;
       const maxScroll = Math.max(0, surface.scrollHeight - surface.clientHeight);
       surface.scrollTop = target >= 0 && target <= maxScroll + 16 ? target : 0;
-      updateNoteScrollFades();
+      const nextFades = getScrollFadeVisibility(surface);
+      setNoteScrollFades((current) =>
+        current.top === nextFades.top && current.bottom === nextFades.bottom ? current : nextFades,
+      );
+      updateDockedNoteTitle(false);
+      readyFrame = requestAnimationFrame(() => {
+        dockedTitleAnimationReadyRef.current = true;
+      });
     });
     // noteOpen intentionally excluded: refreshWorkspace (auto-save) regenerates the notes
     // array which gives noteOpen a new object reference, spuriously re-firing this effect
     // and scrolling back to the top. activePath and editorRestorePosition only change on
     // actual note switches, which is the only time scroll should be restored.
-  }, [activePath, editorRestorePosition, updateNoteScrollFades]);
+    return () => {
+      cancelAnimationFrame(restoreFrame);
+      cancelAnimationFrame(readyFrame);
+    };
+  }, [activePath, editorRestorePosition, updateDockedNoteTitle]);
+
+  useEffect(() => {
+    if (!hasOpenNote) return;
+    const surface = noteSurfaceRef.current;
+    const titleShell = titleShellRef.current;
+    if (!surface || !titleShell) return;
+
+    const updateWithoutAnimation = () => updateDockedNoteTitle(false);
+    const frame = requestAnimationFrame(updateWithoutAnimation);
+    const observer = typeof ResizeObserver === "undefined"
+      ? null
+      : new ResizeObserver(updateWithoutAnimation);
+    observer?.observe(surface);
+    observer?.observe(titleShell);
+
+    return () => {
+      cancelAnimationFrame(frame);
+      observer?.disconnect();
+    };
+  }, [activePath, hasOpenNote, titleDraft, updateDockedNoteTitle]);
 
   useEffect(() => {
     if (!hasOpenNote) {
@@ -2105,6 +2161,7 @@ export default function App() {
 
   function handleNoteSurfaceScroll() {
     updateNoteScrollFades();
+    updateDockedNoteTitle(dockedTitleAnimationReadyRef.current);
     if (!activePath) return;
     const scrollTop = noteSurfaceRef.current?.scrollTop ?? 0;
     if (metadataRef.current.notePositions[activePath]?.scrollTop === scrollTop) return;
@@ -4358,8 +4415,11 @@ export default function App() {
 
       <main className="main-pane">
         <EditorTopbar
+          animateTitle={dockedTitleState.animate}
           leftVisible={leftVisible}
           outlineVisible={outlineVisible}
+          title={titleDraft}
+          titleVisible={dockedTitleState.visible}
           onToggleLeft={() => setLeftVisible((value) => !value)}
           onToggleOutline={() => setOutlineVisible((value) => !value)}
         >
@@ -4449,7 +4509,7 @@ export default function App() {
               }
             }}
           >
-            <div className="title-shell">
+            <div className="title-shell" ref={titleShellRef}>
               <textarea
                 ref={titleInputRef}
                 className="note-title-input"
@@ -6449,15 +6509,21 @@ function EmptyNoteSurface({
 }
 
 export function EditorTopbar({
+  animateTitle = false,
   children,
   leftVisible,
   outlineVisible,
+  title = "",
+  titleVisible = false,
   onToggleLeft,
   onToggleOutline,
 }: {
+  animateTitle?: boolean;
   children?: ReactNode;
   leftVisible: boolean;
   outlineVisible: boolean;
+  title?: string;
+  titleVisible?: boolean;
   onToggleLeft: () => void;
   onToggleOutline: () => void;
 }) {
@@ -6477,6 +6543,13 @@ export function EditorTopbar({
       >
         {leftVisible ? <PanelLeftClose size={17} /> : <PanelLeftOpen size={17} />}
       </button>
+      <div
+        className={`topbar-note-title${titleVisible ? " is-visible" : ""}${animateTitle ? " is-animated" : ""}`}
+        title={titleVisible ? title : undefined}
+        aria-hidden={!titleVisible}
+      >
+        <span>{title}</span>
+      </div>
       <div className="topbar-actions">
         {children}
         <button

@@ -27,8 +27,11 @@ describe("Editor topbar", () => {
     await act(async () => {
       root.render(
         <EditorTopbar
+          animateTitle
           leftVisible
           outlineVisible
+          title="A very long note title"
+          titleVisible
           onToggleLeft={onToggleLeft}
           onToggleOutline={onToggleOutline}
         >
@@ -40,12 +43,17 @@ describe("Editor topbar", () => {
 
     const topbar = container.querySelector(".topbar");
     const actions = container.querySelector(".topbar-actions");
+    const dockedTitle = container.querySelector(".topbar-note-title");
     const leftToggle = container.querySelector<HTMLButtonElement>(".sidebar-toggle");
     const rightToggle = container.querySelector<HTMLButtonElement>(".outline-toggle");
 
     expect(topbar?.firstElementChild).toBe(leftToggle);
+    expect(leftToggle?.nextElementSibling).toBe(dockedTitle);
     expect(topbar?.lastElementChild).toBe(actions);
     expect(actions?.lastElementChild).toBe(rightToggle);
+    expect(dockedTitle?.classList.contains("is-visible")).toBe(true);
+    expect(dockedTitle?.classList.contains("is-animated")).toBe(true);
+    expect(dockedTitle?.getAttribute("aria-hidden")).toBe("false");
     expect(leftToggle?.getAttribute("aria-expanded")).toBe("true");
     expect(rightToggle?.getAttribute("aria-expanded")).toBe("true");
 
@@ -67,6 +75,7 @@ describe("Editor topbar", () => {
 
     expect(container.querySelector("[aria-label='Show left sidebar']")).not.toBeNull();
     expect(container.querySelector("[aria-label='Show right sidebar']")).not.toBeNull();
+    expect(container.querySelector(".topbar-note-title")?.getAttribute("aria-hidden")).toBe("true");
 
     await act(async () => root.unmount());
   });

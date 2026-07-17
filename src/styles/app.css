@@ -2547,10 +2547,56 @@ kbd {
   flex: 0 0 auto;
 }
 
+.topbar-note-title {
+  min-width: 0;
+  max-width: min(420px, 46%);
+  flex: 1 1 280px;
+  overflow: hidden;
+  color: var(--text);
+  font-size: 14px;
+  font-weight: 700;
+  line-height: 1.2;
+  opacity: 0;
+  transform: translateY(10px);
+  visibility: hidden;
+}
+
+.topbar-note-title.is-animated {
+  transition:
+    opacity 180ms ease,
+    transform 180ms ease,
+    visibility 0s linear 180ms;
+}
+
+.topbar-note-title.is-visible {
+  opacity: 1;
+  transform: translateY(0);
+  visibility: visible;
+}
+
+.topbar-note-title.is-animated.is-visible {
+  transition-delay: 0s;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .topbar-note-title.is-animated {
+    transition: none;
+  }
+}
+
+.topbar-note-title span {
+  display: block;
+  overflow: hidden;
+  white-space: nowrap;
+  -webkit-mask-image: linear-gradient(to right, #000 0, #000 calc(100% - 28px), transparent 100%);
+  mask-image: linear-gradient(to right, #000 0, #000 calc(100% - 28px), transparent 100%);
+}
+
 .topbar-actions {
   display: flex;
   align-items: center;
   gap: 8px;
+  flex: 0 0 auto;
   min-width: 0;
   margin-left: auto;
 }
