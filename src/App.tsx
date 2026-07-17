@@ -68,6 +68,7 @@ import { normalizeMarkdownImageLines } from "./lib/markdown";
 import { ActiveNoteLifecycle, type ActiveNoteAccess } from "./lib/activeNoteLifecycle";
 import { buildNoteExportHtml, noteExportFileStem } from "./lib/exportNote";
 import { shouldApplyEditorUpdate } from "./lib/noteEditorUpdates";
+import { getScrollFadeVisibility, type ScrollFadeVisibility } from "./lib/scrollFade";
 import {
   createNoteDocument,
   measureNoteText,
@@ -524,6 +525,7 @@ export default function App() {
   const [appMenuOpen, setAppMenuOpen] = useState(false);
   const [leftVisible, setLeftVisible] = useState(true);
   const [outlineVisible, setOutlineVisible] = useState(true);
+  const [noteScrollFades, setNoteScrollFades] = useState<ScrollFadeVisibility>({ top: false, bottom: false });
   const [rightSidebarMode, setRightSidebarMode] = useState<RightSidebarMode>("outline");
   const [linkIndex, setLinkIndex] = useState<LinkIndex | null>(null);
   const [rawMarkdownVisible, setRawMarkdownVisible] = useState(false);
@@ -2035,6 +2037,18 @@ export default function App() {
     return position;
   }
 
+  const updateNoteScrollFades = useCallback(() => {
+    const scrollElement = rawMarkdownVisible || frontmatterError
+      ? rawMarkdownInputRef.current
+      : noteSurfaceRef.current;
+    const next = scrollElement
+      ? getScrollFadeVisibility(scrollElement)
+      : { top: false, bottom: false };
+    setNoteScrollFades((current) =>
+      current.top === next.top && current.bottom === next.bottom ? current : next,
+    );
+  }, [frontmatterError, rawMarkdownVisible]);
+
   useEffect(() => {
     const surface = noteSurfaceRef.current;
     if (!surface || !activePath) return;
@@ -2042,14 +2056,55 @@ export default function App() {
       const target = editorRestorePosition?.scrollTop ?? 0;
       const maxScroll = Math.max(0, surface.scrollHeight - surface.clientHeight);
       surface.scrollTop = target >= 0 && target <= maxScroll + 16 ? target : 0;
+      updateNoteScrollFades();
     });
     // noteOpen intentionally excluded: refreshWorkspace (auto-save) regenerates the notes
     // array which gives noteOpen a new object reference, spuriously re-firing this effect
     // and scrolling back to the top. activePath and editorRestorePosition only change on
     // actual note switches, which is the only time scroll should be restored.
-  }, [activePath, editorRestorePosition]);
+  }, [activePath, editorRestorePosition, updateNoteScrollFades]);
+
+  useEffect(() => {
+    if (!hasOpenNote) {
+      setNoteScrollFades({ top: false, bottom: false });
+      return;
+    }
+
+    const surface = noteSurfaceRef.current;
+    const scrollElement = rawMarkdownVisible || frontmatterError
+      ? rawMarkdownInputRef.current
+      : surface;
+    if (!scrollElement) return;
+    const frame = requestAnimationFrame(updateNoteScrollFades);
+    const observer = typeof ResizeObserver === "undefined"
+      ? null
+      : new ResizeObserver(updateNoteScrollFades);
+    observer?.observe(scrollElement);
+    if (scrollElement === surface) {
+      Array.from(surface?.children ?? []).forEach((child) => observer?.observe(child));
+    }
+
+    return () => {
+      cancelAnimationFrame(frame);
+      observer?.disconnect();
+    };
+  }, [
+    activePath,
+    draft,
+    editorWidthMode,
+    frontmatterError,
+    hasOpenNote,
+    leftVisible,
+    noteAlignment,
+    outlineVisible,
+    rawMarkdownDraft,
+    rawMarkdownVisible,
+    titleDraft,
+    updateNoteScrollFades,
+  ]);
 
   function handleNoteSurfaceScroll() {
+    updateNoteScrollFades();
     if (!activePath) return;
     const scrollTop = noteSurfaceRef.current?.scrollTop ?? 0;
     if (metadataRef.current.notePositions[activePath]?.scrollTop === scrollTop) return;
@@ -4099,15 +4154,6 @@ export default function App() {
         onDoubleClick={handleChromeDoubleClick}
       >
         <span className="titlebar-traffic-padding" data-tauri-drag-region="" />
-        <button
-          className="icon-button chrome-interactive"
-          type="button"
-          title={leftVisible ? "Hide sidebars" : "Show sidebars"}
-          onMouseDown={stopChromeMouseDown}
-          onClick={() => setLeftVisible((value) => !value)}
-        >
-          {leftVisible ? <PanelLeftClose size={17} /> : <PanelLeftOpen size={17} />}
-        </button>
         <NoteTabs
           activePath={activePath}
           activeTabId={activeTabId}
@@ -4128,20 +4174,12 @@ export default function App() {
           onClose={(tabId) => void closeTab(tabId)}
           onCloseAll={() => void closeAllTabs()}
         />
-        <button
-          className="icon-button outline-toggle chrome-interactive"
-          type="button"
-          title={outlineVisible ? "Hide outline" : "Show outline"}
-          onMouseDown={stopChromeMouseDown}
-          onClick={() => setOutlineVisible((value) => !value)}
-        >
-          {outlineVisible ? <PanelRightClose size={17} /> : <PanelRightOpen size={17} />}
-        </button>
       </header>
 
       <div className={`app-frame ${leftVisible ? "" : "is-left-hidden"} ${outlineVisible ? "" : "is-outline-hidden"} ${navigationStyle === "single-pane" ? "is-single-col" : ""}`} style={frameStyle}>
       {leftVisible ? (
         <aside
+          id="left-navigation-panes"
           className={`left-panes${navigationStyle === "single-pane" ? " is-single-col" : ""}`}
           onContextMenu={(event) => openContextMenu(event, { kind: "empty" })}
         >
@@ -4319,82 +4357,89 @@ export default function App() {
       {leftVisible ? <PaneResizer label="Resize notes pane" variant="left-of-main" onPointerDown={startNotesPaneResize} /> : null}
 
       <main className="main-pane">
-        {noteOpen ? (
-          <header className="topbar">
-            <div className="save-state">
-              <Check size={15} />
-              <span>{!activeNoteEditable ? "Read-only" : hasUnsavedChanges ? "Unsaved" : "Saved"}</span>
-            </div>
-            <button
-              className="icon-button"
-              type="button"
-              title="Find in note"
-              onClick={() => setNoteFindRequest((v) => v + 1)}
-            >
-              <Search size={17} />
-            </button>
-            <button
-              className={`icon-button ${rawMarkdownVisible || frontmatterError ? "is-active" : ""}`}
-              type="button"
-              title={rawMarkdownVisible ? "Show rich editor" : "Show raw Markdown"}
-              onClick={toggleRawMarkdownMode}
-            >
-              <FileCode2 size={17} />
-            </button>
-            <div className="note-view-control note-view-menu">
+        <EditorTopbar
+          leftVisible={leftVisible}
+          outlineVisible={outlineVisible}
+          onToggleLeft={() => setLeftVisible((value) => !value)}
+          onToggleOutline={() => setOutlineVisible((value) => !value)}
+        >
+          {noteOpen ? (
+            <>
+              <div className="save-state">
+                <Check size={15} />
+                <span>{!activeNoteEditable ? "Read-only" : hasUnsavedChanges ? "Unsaved" : "Saved"}</span>
+              </div>
               <button
-                className={`icon-button ${widthMenuOpen ? "is-active" : ""}`}
+                className="icon-button"
                 type="button"
-                title={`Width: ${selectedWidthOption.label}`}
-                aria-label="Editor width"
-                aria-haspopup="menu"
-                aria-expanded={widthMenuOpen}
-                onClick={(event) => {
-                  event.stopPropagation();
-                  setWidthMenuOpen((value) => !value);
-                }}
+                title="Find in note"
+                onClick={() => setNoteFindRequest((v) => v + 1)}
               >
-                <StretchHorizontal size={17} />
+                <Search size={17} />
               </button>
-              {widthMenuOpen ? (
-                <div className="note-view-dropdown" role="menu" aria-label="Editor width">
-                  {editorWidthOptions.map((option) => (
-                    <button
-                      key={option.value}
-                      type="button"
-                      className={option.value === editorWidthMode ? "is-active" : ""}
-                      role="menuitemradio"
-                      aria-checked={option.value === editorWidthMode}
-                      onClick={() => {
-                        setEditorWidthMode(option.value);
-                        setWidthMenuOpen(false);
-                      }}
-                    >
-                      <span>
-                        <strong>{option.label}</strong>
-                        {option.hint ? <small>{option.hint}</small> : null}
-                      </span>
-                      {option.value === editorWidthMode ? <Check size={15} /> : null}
-                    </button>
-                  ))}
-                </div>
-              ) : null}
-            </div>
-            <button
-              className="icon-button"
-              type="button"
-              title={noteAlignment === "left" ? "Align center" : "Align left"}
-              aria-label={noteAlignment === "left" ? "Align center" : "Align left"}
-              onClick={() => setNoteAlignment((value) => (value === "left" ? "center" : "left"))}
-            >
-              <AlignmentIcon size={17} />
-            </button>
-          </header>
-        ) : null}
+              <button
+                className={`icon-button ${rawMarkdownVisible || frontmatterError ? "is-active" : ""}`}
+                type="button"
+                title={rawMarkdownVisible ? "Show rich editor" : "Show raw Markdown"}
+                onClick={toggleRawMarkdownMode}
+              >
+                <FileCode2 size={17} />
+              </button>
+              <div className="note-view-control note-view-menu">
+                <button
+                  className={`icon-button ${widthMenuOpen ? "is-active" : ""}`}
+                  type="button"
+                  title={`Width: ${selectedWidthOption.label}`}
+                  aria-label="Editor width"
+                  aria-haspopup="menu"
+                  aria-expanded={widthMenuOpen}
+                  onClick={(event) => {
+                    event.stopPropagation();
+                    setWidthMenuOpen((value) => !value);
+                  }}
+                >
+                  <StretchHorizontal size={17} />
+                </button>
+                {widthMenuOpen ? (
+                  <div className="note-view-dropdown" role="menu" aria-label="Editor width">
+                    {editorWidthOptions.map((option) => (
+                      <button
+                        key={option.value}
+                        type="button"
+                        className={option.value === editorWidthMode ? "is-active" : ""}
+                        role="menuitemradio"
+                        aria-checked={option.value === editorWidthMode}
+                        onClick={() => {
+                          setEditorWidthMode(option.value);
+                          setWidthMenuOpen(false);
+                        }}
+                      >
+                        <span>
+                          <strong>{option.label}</strong>
+                          {option.hint ? <small>{option.hint}</small> : null}
+                        </span>
+                        {option.value === editorWidthMode ? <Check size={15} /> : null}
+                      </button>
+                    ))}
+                  </div>
+                ) : null}
+              </div>
+              <button
+                className="icon-button"
+                type="button"
+                title={noteAlignment === "left" ? "Align center" : "Align left"}
+                aria-label={noteAlignment === "left" ? "Align center" : "Align left"}
+                onClick={() => setNoteAlignment((value) => (value === "left" ? "center" : "left"))}
+              >
+                <AlignmentIcon size={17} />
+              </button>
+            </>
+          ) : null}
+        </EditorTopbar>
 
         {noteOpen ? (
           <section
-            className={`note-surface is-${editorWidthMode}-width is-${noteAlignment}-aligned`}
+            className={`note-surface is-${editorWidthMode}-width is-${noteAlignment}-aligned${!rawMarkdownVisible && !frontmatterError && noteScrollFades.top ? " has-scroll-above" : ""}${!rawMarkdownVisible && !frontmatterError && noteScrollFades.bottom ? " has-scroll-below" : ""}`}
             ref={noteSurfaceRef}
             onScroll={handleNoteSurfaceScroll}
             onMouseDown={(event) => {
@@ -4512,33 +4557,36 @@ export default function App() {
                     </div>
                   </div>
                 ) : null}
-                <textarea
-                  ref={rawMarkdownInputRef}
-                  aria-label="Raw Markdown"
-                  className="raw-markdown-input"
-                  value={rawMarkdownDraft}
-                  disabled={!activeNoteEditable}
-                  autoCapitalize="none"
-                  autoCorrect="off"
-                  onChange={(event) => {
-                    if (!activeNoteEditable) return;
-                    rawMarkdownSelectionRef.current = {
-                      start: event.currentTarget.selectionStart,
-                      end: event.currentTarget.selectionEnd,
-                      direction: event.currentTarget.selectionDirection,
-                      scrollTop: event.currentTarget.scrollTop,
-                      scrollLeft: event.currentTarget.scrollLeft,
-                    };
-                    handleRawMarkdownChange(event.target.value);
-                  }}
-                  onSelect={(event) => {
-                    const input = event.currentTarget;
-                    const selectedText = input.value.slice(input.selectionStart, input.selectionEnd);
-                    selectedEditorTextRef.current = selectedText;
-                    setSelectedEditorText(selectedText);
-                  }}
-                  spellCheck={spellcheckEnabled}
-                />
+                <div className={`raw-markdown-input-frame${noteScrollFades.top ? " has-scroll-above" : ""}${noteScrollFades.bottom ? " has-scroll-below" : ""}`}>
+                  <textarea
+                    ref={rawMarkdownInputRef}
+                    aria-label="Raw Markdown"
+                    className="raw-markdown-input"
+                    value={rawMarkdownDraft}
+                    disabled={!activeNoteEditable}
+                    autoCapitalize="none"
+                    autoCorrect="off"
+                    onChange={(event) => {
+                      if (!activeNoteEditable) return;
+                      rawMarkdownSelectionRef.current = {
+                        start: event.currentTarget.selectionStart,
+                        end: event.currentTarget.selectionEnd,
+                        direction: event.currentTarget.selectionDirection,
+                        scrollTop: event.currentTarget.scrollTop,
+                        scrollLeft: event.currentTarget.scrollLeft,
+                      };
+                      handleRawMarkdownChange(event.target.value);
+                    }}
+                    onScroll={updateNoteScrollFades}
+                    onSelect={(event) => {
+                      const input = event.currentTarget;
+                      const selectedText = input.value.slice(input.selectionStart, input.selectionEnd);
+                      selectedEditorTextRef.current = selectedText;
+                      setSelectedEditorText(selectedText);
+                    }}
+                    spellCheck={spellcheckEnabled}
+                  />
+                </div>
               </div>
             ) : (
               <EditorErrorBoundary resetKey={activePath ?? "pending-note"} onError={handleNoteLoadError}>
@@ -4591,6 +4639,7 @@ export default function App() {
       {outlineVisible ? <PaneResizer label="Resize right sidebar" variant="right-of-main" onPointerDown={startRightPaneResize} /> : null}
       {outlineVisible ? (
         <RightSidebar
+          id="right-note-sidebar"
           activeNote={activeNote}
           frontmatter={frontmatterDraft}
           frontmatterError={frontmatterError}
@@ -6399,6 +6448,53 @@ function EmptyNoteSurface({
   );
 }
 
+export function EditorTopbar({
+  children,
+  leftVisible,
+  outlineVisible,
+  onToggleLeft,
+  onToggleOutline,
+}: {
+  children?: ReactNode;
+  leftVisible: boolean;
+  outlineVisible: boolean;
+  onToggleLeft: () => void;
+  onToggleOutline: () => void;
+}) {
+  const leftLabel = leftVisible ? "Hide left sidebar" : "Show left sidebar";
+  const rightLabel = outlineVisible ? "Hide right sidebar" : "Show right sidebar";
+
+  return (
+    <header className="topbar">
+      <button
+        className="icon-button sidebar-toggle"
+        type="button"
+        title={leftLabel}
+        aria-label={leftLabel}
+        aria-controls="left-navigation-panes"
+        aria-expanded={leftVisible}
+        onClick={onToggleLeft}
+      >
+        {leftVisible ? <PanelLeftClose size={17} /> : <PanelLeftOpen size={17} />}
+      </button>
+      <div className="topbar-actions">
+        {children}
+        <button
+          className="icon-button outline-toggle"
+          type="button"
+          title={rightLabel}
+          aria-label={rightLabel}
+          aria-controls="right-note-sidebar"
+          aria-expanded={outlineVisible}
+          onClick={onToggleOutline}
+        >
+          {outlineVisible ? <PanelRightClose size={17} /> : <PanelRightOpen size={17} />}
+        </button>
+      </div>
+    </header>
+  );
+}
+
 export function NoteCard({
   active,
   content,
@@ -6525,6 +6621,7 @@ function NotebookMenuButton({
 }
 
 function RightSidebar({
+  id,
   activeNote,
   frontmatter,
   frontmatterError,
@@ -6543,6 +6640,7 @@ function RightSidebar({
   onSelectOutline,
   onSelectBacklink,
 }: {
+  id?: string;
   activeNote: NoteEntry | null;
   frontmatter: string;
   frontmatterError: string | null;
@@ -6570,7 +6668,7 @@ function RightSidebar({
       ? "Backlinks"
       : "Properties";
   return (
-    <aside className="right-sidebar">
+    <aside id={id} className="right-sidebar">
       <div className="pane-header">
         <strong>{title}</strong>
         <div className="sidebar-tabs">
