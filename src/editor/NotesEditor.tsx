@@ -2530,6 +2530,7 @@ export function NotesEditor({ content, commandRequest, focusRequest, focusAtEndR
       },
       handleDOMEvents: {
         keydown(_view, event) {
+          if (handleNestedListBoundaryDelete(_view, event)) return true;
           if (handleEmptyTaskItemBackspace(_view, event)) return true;
           if (handleEmptyTaskItemForwardDelete(_view, event)) return true;
           if (handleEmptyListItemDelete(_view, event)) return true;
@@ -3312,7 +3313,7 @@ function FormattingBubbleMenu({
     if (document.querySelector(".table-context-menu")) return false;
     if (isTableChromeTarget(activeElement)) return false;
     if (editor.isActive("image")) return false;
-    return !selection.empty && editor.isEditable && editor.isFocused;
+    return isFormattingSelection(selection) && editor.isEditable && editor.isFocused;
   })();
 
   const visible = eligible && !suppressed && pendingShow;
@@ -3463,6 +3464,124 @@ function handleEmptyListItemDelete(view: EditorView, event: KeyboardEvent) {
     : Selection.near(tr.doc.resolve(Math.min(deleteFrom, tr.doc.content.size)), 1);
   view.dispatch(tr.setSelection(nextSelection).scrollIntoView());
   return true;
+}
+
+export function isFormattingSelection(selection: Selection) {
+  return !selection.empty && !(selection instanceof NodeSelection);
+}
+
+export function handleNestedListBoundaryDelete(view: EditorView, event: KeyboardEvent) {
+  if ((event.key !== "Backspace" && event.key !== "Delete")
+    || event.metaKey || event.ctrlKey || event.altKey || event.shiftKey) return false;
+
+  const { selection } = view.state;
+  if (!(selection instanceof TextSelection) || !selection.empty || !selection.$cursor) return false;
+
+  const boundary = event.key === "Delete"
+    ? findForwardNestedListBoundary(selection.$cursor)
+    : findBackwardNestedListBoundary(selection.$cursor);
+  if (!boundary) return false;
+
+  const {
+    parentItem,
+    parentItemFrom,
+    parentParagraphIndex,
+    nestedListIndex,
+    childItem,
+    nestedList,
+  } = boundary;
+  const parentParagraph = parentItem.child(parentParagraphIndex);
+  const childParagraph = childItem.firstChild;
+  if (!childParagraph?.isTextblock) return false;
+  let joinPosition = parentItemFrom + 2 + parentParagraph.content.size;
+  for (let index = 0; index < parentParagraphIndex; index += 1) {
+    joinPosition += parentItem.child(index).nodeSize;
+  }
+
+  const mergedParagraph = parentParagraph.copy(parentParagraph.content.append(childParagraph.content));
+  const replacementChildren: ProseMirrorNode[] = [];
+  for (let index = 0; index < nestedListIndex; index += 1) {
+    replacementChildren.push(index === parentParagraphIndex ? mergedParagraph : parentItem.child(index));
+  }
+
+  const childBlocks = Array.from({ length: childItem.childCount - 1 }, (_, index) => childItem.child(index + 1));
+  const remainingSiblings = Array.from({ length: nestedList.childCount - 1 }, (_, index) => nestedList.child(index + 1));
+  const lastChildBlock = childBlocks.at(-1);
+  if (remainingSiblings.length > 0 && lastChildBlock?.type === nestedList.type) {
+    childBlocks[childBlocks.length - 1] = lastChildBlock.copy(
+      lastChildBlock.content.append(ProseMirrorFragment.fromArray(remainingSiblings)),
+    );
+  } else if (remainingSiblings.length > 0) {
+    childBlocks.push(nestedList.copy(ProseMirrorFragment.fromArray(remainingSiblings)));
+  }
+  replacementChildren.push(...childBlocks);
+  for (let index = nestedListIndex + 1; index < parentItem.childCount; index += 1) {
+    replacementChildren.push(parentItem.child(index));
+  }
+
+  event.preventDefault();
+  const replacement = parentItem.copy(ProseMirrorFragment.fromArray(replacementChildren));
+  const tr = view.state.tr.replaceWith(parentItemFrom, parentItemFrom + parentItem.nodeSize, replacement);
+  view.dispatch(tr.setSelection(TextSelection.create(tr.doc, joinPosition)).scrollIntoView());
+  return true;
+}
+
+type NestedListBoundary = {
+  childItem: ProseMirrorNode;
+  nestedList: ProseMirrorNode;
+  nestedListIndex: number;
+  parentItem: ProseMirrorNode;
+  parentItemFrom: number;
+  parentParagraphIndex: number;
+};
+
+function findForwardNestedListBoundary($cursor: ResolvedPos): NestedListBoundary | null {
+  if ($cursor.parentOffset !== $cursor.parent.content.size) return null;
+  const item = findListItemAtSelection($cursor);
+  if (!item) return null;
+  const paragraphIndex = $cursor.index(item.depth);
+  const nestedListIndex = paragraphIndex + 1;
+  const nestedList = item.node.maybeChild(nestedListIndex);
+  const childItem = nestedList?.firstChild;
+  if (!$cursor.parent.isTextblock || !isListNode(nestedList) || !isListItemNode(childItem)) return null;
+  return {
+    childItem,
+    nestedList,
+    nestedListIndex,
+    parentItem: item.node,
+    parentItemFrom: item.from,
+    parentParagraphIndex: paragraphIndex,
+  };
+}
+
+function findBackwardNestedListBoundary($cursor: ResolvedPos): NestedListBoundary | null {
+  if ($cursor.parentOffset !== 0) return null;
+  const child = findListItemAtSelection($cursor);
+  if (!child || $cursor.index(child.depth) !== 0 || $cursor.index(child.parentDepth) !== 0) return null;
+  const parentItemDepth = child.parentDepth - 1;
+  if (parentItemDepth < 1) return null;
+  const parentItem = $cursor.node(parentItemDepth);
+  if (!isListItemNode(parentItem)) return null;
+  const nestedListIndex = $cursor.index(parentItemDepth);
+  const parentParagraphIndex = nestedListIndex - 1;
+  const parentParagraph = parentItem.maybeChild(parentParagraphIndex);
+  if (!parentParagraph?.isTextblock || parentItem.child(nestedListIndex) !== child.parentNode) return null;
+  return {
+    childItem: child.node,
+    nestedList: child.parentNode,
+    nestedListIndex,
+    parentItem,
+    parentItemFrom: $cursor.before(parentItemDepth),
+    parentParagraphIndex,
+  };
+}
+
+function isListNode(node: ProseMirrorNode | null | undefined): node is ProseMirrorNode {
+  return node?.type.name === "bulletList" || node?.type.name === "orderedList" || node?.type.name === "taskList";
+}
+
+function isListItemNode(node: ProseMirrorNode | null | undefined): node is ProseMirrorNode {
+  return node?.type.name === "listItem" || node?.type.name === "taskItem";
 }
 
 function handleEmptyTaskItemBackspace(view: EditorView, event: KeyboardEvent) {

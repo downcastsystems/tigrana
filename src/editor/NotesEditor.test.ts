@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 
 import { Schema, type Node as ProseMirrorNode } from "@tiptap/pm/model";
-import { EditorState, TextSelection } from "@tiptap/pm/state";
+import { EditorState, NodeSelection, TextSelection } from "@tiptap/pm/state";
 import type { EditorProps, EditorView } from "@tiptap/pm/view";
 import { describe, expect, it } from "vitest";
 
@@ -10,6 +10,8 @@ HTMLCanvasElement.prototype.getContext = (() => null) as typeof HTMLCanvasElemen
 const {
   findSlashQueryInState,
   getTaskLineCutDeleteRange,
+  handleNestedListBoundaryDelete,
+  isFormattingSelection,
   serializeEditorSelectionForClipboard,
   setEditorEditableSilently,
   setEditorSpellcheck,
@@ -92,6 +94,96 @@ function clipboardPayload(doc: ProseMirrorNode, from: number, to: number) {
   });
   return serializeEditorSelectionForClipboard({ state } as EditorView);
 }
+
+function applyBoundaryKey(doc: ProseMirrorNode, position: number, key: "Backspace" | "Delete") {
+  let state = EditorState.create({ doc, selection: TextSelection.create(doc, position) });
+  const event = new KeyboardEvent("keydown", { key });
+  const view = {
+    get state() {
+      return state;
+    },
+    dispatch(transaction: ReturnType<typeof state["tr"]["setSelection"]>) {
+      state = state.apply(transaction);
+    },
+  } as EditorView;
+
+  return {
+    handled: handleNestedListBoundaryDelete(view, event),
+    state,
+  };
+}
+
+describe("nested list boundary deletion", () => {
+  const createScenario = () => bulletDoc([
+    bulletItem("Worried", bulletList([
+      bulletItem("That we may have a perfect storm", bulletList([bulletItem("")])),
+      bulletItem("Another concern"),
+    ])),
+    bulletItem("Following top-level bullet"),
+  ]);
+
+  it("joins a child bullet into its parent on forward Delete", () => {
+    const doc = createScenario();
+    const parent = textRange(doc, "Worried");
+    const result = applyBoundaryKey(doc, parent.to, "Delete");
+
+    expect(result.handled).toBe(true);
+    expect(result.state.selection).toBeInstanceOf(TextSelection);
+    expect(result.state.doc.toJSON()).toEqual(bulletDoc([
+      bulletItem("WorriedThat we may have a perfect storm", bulletList([
+        bulletItem(""),
+        bulletItem("Another concern"),
+      ])),
+      bulletItem("Following top-level bullet"),
+    ]).toJSON());
+  });
+
+  it("joins a child bullet into its parent on Backspace", () => {
+    const doc = createScenario();
+    const child = textRange(doc, "That we may have a perfect storm");
+    const result = applyBoundaryKey(doc, child.from, "Backspace");
+
+    expect(result.handled).toBe(true);
+    expect(result.state.selection).toBeInstanceOf(TextSelection);
+    expect(result.state.doc.textContent).toContain("WorriedThat we may have a perfect storm");
+    expect(result.state.doc.textContent).toContain("Another concern");
+    const joined = textRange(result.state.doc, "WorriedThat we may have a perfect storm");
+    expect(result.state.selection.from).toBe(joined.from + "Worried".length);
+  });
+
+  it("does not join the child into its parent while removing a trailing empty paragraph", () => {
+    const childWithTrailingParagraph = schema.nodes.listItem.create(null, [
+      paragraph("That blah blah blah"),
+      paragraph(""),
+    ]);
+    const doc = bulletDoc([
+      bulletItem("Worried", bulletList([childWithTrailingParagraph])),
+    ]);
+    let emptyParagraphStart = -1;
+    doc.descendants((node, position) => {
+      if (node.type.name === "paragraph" && node.content.size === 0) emptyParagraphStart = position + 1;
+    });
+
+    const result = applyBoundaryKey(doc, emptyParagraphStart, "Backspace");
+
+    expect(result.handled).toBe(false);
+    expect(result.state.doc.eq(doc)).toBe(true);
+  });
+});
+
+describe("formatting selection eligibility", () => {
+  it("accepts a non-empty text selection", () => {
+    const doc = bulletDoc([bulletItem("Worried")]);
+    const range = textRange(doc, "Worried");
+    expect(isFormattingSelection(TextSelection.create(doc, range.from, range.to))).toBe(true);
+  });
+
+  it("rejects structural node selections", () => {
+    const doc = bulletDoc([bulletItem("Worried", bulletList([bulletItem("That")]))]);
+    const nestedListPosition = textRange(doc, "Worried").to + 1;
+    expect(isFormattingSelection(NodeSelection.create(doc, nestedListPosition))).toBe(false);
+  });
+});
 
 describe("list clipboard serialization", () => {
   it("copies a partial word from one bullet without the bullet marker", () => {

@@ -1,81 +1,152 @@
 # Tigrana
 
-A simple, beautiful, file-native desktop notes app.
+**A calm, local-first notes app built around plain Markdown files.**
 
-Tigrana is a Notion-inspired note-taking app with a deliberately small scope:
-write notes, organize them in a hierarchy, search them quickly, and keep the data as
-ordinary folders and Markdown files.
+Tigrana is a free and open-source desktop notes app for people who want a polished writing experience without giving up ownership of their notes. It takes inspiration from Notion's approachable editor while keeping its scope intentionally focused: write, organize, and find notes.
 
-## Product Principles
+Your notebook is an ordinary folder. Notes are ordinary Markdown files. The hierarchy you see in Tigrana is the hierarchy on disk, so your writing remains portable, readable, and yours.
 
-- Markdown files are the source of truth.
-- Folder structure is the note hierarchy.
-- App metadata and indexes are disposable.
-- The editor should feel calm, fast, and joyful.
-- Features that make Markdown unreadable elsewhere do not belong in the core app.
+> [!NOTE]
+> Tigrana is early-stage software. macOS is the primary development platform; Windows builds are configured but have not been tested yet.
 
-## Current MVP
+## Why Tigrana?
 
-- React and Tiptap editor surface
-- Tauri project scaffold for macOS and Windows packaging
-- Folder-backed note tree
-- Create, read, edit, and autosave Markdown notes
-- Markdown import/export for headings, lists, tasks, quotes, code, links, dividers, and images
-- Slash command menu for common blocks
-- Clipboard image paste path that saves assets through Tauri
-- Fuzzy search across note title, path, and cached content
-- Browser demo fallback using localStorage when the Tauri shell is not available
+- **Local first** — your notes live on your computer, not behind a cloud account.
+- **File native** — Markdown files and folders remain the source of truth.
+- **Free and open source** — inspect it, build it, and help improve it.
+- **Focused by design** — a notes app, not an all-purpose productivity suite.
+- **Portable** — your Markdown stays readable in other editors and tools.
+- **Private** — no account is required to use your local notebooks.
 
-## Workspace Format
+## Features
+
+- Rich Markdown editing with headings, lists, tasks, quotes, code blocks, links, tables, dividers, and images
+- Notion-style slash commands
+- Nested folders backed by the filesystem
+- Note pinning, reordering, and drag-and-drop organization
+- Fast fuzzy search across titles, paths, and note content
+- Automatic saving and local note history
+- Clipboard image support with notebook-local assets
+- Light and dark themes
+- Markdown import and export
+- Stable note and folder identities so links survive moves and renames
+
+## Built With
+
+- [Tauri 2](https://tauri.app/) and [Rust](https://www.rust-lang.org/) for the native desktop application and filesystem layer
+- [React](https://react.dev/) and [TypeScript](https://www.typescriptlang.org/) for the interface
+- [Vite](https://vite.dev/) for frontend tooling
+- [Tiptap](https://tiptap.dev/) / [ProseMirror](https://prosemirror.net/) for the editor
+- [remark](https://remark.js.org/) for Markdown processing
+- [Fuse.js](https://www.fusejs.io/) for local fuzzy search
+- [Vitest](https://vitest.dev/) for testing
+
+## Install from Source
+
+Tigrana does not currently publish signed release binaries, so the app is built from source.
+
+### macOS
+
+Prerequisites:
+
+- [Node.js](https://nodejs.org/) and npm
+- [Rust](https://www.rust-lang.org/tools/install)
+- Xcode Command Line Tools (`xcode-select --install`)
+
+Clone the repository, install dependencies, then build and install Tigrana:
+
+```bash
+git clone https://github.com/elmogallen/notes-app.git
+cd notes-app
+npm install
+npm run install:app
+```
+
+This creates a release build and installs `Tigrana.app` in `/Applications`.
+
+Because the app is not currently signed or notarized, macOS may require you to approve it in **System Settings → Privacy & Security** the first time it opens.
+
+### Windows (experimental and untested)
+
+> [!WARNING]
+> Tigrana has not been tested on Windows. The project includes Windows packaging configuration, but installation and runtime behavior may have platform-specific issues. Bug reports and contributions are welcome.
+
+Prerequisites:
+
+- [Node.js](https://nodejs.org/) and npm
+- [Rust](https://www.rust-lang.org/tools/install) using the MSVC toolchain
+- Microsoft C++ Build Tools and WebView2, as described in the [Tauri Windows prerequisites](https://v2.tauri.app/start/prerequisites/#windows)
+
+In PowerShell:
+
+```powershell
+git clone https://github.com/elmogallen/notes-app.git
+cd notes-app
+npm install
+npm run tauri -- build
+```
+
+When the build completes, run either the generated `.msi` installer from:
 
 ```text
-My Notes/
+src-tauri\target\release\bundle\msi\
+```
+
+or the generated NSIS `.exe` installer from:
+
+```text
+src-tauri\target\release\bundle\nsis\
+```
+
+## Development
+
+Install dependencies and start the native desktop app:
+
+```bash
+npm install
+npm run tauri -- dev
+```
+
+To run only the browser-based development version:
+
+```bash
+npm run dev
+```
+
+Vite prints the local URL when the development server starts. Browser mode uses local storage in place of the native filesystem APIs.
+
+## Quality Checks
+
+```bash
+npm run lint
+npm test
+npm run build
+```
+
+## How Your Notes Are Stored
+
+Tigrana keeps durable content and supporting metadata inside the notebook itself:
+
+```text
+My Notebook/
   Inbox.md
   Projects/
     Tigrana.md
   .assets/
     pasted-image.png
   .tigrana/
-    settings.json
-    search.sqlite
+    metadata.json
+    index.json
 ```
 
-Markdown files are the durable data. The `.tigrana` directory is reserved for local
-indexes and UI state. The `.assets` directory stores pasted images and other binary
-attachments.
+Markdown files and folders are your content. `.assets` contains pasted images and other attachments. `.tigrana` contains app metadata and a rebuildable link index.
 
-## Development
+## Contributing
 
-```bash
-npm install
-npm run dev
-```
+Tigrana is young, and contributions are welcome—especially testing and fixes for Windows. If you find a bug or have an idea that fits the project's focused, file-native direction, open an issue or pull request.
 
-Open `http://127.0.0.1:1420/` for the browser demo.
+Please keep one principle in mind: features should preserve clean, readable Markdown outside Tigrana whenever possible.
 
-To run the native desktop shell:
+## License
 
-```bash
-npm run tauri dev
-```
-
-The native shell requires Rust and the Tauri prerequisites for your platform.
-
-## Verification
-
-```bash
-npm run lint
-npm run build
-```
-
-Build macOS app bundle:
-
-```bash
-npm run tauri -- build --bundles app
-```
-
-The `.app` bundle is produced at:
-
-```text
-src-tauri/target/release/bundle/macos/Tigrana.app
-```
+Tigrana is free and open-source software released under the [MIT License](LICENSE).
