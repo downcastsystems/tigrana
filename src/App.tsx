@@ -4,8 +4,6 @@ import { availableMonitors, getCurrentWindow, LogicalPosition, LogicalSize, Phys
 import { WebviewWindow } from "@tauri-apps/api/webviewWindow";
 import { gitHubEmojis, type EmojiItem } from "@tiptap/extension-emoji";
 import {
-  AlignCenter,
-  AlignLeft,
   BookOpen,
   Bookmark,
   Braces,
@@ -14,6 +12,7 @@ import {
   ChevronRight,
   ChevronUp,
   Copy,
+  EllipsisVertical,
   FileCode2,
   FileText,
   Folder,
@@ -36,7 +35,6 @@ import {
   Search,
   Settings,
   Square,
-  StretchHorizontal,
   Sun,
   Trash2,
   X,
@@ -4199,9 +4197,6 @@ export default function App() {
     if (isTauri()) void getCurrentWindow().toggleMaximize();
   }
 
-  const selectedWidthOption = editorWidthOptions.find((option) => option.value === editorWidthMode) ?? editorWidthOptions[0];
-  const AlignmentIcon = noteAlignment === "left" ? AlignLeft : AlignCenter;
-
   return (
     <div className="app-shell">
       <header
@@ -4438,20 +4433,12 @@ export default function App() {
               >
                 <Search size={17} />
               </button>
-              <button
-                className={`icon-button ${rawMarkdownVisible || frontmatterError ? "is-active" : ""}`}
-                type="button"
-                title={rawMarkdownVisible ? "Show rich editor" : "Show raw Markdown"}
-                onClick={toggleRawMarkdownMode}
-              >
-                <FileCode2 size={17} />
-              </button>
               <div className="note-view-control note-view-menu">
                 <button
                   className={`icon-button ${widthMenuOpen ? "is-active" : ""}`}
                   type="button"
-                  title={`Width: ${selectedWidthOption.label}`}
-                  aria-label="Editor width"
+                  title="Editor options"
+                  aria-label="Editor options"
                   aria-haspopup="menu"
                   aria-expanded={widthMenuOpen}
                   onClick={(event) => {
@@ -4459,10 +4446,28 @@ export default function App() {
                     setWidthMenuOpen((value) => !value);
                   }}
                 >
-                  <StretchHorizontal size={17} />
+                  <EllipsisVertical size={18} />
                 </button>
                 {widthMenuOpen ? (
-                  <div className="note-view-dropdown" role="menu" aria-label="Editor width">
+                  <div className="note-view-dropdown" role="menu" aria-label="Editor options">
+                    <button
+                      type="button"
+                      className={rawMarkdownVisible || frontmatterError ? "is-active" : ""}
+                      role="menuitemcheckbox"
+                      aria-checked={rawMarkdownVisible || Boolean(frontmatterError)}
+                      onClick={() => {
+                        toggleRawMarkdownMode();
+                        setWidthMenuOpen(false);
+                      }}
+                    >
+                      <span>
+                        <strong>{rawMarkdownVisible ? "Show rich editor" : "Show raw Markdown"}</strong>
+                        <small>Markdown editor style</small>
+                      </span>
+                      <FileCode2 size={16} />
+                    </button>
+                    <div className="note-view-menu-divider" />
+                    <div className="note-view-menu-label">Editor width</div>
                     {editorWidthOptions.map((option) => (
                       <button
                         key={option.value}
@@ -4472,7 +4477,6 @@ export default function App() {
                         aria-checked={option.value === editorWidthMode}
                         onClick={() => {
                           setEditorWidthMode(option.value);
-                          setWidthMenuOpen(false);
                         }}
                       >
                         <span>
@@ -4482,18 +4486,26 @@ export default function App() {
                         {option.value === editorWidthMode ? <Check size={15} /> : null}
                       </button>
                     ))}
+                    <div className="note-view-menu-divider" />
+                    <div className="note-view-menu-label">Alignment</div>
+                    {(["left", "center"] as const).map((alignment) => (
+                      <button
+                        key={alignment}
+                        type="button"
+                        className={alignment === noteAlignment ? "is-active" : ""}
+                        role="menuitemradio"
+                        aria-checked={alignment === noteAlignment}
+                        onClick={() => setNoteAlignment(alignment)}
+                      >
+                        <span>
+                          <strong>{alignment === "left" ? "Align left" : "Align center"}</strong>
+                        </span>
+                        {alignment === noteAlignment ? <Check size={15} /> : null}
+                      </button>
+                    ))}
                   </div>
                 ) : null}
               </div>
-              <button
-                className="icon-button"
-                type="button"
-                title={noteAlignment === "left" ? "Align center" : "Align left"}
-                aria-label={noteAlignment === "left" ? "Align center" : "Align left"}
-                onClick={() => setNoteAlignment((value) => (value === "left" ? "center" : "left"))}
-              >
-                <AlignmentIcon size={17} />
-              </button>
             </>
           ) : null}
         </EditorTopbar>

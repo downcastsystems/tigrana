@@ -2808,6 +2808,21 @@ html[data-theme="dark"] .tab-list-separator {
   justify-self: center;
 }
 
+.note-view-menu-divider {
+  height: 1px;
+  margin: 3px 4px;
+  background: var(--border);
+}
+
+.note-view-menu-label {
+  padding: 3px 9px 0;
+  color: var(--text-muted);
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
 .note-surface {
   --note-scroll-fade-size: 22px;
   display: flex;
