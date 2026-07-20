@@ -3467,7 +3467,9 @@ function handleEmptyListItemDelete(view: EditorView, event: KeyboardEvent) {
 }
 
 export function isFormattingSelection(selection: Selection) {
-  return !selection.empty && !(selection instanceof NodeSelection);
+  return !selection.empty
+    && !(selection instanceof NodeSelection)
+    && selection.$from.doc.textBetween(selection.from, selection.to, "").length > 0;
 }
 
 export function handleNestedListBoundaryDelete(view: EditorView, event: KeyboardEvent) {

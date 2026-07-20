@@ -183,6 +183,16 @@ describe("formatting selection eligibility", () => {
     const nestedListPosition = textRange(doc, "Worried").to + 1;
     expect(isFormattingSelection(NodeSelection.create(doc, nestedListPosition))).toBe(false);
   });
+
+  it("rejects a text selection that contains only a block boundary", () => {
+    const doc = bulletDoc([bulletItem("First"), bulletItem("Second")]);
+    const first = textRange(doc, "First");
+    const second = textRange(doc, "Second");
+    const boundarySelection = TextSelection.create(doc, first.to, second.from);
+
+    expect(boundarySelection.empty).toBe(false);
+    expect(isFormattingSelection(boundarySelection)).toBe(false);
+  });
 });
 
 describe("list clipboard serialization", () => {
