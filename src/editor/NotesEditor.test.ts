@@ -1,18 +1,26 @@
 // @vitest-environment jsdom
 
+import { Editor } from "@tiptap/core";
 import { Schema, type Node as ProseMirrorNode } from "@tiptap/pm/model";
 import { EditorState, NodeSelection, TextSelection } from "@tiptap/pm/state";
 import type { EditorProps, EditorView } from "@tiptap/pm/view";
+import StarterKit from "@tiptap/starter-kit";
 import { describe, expect, it } from "vitest";
 
 HTMLCanvasElement.prototype.getContext = (() => null) as typeof HTMLCanvasElement.prototype.getContext;
 
 const {
+  BoundedNoteStateCache,
+  cacheCurrentNoteEditorState,
   collapseBoundarySelectionAt,
   findSlashQueryInState,
   getTaskLineCutDeleteRange,
   handleNestedListBoundaryDelete,
+  handleOutermostListItemBackspace,
+  handleSameLevelListItemBackspace,
   isFormattingSelection,
+  resetEditorHistory,
+  restoreCachedNoteEditorState,
   serializeEditorSelectionForClipboard,
   setEditorEditableSilently,
   setEditorSpellcheck,
@@ -57,12 +65,19 @@ function heading(text: string) {
   return schema.nodes.heading.create({ level: 1 }, text ? schema.text(text) : null);
 }
 
-function taskItem(text: string) {
-  return schema.nodes.taskItem.create({ checked: false }, paragraph(text));
+function taskItem(text: string, nestedList?: ProseMirrorNode) {
+  return schema.nodes.taskItem.create(
+    { checked: false },
+    nestedList ? [paragraph(text), nestedList] : paragraph(text),
+  );
 }
 
 function taskDoc(items: string[]) {
-  return schema.nodes.doc.create(null, schema.nodes.taskList.create(null, items.map(taskItem)));
+  return schema.nodes.doc.create(null, schema.nodes.taskList.create(null, items.map((text) => taskItem(text))));
+}
+
+function taskList(items: ProseMirrorNode[]) {
+  return schema.nodes.taskList.create(null, items);
 }
 
 function bulletItem(text: string, nestedList?: ProseMirrorNode) {
@@ -110,6 +125,46 @@ function applyBoundaryKey(doc: ProseMirrorNode, position: number, key: "Backspac
 
   return {
     handled: handleNestedListBoundaryDelete(view, event),
+    state,
+  };
+}
+
+function applyOutermostListBackspace(doc: ProseMirrorNode, position: number) {
+  let state = EditorState.create({ doc, selection: TextSelection.create(doc, position) });
+  const event = new KeyboardEvent("keydown", { key: "Backspace" });
+  const view = {
+    get state() {
+      return state;
+    },
+    dispatch(transaction: ReturnType<typeof state["tr"]["setSelection"]>) {
+      state = state.apply(transaction);
+    },
+  } as EditorView;
+
+  return {
+    handled: handleOutermostListItemBackspace(view, event),
+    state,
+  };
+}
+
+function applySameLevelListBackspace(
+  doc: ProseMirrorNode,
+  position: number,
+  eventInit: KeyboardEventInit = {},
+) {
+  let state = EditorState.create({ doc, selection: TextSelection.create(doc, position) });
+  const event = new KeyboardEvent("keydown", { key: "Backspace", ...eventInit });
+  const view = {
+    get state() {
+      return state;
+    },
+    dispatch(transaction: ReturnType<typeof state["tr"]["setSelection"]>) {
+      state = state.apply(transaction);
+    },
+  } as EditorView;
+
+  return {
+    handled: handleSameLevelListItemBackspace(view, event),
     state,
   };
 }
@@ -169,6 +224,262 @@ describe("nested list boundary deletion", () => {
 
     expect(result.handled).toBe(false);
     expect(result.state.doc.eq(doc)).toBe(true);
+  });
+});
+
+describe("same-level list item Backspace", () => {
+  it("joins the current item text into its previous sibling", () => {
+    const doc = bulletDoc([
+      bulletItem("a"),
+      bulletItem("b"),
+      bulletItem("c"),
+    ]);
+    const b = textRange(doc, "b");
+
+    const result = applySameLevelListBackspace(doc, b.from);
+
+    expect(result.handled).toBe(true);
+    expect(result.state.doc.toJSON()).toEqual(bulletDoc([
+      bulletItem("ab"),
+      bulletItem("c"),
+    ]).toJSON());
+    expect(result.state.selection.from).toBe(textRange(result.state.doc, "ab").from + 1);
+  });
+
+  it("preserves and combines nested content from both items", () => {
+    const doc = bulletDoc([
+      bulletItem("a", bulletList([
+        bulletItem("a child"),
+      ])),
+      bulletItem("b", bulletList([
+        bulletItem("b child"),
+      ])),
+      bulletItem("c"),
+    ]);
+    const b = textRange(doc, "b");
+
+    const result = applySameLevelListBackspace(doc, b.from);
+
+    expect(result.handled).toBe(true);
+    expect(result.state.doc.toJSON()).toEqual(bulletDoc([
+      bulletItem("ab", bulletList([
+        bulletItem("a child"),
+        bulletItem("b child"),
+      ])),
+      bulletItem("c"),
+    ]).toJSON());
+  });
+
+  it("does not handle the first item, modified Backspace, or a cursor inside text", () => {
+    const doc = bulletDoc([
+      bulletItem("a"),
+      bulletItem("b"),
+    ]);
+    const a = textRange(doc, "a");
+    const b = textRange(doc, "b");
+
+    expect(applySameLevelListBackspace(doc, a.from).handled).toBe(false);
+    expect(applySameLevelListBackspace(doc, b.from, { altKey: true }).handled).toBe(false);
+    expect(applySameLevelListBackspace(doc, b.from + 1).handled).toBe(false);
+  });
+});
+
+describe("outermost list item Backspace", () => {
+  it("removes the first top-level bullet and promotes its nested bullets", () => {
+    const doc = schema.nodes.doc.create(null, [
+      heading("Notes"),
+      bulletList([
+        bulletItem("Mike", bulletList([
+          bulletItem("sheets v2 - using pgboss with individual scheduled jobs"),
+        ])),
+      ]),
+    ]);
+    const mike = textRange(doc, "Mike");
+
+    const result = applyOutermostListBackspace(doc, mike.from);
+
+    expect(result.handled).toBe(true);
+    expect(result.state.doc.toJSON()).toEqual(schema.nodes.doc.create(null, [
+      heading("Notes"),
+      paragraph("Mike"),
+      bulletList([
+        bulletItem("sheets v2 - using pgboss with individual scheduled jobs"),
+      ]),
+    ]).toJSON());
+    expect(result.state.selection.from).toBe(textRange(result.state.doc, "Mike").from);
+  });
+
+  it("does not override normal Backspace for a later sibling", () => {
+    const doc = bulletDoc([
+      bulletItem("First"),
+      bulletItem("Second"),
+    ]);
+    const second = textRange(doc, "Second");
+
+    const result = applyOutermostListBackspace(doc, second.from);
+
+    expect(result.handled).toBe(false);
+    expect(result.state.doc.eq(doc)).toBe(true);
+  });
+
+  it("does not override a native join with a preceding adjacent list", () => {
+    const doc = schema.nodes.doc.create(null, [
+      bulletList([bulletItem("First")]),
+      bulletList([bulletItem("Second")]),
+    ]);
+    const second = textRange(doc, "Second");
+
+    const result = applyOutermostListBackspace(doc, second.from);
+
+    expect(result.handled).toBe(false);
+    expect(result.state.doc.eq(doc)).toBe(true);
+  });
+
+  it("leaves an unnested top-level bullet to native Backspace", () => {
+    const doc = schema.nodes.doc.create(null, [
+      heading("Notes"),
+      bulletList([bulletItem("Mike")]),
+    ]);
+    const mike = textRange(doc, "Mike");
+
+    const result = applyOutermostListBackspace(doc, mike.from);
+
+    expect(result.handled).toBe(false);
+    expect(result.state.doc.eq(doc)).toBe(true);
+  });
+
+  it("leaves nested items to the nested-list boundary handler", () => {
+    const doc = bulletDoc([
+      bulletItem("Parent", bulletList([
+        bulletItem("Child"),
+      ])),
+    ]);
+    const child = textRange(doc, "Child");
+
+    const result = applyOutermostListBackspace(doc, child.from);
+
+    expect(result.handled).toBe(false);
+    expect(result.state.doc.eq(doc)).toBe(true);
+  });
+
+  it("uses the same fallback for a non-empty top-level task with nested tasks", () => {
+    const doc = schema.nodes.doc.create(null, [
+      heading("Notes"),
+      taskList([
+        taskItem("Mike", taskList([
+          taskItem("Follow up"),
+        ])),
+      ]),
+    ]);
+    const mike = textRange(doc, "Mike");
+
+    const result = applyOutermostListBackspace(doc, mike.from);
+
+    expect(result.handled).toBe(true);
+    expect(result.state.doc.toJSON()).toEqual(schema.nodes.doc.create(null, [
+      heading("Notes"),
+      paragraph("Mike"),
+      taskList([
+        taskItem("Follow up"),
+      ]),
+    ]).toJSON());
+  });
+
+  it("does not lift while the cursor is inside the item text", () => {
+    const doc = bulletDoc([bulletItem("Mike")]);
+    const mike = textRange(doc, "Mike");
+
+    const result = applyOutermostListBackspace(doc, mike.from + 1);
+
+    expect(result.handled).toBe(false);
+    expect(result.state.doc.eq(doc)).toBe(true);
+  });
+});
+
+describe("editor history across Note loads", () => {
+  it("does not allow Undo to restore the previously loaded Note", () => {
+    const editor = new Editor({
+      extensions: [StarterKit],
+      content: "<p>Note A</p>",
+    });
+
+    try {
+      editor.commands.setTextSelection(editor.state.doc.content.size);
+      editor.commands.insertContent(" changed");
+      editor.commands.setContent("<p>Note B</p>", false);
+
+      resetEditorHistory(editor);
+
+      expect(editor.getText()).toBe("Note B");
+      expect(editor.can().undo()).toBe(false);
+      expect(editor.commands.undo()).toBe(false);
+      expect(editor.getText()).toBe("Note B");
+
+      editor.commands.setTextSelection(editor.state.doc.content.size);
+      editor.commands.insertContent(" changed");
+
+      expect(editor.can().undo()).toBe(true);
+      expect(editor.commands.undo()).toBe(true);
+      expect(editor.getText()).toBe("Note B");
+    } finally {
+      editor.destroy();
+    }
+  });
+
+  it("restores independent Undo histories when switching between Notes", () => {
+    const editor = new Editor({
+      extensions: [StarterKit],
+      content: "<p>Note A</p>",
+    });
+    const cache = new BoundedNoteStateCache(30);
+
+    try {
+      editor.commands.setTextSelection(editor.state.doc.content.size);
+      editor.commands.insertContent(" changed");
+      cacheCurrentNoteEditorState(cache, "Note A.md", editor);
+
+      editor.commands.setContent("<p>Note B</p>", false);
+      resetEditorHistory(editor);
+      editor.commands.setTextSelection(editor.state.doc.content.size);
+      editor.commands.insertContent(" changed");
+      cacheCurrentNoteEditorState(cache, "Note B.md", editor);
+
+      expect(restoreCachedNoteEditorState(cache, "Note A.md", "Note A changed", editor)).toBe(true);
+      expect(editor.getText()).toBe("Note A changed");
+      expect(editor.commands.undo()).toBe(true);
+      expect(editor.getText()).toBe("Note A");
+      cacheCurrentNoteEditorState(cache, "Note A.md", editor);
+
+      expect(restoreCachedNoteEditorState(cache, "Note B.md", "Note B changed", editor)).toBe(true);
+      expect(editor.getText()).toBe("Note B changed");
+      expect(editor.commands.undo()).toBe(true);
+      expect(editor.getText()).toBe("Note B");
+    } finally {
+      editor.destroy();
+    }
+  });
+
+  it("rejects stale cached state and evicts the least recently used Note", () => {
+    const editor = new Editor({
+      extensions: [StarterKit],
+      content: "<p>Original</p>",
+    });
+    const cache = new BoundedNoteStateCache(2);
+
+    try {
+      cacheCurrentNoteEditorState(cache, "A.md", editor);
+      editor.commands.setContent("<p>Note B</p>", false);
+      cacheCurrentNoteEditorState(cache, "B.md", editor);
+      expect(cache.get("A.md")).toBeDefined();
+      editor.commands.setContent("<p>Note C</p>", false);
+      cacheCurrentNoteEditorState(cache, "C.md", editor);
+
+      expect(cache.get("B.md")).toBeUndefined();
+      expect(restoreCachedNoteEditorState(cache, "A.md", "Externally changed", editor)).toBe(false);
+      expect(cache.get("A.md")).toBeUndefined();
+    } finally {
+      editor.destroy();
+    }
   });
 });
 

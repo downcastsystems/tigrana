@@ -10,8 +10,10 @@ import { TableHeader } from "@tiptap/extension-table-header";
 import { TableRow } from "@tiptap/extension-table-row";
 import TaskItem from "@tiptap/extension-task-item";
 import TaskList from "@tiptap/extension-task-list";
+import { joinBackward } from "@tiptap/pm/commands";
 import { DOMSerializer, Fragment as ProseMirrorFragment, type Node as ProseMirrorNode, type ResolvedPos } from "@tiptap/pm/model";
-import { NodeSelection, Plugin, PluginKey, Selection, TextSelection, type EditorState, type Transaction } from "@tiptap/pm/state";
+import { liftListItem } from "@tiptap/pm/schema-list";
+import { EditorState, NodeSelection, Plugin, PluginKey, Selection, TextSelection, type Transaction } from "@tiptap/pm/state";
 import { addColumnAfter, addColumnBefore, addRowAfter, addRowBefore, CellSelection, deleteColumn, deleteRow, TableMap } from "@tiptap/pm/tables";
 import { Decoration, DecorationSet, type EditorProps, type EditorView, type NodeView, type ViewMutationRecord } from "@tiptap/pm/view";
 import { EditorContent, NodeViewContent, NodeViewWrapper, Range, ReactNodeViewRenderer, useEditor, type Editor } from "@tiptap/react";
@@ -52,6 +54,7 @@ import { ensureParagraphAfterCurrentTable, filterSlashCommands, markCurrentTable
 import { createDeferredCommit, type DeferredCommit } from "../lib/deferredCommit";
 import { emojiShortcodeToText } from "../lib/emoji";
 import { htmlToMarkdown, markdownToHtml } from "../lib/markdown";
+import { normalizeNoteMarkdown } from "../lib/noteDocument";
 import { isTauri, openExternal } from "../lib/desktop";
 import { notebookStorage } from "../lib/notebookStorage";
 import type { NotePositionMetadata } from "../types";
@@ -64,6 +67,7 @@ type NotesEditorProps = {
   focusRequest: number;
   focusAtEndRequest: number;
   findRequest: number;
+  historyKey: string | null;
   reloadRequest?: number;
   notePath: string | null;
   restorePosition: NotePositionMetadata | null;
@@ -150,6 +154,77 @@ export function setEditorSpellcheck(editor: SpellcheckEditor | null, enabled: bo
   });
 }
 
+export function resetEditorHistory(editor: Editor) {
+  // Tiptap has no public command for clearing the history plugin. Recreating
+  // state at a Note boundary keeps the loaded document and selection while
+  // reinitializing history (and other document-scoped plugin state).
+  editor.view.updateState(EditorState.create({
+    doc: editor.state.doc,
+    selection: editor.state.selection,
+    plugins: editor.state.plugins,
+  }));
+}
+
+type CachedNoteEditorState = {
+  markdown: string;
+  state: EditorState;
+};
+
+export class BoundedNoteStateCache {
+  private readonly entries = new Map<string, CachedNoteEditorState>();
+
+  constructor(private readonly limit: number) {}
+
+  get(key: string) {
+    const entry = this.entries.get(key);
+    if (!entry) return undefined;
+    this.entries.delete(key);
+    this.entries.set(key, entry);
+    return entry;
+  }
+
+  set(key: string, entry: CachedNoteEditorState) {
+    this.entries.delete(key);
+    this.entries.set(key, entry);
+    while (this.entries.size > this.limit) {
+      const oldestKey = this.entries.keys().next().value;
+      if (typeof oldestKey !== "string") break;
+      this.entries.delete(oldestKey);
+    }
+  }
+
+  delete(key: string) {
+    this.entries.delete(key);
+  }
+
+  clear() {
+    this.entries.clear();
+  }
+}
+
+export function cacheCurrentNoteEditorState(cache: BoundedNoteStateCache, key: string, editor: Editor) {
+  cache.set(key, {
+    markdown: htmlToMarkdown(editor.getHTML()),
+    state: editor.state,
+  });
+}
+
+export function restoreCachedNoteEditorState(
+  cache: BoundedNoteStateCache,
+  key: string,
+  markdown: string,
+  editor: Editor,
+) {
+  const cached = cache.get(key);
+  if (!cached) return false;
+  if (normalizeNoteMarkdown(cached.markdown) !== normalizeNoteMarkdown(markdown)) {
+    cache.delete(key);
+    return false;
+  }
+  editor.view.updateState(cached.state);
+  return true;
+}
+
 export type EditorCommandRequest = {
   id: number;
   command: EditorCommand;
@@ -169,6 +244,7 @@ const lowlight = createLowlight(common);
 const searchHighlightKey = new PluginKey<SearchHighlightState>("searchHighlight");
 const notebookImagePreviewCache = new Map<string, string>();
 const markdownCommitDelayMs = 80;
+const noteHistoryCacheLimit = 30;
 
 type SearchHighlightState = {
   activeIndex: number;
@@ -2353,7 +2429,7 @@ const MarkdownImage = Image.extend({
   },
 });
 
-export function NotesEditor({ content, commandRequest, focusRequest, focusAtEndRequest, findRequest, reloadRequest, notePath, restorePosition, editable, spellcheckEnabled, workspace, onChange, onPendingChange, onLoadError, onPositionChange, onInternalLinkClick, onRequestEmoji, onRequestLink, onRequestImage }: NotesEditorProps) {
+export function NotesEditor({ content, commandRequest, focusRequest, focusAtEndRequest, findRequest, historyKey, reloadRequest, notePath, restorePosition, editable, spellcheckEnabled, workspace, onChange, onPendingChange, onLoadError, onPositionChange, onInternalLinkClick, onRequestEmoji, onRequestLink, onRequestImage }: NotesEditorProps) {
   const [slash, setSlash] = useState<SlashState | null>(null);
   const [findOpen, setFindOpen] = useState(false);
   const [replaceOpen, setReplaceOpen] = useState(false);
@@ -2369,6 +2445,9 @@ export function NotesEditor({ content, commandRequest, focusRequest, focusAtEndR
   const lastLoadedNote = useRef<string | null>(null);
   const handledReloadRequest = useRef(reloadRequest ?? 0);
   const notePathRef = useRef(notePath);
+  const loadedHistoryKey = useRef<string | null>(null);
+  const historyWorkspace = useRef(workspace);
+  const noteHistoryCache = useRef<BoundedNoteStateCache | null>(null);
   const onChangeRef = useRef(onChange);
   const onPendingChangeRef = useRef(onPendingChange);
   const deferredMarkdownRef = useRef<DeferredCommit<EditorMarkdownSnapshot> | null>(null);
@@ -2386,6 +2465,9 @@ export function NotesEditor({ content, commandRequest, focusRequest, focusAtEndR
     pendingChangeHandleRef.current = {
       flush: () => deferredMarkdownRef.current?.flush() ?? null,
     };
+  }
+  if (!noteHistoryCache.current) {
+    noteHistoryCache.current = new BoundedNoteStateCache(noteHistoryCacheLimit);
   }
 
   useEffect(() => {
@@ -2537,9 +2619,11 @@ export function NotesEditor({ content, commandRequest, focusRequest, focusAtEndR
       handleDOMEvents: {
         keydown(_view, event) {
           if (handleNestedListBoundaryDelete(_view, event)) return true;
+          if (handleSameLevelListItemBackspace(_view, event)) return true;
           if (handleEmptyTaskItemBackspace(_view, event)) return true;
           if (handleEmptyTaskItemForwardDelete(_view, event)) return true;
           if (handleEmptyListItemDelete(_view, event)) return true;
+          if (handleOutermostListItemBackspace(_view, event)) return true;
           if (handleSlashKeyDown(event)) return true;
           const currentEditor = editorRef.current;
           if (currentEditor && handleEditorTabKeyDown(currentEditor, event)) return true;
@@ -2629,10 +2713,29 @@ export function NotesEditor({ content, commandRequest, focusRequest, focusAtEndR
 
   useEffect(() => {
     if (!editor) return;
+    if (historyWorkspace.current !== workspace) {
+      noteHistoryCache.current?.clear();
+      historyWorkspace.current = workspace;
+      loadedHistoryKey.current = null;
+      lastLoadedNote.current = null;
+    }
+    const nextHistoryKey = notePath ? `${workspace}\0${historyKey ?? notePath}` : null;
     const requestedReload = (reloadRequest ?? 0) !== handledReloadRequest.current;
-    if (lastLoadedNote.current === notePath && !requestedReload) return;
+    if (lastLoadedNote.current === notePath && !requestedReload) {
+      const previousHistoryKey = loadedHistoryKey.current;
+      if (nextHistoryKey && previousHistoryKey && nextHistoryKey !== previousHistoryKey && noteHistoryCache.current) {
+        cacheCurrentNoteEditorState(noteHistoryCache.current, nextHistoryKey, editor);
+        noteHistoryCache.current.delete(previousHistoryKey);
+        loadedHistoryKey.current = nextHistoryKey;
+      }
+      return;
+    }
     deferredMarkdownRef.current?.cancel();
     onPendingChangeRef.current(null);
+    const previousHistoryKey = loadedHistoryKey.current;
+    if (previousHistoryKey && noteHistoryCache.current) {
+      cacheCurrentNoteEditorState(noteHistoryCache.current, previousHistoryKey, editor);
+    }
     let next = "";
     try {
       next = markdownToHtml(content, { resolveImageSrc: (src) => resolveNotebookImageSrc(workspace, src) });
@@ -2661,22 +2764,35 @@ export function NotesEditor({ content, commandRequest, focusRequest, focusAtEndR
     }
     setFindOpen(false);
     try {
-      editor
-        .chain()
-        .setContent(next, false)
-        .command(({ tr, state }) => {
-          const docSize = state.doc.content.size;
-          const targetTo = hasValidRestore
-            ? Math.min(Math.max(1, selectionTo as number), docSize)
-            : 1;
-          const targetFrom = hasValidRestore
-            ? Math.min(Math.max(1, selectionFrom as number), targetTo)
-            : 1;
-          tr.setSelection(TextSelection.create(state.doc, targetFrom, targetTo));
-          return true;
-        })
-        .run();
+      if (requestedReload && nextHistoryKey) {
+        noteHistoryCache.current?.delete(nextHistoryKey);
+      }
+      const restoredHistory = Boolean(
+        !requestedReload
+        && nextHistoryKey
+        && noteHistoryCache.current
+        && restoreCachedNoteEditorState(noteHistoryCache.current, nextHistoryKey, content, editor),
+      );
+      if (!restoredHistory) {
+        editor
+          .chain()
+          .setContent(next, false)
+          .command(({ tr, state }) => {
+            const docSize = state.doc.content.size;
+            const targetTo = hasValidRestore
+              ? Math.min(Math.max(1, selectionTo as number), docSize)
+              : 1;
+            const targetFrom = hasValidRestore
+              ? Math.min(Math.max(1, selectionFrom as number), targetTo)
+              : 1;
+            tr.setSelection(TextSelection.create(state.doc, targetFrom, targetTo));
+            return true;
+          })
+          .run();
+        resetEditorHistory(editor);
+      }
       lastLoadedNote.current = notePath;
+      loadedHistoryKey.current = nextHistoryKey;
       handledReloadRequest.current = reloadRequest ?? 0;
       if (wasFocused) {
         editor.view.dom.focus({ preventScroll: true });
@@ -2685,7 +2801,7 @@ export function NotesEditor({ content, commandRequest, focusRequest, focusAtEndR
     } catch (error) {
       onLoadError(error);
     }
-  }, [content, editor, notePath, onLoadError, reloadRequest, restorePosition, workspace]);
+  }, [content, editor, historyKey, notePath, onLoadError, reloadRequest, restorePosition, workspace]);
 
   useEffect(() => {
     if (!editor || !focusRequest) return;
@@ -3607,6 +3723,87 @@ function isListItemNode(node: ProseMirrorNode | null | undefined): node is Prose
   return node?.type.name === "listItem" || node?.type.name === "taskItem";
 }
 
+export function handleSameLevelListItemBackspace(view: EditorView, event: KeyboardEvent) {
+  if (!isPlainDeleteKey(event, "Backspace")) return false;
+
+  const { selection } = view.state;
+  if (!(selection instanceof TextSelection) || !selection.empty || !selection.$cursor) return false;
+
+  const { $cursor } = selection;
+  if ($cursor.parentOffset !== 0 || !$cursor.parent.isTextblock || !$cursor.parent.textContent.trim()) return false;
+
+  const item = findListItemAtSelection($cursor);
+  if (!item || $cursor.index(item.depth) !== 0) return false;
+
+  const itemIndex = $cursor.index(item.parentDepth);
+  if (itemIndex < 1) return false;
+
+  const previousItem = item.parentNode.child(itemIndex - 1);
+  const previousParagraph = previousItem.firstChild;
+  const currentParagraph = item.node.firstChild;
+  if (!isListItemNode(previousItem) || !previousParagraph?.isTextblock || !currentParagraph?.isTextblock) return false;
+
+  const previousBlocks = Array.from(
+    { length: previousItem.childCount - 1 },
+    (_, index) => previousItem.child(index + 1),
+  );
+  const currentBlocks = Array.from(
+    { length: item.node.childCount - 1 },
+    (_, index) => item.node.child(index + 1),
+  );
+  const previousLastBlock = previousBlocks.at(-1);
+  const currentFirstBlock = currentBlocks[0];
+  if (isListNode(previousLastBlock) && currentFirstBlock?.type === previousLastBlock.type) {
+    previousBlocks[previousBlocks.length - 1] = previousLastBlock.copy(
+      previousLastBlock.content.append(currentFirstBlock.content),
+    );
+    currentBlocks.shift();
+  }
+
+  const mergedParagraph = previousParagraph.copy(
+    previousParagraph.content.append(currentParagraph.content),
+  );
+  const mergedItem = previousItem.type.create(
+    {
+      ...previousItem.attrs,
+      separatorAfter: item.node.attrs.separatorAfter,
+    },
+    ProseMirrorFragment.fromArray([mergedParagraph, ...previousBlocks, ...currentBlocks]),
+    previousItem.marks,
+  );
+  const previousItemFrom = item.from - previousItem.nodeSize;
+  const joinPosition = previousItemFrom + 2 + previousParagraph.content.size;
+  const tr = view.state.tr.replaceWith(previousItemFrom, item.from + item.node.nodeSize, mergedItem);
+  tr.setSelection(TextSelection.create(tr.doc, joinPosition)).scrollIntoView();
+
+  event.preventDefault();
+  view.dispatch(tr);
+  return true;
+}
+
+export function handleOutermostListItemBackspace(view: EditorView, event: KeyboardEvent) {
+  if (!isPlainDeleteKey(event, "Backspace")) return false;
+
+  const { selection } = view.state;
+  if (!(selection instanceof TextSelection) || !selection.empty || !selection.$cursor) return false;
+
+  const { $cursor } = selection;
+  if ($cursor.parentOffset !== 0 || !$cursor.parent.isTextblock || !$cursor.parent.textContent.trim()) return false;
+
+  const item = findListItemAtSelection($cursor);
+  if (!item || $cursor.index(item.depth) !== 0 || $cursor.index(item.parentDepth) !== 0) return false;
+
+  for (let depth = item.parentDepth - 1; depth > 0; depth -= 1) {
+    if (isListItemNode($cursor.node(depth))) return false;
+  }
+
+  if (joinBackward(view.state)) return false;
+
+  const handled = liftListItem(item.node.type)(view.state, (transaction) => view.dispatch(transaction));
+  if (handled) event.preventDefault();
+  return handled;
+}
+
 function handleEmptyTaskItemBackspace(view: EditorView, event: KeyboardEvent) {
   if (!isPlainDeleteKey(event, "Backspace")) return false;
   const { selection } = view.state;
@@ -4123,7 +4320,7 @@ async function hydrateNotebookImageNodes(
   );
 
   if (getCurrentNotePath() !== expectedNotePath) return;
-  const tr = editor.state.tr;
+  const tr = editor.state.tr.setMeta("addToHistory", false);
   let changed = false;
   for (const item of resolved) {
     if (getCurrentNotePath() !== expectedNotePath) return;

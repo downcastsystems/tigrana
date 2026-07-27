@@ -4737,6 +4737,7 @@ export default function App() {
                   focusRequest={editorFocusRequest}
                   focusAtEndRequest={editorFocusAtEndRequest}
                   findRequest={noteFindRequest}
+                  historyKey={activePath ? linkIndex?.pathToId[activePath] ?? activePath : null}
                   reloadRequest={editorReloadRequest}
                   commandRequest={editorCommandRequest}
                   notePath={activePath}
