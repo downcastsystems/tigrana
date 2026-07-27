@@ -309,7 +309,16 @@ type NoteDragPreview = {
 };
 
 type ColorScheme = "system" | "light" | "dark";
-type ThemePresetId = "default" | "atom" | "solarized" | "dracula" | "nord" | "gruvbox";
+type ThemePresetId =
+  | "default"
+  | "atom"
+  | "solarized"
+  | "dracula"
+  | "nord"
+  | "gruvbox"
+  | "catppuccin-frappe"
+  | "catppuccin-macchiato"
+  | "catppuccin-mocha";
 type RightSidebarMode = "outline" | "frontmatter" | "properties" | "backlinks";
 type NoteTab = {
   id: string;
@@ -418,6 +427,16 @@ const defaultNotebookThemeColors = (): NotebookThemeColorSettings => ({
   dark: { accentColor: null, titlebarColor: null, titlebarUseAccent: true },
 });
 
+const catppuccinLatteTokens: ThemeTokens = {
+  surface: "#e6e9ef",
+  surfaceSoft: "#eff1f5",
+  surfaceStrong: "#ffffff",
+  surfaceMuted: "#dce0e8",
+  border: "#ccd0da",
+  text: "#4c4f69",
+  textMuted: "#6c6f85",
+};
+
 type PersistDraftSnapshot = {
   workspace: string;
   path: string | null;
@@ -449,30 +468,80 @@ const themePresets: ThemePreset[] = [
     name: "Atom One",
     accent: { light: "#4078c0", dark: "#61afef" },
     appBackground: { light: "#fafafa", dark: "#20252b" },
+    tokens: {
+      light: { surface: "#f0f0f0", surfaceSoft: "#f6f6f6", surfaceStrong: "#ffffff", surfaceMuted: "#e5e5e6", border: "#d4d4d5", text: "#383a42", textMuted: "#696c77" },
+      dark: { surface: "#21252b", surfaceSoft: "#282c34", surfaceStrong: "#2c313a", surfaceMuted: "#181a1f", border: "#3e4451", text: "#abb2bf", textMuted: "#7f848e" },
+    },
   },
   {
     id: "solarized",
     name: "Solarized",
     accent: { light: "#268bd2", dark: "#2aa198" },
     appBackground: { light: "#fdf6e3", dark: "#002b36" },
+    tokens: {
+      light: { surface: "#eee8d5", surfaceSoft: "#fdf6e3", surfaceStrong: "#fffdf5", surfaceMuted: "#e4ddc8", border: "#d5cfba", text: "#586e75", textMuted: "#839496" },
+      dark: { surface: "#073642", surfaceSoft: "#002b36", surfaceStrong: "#0b404d", surfaceMuted: "#00232c", border: "#24515b", text: "#eee8d5", textMuted: "#93a1a1" },
+    },
   },
   {
     id: "dracula",
     name: "Dracula",
     accent: { light: "#bd93f9", dark: "#ff79c6" },
     appBackground: { light: "#f7f2fb", dark: "#282a36" },
+    tokens: {
+      light: { surface: "#eee7f4", surfaceSoft: "#f7f2fb", surfaceStrong: "#ffffff", surfaceMuted: "#e5daee", border: "#d5c7e0", text: "#282a36", textMuted: "#6272a4" },
+      dark: { surface: "#21222c", surfaceSoft: "#282a36", surfaceStrong: "#343746", surfaceMuted: "#191a21", border: "#44475a", text: "#f8f8f2", textMuted: "#a8a4b8" },
+    },
   },
   {
     id: "nord",
     name: "Nord",
     accent: { light: "#5e81ac", dark: "#88c0d0" },
     appBackground: { light: "#eceff4", dark: "#2e3440" },
+    tokens: {
+      light: { surface: "#e5e9f0", surfaceSoft: "#eceff4", surfaceStrong: "#ffffff", surfaceMuted: "#d8dee9", border: "#c6ccd6", text: "#2e3440", textMuted: "#4c566a" },
+      dark: { surface: "#292e39", surfaceSoft: "#2e3440", surfaceStrong: "#3b4252", surfaceMuted: "#242933", border: "#4c566a", text: "#eceff4", textMuted: "#aeb8c8" },
+    },
   },
   {
     id: "gruvbox",
     name: "Gruvbox",
     accent: { light: "#b57614", dark: "#fabd2f" },
     appBackground: { light: "#fbf1c7", dark: "#282828" },
+    tokens: {
+      light: { surface: "#f2e5bc", surfaceSoft: "#fbf1c7", surfaceStrong: "#fff9dc", surfaceMuted: "#ebdbb2", border: "#d5c4a1", text: "#3c3836", textMuted: "#7c6f64" },
+      dark: { surface: "#1d2021", surfaceSoft: "#282828", surfaceStrong: "#3c3836", surfaceMuted: "#171819", border: "#504945", text: "#ebdbb2", textMuted: "#a89984" },
+    },
+  },
+  {
+    id: "catppuccin-frappe",
+    name: "Catppuccin Frappé",
+    accent: { light: "#8839ef", dark: "#ca9ee6" },
+    appBackground: { light: "#eff1f5", dark: "#303446" },
+    tokens: {
+      light: catppuccinLatteTokens,
+      dark: { surface: "#292c3c", surfaceSoft: "#303446", surfaceStrong: "#414559", surfaceMuted: "#232634", border: "#51576d", text: "#c6d0f5", textMuted: "#a5adce" },
+    },
+  },
+  {
+    id: "catppuccin-macchiato",
+    name: "Catppuccin Macchiato",
+    accent: { light: "#7651c9", dark: "#c6a0f6" },
+    appBackground: { light: "#f2eff8", dark: "#24273a" },
+    tokens: {
+      light: { surface: "#e5e1f0", surfaceSoft: "#eeebf6", surfaceStrong: "#fcfaff", surfaceMuted: "#dad4e8", border: "#c8c0d9", text: "#49465e", textMuted: "#706b87" },
+      dark: { surface: "#1e2030", surfaceSoft: "#24273a", surfaceStrong: "#363a4f", surfaceMuted: "#181926", border: "#494d64", text: "#cad3f5", textMuted: "#a5adcb" },
+    },
+  },
+  {
+    id: "catppuccin-mocha",
+    name: "Catppuccin Mocha",
+    accent: { light: "#95507f", dark: "#cba6f7" },
+    appBackground: { light: "#f5eef3", dark: "#1e1e2e" },
+    tokens: {
+      light: { surface: "#e9dde7", surfaceSoft: "#f1e7ef", surfaceStrong: "#fffafe", surfaceMuted: "#ddcedb", border: "#cbb9c9", text: "#4d414d", textMuted: "#776877" },
+      dark: { surface: "#181825", surfaceSoft: "#1e1e2e", surfaceStrong: "#313244", surfaceMuted: "#11111b", border: "#45475a", text: "#cdd6f4", textMuted: "#a6adc8" },
+    },
   },
 ];
 

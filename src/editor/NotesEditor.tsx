@@ -2528,6 +2528,12 @@ export function NotesEditor({ content, commandRequest, focusRequest, focusAtEndR
         autocorrect: "off",
         spellcheck: spellcheckEnabled ? "true" : "false",
       },
+      handleDoubleClick(view, position) {
+        window.setTimeout(() => {
+          if (!view.isDestroyed) collapseBoundarySelectionAt(view, position);
+        }, 0);
+        return false;
+      },
       handleDOMEvents: {
         keydown(_view, event) {
           if (handleNestedListBoundaryDelete(_view, event)) return true;
@@ -3470,6 +3476,21 @@ export function isFormattingSelection(selection: Selection) {
   return !selection.empty
     && !(selection instanceof NodeSelection)
     && selection.$from.doc.textBetween(selection.from, selection.to, "").length > 0;
+}
+
+export function collapseBoundarySelectionAt(view: EditorView, position: number) {
+  const { selection, doc } = view.state;
+  if (!(selection instanceof TextSelection)
+    || selection.empty
+    || doc.textBetween(selection.from, selection.to, "").length > 0) return false;
+
+  const safePosition = Math.min(Math.max(0, position), doc.content.size);
+  const $position = doc.resolve(safePosition);
+  const caret = $position.parent.inlineContent
+    ? TextSelection.create(doc, safePosition)
+    : Selection.near($position, -1);
+  view.dispatch(view.state.tr.setSelection(caret).setMeta("pointer", true));
+  return true;
 }
 
 export function handleNestedListBoundaryDelete(view: EditorView, event: KeyboardEvent) {

@@ -8,6 +8,7 @@ import { describe, expect, it } from "vitest";
 HTMLCanvasElement.prototype.getContext = (() => null) as typeof HTMLCanvasElement.prototype.getContext;
 
 const {
+  collapseBoundarySelectionAt,
   findSlashQueryInState,
   getTaskLineCutDeleteRange,
   handleNestedListBoundaryDelete,
@@ -192,6 +193,42 @@ describe("formatting selection eligibility", () => {
 
     expect(boundarySelection.empty).toBe(false);
     expect(isFormattingSelection(boundarySelection)).toBe(false);
+  });
+});
+
+describe("double-click boundary selection", () => {
+  function selectionView(doc: ProseMirrorNode, selection: TextSelection) {
+    let state = EditorState.create({ doc, selection });
+    const view = {
+      get state() {
+        return state;
+      },
+      dispatch(transaction: ReturnType<typeof state["tr"]["setSelection"]>) {
+        state = state.apply(transaction);
+      },
+    } as EditorView;
+    return { view, getState: () => state };
+  }
+
+  it("collapses a zero-text boundary selection to the clicked position", () => {
+    const doc = bulletDoc([bulletItem("First"), bulletItem("Second")]);
+    const first = textRange(doc, "First");
+    const second = textRange(doc, "Second");
+    const subject = selectionView(doc, TextSelection.create(doc, first.to, second.from));
+
+    expect(collapseBoundarySelectionAt(subject.view, first.to)).toBe(true);
+    expect(subject.getState().selection.empty).toBe(true);
+    expect(subject.getState().selection.from).toBe(first.to);
+  });
+
+  it("preserves a normal double-click word selection", () => {
+    const doc = bulletDoc([bulletItem("First word")]);
+    const line = textRange(doc, "First word");
+    const subject = selectionView(doc, TextSelection.create(doc, line.from, line.from + "First".length));
+
+    expect(collapseBoundarySelectionAt(subject.view, line.from + "First".length)).toBe(false);
+    expect(subject.getState().selection.from).toBe(line.from);
+    expect(subject.getState().selection.to).toBe(line.from + "First".length);
   });
 });
 

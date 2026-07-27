@@ -4980,6 +4980,89 @@ html[data-theme="dark"] .settings-number-input::-webkit-outer-spin-button {
   background: white;
 }
 
+/* Full light palettes. The default theme keeps the warm translucent styling
+ * above; named presets use their own opaque hierarchy so changing a preset is
+ * visible throughout the editor chrome, menus, dialogs, and settings. */
+html[data-theme="light"]:not([data-theme-preset="default"]) {
+  color: var(--text);
+  background: var(--app-bg);
+}
+
+html[data-theme="light"]:not([data-theme-preset="default"]) body {
+  color: var(--text);
+  background: var(--app-bg);
+}
+
+html[data-theme="light"]:not([data-theme-preset="default"]) .tab-overflow-menu,
+html[data-theme="light"]:not([data-theme-preset="default"]) .note-find-bar,
+html[data-theme="light"]:not([data-theme-preset="default"]) .code-block-context-menu,
+html[data-theme="light"]:not([data-theme-preset="default"]) .table-context-menu,
+html[data-theme="light"]:not([data-theme-preset="default"]) .slash-menu,
+html[data-theme="light"]:not([data-theme-preset="default"]) .format-bubble,
+html[data-theme="light"]:not([data-theme-preset="default"]) .palette,
+html[data-theme="light"]:not([data-theme-preset="default"]) .settings-modal,
+html[data-theme="light"]:not([data-theme-preset="default"]) .dialog {
+  color: var(--text);
+  border-color: var(--border);
+  background: var(--surface-strong);
+}
+
+html[data-theme="light"]:not([data-theme-preset="default"]) .folder-search-input,
+html[data-theme="light"]:not([data-theme-preset="default"]) .search-button,
+html[data-theme="light"]:not([data-theme-preset="default"]) .toolbar-button,
+html[data-theme="light"]:not([data-theme-preset="default"]) .segmented-button,
+html[data-theme="light"]:not([data-theme-preset="default"]) .settings-text-input,
+html[data-theme="light"]:not([data-theme-preset="default"]) .settings-number-input,
+html[data-theme="light"]:not([data-theme-preset="default"]) .dialog-input,
+html[data-theme="light"]:not([data-theme-preset="default"]) .icon-choice,
+html[data-theme="light"]:not([data-theme-preset="default"]) .accent-control input[type="color"] {
+  color: var(--text);
+  border-color: var(--border);
+  background: var(--surface-strong);
+}
+
+html[data-theme="light"]:not([data-theme-preset="default"]) .toolbar-button:hover,
+html[data-theme="light"]:not([data-theme-preset="default"]) .segmented-button:hover,
+html[data-theme="light"]:not([data-theme-preset="default"]) .settings-select:hover {
+  background: var(--surface-muted);
+}
+
+html[data-theme="light"]:not([data-theme-preset="default"]) .settings-sidebar,
+html[data-theme="light"]:not([data-theme-preset="default"]) .settings-card {
+  border-color: var(--border);
+  background: var(--surface-soft);
+}
+
+html[data-theme="light"]:not([data-theme-preset="default"]) .settings-select {
+  color: var(--text);
+  border-color: var(--border);
+  background-color: var(--surface-strong);
+}
+
+html[data-theme="light"]:not([data-theme-preset="default"]) .note-card.is-dragging,
+html[data-theme="light"]:not([data-theme-preset="default"]) .note-drag-preview,
+html[data-theme="light"]:not([data-theme-preset="default"]) .table-row-handle.is-visible:hover,
+html[data-theme="light"]:not([data-theme-preset="default"]) .table-column-handle.is-visible:hover {
+  color: var(--text);
+  border-color: var(--border);
+  background: var(--surface-strong);
+}
+
+html[data-theme="light"]:not([data-theme-preset="default"]) kbd {
+  color: var(--text-muted);
+  border-color: var(--border);
+  background: var(--surface-muted);
+}
+
+html[data-theme="light"]:not([data-theme-preset="default"]) .save-state,
+html[data-theme="light"]:not([data-theme-preset="default"]) .setting-row small,
+html[data-theme="light"]:not([data-theme-preset="default"]) .icon-choice span,
+html[data-theme="light"]:not([data-theme-preset="default"]) .dialog-header p,
+html[data-theme="light"]:not([data-theme-preset="default"]) .settings-title p,
+html[data-theme="light"]:not([data-theme-preset="default"]) .settings-content-header p {
+  color: var(--text-muted);
+}
+
 html[data-theme="dark"] {
   color: #fafafa;
   background: var(--app-bg);
@@ -5451,6 +5534,63 @@ html[data-theme="dark"] .switch-track {
 
 html[data-theme="dark"] .switch input:checked + .switch-track {
   background: #8f98a3;
+}
+
+/* Presets opt into a complete palette. Keep the default theme's deliberately
+ * warm, hand-tuned colors above, while allowing themed surfaces and typography
+ * to follow their own tokens instead of inheriting the default dark neutrals. */
+html[data-theme="dark"]:not([data-theme-preset="default"]) .settings-modal,
+html[data-theme="dark"]:not([data-theme-preset="default"]) .app-menu,
+html[data-theme="dark"]:not([data-theme-preset="default"]) .tab-overflow-menu,
+html[data-theme="dark"]:not([data-theme-preset="default"]) .search-button,
+html[data-theme="dark"]:not([data-theme-preset="default"]) .toolbar-button,
+html[data-theme="dark"]:not([data-theme-preset="default"]) .dialog,
+html[data-theme="dark"]:not([data-theme-preset="default"]) .palette,
+html[data-theme="dark"]:not([data-theme-preset="default"]) .slash-menu,
+html[data-theme="dark"]:not([data-theme-preset="default"]) .note-find-bar,
+html[data-theme="dark"]:not([data-theme-preset="default"]) .note-status-bar,
+html[data-theme="dark"]:not([data-theme-preset="default"]) .segmented-button,
+html[data-theme="dark"]:not([data-theme-preset="default"]) .context-menu,
+html[data-theme="dark"]:not([data-theme-preset="default"]) .code-block-context-menu,
+html[data-theme="dark"]:not([data-theme-preset="default"]) .table-context-menu {
+  color: var(--text);
+  border-color: var(--border);
+  background: var(--surface-strong);
+}
+
+html[data-theme="dark"]:not([data-theme-preset="default"]) .icon-choice,
+html[data-theme="dark"]:not([data-theme-preset="default"]) .folder-search-input,
+html[data-theme="dark"]:not([data-theme-preset="default"]) .format-bubble,
+html[data-theme="dark"]:not([data-theme-preset="default"]) .settings-text-input,
+html[data-theme="dark"]:not([data-theme-preset="default"]) .settings-number-input,
+html[data-theme="dark"]:not([data-theme-preset="default"]) .note-drag-preview,
+html[data-theme="dark"]:not([data-theme-preset="default"]) .raw-markdown-input,
+html[data-theme="dark"]:not([data-theme-preset="default"]) .frontmatter-field input,
+html[data-theme="dark"]:not([data-theme-preset="default"]) .frontmatter-raw textarea,
+html[data-theme="dark"]:not([data-theme-preset="default"]) .accent-control input[type="color"] {
+  color: var(--text);
+  border-color: var(--border);
+  background: var(--surface-strong);
+}
+
+html[data-theme="dark"]:not([data-theme-preset="default"]) .ProseMirror,
+html[data-theme="dark"]:not([data-theme-preset="default"]) .note-title-input,
+html[data-theme="dark"]:not([data-theme-preset="default"]) .settings-modal,
+html[data-theme="dark"]:not([data-theme-preset="default"]) .app-menu {
+  color: var(--text);
+}
+
+html[data-theme="dark"]:not([data-theme-preset="default"]) .eyebrow,
+html[data-theme="dark"]:not([data-theme-preset="default"]) .save-state,
+html[data-theme="dark"]:not([data-theme-preset="default"]) .setting-row small,
+html[data-theme="dark"]:not([data-theme-preset="default"]) .app-menu button small,
+html[data-theme="dark"]:not([data-theme-preset="default"]) .slash-item small,
+html[data-theme="dark"]:not([data-theme-preset="default"]) .note-card small,
+html[data-theme="dark"]:not([data-theme-preset="default"]) .find-count,
+html[data-theme="dark"]:not([data-theme-preset="default"]) .palette-result small,
+html[data-theme="dark"]:not([data-theme-preset="default"]) .empty-sidebar-note,
+html[data-theme="dark"]:not([data-theme-preset="default"]) .palette-empty {
+  color: var(--text-muted);
 }
 
 .left-panes:not(.is-single-col) .folder-pane:not(.section-view-folder-pane) .folder-row:hover,
