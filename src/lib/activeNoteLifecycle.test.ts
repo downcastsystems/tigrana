@@ -1,5 +1,9 @@
 import { describe, expect, it, vi } from "vitest";
-import { ActiveNoteLifecycle } from "./activeNoteLifecycle";
+import {
+  ActiveNoteLifecycle,
+  getMissingNoteChangeAction,
+  getWatchedContentChangeAction,
+} from "./activeNoteLifecycle";
 import type { NotebookStorage } from "./notebookStorage";
 
 function deferred() {
@@ -200,6 +204,56 @@ describe("active Note lifecycle", () => {
     expect(subject.hasPathChange).toBe(false);
   });
 
+  it("defers a missing-path watcher event while an internal rename is in flight", async () => {
+    const { subject } = lifecycle();
+    const rename = deferred();
+    const mutation = subject.runPathMutation("Old title.md", false, async () => {
+      await rename.promise;
+    });
+
+    expect(subject.isPathMutationInFlight("Old title.md")).toBe(true);
+    expect(subject.isPathMutationInFlight("Unrelated.md")).toBe(false);
+    expect(getMissingNoteChangeAction({
+      activePath: "Old title.md",
+      changedPath: "Old title.md",
+      hasPathMutation: subject.isPathMutationInFlight("Old title.md"),
+      hasUnsavedChanges: true,
+    })).toBe("defer");
+
+    rename.resolve();
+    await mutation;
+    expect(subject.isPathMutationInFlight("Old title.md")).toBe(false);
+  });
+
+  it("scopes folder path mutations to their descendants", async () => {
+    const { subject } = lifecycle();
+    const rename = deferred();
+    const mutation = subject.runPathMutation("Projects", true, async () => {
+      await rename.promise;
+    });
+
+    expect(subject.isPathMutationInFlight("Projects/Plan.md")).toBe(true);
+    expect(subject.isPathMutationInFlight("Project Archive/Plan.md")).toBe(false);
+
+    rename.resolve();
+    await mutation;
+  });
+
+  it("preserves an active unsaved Note when its watched path is missing", () => {
+    expect(getMissingNoteChangeAction({
+      activePath: "Note.md",
+      changedPath: "Note.md",
+      hasPathMutation: false,
+      hasUnsavedChanges: true,
+    })).toBe("preserve");
+    expect(getMissingNoteChangeAction({
+      activePath: "Other.md",
+      changedPath: "Note.md",
+      hasPathMutation: false,
+      hasUnsavedChanges: false,
+    })).toBe("refresh");
+  });
+
   it("coalesces overlapping persistence requests onto the latest work", async () => {
     const { subject } = lifecycle();
     const first = deferred();
@@ -264,6 +318,33 @@ describe("active Note lifecycle", () => {
     expect(subject.observeDiskContent("Note.md", "saved")).toBe("acceptedWrite");
     expect(subject.observeDiskContent("Note.md", "draft", "draft\n")).toBe("matchesEditor");
     expect(subject.observeDiskContent("Note.md", "someone else's edit", "draft")).toBe("externalChange");
+  });
+
+  it("defers a same-identity watcher mismatch throughout an internal title path change", () => {
+    expect(getWatchedContentChangeAction({
+      diskChange: "externalChange",
+      hasPathChange: true,
+      activeNoteIdentity: "note-123",
+      changedNoteIdentity: "note-123",
+      hasUnsavedChanges: true,
+    })).toBe("defer");
+  });
+
+  it("still warns for genuine external edits with unsaved work", () => {
+    expect(getWatchedContentChangeAction({
+      diskChange: "externalChange",
+      hasPathChange: false,
+      activeNoteIdentity: "note-123",
+      changedNoteIdentity: "note-123",
+      hasUnsavedChanges: true,
+    })).toBe("warn");
+    expect(getWatchedContentChangeAction({
+      diskChange: "externalChange",
+      hasPathChange: true,
+      activeNoteIdentity: "note-123",
+      changedNoteIdentity: "other-note",
+      hasUnsavedChanges: true,
+    })).toBe("warn");
   });
 
   it("reports lock denial and releases an acquired lock", async () => {

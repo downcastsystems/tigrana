@@ -225,6 +225,27 @@ export function restoreCachedNoteEditorState(
   return true;
 }
 
+type EditorDocumentLoadAction = "load" | "preserve" | "unchanged";
+
+export function getEditorDocumentLoadAction({
+  currentHistoryKey,
+  currentPath,
+  nextHistoryKey,
+  nextPath,
+  requestedReload,
+}: {
+  currentHistoryKey: string | null;
+  currentPath: string | null;
+  nextHistoryKey: string | null;
+  nextPath: string | null;
+  requestedReload: boolean;
+}): EditorDocumentLoadAction {
+  if (requestedReload) return "load";
+  if (currentPath === nextPath) return "unchanged";
+  if (currentHistoryKey && nextHistoryKey && currentHistoryKey === nextHistoryKey) return "preserve";
+  return "load";
+}
+
 export type EditorCommandRequest = {
   id: number;
   command: EditorCommand;
@@ -2721,13 +2742,26 @@ export function NotesEditor({ content, commandRequest, focusRequest, focusAtEndR
     }
     const nextHistoryKey = notePath ? `${workspace}\0${historyKey ?? notePath}` : null;
     const requestedReload = (reloadRequest ?? 0) !== handledReloadRequest.current;
-    if (lastLoadedNote.current === notePath && !requestedReload) {
+    const loadAction = getEditorDocumentLoadAction({
+      currentHistoryKey: loadedHistoryKey.current,
+      currentPath: lastLoadedNote.current,
+      nextHistoryKey,
+      nextPath: notePath,
+      requestedReload,
+    });
+    if (loadAction === "unchanged") {
       const previousHistoryKey = loadedHistoryKey.current;
       if (nextHistoryKey && previousHistoryKey && nextHistoryKey !== previousHistoryKey && noteHistoryCache.current) {
         cacheCurrentNoteEditorState(noteHistoryCache.current, nextHistoryKey, editor);
         noteHistoryCache.current.delete(previousHistoryKey);
         loadedHistoryKey.current = nextHistoryKey;
       }
+      return;
+    }
+    if (loadAction === "preserve") {
+      lastLoadedNote.current = notePath;
+      loadedHistoryKey.current = nextHistoryKey;
+      handledReloadRequest.current = reloadRequest ?? 0;
       return;
     }
     deferredMarkdownRef.current?.cancel();

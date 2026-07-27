@@ -15,6 +15,7 @@ const {
   collapseBoundarySelectionAt,
   findSlashQueryInState,
   getTaskLineCutDeleteRange,
+  getEditorDocumentLoadAction,
   handleNestedListBoundaryDelete,
   handleOutermostListItemBackspace,
   handleSameLevelListItemBackspace,
@@ -480,6 +481,45 @@ describe("editor history across Note loads", () => {
     } finally {
       editor.destroy();
     }
+  });
+});
+
+describe("editor document load decisions", () => {
+  it("preserves the editor when the same Note gets a new path", () => {
+    expect(getEditorDocumentLoadAction({
+      currentHistoryKey: "workspace\u0000note-id",
+      currentPath: "Old title.md",
+      nextHistoryKey: "workspace\u0000note-id",
+      nextPath: "New title.md",
+      requestedReload: false,
+    })).toBe("preserve");
+  });
+
+  it("loads when switching identities or explicitly reloading", () => {
+    expect(getEditorDocumentLoadAction({
+      currentHistoryKey: "workspace\u0000note-a",
+      currentPath: "Note A.md",
+      nextHistoryKey: "workspace\u0000note-b",
+      nextPath: "Note B.md",
+      requestedReload: false,
+    })).toBe("load");
+    expect(getEditorDocumentLoadAction({
+      currentHistoryKey: "workspace\u0000note-a",
+      currentPath: "Note A.md",
+      nextHistoryKey: "workspace\u0000note-a",
+      nextPath: "Note A.md",
+      requestedReload: true,
+    })).toBe("load");
+  });
+
+  it("does nothing when neither the Note nor path changed", () => {
+    expect(getEditorDocumentLoadAction({
+      currentHistoryKey: "workspace\u0000note-a",
+      currentPath: "Note A.md",
+      nextHistoryKey: "workspace\u0000note-a",
+      nextPath: "Note A.md",
+      requestedReload: false,
+    })).toBe("unchanged");
   });
 });
 

@@ -26,6 +26,11 @@ type UpdateMetadata = (
   options?: { persist?: boolean },
 ) => void;
 
+type DurablePathMutationScope = {
+  path: string;
+  includesDescendants: boolean;
+};
+
 type NotebookPathMutationOptions = {
   activePath: string | null;
   activeNoteLockRef: MutableRefObject<NoteEditLock | null>;
@@ -47,7 +52,7 @@ type NotebookPathMutationOptions = {
     reverse: (current: WorkspaceMetadata) => WorkspaceMetadata,
     localMetadata: WorkspaceMetadata,
   ) => void;
-  runDurableMutation?: <T>(operation: () => Promise<T>) => Promise<T>;
+  runDurableMutation?: <T>(operation: () => Promise<T>, scope: DurablePathMutationScope) => Promise<T>;
   isWorkspaceActive?: () => boolean;
 };
 
@@ -138,7 +143,7 @@ export function createNotebookPathMutations({
         (current) => moveNoteInMetadata(current, result.path, path, result.parent_path, sourceNote.parent_path),
       );
       return result;
-    });
+    }, { path, includesDescendants: false });
     if (!isWorkspaceActive()) return moved;
     repairActiveNotePath(path, moved.path);
     replaceOpenTabPath(path, moved.path);
@@ -157,7 +162,7 @@ export function createNotebookPathMutations({
         (current) => replaceOrderedPath(current, result.path, path),
       );
       return result;
-    });
+    }, { path, includesDescendants: false });
     if (!isWorkspaceActive()) return renamed;
     repairActiveNotePath(path, renamed.path);
     replaceOpenTabPath(path, renamed.path);
@@ -210,7 +215,7 @@ export function createNotebookPathMutations({
         (current) => moveFolderInMetadata(current, result.path, path, result.parent_path, sourceFolder.parent_path),
       );
       return result;
-    });
+    }, { path, includesDescendants: true });
 
     if (!isWorkspaceActive()) return moved;
     if (selectedFolder === path || selectedFolder.startsWith(`${path}/`)) {
@@ -234,7 +239,7 @@ export function createNotebookPathMutations({
         (current) => replaceFolderPathPrefix(current, result.path, path),
       );
       return result;
-    });
+    }, { path, includesDescendants: true });
     if (!isWorkspaceActive()) return renamed;
     if (selectedFolder === path || selectedFolder.startsWith(`${path}/`)) {
       setSelectedFolder(replacePathPrefix(selectedFolder, path, renamed.path));

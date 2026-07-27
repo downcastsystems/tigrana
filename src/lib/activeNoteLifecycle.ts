@@ -11,6 +11,51 @@ export type ActiveNoteLock = {
 
 export type DiskChangeKind = "acceptedWrite" | "matchesEditor" | "externalChange";
 export type DeletedTargetDisposition = "clearAndCancelNavigation" | "clearAndPreserveNavigation" | "ignore";
+export type MissingNoteChangeAction = "defer" | "preserve" | "refresh";
+export type WatchedContentChangeAction = "accept" | "defer" | "warn" | "reload";
+
+export function getMissingNoteChangeAction({
+  activePath,
+  changedPath,
+  hasPathMutation,
+  hasUnsavedChanges,
+}: {
+  activePath: string | null;
+  changedPath: string;
+  hasPathMutation: boolean;
+  hasUnsavedChanges: boolean;
+}): MissingNoteChangeAction {
+  if (activePath !== changedPath) return "refresh";
+  if (hasPathMutation) return "defer";
+  if (hasUnsavedChanges) return "preserve";
+  return "refresh";
+}
+
+export function getWatchedContentChangeAction({
+  diskChange,
+  hasPathChange,
+  activeNoteIdentity,
+  changedNoteIdentity,
+  hasUnsavedChanges,
+}: {
+  diskChange: DiskChangeKind;
+  hasPathChange: boolean;
+  activeNoteIdentity: string | null;
+  changedNoteIdentity: string | null;
+  hasUnsavedChanges: boolean;
+}): WatchedContentChangeAction {
+  if (diskChange !== "externalChange") return "accept";
+  if (
+    hasPathChange
+    && activeNoteIdentity
+    && changedNoteIdentity
+    && activeNoteIdentity === changedNoteIdentity
+  ) {
+    return "defer";
+  }
+  if (hasUnsavedChanges) return "warn";
+  return "reload";
+}
 
 type ActiveNoteLifecycleOptions = {
   storage: Pick<NotebookStorage, "acquireNoteEditLock" | "releaseNoteEditLock">;
@@ -32,6 +77,7 @@ export class ActiveNoteLifecycle {
   private activeLoadToken = 0;
   private saveQueues = new Map<string, Promise<void>>();
   private savingPathCounts = new Map<string, number>();
+  private pathMutationScopes: Array<{ path: string; includesDescendants: boolean }> = [];
   private pathChangeTail: Promise<void> | null = null;
   private persistenceRun: Promise<string | undefined> | null = null;
   private latestPersistenceWork: (() => Promise<string | undefined>) | null = null;
@@ -44,6 +90,7 @@ export class ActiveNoteLifecycle {
     this.navigationGeneration += 1;
     this.navigationTarget = null;
     this.acceptedDiskContent.clear();
+    this.pathMutationScopes = [];
     this.cancelLoads();
   }
 
@@ -270,6 +317,28 @@ export class ActiveNoteLifecycle {
     this.pathChangeTail = tracked;
     await tracked;
     return "completed" as const;
+  }
+
+  async runPathMutation<T>(
+    path: string,
+    includesDescendants: boolean,
+    work: () => Promise<T>,
+  ) {
+    const scope = { path, includesDescendants };
+    this.pathMutationScopes.push(scope);
+    try {
+      return await work();
+    } finally {
+      const index = this.pathMutationScopes.indexOf(scope);
+      if (index !== -1) this.pathMutationScopes.splice(index, 1);
+    }
+  }
+
+  isPathMutationInFlight(path: string) {
+    return this.pathMutationScopes.some((scope) =>
+      path === scope.path
+      || (scope.includesDescendants && path.startsWith(`${scope.path}/`)),
+    );
   }
 
   get hasPathChange() {

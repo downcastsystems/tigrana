@@ -63,7 +63,12 @@ import { decodeTitleFromFilename, validateNoteTitle } from "./lib/notebookNames"
 import { defaultWorkspaceMetadata, notebookStorage, SAMPLE_WORKSPACE } from "./lib/notebookStorage";
 import type { NoteVersionEntry, TrashEntry } from "./lib/notebookStorage";
 import { normalizeMarkdownImageLines } from "./lib/markdown";
-import { ActiveNoteLifecycle, type ActiveNoteAccess } from "./lib/activeNoteLifecycle";
+import {
+  ActiveNoteLifecycle,
+  getMissingNoteChangeAction,
+  getWatchedContentChangeAction,
+  type ActiveNoteAccess,
+} from "./lib/activeNoteLifecycle";
 import { shouldDockNoteTitle } from "./lib/dockedTitle";
 import { buildNoteExportHtml, noteExportFileStem } from "./lib/exportNote";
 import { shouldApplyEditorUpdate } from "./lib/noteEditorUpdates";
@@ -692,6 +697,7 @@ export default function App() {
   );
   const positionWriteTimerRef = useRef<number | null>(null);
   const pendingEditorChangeRef = useRef<PendingEditorChange | null>(null);
+  const activeNoteIdentityRef = useRef<string | null>(null);
   const pendingNoteContentsRef = useRef(new PendingNoteContents());
   const latestNotebookSnapshotRef = useRef(new LatestNotebookSnapshot<NotebookSnapshot>());
   const latestTrashSnapshotRef = useRef(new LatestNotebookSnapshot<TrashEntry[]>());
@@ -786,6 +792,9 @@ export default function App() {
     () => createNoteDocument({ title: titleDraft, body: draft, frontmatter: frontmatterDraft }),
     [draft, frontmatterDraft, titleDraft],
   );
+  const activeNoteHistoryKey = activePath
+    ? activeNoteIdentityRef.current || linkIndex?.pathToId[activePath] || activePath
+    : null;
   const outline = useNoteOutline(
     titleDraft,
     draft,
@@ -1602,6 +1611,7 @@ export default function App() {
     if (!preserveNavigation) void releaseActiveNoteLock();
     applyNoteAccess("editable");
     setActivePathAuthoritatively(null);
+    activeNoteIdentityRef.current = null;
     activeDraftStateRef.current.pendingNote = null;
     setPendingNote(null);
     setEditorRestorePosition(null);
@@ -1747,8 +1757,12 @@ export default function App() {
     rebasePendingMetadata: (forward, reverse, localMetadata) => {
       notebookMetadataPersistence.rebasePending(workspace, forward, reverse, localMetadata);
     },
-    runDurableMutation: (operation) => notebookMetadataPersistence.runExclusive(workspace, operation),
-  }), [activeNoteLockRef, activePath, adoptAuthoritativeMetadata, folders, isWorkspaceActive, navigationStyle, notes, refreshWorkspace, selectedFolder, setActivePathAuthoritatively, updateMetadata, workspace]);
+    runDurableMutation: (operation, scope) => activeNoteLifecycle.runPathMutation(
+      scope.path,
+      scope.includesDescendants,
+      () => notebookMetadataPersistence.runExclusive(workspace, operation),
+    ),
+  }), [activeNoteLifecycle, activeNoteLockRef, activePath, adoptAuthoritativeMetadata, folders, isWorkspaceActive, navigationStyle, notes, refreshWorkspace, selectedFolder, setActivePathAuthoritatively, updateMetadata, workspace]);
 
   const setFolderExpanded = useCallback((path: string, expanded: boolean) => {
     updateMetadata((current) => ({
@@ -2406,8 +2420,25 @@ export default function App() {
         nextContent,
         activePath === path ? currentMarkdownSnapshot() : undefined,
       );
-      if (diskChange === "acceptedWrite") {
+      const changedNoteIdentity =
+        readNoteDocument(nextContent, "").frontmatterFields
+          .find((field) => field.key === "id")?.value.trim()
+        || null;
+      const contentChangeAction = getWatchedContentChangeAction({
+        diskChange,
+        hasPathChange: activeNoteLifecycle.hasPathChange,
+        activeNoteIdentity: activeNoteIdentityRef.current,
+        changedNoteIdentity,
+        hasUnsavedChanges: hasUnsavedChanges
+          || hadPendingEditorChange
+          || Boolean(pendingEditorChangeRef.current),
+      });
+      if (contentChangeAction === "accept") {
         cacheObservedContent();
+        return;
+      }
+      if (contentChangeAction === "defer") {
+        activeNoteLifecycle.acceptDiskContent(path, nextContent);
         return;
       }
 
@@ -2415,13 +2446,8 @@ export default function App() {
       // source of truth. A move that rewrote inbound links on disk also calls
       // refreshWorkspace, which has already updated the contents map; without this
       // check we'd short-circuit and the editor would keep showing the stale link.
-      const sameAsEditor = diskChange === "matchesEditor";
       const currentContent = contents.get(path);
       if (activePath !== path && currentContent !== undefined && normalizeNoteMarkdown(currentContent) === nextNormalized) return;
-      if (sameAsEditor) {
-        cacheObservedContent();
-        return;
-      }
 
       setContents((current) => {
         const next = new Map(current);
@@ -2438,7 +2464,7 @@ export default function App() {
         || activeDraftStateRef.current.activePath !== path
       ) return;
 
-      if (hasUnsavedChanges || hadPendingEditorChange || pendingEditorChangeRef.current) {
+      if (contentChangeAction === "warn") {
         setAppError("This note changed on disk, but you have unsaved edits. Save or switch notes before reloading it.");
         return;
       }
@@ -2458,6 +2484,17 @@ export default function App() {
       recordNotePosition(path, nextContent, restorePosition);
     } catch {
       if (!isWorkspaceActive(operationWorkspace)) return;
+      const missingChangeAction = getMissingNoteChangeAction({
+        activePath: activeDraftStateRef.current.activePath,
+        changedPath: path,
+        hasPathMutation: activeNoteLifecycle.isPathMutationInFlight(path),
+        hasUnsavedChanges: hasUnsavedChanges || Boolean(pendingEditorChangeRef.current),
+      });
+      if (missingChangeAction === "defer") return;
+      if (missingChangeAction === "preserve") {
+        setAppError("This note is temporarily unavailable on disk, but your unsaved edits are still open. Save to retry or switch notes when you are ready.");
+        return;
+      }
       await refreshWorkspace(operationWorkspace);
       if (!isWorkspaceActive(operationWorkspace)) return;
       if (
@@ -3596,6 +3633,10 @@ export default function App() {
 
   function loadContentIntoEditor(note: NoteEntry | null, markdown: string, restorePosition: NotePositionMetadata | null = null) {
     const loadedDocument = readNoteDocument(markdown, note?.title ?? "");
+    activeNoteIdentityRef.current =
+      loadedDocument.frontmatterFields.find((field) => field.key === "id")?.value.trim()
+      || note?.path
+      || null;
     setEditorRestorePosition(restorePosition);
     setTitleDraft(loadedDocument.title);
     setSavedTitle(loadedDocument.title);
@@ -4737,7 +4778,7 @@ export default function App() {
                   focusRequest={editorFocusRequest}
                   focusAtEndRequest={editorFocusAtEndRequest}
                   findRequest={noteFindRequest}
-                  historyKey={activePath ? linkIndex?.pathToId[activePath] ?? activePath : null}
+                  historyKey={activeNoteHistoryKey}
                   reloadRequest={editorReloadRequest}
                   commandRequest={editorCommandRequest}
                   notePath={activePath}
