@@ -166,6 +166,19 @@ Slash commands should use Tiptap commands, not Markdown text insertion. For exam
 
 Clipboard image paste should save assets through the Tauri backend and insert Markdown-compatible image references.
 
+### Editor performance invariants
+
+Performance and stability are the top product constraint. Preserve these rules:
+
+- ProseMirror transactions stay local while the user is typing; do not publish React state on every transaction.
+- A typing burst produces at most one deferred Markdown conversion and parent update.
+- The Tiptap editor instance and its extensions remain stable across typing and serialized Markdown echoes.
+- Never feed the editor its own serialized Markdown back through `setContent`; explicit Note switches and reloads are the only content-replacement paths.
+- Navigation, external reloads, and Note switches must cancel or reject stale pending editor updates.
+- Long Notes must follow the same bounded-work path as short Notes.
+
+`src/editor/NotesEditor.performance.test.tsx` is the regression gate for these invariants. Prefer deterministic work-count assertions over wall-clock thresholds when extending it.
+
 ## Markdown Support
 
 Current conversion support in `src/lib/markdown.ts`:

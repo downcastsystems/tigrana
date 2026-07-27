@@ -149,6 +149,15 @@ positions update refs and persist after idle without changing workspace React
 state. Image hydration runs when a Note loads or an image is inserted, not in
 response to the editor's own serialized Markdown.
 
+`src/editor/NotesEditor.performance.test.tsx` protects this path through the
+public Note editor interface. A burst of editor transactions must cause no
+parent render or whole-Note Markdown conversion until the deferred commit,
+then exactly one of each. The editor instance must survive that Markdown echo,
+and its Undo history must remain intact. The same bounded-work rule applies to
+long Notes. Note switches and explicit external reloads cancel stale pending
+updates without recreating the editor; explicit reloads reset stale Undo
+history.
+
 Autosave must be invisible to input. Starting a save stages content outside
 React rather than replacing the workspace content cache. Save completion and
 filesystem-watcher echo updates are transitions, and the Link index is reread
