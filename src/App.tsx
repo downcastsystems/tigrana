@@ -103,6 +103,7 @@ import { NotebookMetadataSession } from "./lib/notebookMetadataSession";
 import { adoptNotebookMetadata as applyNotebookMetadataAdoption } from "./lib/notebookAppearance";
 import { LatestNotebookSnapshot } from "./lib/notebookSnapshot";
 import { PendingNoteContents } from "./lib/pendingNoteContents";
+import { buildRecentNoteViews } from "./lib/recentNotes";
 import { useNoteTextStats } from "./lib/useNoteTextStats";
 import { useNoteOutline } from "./lib/useNoteOutline";
 import type { BookmarkEntry, FolderEntry, LinkIndex, NavigationStyle, NotebookSnapshot, NotebookThemeColors, NoteEntry, NotePositionMetadata, WorkspaceMetadata } from "./types";
@@ -847,6 +848,10 @@ export default function App() {
     return notes.find((note) => note.path === activePath)?.parent_path ?? null;
   }, [activePath, notes]);
   const bookmarks = useMemo(() => buildBookmarkViews(metadata.bookmarks, folders, notes, metadata, workspace), [folders, metadata, notes, workspace]);
+  const recentNotes = useMemo(
+    () => buildRecentNoteViews(notes, metadata),
+    [metadata, notes],
+  );
   const visibleTabs = useMemo(
     () =>
       openTabs.map((tab) => ({
@@ -1180,6 +1185,7 @@ export default function App() {
       spellcheckEnabled,
       editorWidthMode,
       noteAlignment,
+      recentNotes: recentNotes.map(({ path, title }) => ({ path, title })),
     };
     const handle = window.setTimeout(() => {
       void updateAppMenuState(label, state).catch((error) => {
@@ -1197,6 +1203,7 @@ export default function App() {
     noteAlignment,
     outlineVisible,
     rawMarkdownVisible,
+    recentNotes,
     spellcheckEnabled,
     workspace,
   ]);
@@ -1889,6 +1896,13 @@ export default function App() {
   }
 
   async function handleMenuCommand(command: string) {
+    if (command.startsWith("open_recent_note:")) {
+      const index = Number(command.slice("open_recent_note:".length));
+      const recentNote = Number.isInteger(index) ? recentNotes[index] : undefined;
+      if (recentNote) await selectNote(recentNote.path);
+      return;
+    }
+
     switch (command) {
       case "open_settings":
         setSettingsOpen(true);
@@ -4397,7 +4411,6 @@ export default function App() {
           ) : navigationStyle === "section-view" ? (
             <>
               <SectionViewFolderPane
-                activePath={activePath}
                 bookmarks={bookmarks}
                 bookmarksExpanded={metadata.bookmarksExpanded}
                 draggingItem={draggingItem}
@@ -4461,7 +4474,6 @@ export default function App() {
           ) : (
             <>
               <FolderPane
-                activePath={activePath}
                 bookmarks={bookmarks}
                 bookmarksExpanded={metadata.bookmarksExpanded}
                 disabled={!workspace}
@@ -5167,7 +5179,6 @@ export default function App() {
 }
 
 function FolderPane({
-  activePath,
   bookmarks,
   bookmarksExpanded,
   disabled,
@@ -5197,7 +5208,6 @@ function FolderPane({
   onToggleSearch,
   onToggleMenu,
 }: {
-  activePath: string | null;
   bookmarks: BookmarkView[];
   bookmarksExpanded: boolean;
   disabled: boolean;
@@ -5249,8 +5259,6 @@ function FolderPane({
         </div>
       </div>
       <BookmarksSection
-        activeFolderPath={selectedFolder}
-        activeNotePath={activePath}
         bookmarks={bookmarks}
         expanded={bookmarksExpanded}
         onRemove={onRemoveBookmark}
@@ -5377,16 +5385,12 @@ function NotebookFooter({
 }
 
 function BookmarksSection({
-  activeFolderPath,
-  activeNotePath,
   bookmarks,
   expanded,
   onRemove,
   onSelect,
   onToggle,
 }: {
-  activeFolderPath?: string | null;
-  activeNotePath?: string | null;
   bookmarks: BookmarkView[];
   expanded: boolean;
   onRemove: (id: string) => void;
@@ -5402,14 +5406,9 @@ function BookmarksSection({
       {expanded ? (
         <div className="bookmarks-list">
           {bookmarks.map((bookmark) => {
-            const isActive =
-              !bookmark.missing &&
-              ((bookmark.kind === "note" && bookmark.path === activeNotePath) ||
-                (bookmark.kind === "folder" && bookmark.path === activeFolderPath));
-
             return (
               <button
-                className={`bookmark-item${bookmark.missing ? " is-missing" : ""}${isActive ? " is-active" : ""}`}
+                className={`bookmark-item${bookmark.missing ? " is-missing" : ""}`}
                 key={bookmark.id}
                 type="button"
                 aria-disabled={bookmark.missing}
@@ -5585,7 +5584,6 @@ function FolderRow({
 // ---------- Section View first pane (root folders only) ----------
 
 function SectionViewFolderPane({
-  activePath,
   bookmarks,
   bookmarksExpanded,
   draggingItem,
@@ -5614,7 +5612,6 @@ function SectionViewFolderPane({
   onToggleMenu,
   onToggleSearch,
 }: {
-  activePath: string | null;
   bookmarks: BookmarkView[];
   bookmarksExpanded: boolean;
   draggingItem: DragItem;
@@ -5673,8 +5670,6 @@ function SectionViewFolderPane({
         </div>
       </div>
       <BookmarksSection
-        activeFolderPath={selectedFolder}
-        activeNotePath={activePath}
         bookmarks={bookmarks}
         expanded={bookmarksExpanded}
         onRemove={onRemoveBookmark}
@@ -6155,8 +6150,6 @@ function UnifiedTreePane({
       </div>
       {showBookmarks && onRemoveBookmark && onSelectBookmark && onToggleBookmarksExpanded ? (
         <BookmarksSection
-          activeFolderPath={selectedFolderPath}
-          activeNotePath={activePath}
           bookmarks={bookmarks}
           expanded={bookmarksExpanded}
           onRemove={onRemoveBookmark}

@@ -53,4 +53,10 @@ describe("Markdown round trips", () => {
 
     expect(htmlToMarkdown(html).trimEnd()).toBe("| Character | Role |\n| --- | --- |\n| Mina | Lead |");
   });
+
+  it.fails("keeps consecutive quoted lines in one blockquote", () => {
+    const markdown = "> First quoted line\n> Second quoted line";
+
+    expect(htmlToMarkdown(markdownToHtml(markdown)).trimEnd()).toBe(markdown);
+  });
 });

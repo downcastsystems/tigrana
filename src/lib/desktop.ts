@@ -18,6 +18,7 @@ export type AppMenuState = {
   spellcheckEnabled: boolean;
   editorWidthMode: "comfortable" | "narrow" | "full";
   noteAlignment: "left" | "center";
+  recentNotes: Array<{ path: string; title: string }>;
 };
 
 export function isTauri() {

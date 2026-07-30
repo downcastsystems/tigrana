@@ -124,12 +124,18 @@ Browser/demo mode falls back to localStorage, but native app behavior should use
 
 New notes should behave like Notion:
 
-- Clicking New Note opens a blank note screen immediately.
+- Clicking New Note immediately creates and opens a blank `Untitled` note
+  (`Untitled 2`, and so on, when needed). Persisting this placeholder is
+  intentional because it keeps note identity and the surrounding UI coherent,
+  including across reloads.
 - The title is typed into the note title field, not a prompt/modal.
-- The filename is derived from the title only when saved.
+- Committing a valid title renames the placeholder file from the title field.
 - Invalid filename characters are rejected:
   - `\ : * ? " < > |`
   - Note that there is a special handling for '/' so that it can be used in titles.
+- Filename-portability substitutions use visually similar fullwidth characters.
+  A literal fullwidth escape-token character can therefore collide with its
+  portable counterpart; this is an accepted tradeoff, not a defect.
 - Duplicate note titles in the same folder are rejected.
 
 Do not reintroduce `window.prompt()` for note creation.
@@ -195,6 +201,11 @@ Current conversion support in `src/lib/markdown.ts`:
 - images
 
 If you add a block type, make sure it round-trips cleanly to readable Markdown.
+
+GFM tables cover straightforward pipe-delimited content. Escaped literal pipes
+inside GFM table cells are an accepted limitation; use the richer HTML-table
+representation when cells need advanced content or formatting. Preserving a
+non-1 starting number for ordered lists is not a product requirement.
 
 ## Commands
 

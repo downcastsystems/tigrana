@@ -7,6 +7,11 @@ describe("Notebook file names", () => {
     expect(decodeTitleFromFilename(encodeTitleForFilename(title))).toBe(title);
   });
 
+  it("reserves the fullwidth solidus as the portable filename token for slash", () => {
+    expect(encodeTitleForFilename("Draft/Final")).toBe("Draft／Final");
+    expect(decodeTitleFromFilename("Draft／Final")).toBe("Draft/Final");
+  });
+
   it("rejects empty, reserved, invalid, and control-character titles", () => {
     for (const title of ["", "..", "bad:name", "line\nbreak"]) {
       expect(() => validateNoteTitle(title)).toThrow();

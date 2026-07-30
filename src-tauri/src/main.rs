@@ -204,6 +204,13 @@ struct WriteExportTextPayload {
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
 #[serde(rename_all = "camelCase")]
+struct RecentMenuNote {
+    path: String,
+    title: String,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
+#[serde(rename_all = "camelCase")]
 struct AppMenuState {
     has_workspace: bool,
     has_open_note: bool,
@@ -215,6 +222,8 @@ struct AppMenuState {
     spellcheck_enabled: bool,
     editor_width_mode: String,
     note_alignment: String,
+    #[serde(default)]
+    recent_notes: Vec<RecentMenuNote>,
 }
 
 impl Default for AppMenuState {
@@ -230,6 +239,7 @@ impl Default for AppMenuState {
             spellcheck_enabled: true,
             editor_width_mode: "comfortable".to_string(),
             note_alignment: "left".to_string(),
+            recent_notes: Vec::new(),
         }
     }
 }
@@ -1278,6 +1288,35 @@ fn build_app_menu(
         true,
         Some("Cmd+O"),
     )?;
+    let open_recent = Submenu::new(handle, "Open Recent", has_workspace)?;
+    if state.recent_notes.is_empty() {
+        let empty = MenuItem::with_id(
+            handle,
+            "open_recent_empty",
+            "No Recent Notes",
+            false,
+            None::<&str>,
+        )?;
+        open_recent.append(&empty)?;
+    } else {
+        for (index, note) in state.recent_notes.iter().enumerate() {
+            let parent = Path::new(&note.path)
+                .parent()
+                .and_then(|value| value.to_str())
+                .filter(|value| !value.is_empty());
+            let title = parent
+                .map(|value| format!("{} — {}", note.title, value))
+                .unwrap_or_else(|| note.title.clone());
+            let item = MenuItem::with_id(
+                handle,
+                format!("open_recent_note:{index}"),
+                title,
+                true,
+                None::<&str>,
+            )?;
+            open_recent.append(&item)?;
+        }
+    }
     let manage_notebooks = MenuItem::with_id(
         handle,
         "manage_notebooks",
@@ -1663,6 +1702,7 @@ fn build_app_menu(
         &[
             &new_notebook,
             &open_notebook,
+            &open_recent,
             &manage_notebooks,
             &PredefinedMenuItem::separator(handle)?,
             &new_note,
@@ -2092,6 +2132,7 @@ pub fn run() {
             "open_recently_deleted" => {
                 emit_menu_command(app, "open_recently_deleted");
             }
+            id if id.starts_with("open_recent_note:") => emit_menu_command(app, id),
             "new_notebook" => emit_menu_command(app, "new_notebook"),
             "new_note" => emit_menu_command(app, "new_note"),
             "new_folder" => emit_menu_command(app, "new_folder"),

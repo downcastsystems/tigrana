@@ -1052,17 +1052,7 @@ body.is-dragging-section * {
   cursor: pointer;
 }
 
-.bookmark-item.is-active {
-  color: var(--accent-contrast);
-  background: var(--accent);
-}
-
-.bookmark-item.is-active:hover {
-  color: var(--accent-contrast);
-  background: var(--accent);
-}
-
-.bookmark-item:not(.is-active):hover {
+.bookmark-item:hover {
   color: var(--accent-contrast);
   background: var(--accent);
 }
@@ -5365,13 +5355,7 @@ html[data-theme="dark"] .bookmark-item {
   background: transparent;
 }
 
-html[data-theme="dark"] .bookmark-item:not(.is-active):hover {
-  color: var(--accent-contrast);
-  background: var(--accent);
-}
-
-html[data-theme="dark"] .bookmark-item.is-active,
-html[data-theme="dark"] .bookmark-item.is-active:hover {
+html[data-theme="dark"] .bookmark-item:hover {
   color: var(--accent-contrast);
   background: var(--accent);
 }
