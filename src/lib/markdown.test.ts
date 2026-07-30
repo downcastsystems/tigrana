@@ -32,6 +32,20 @@ describe("Markdown round trips", () => {
     expect(html).not.toContain('data-type="emoji"');
   });
 
+  it("renders alternate fenced code blocks and normalizes them on save", () => {
+    const markdown = "~~~~ts\n# This is code\n~~~~";
+    const html = markdownToHtml(markdown);
+
+    expect(html).toBe('<pre><code class="language-ts"># This is code</code></pre>');
+    expect(htmlToMarkdown(html).trimEnd()).toBe("```ts\n# This is code\n```");
+  });
+
+  it("uses a longer saved fence when code contains triple backticks", () => {
+    const markdown = "````md\n```\n# This is still code\n````";
+
+    expect(htmlToMarkdown(markdownToHtml(markdown)).trimEnd()).toBe(markdown);
+  });
+
   it("uses the same policy for clipboard-like HTML fragments", () => {
     const html = [
       "<h2>Scene</h2>",

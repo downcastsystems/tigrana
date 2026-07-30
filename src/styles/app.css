@@ -3170,6 +3170,15 @@ html[data-theme="dark"] .tab-list-separator {
   min-height: 68vh;
 }
 
+.editor-content h1,
+.editor-content h2,
+.editor-content h3,
+.editor-content h4,
+.editor-content h5,
+.editor-content h6 {
+  scroll-margin-top: var(--note-scroll-fade-size);
+}
+
 .ProseMirror {
   outline: none;
   color: #22211f;

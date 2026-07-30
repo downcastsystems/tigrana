@@ -1,4 +1,10 @@
 import { replaceEmojiShortcodes } from "./emoji";
+import {
+  closesMarkdownCodeFence,
+  markdownCodeFenceDelimiter,
+  readMarkdownCodeFence,
+  type MarkdownCodeFence,
+} from "./markdownCodeFence";
 
 const escapeHtml = (value: string) =>
   value
@@ -79,9 +85,8 @@ export function markdownToHtml(markdown: string, options: MarkdownOptions = {}) 
   const html: string[] = [];
   type ListLevel = { type: "ul" | "ol" | "task"; indent: number; openLi: boolean; lastLiIndex: number };
   const listStack: ListLevel[] = [];
-  let inCode = false;
+  let codeFence: MarkdownCodeFence | null = null;
   let codeLines: string[] = [];
-  let codeLanguage = "";
   let tableRows: string[][] = [];
   let inTable = false;
   let blankLineRun = 0;
@@ -264,26 +269,25 @@ export function markdownToHtml(markdown: string, options: MarkdownOptions = {}) 
   while (i < lines.length) {
     const line = lines[i];
 
-    if (line.startsWith("```")) {
-      if (inCode) {
-        const langAttr = codeLanguage ? ` class="language-${escapeHtml(codeLanguage)}"` : "";
+    if (codeFence) {
+      if (closesMarkdownCodeFence(line, codeFence)) {
+        const langAttr = codeFence.info ? ` class="language-${escapeHtml(codeFence.info)}"` : "";
         html.push(`<pre><code${langAttr}>${escapeHtml(codeLines.join("\n"))}</code></pre>`);
         codeLines = [];
-        codeLanguage = "";
-        inCode = false;
+        codeFence = null;
       } else {
-        closeList();
-        closeTable();
-        flushBlankParagraphs();
-        inCode = true;
-        codeLanguage = line.slice(3).trim();
+        codeLines.push(line);
       }
       i += 1;
       continue;
     }
 
-    if (inCode) {
-      codeLines.push(line);
+    const openingFence = readMarkdownCodeFence(line);
+    if (openingFence) {
+      closeList();
+      closeTable();
+      flushBlankParagraphs();
+      codeFence = openingFence;
       i += 1;
       continue;
     }
@@ -446,8 +450,8 @@ export function markdownToHtml(markdown: string, options: MarkdownOptions = {}) 
 
   closeList();
   closeTable();
-  if (inCode) {
-    const langAttr = codeLanguage ? ` class="language-${escapeHtml(codeLanguage)}"` : "";
+  if (codeFence) {
+    const langAttr = codeFence.info ? ` class="language-${escapeHtml(codeFence.info)}"` : "";
     html.push(`<pre><code${langAttr}>${escapeHtml(codeLines.join("\n"))}</code></pre>`);
   }
   return html.join("\n");
@@ -565,7 +569,9 @@ export function htmlToMarkdown(html: string) {
       const className = codeEl?.getAttribute("class") ?? "";
       const langMatch = /language-([\w+#.-]+)/.exec(className);
       const language = langMatch ? langMatch[1] : "";
-      markdown.push(`\`\`\`${language}\n${block.textContent ?? ""}\n\`\`\``);
+      const code = block.textContent ?? "";
+      const fence = markdownCodeFenceDelimiter(code);
+      markdown.push(`${fence}${language}\n${code}\n${fence}`);
     } else if (tag === "hr") {
       markdown.push("---");
     } else if (tag === "ul" || tag === "ol") {

@@ -8,6 +8,7 @@ import {
   reviseNoteDocument,
   updateNoteDocumentFrontmatterField,
 } from "./noteDocument";
+import { markdownToHtml } from "./markdown";
 
 describe("Note document", () => {
   it("reads frontmatter, body, and every derived value together", () => {
@@ -81,6 +82,77 @@ describe("Note document", () => {
       { id: "heading-1", level: 1, text: "✅ Discover" },
     ]);
     expect(revised.preview).toBe("First scene revised");
+  });
+
+  it("excludes fenced code contents from the outline", () => {
+    const document = createNoteDocument({
+      title: "July 2026 - To Do",
+      frontmatter: "",
+      body: [
+        "# 7/28/2026",
+        "",
+        "```sh",
+        "# DEV",
+        "# DATABASE_URL=postgresql://username:password@example.com/app",
+        "",
+        "# PROD",
+        "# DATABASE_URL=postgresql://username:password@example.com/app",
+        "```",
+        "",
+        "# 7/27/2026",
+      ].join("\n"),
+    });
+
+    expect(document.outline).toEqual([
+      { id: "heading-0", level: 1, text: "July 2026 - To Do" },
+      { id: "heading-1", level: 1, text: "7/28/2026" },
+      { id: "heading-2", level: 1, text: "7/27/2026" },
+    ]);
+  });
+
+  it.each([
+    ["tilde fences", "~~~sh\n# Hidden tilde heading\n~~~"],
+    ["longer backtick fences", "````md\n# Hidden long-fence heading\n```\n# Still hidden\n````"],
+  ])("excludes headings inside %s", (_kind, codeBlock) => {
+    const document = createNoteDocument({
+      title: "Draft",
+      frontmatter: "",
+      body: `# Before\n\n${codeBlock}\n\n## After`,
+    });
+
+    expect(document.outline.map(({ level, text }) => ({ level, text }))).toEqual([
+      { level: 1, text: "Draft" },
+      { level: 1, text: "Before" },
+      { level: 2, text: "After" },
+    ]);
+  });
+
+  it("treats the remainder of an unclosed fence as code", () => {
+    const document = createNoteDocument({
+      title: "Draft",
+      frontmatter: "",
+      body: "# Before\n\n```sh\n# Hidden\n\n## Still hidden",
+    });
+
+    expect(document.outline.map((entry) => entry.text)).toEqual(["Draft", "Before"]);
+  });
+
+  it.each([
+    ["backtick fences", "```sh\n# Hidden\n```"],
+    ["tilde fences", "~~~sh\n# Hidden\n~~~"],
+    ["longer fences", "````md\n# Hidden\n```\n## Still hidden\n````"],
+    ["unclosed fences", "```sh\n# Hidden\n## Still hidden"],
+  ])("keeps outline headings aligned with rendered headings around %s", (_kind, codeBlock) => {
+    const body = `# Before\n\n${codeBlock}\n\n## After`;
+    const outlineHeadings = createNoteDocument({
+      title: "",
+      frontmatter: "",
+      body,
+    }).outline.map(({ level, text }) => ({ level, text }));
+    const renderedHeadings = [...markdownToHtml(body).matchAll(/<h([1-6])>([^<]*)<\/h\1>/g)]
+      .map((match) => ({ level: Number(match[1]), text: match[2] }));
+
+    expect(outlineHeadings).toEqual(renderedHeadings);
   });
 
   it("keeps invalid edited frontmatter visible and reports its validation state", () => {

@@ -1,4 +1,5 @@
 import { replaceEmojiShortcodes } from "./emoji";
+import { closesMarkdownCodeFence, readMarkdownCodeFence, type MarkdownCodeFence } from "./markdownCodeFence";
 import { measureNoteText, type NoteTextStats } from "./noteTextStats";
 
 export { measureNoteText } from "./noteTextStats";
@@ -221,7 +222,21 @@ function previewBody(body: string) {
 
 export function extractNoteOutline(title: string, body: string): NoteOutlineEntry[] {
   const headings = title.trim() ? [{ level: 1, text: title.trim() }] : [];
-  body.split("\n").forEach((line) => {
+  const lines = body.replace(/\r\n/g, "\n").split("\n");
+  let codeFence: MarkdownCodeFence | null = null;
+
+  lines.forEach((line) => {
+    if (codeFence) {
+      if (closesMarkdownCodeFence(line, codeFence)) codeFence = null;
+      return;
+    }
+
+    const openingFence = readMarkdownCodeFence(line);
+    if (openingFence) {
+      codeFence = openingFence;
+      return;
+    }
+
     const match = /^(#{1,6})\s+(.+)$/.exec(line);
     if (match) headings.push({ level: match[1].length, text: inlineMarkdownToPlainText(match[2]) });
   });
