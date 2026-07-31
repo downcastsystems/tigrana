@@ -486,6 +486,12 @@ body.is-dragging-folder * {
   user-select: none;
 }
 
+body.is-dragging-bookmark,
+body.is-dragging-bookmark * {
+  cursor: grabbing !important;
+  user-select: none;
+}
+
 .folder-pane {
   position: relative;
   z-index: 10;
@@ -1038,6 +1044,7 @@ body.is-dragging-section * {
 }
 
 .bookmark-item {
+  position: relative;
   display: grid;
   grid-template-columns: 18px minmax(0, 1fr) 20px;
   align-items: center;
@@ -1049,7 +1056,35 @@ body.is-dragging-section * {
   background: transparent;
   color: var(--text);
   text-align: left;
-  cursor: pointer;
+  cursor: grab;
+}
+
+.bookmark-item:active {
+  cursor: grabbing;
+}
+
+.bookmark-item.is-dragging {
+  opacity: 0.45;
+}
+
+.bookmark-item.is-reorder-before::before,
+.bookmark-item.is-reorder-after::after {
+  content: "";
+  position: absolute;
+  right: 4px;
+  left: 22px;
+  height: 2px;
+  border-radius: 999px;
+  background: var(--accent-strong);
+  pointer-events: none;
+}
+
+.bookmark-item.is-reorder-before::before {
+  top: -2px;
+}
+
+.bookmark-item.is-reorder-after::after {
+  bottom: -2px;
 }
 
 .bookmark-item:hover {

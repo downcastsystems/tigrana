@@ -93,6 +93,7 @@ import {
   getNotebookName,
   orderFolders,
   orderNotes,
+  reorderBookmarks,
   setMetadataValue,
   type BookmarkView,
   type FolderNode,
@@ -4249,6 +4250,10 @@ export default function App() {
     }));
   }
 
+  function reorderBookmark(draggedId: string, targetId: string, placement: DropPlacement) {
+    updateMetadata((current) => reorderBookmarks(current, draggedId, targetId, placement));
+  }
+
   function selectBookmark(bookmark: BookmarkEntry) {
     if (bookmark.kind === "folder") {
       setSelectedFolder(bookmark.path);
@@ -4396,6 +4401,7 @@ export default function App() {
               onPin={toggleNotePin}
               onPointerDragStart={beginNotePointerDrag}
               onRemoveBookmark={removeBookmark}
+              onReorderBookmark={reorderBookmark}
               onSelectBookmark={selectBookmark}
               onSelectFolder={(path) => void selectFolderForNewNote(path)}
               onSelectNotebook={openNotebookInNewWindow}
@@ -4432,6 +4438,7 @@ export default function App() {
                 onNewNotebook={() => void chooseWorkspace("new", true)}
                 onOpenWorkspace={() => void chooseWorkspace("open", true)}
                 onRemoveBookmark={removeBookmark}
+                onReorderBookmark={reorderBookmark}
                 onSelectBookmark={selectBookmark}
                 onSelectFolder={(path) => void selectSection(path)}
                 onSelectNotebook={openNotebookInNewWindow}
@@ -4498,6 +4505,7 @@ export default function App() {
                 onNewNotebook={() => void chooseWorkspace("new", true)}
                 onOpenWorkspace={() => void chooseWorkspace("open", true)}
                 onRemoveBookmark={removeBookmark}
+                onReorderBookmark={reorderBookmark}
                 onSelectBookmark={selectBookmark}
                 onSelectNotebook={openNotebookInNewWindow}
                 onSelectFolder={(path) => setSelectedFolder(path)}
@@ -5200,6 +5208,7 @@ function FolderPane({
   onNewNotebook,
   onOpenWorkspace,
   onRemoveBookmark,
+  onReorderBookmark,
   onSelectBookmark,
   onSelectNotebook,
   onSelectFolder,
@@ -5229,6 +5238,7 @@ function FolderPane({
   onNewNotebook: () => void;
   onOpenWorkspace: () => void;
   onRemoveBookmark: (id: string) => void;
+  onReorderBookmark: (draggedId: string, targetId: string, placement: DropPlacement) => void;
   onSelectBookmark: (bookmark: BookmarkEntry) => void;
   onSelectNotebook: (path: string) => void;
   onSelectFolder: (path: string) => void;
@@ -5262,6 +5272,7 @@ function FolderPane({
         bookmarks={bookmarks}
         expanded={bookmarksExpanded}
         onRemove={onRemoveBookmark}
+        onReorder={onReorderBookmark}
         onSelect={onSelectBookmark}
         onToggle={onToggleBookmarksExpanded}
       />
@@ -5384,19 +5395,93 @@ function NotebookFooter({
   );
 }
 
-function BookmarksSection({
+export function BookmarksSection({
   bookmarks,
   expanded,
   onRemove,
+  onReorder,
   onSelect,
   onToggle,
 }: {
   bookmarks: BookmarkView[];
   expanded: boolean;
   onRemove: (id: string) => void;
+  onReorder: (draggedId: string, targetId: string, placement: DropPlacement) => void;
   onSelect: (bookmark: BookmarkEntry) => void;
   onToggle: () => void;
 }) {
+  const [draggedBookmarkId, setDraggedBookmarkId] = useState<string | null>(null);
+  const [dropIndicator, setDropIndicator] = useState<{ id: string; placement: DropPlacement } | null>(null);
+  const pointerDragRef = useRef<{ dragging: boolean; id: string; startX: number; startY: number } | null>(null);
+  const suppressNextClickRef = useRef(false);
+
+  const bookmarkDropTargetAtPoint = (clientX: number, clientY: number) => {
+    const row = document.elementFromPoint(clientX, clientY)?.closest<HTMLElement>("[data-bookmark-id]");
+    const id = row?.dataset.bookmarkId;
+    if (!row || !id || id === pointerDragRef.current?.id) return null;
+    const bounds = row.getBoundingClientRect();
+    return {
+      id,
+      placement: (clientY > bounds.top + bounds.height / 2 ? "after" : "before") as DropPlacement,
+    };
+  };
+
+  const beginPointerDrag = (bookmarkId: string, event: React.PointerEvent<HTMLButtonElement>) => {
+    if (event.button !== 0) return;
+    if ((event.target as HTMLElement | null)?.closest(".bookmark-remove")) return;
+
+    pointerDragRef.current = {
+      dragging: false,
+      id: bookmarkId,
+      startX: event.clientX,
+      startY: event.clientY,
+    };
+
+    const handlePointerMove = (moveEvent: PointerEvent) => {
+      const drag = pointerDragRef.current;
+      if (!drag) return;
+      const distance = Math.hypot(moveEvent.clientX - drag.startX, moveEvent.clientY - drag.startY);
+      if (!drag.dragging && distance < 5) return;
+
+      if (!drag.dragging) {
+        drag.dragging = true;
+        suppressNextClickRef.current = true;
+        document.body.classList.add("is-dragging-bookmark");
+        setDraggedBookmarkId(drag.id);
+      }
+
+      moveEvent.preventDefault();
+      setDropIndicator(bookmarkDropTargetAtPoint(moveEvent.clientX, moveEvent.clientY));
+    };
+
+    const cleanupPointerDrag = () => {
+      window.removeEventListener("pointermove", handlePointerMove);
+      window.removeEventListener("pointerup", handlePointerUp);
+      window.removeEventListener("pointercancel", handlePointerCancel);
+      document.body.classList.remove("is-dragging-bookmark");
+      pointerDragRef.current = null;
+      setDraggedBookmarkId(null);
+      setDropIndicator(null);
+    };
+
+    const handlePointerCancel = () => {
+      cleanupPointerDrag();
+      suppressNextClickRef.current = false;
+    };
+
+    const handlePointerUp = (upEvent: PointerEvent) => {
+      const drag = pointerDragRef.current;
+      const target = drag?.dragging ? bookmarkDropTargetAtPoint(upEvent.clientX, upEvent.clientY) : null;
+      cleanupPointerDrag();
+      if (drag?.dragging && target) onReorder(drag.id, target.id, target.placement);
+      setTimeout(() => { suppressNextClickRef.current = false; }, 0);
+    };
+
+    window.addEventListener("pointermove", handlePointerMove);
+    window.addEventListener("pointerup", handlePointerUp, { once: true });
+    window.addEventListener("pointercancel", handlePointerCancel, { once: true });
+  };
+
   return (
     <section className="bookmarks-section">
       <button className="section-header-button" type="button" onClick={onToggle}>
@@ -5408,11 +5493,19 @@ function BookmarksSection({
           {bookmarks.map((bookmark) => {
             return (
               <button
-                className={`bookmark-item${bookmark.missing ? " is-missing" : ""}`}
+                className={[
+                  "bookmark-item",
+                  bookmark.missing ? "is-missing" : "",
+                  draggedBookmarkId === bookmark.id ? "is-dragging" : "",
+                  dropIndicator?.id === bookmark.id ? `is-reorder-${dropIndicator.placement}` : "",
+                ].filter(Boolean).join(" ")}
+                data-bookmark-id={bookmark.id}
                 key={bookmark.id}
                 type="button"
                 aria-disabled={bookmark.missing}
+                onPointerDown={(event) => beginPointerDrag(bookmark.id, event)}
                 onClick={() => {
+                  if (suppressNextClickRef.current) return;
                   if (!bookmark.missing) onSelect(bookmark);
                 }}
               >
@@ -5604,6 +5697,7 @@ function SectionViewFolderPane({
   onNewNotebook,
   onOpenWorkspace,
   onRemoveBookmark,
+  onReorderBookmark,
   onSectionPointerDragStart,
   onSelectBookmark,
   onSelectFolder,
@@ -5632,6 +5726,7 @@ function SectionViewFolderPane({
   onNewNotebook: () => void;
   onOpenWorkspace: () => void;
   onRemoveBookmark: (id: string) => void;
+  onReorderBookmark: (draggedId: string, targetId: string, placement: DropPlacement) => void;
   onSectionPointerDragStart: (path: string, event: React.PointerEvent<HTMLElement>) => void;
   onSelectBookmark: (bookmark: BookmarkEntry) => void;
   onSelectFolder: (path: string) => void;
@@ -5673,6 +5768,7 @@ function SectionViewFolderPane({
         bookmarks={bookmarks}
         expanded={bookmarksExpanded}
         onRemove={onRemoveBookmark}
+        onReorder={onReorderBookmark}
         onSelect={onSelectBookmark}
         onToggle={onToggleBookmarksExpanded}
       />
@@ -6073,6 +6169,7 @@ function UnifiedTreePane({
   onPin,
   onPointerDragStart,
   onRemoveBookmark,
+  onReorderBookmark,
   onSelectBookmark,
   onSelectNotebook,
   onSelectFolder,
@@ -6115,6 +6212,7 @@ function UnifiedTreePane({
   onPin: (path: string) => void;
   onPointerDragStart: (path: string, event: React.PointerEvent<HTMLElement>) => void;
   onRemoveBookmark?: (id: string) => void;
+  onReorderBookmark?: (draggedId: string, targetId: string, placement: DropPlacement) => void;
   onSelectBookmark?: (bookmark: BookmarkEntry) => void;
   onSelectNotebook?: (path: string) => void;
   onSelectFolder?: (path: string) => void;
@@ -6148,11 +6246,12 @@ function UnifiedTreePane({
           ) : null}
         </div>
       </div>
-      {showBookmarks && onRemoveBookmark && onSelectBookmark && onToggleBookmarksExpanded ? (
+      {showBookmarks && onRemoveBookmark && onReorderBookmark && onSelectBookmark && onToggleBookmarksExpanded ? (
         <BookmarksSection
           bookmarks={bookmarks}
           expanded={bookmarksExpanded}
           onRemove={onRemoveBookmark}
+          onReorder={onReorderBookmark}
           onSelect={onSelectBookmark}
           onToggle={onToggleBookmarksExpanded}
         />

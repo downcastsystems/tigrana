@@ -95,6 +95,30 @@ export function buildBookmarkViews(
   });
 }
 
+export function reorderBookmarks(
+  metadata: WorkspaceMetadata,
+  draggedId: string,
+  targetId: string,
+  placement: "before" | "after",
+): WorkspaceMetadata {
+  if (draggedId === targetId) return metadata;
+
+  const draggedIndex = metadata.bookmarks.findIndex((bookmark) => bookmark.id === draggedId);
+  const targetIndex = metadata.bookmarks.findIndex((bookmark) => bookmark.id === targetId);
+  if (draggedIndex === -1 || targetIndex === -1) return metadata;
+
+  const bookmarks = [...metadata.bookmarks];
+  const [dragged] = bookmarks.splice(draggedIndex, 1);
+  const remainingTargetIndex = bookmarks.findIndex((bookmark) => bookmark.id === targetId);
+  const insertionIndex = remainingTargetIndex + (placement === "after" ? 1 : 0);
+  bookmarks.splice(insertionIndex, 0, dragged);
+
+  if (bookmarks.every((bookmark, index) => bookmark.id === metadata.bookmarks[index]?.id)) {
+    return metadata;
+  }
+  return { ...metadata, bookmarks };
+}
+
 export function orderFolders<T extends FolderEntry>(folders: T[], parentPath: string, metadata: WorkspaceMetadata): T[] {
   const order = metadata.folderOrder[parentPath] ?? [];
   return [...folders].sort((a, b) => {

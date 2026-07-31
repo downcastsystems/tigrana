@@ -10,6 +10,7 @@ import {
   moveNoteInMetadata,
   orderFolders,
   orderNotes,
+  reorderBookmarks,
   removeFolderFromMetadata,
   removeNoteFromMetadata,
   replaceFolderPathPrefix,
@@ -143,6 +144,43 @@ describe("notebook metadata", () => {
       { id: "note-bookmark", kind: "note", path: "Ideas/Seed.md", createdAt: 2, title: "Seed", icon: "lucide:FileText", missing: false },
       { id: "missing-note", kind: "note", path: "Ideas/Missing.md", createdAt: 3, title: "Ideas/Missing.md (missing)", icon: undefined, missing: true },
     ]);
+  });
+
+  it("reorders bookmarks without changing their durable entries", () => {
+    const current = metadata({
+      bookmarks: [
+        { id: "alpha", kind: "note", path: "Alpha.md", createdAt: 1 },
+        { id: "bravo", kind: "folder", path: "Bravo", createdAt: 2 },
+        { id: "charlie", kind: "note", path: "Charlie.md", createdAt: 3 },
+      ],
+    });
+
+    const reordered = reorderBookmarks(current, "charlie", "alpha", "before");
+    expect(reordered.bookmarks).toEqual([
+      current.bookmarks[2],
+      current.bookmarks[0],
+      current.bookmarks[1],
+    ]);
+    expect(current.bookmarks.map((bookmark) => bookmark.id)).toEqual(["alpha", "bravo", "charlie"]);
+
+    expect(reorderBookmarks(reordered, "charlie", "bravo", "after").bookmarks).toEqual([
+      current.bookmarks[0],
+      current.bookmarks[1],
+      current.bookmarks[2],
+    ]);
+  });
+
+  it("ignores bookmark reorder requests without two distinct known ids", () => {
+    const current = metadata({
+      bookmarks: [
+        { id: "alpha", kind: "note", path: "Alpha.md", createdAt: 1 },
+        { id: "bravo", kind: "folder", path: "Bravo", createdAt: 2 },
+      ],
+    });
+
+    expect(reorderBookmarks(current, "alpha", "alpha", "after")).toBe(current);
+    expect(reorderBookmarks(current, "missing", "bravo", "before")).toBe(current);
+    expect(reorderBookmarks(current, "alpha", "missing", "after")).toBe(current);
   });
 
   it("repairs note path metadata when a Note is renamed", () => {
