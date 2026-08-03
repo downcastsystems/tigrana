@@ -9,11 +9,7 @@ import {
   replacePathPrefix,
 } from "./notebookMetadata";
 import type { FolderEntry, NavigationStyle, NoteEntry, WorkspaceMetadata } from "../types";
-
-type NoteTab = {
-  id: string;
-  path: string | null;
-};
+import { replaceNoteTabPath, replaceNoteTabPathPrefix, type NoteTab } from "./noteTabHistory";
 
 type NoteEditLock = {
   workspace: string;
@@ -104,13 +100,11 @@ export function createNotebookPathMutations({
     updateMetadata(repair);
   };
   const replaceOpenTabPath = (oldPath: string, newPath: string) => {
-    setOpenTabs((current) => current.map((tab) => (tab.path === oldPath ? { ...tab, path: newPath } : tab)));
+    setOpenTabs((current) => current.map((tab) => replaceNoteTabPath(tab, oldPath, newPath)));
   };
 
   const replaceOpenTabPrefix = (oldPrefix: string, newPrefix: string) => {
-    setOpenTabs((current) =>
-      current.map((tab) => (tab.path ? { ...tab, path: replacePathPrefix(tab.path, oldPrefix, newPrefix) } : tab)),
-    );
+    setOpenTabs((current) => current.map((tab) => replaceNoteTabPathPrefix(tab, oldPrefix, newPrefix)));
   };
 
   const repairActiveNotePath = (oldPath: string, newPath: string) => {

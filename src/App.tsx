@@ -9,6 +9,7 @@ import {
   Braces,
   Check,
   ChevronDown,
+  ChevronLeft,
   ChevronRight,
   ChevronUp,
   Copy,
@@ -72,6 +73,15 @@ import {
 import { shouldDockNoteTitle } from "./lib/dockedTitle";
 import { buildNoteExportHtml, noteExportFileStem } from "./lib/exportNote";
 import { shouldApplyEditorUpdate } from "./lib/noteEditorUpdates";
+import {
+  createNoteTab,
+  getNoteTabHistoryTarget,
+  moveInNoteTabHistory,
+  pruneNoteTabHistory,
+  resolveNoteTabHistory,
+  visitNoteInTab,
+  type NoteTab,
+} from "./lib/noteTabHistory";
 import { getScrollFadeVisibility, type ScrollFadeVisibility } from "./lib/scrollFade";
 import {
   createNoteDocument,
@@ -327,11 +337,6 @@ type ThemePresetId =
   | "catppuccin-macchiato"
   | "catppuccin-mocha";
 type RightSidebarMode = "outline" | "frontmatter" | "properties" | "backlinks";
-type NoteTab = {
-  id: string;
-  path: string | null;
-};
-
 type EditorCommand =
   | "bold"
   | "italic"
@@ -860,6 +865,12 @@ export default function App() {
         note: tab.path ? notes.find((note) => note.path === tab.path) ?? null : null,
       })),
     [notes, openTabs],
+  );
+  const activeNavigationTab = openTabs.find((tab) => tab.id === activeTabId) ?? null;
+  const activeTabHistory = activeNavigationTab ? resolveNoteTabHistory(activeNavigationTab) : null;
+  const canNavigateBack = Boolean(activeTabHistory && activeTabHistory.historyIndex > 0);
+  const canNavigateForward = Boolean(
+    activeTabHistory && activeTabHistory.historyIndex < activeTabHistory.history.length - 1,
   );
   const frameStyle = {
     "--folder-pane-width": `${folderPaneWidth}px`,
@@ -1650,7 +1661,7 @@ export default function App() {
     autoSelectedWorkspaceRef.current = workspace;
     const tabId = createTabId();
     setSelectedFolder(targetNote.parent_path);
-    setOpenTabs([{ id: tabId, path: targetNote.path }]);
+    setOpenTabs([createNoteTab(tabId, targetNote.path)]);
     setActiveTabId(tabId);
     void loadExistingNoteIntoEditor(targetNote.path, { preserveSelectedFolder: true });
   }, [activePath, contents, loadExistingNoteIntoEditor, metadataLoaded, notes, pendingNote, workspace]);
@@ -1677,7 +1688,7 @@ export default function App() {
       restoredTabsWorkspaceRef.current = workspace;
       autoSelectedWorkspaceRef.current = workspace;
       const tabId = createTabId();
-      setOpenTabs([{ id: tabId, path: target.path }]);
+      setOpenTabs([createNoteTab(tabId, target.path)]);
       setActiveTabId(tabId);
       void loadExistingNoteIntoEditor(target.path);
       return;
@@ -1692,7 +1703,7 @@ export default function App() {
     const existingPaths = storedSession.openTabs.filter((path) => notes.some((note) => note.path === path));
     if (!existingPaths.length) return;
 
-    const tabs = existingPaths.map((path) => ({ id: createTabId(), path }));
+    const tabs = existingPaths.map((path) => createNoteTab(createTabId(), path));
     const activeSessionPath = storedSession.activeTab && existingPaths.includes(storedSession.activeTab)
       ? storedSession.activeTab
       : existingPaths[0];
@@ -2286,8 +2297,8 @@ export default function App() {
     const tabId = activeTabId && openTabs.some((tab) => tab.id === activeTabId) ? activeTabId : createTabId();
     if (tabId !== activeTabId) setActiveTabId(tabId);
     setOpenTabs((current) => {
-      const tabs = current.some((tab) => tab.id === tabId) ? current : [...current, { id: tabId, path: null }];
-      return tabs.map((tab) => (tab.id === tabId ? { ...tab, path } : tab));
+      const tabs = current.some((tab) => tab.id === tabId) ? current : [...current, createNoteTab(tabId, null)];
+      return tabs.map((tab) => (tab.id === tabId ? visitNoteInTab(tab, path) : tab));
     });
   }, [activeTabId, openTabs]);
 
@@ -3007,7 +3018,9 @@ export default function App() {
         next.delete(path);
         return next;
       });
-      setOpenTabs((current) => current.filter((tab) => tab.path !== path));
+      setOpenTabs((current) => current
+        .filter((tab) => tab.path !== path)
+        .map((tab) => pruneNoteTabHistory(tab, (historyPath) => historyPath === path)));
       updateMetadata((current) => removeNoteFromMetadata(current, path));
       if (
         isCurrentNoteNavigation(navigationToken)
@@ -3041,7 +3054,7 @@ export default function App() {
     if (!await persistDraftForNavigation()) return;
     if (!isWorkspaceActive(operationWorkspace) || !isCurrentNoteNavigation(navigationToken)) return;
     const tabId = createTabId();
-    setOpenTabs((current) => [...current, { id: tabId, path: null }]);
+    setOpenTabs((current) => [...current, createNoteTab(tabId, null)]);
     setActiveTabId(tabId);
     clearCurrentNote();
   }
@@ -3064,6 +3077,25 @@ export default function App() {
     clearCurrentNote();
   }
 
+  async function navigateActiveTabHistory(offset: -1 | 1) {
+    const tab = openTabs.find((entry) => entry.id === activeTabId);
+    const targetPath = tab ? getNoteTabHistoryTarget(tab, offset) : null;
+    if (!workspace || !tab || !targetPath) return;
+    const operationWorkspace = workspace;
+    const navigationToken = beginNoteNavigation(targetPath);
+
+    if (!await persistDraftForNavigation()) return;
+    if (!isWorkspaceActive(operationWorkspace) || !isCurrentNoteNavigation(navigationToken)) return;
+
+    setOpenTabs((current) => current.map((entry) => {
+      if (entry.id !== tab.id || getNoteTabHistoryTarget(entry, offset) !== targetPath) return entry;
+      return moveInNoteTabHistory(entry, offset);
+    }));
+    await loadExistingNoteIntoEditor(targetPath, { navigationToken });
+    if (!isWorkspaceActive(operationWorkspace) || !isCurrentNoteNavigation(navigationToken)) return;
+    setSearchQuery("");
+  }
+
   async function openNoteInNewTab(path: string) {
     if (!workspace) return;
     const operationWorkspace = workspace;
@@ -3071,7 +3103,7 @@ export default function App() {
     if (!await persistDraftForNavigation()) return;
     if (!isWorkspaceActive(operationWorkspace) || !isCurrentNoteNavigation(navigationToken)) return;
     const tabId = createTabId();
-    setOpenTabs((current) => [...current, { id: tabId, path }]);
+    setOpenTabs((current) => [...current, createNoteTab(tabId, path)]);
     setActiveTabId(tabId);
 
     await loadExistingNoteIntoEditor(path, { navigationToken });
@@ -3293,7 +3325,9 @@ export default function App() {
     } else if (deletedTargetDisposition === "clearAndPreserveNavigation") {
       clearCurrentNote(true);
     }
-    setOpenTabs((current) => current.filter((tab) => tab.path !== path));
+    setOpenTabs((current) => current
+      .filter((tab) => tab.path !== path)
+      .map((tab) => pruneNoteTabHistory(tab, (historyPath) => historyPath === path)));
     updateMetadata((current) => removeNoteFromMetadata(current, path));
     await refreshWorkspace(operationWorkspace);
   }
@@ -3387,7 +3421,9 @@ export default function App() {
     } else if (deletedTargetDisposition === "clearAndPreserveNavigation") {
       clearCurrentNote(true);
     }
-    setOpenTabs((current) => current.filter((tab) => !tab.path?.startsWith(`${path}/`)));
+    setOpenTabs((current) => current
+      .filter((tab) => !tab.path?.startsWith(`${path}/`))
+      .map((tab) => pruneNoteTabHistory(tab, (historyPath) => historyPath.startsWith(`${path}/`))));
     updateMetadata((current) => removeFolderFromMetadata(current, path));
     await refreshWorkspace(operationWorkspace);
   }
@@ -4335,6 +4371,12 @@ export default function App() {
         onDoubleClick={handleChromeDoubleClick}
       >
         <span className="titlebar-traffic-padding" data-tauri-drag-region="" />
+        <TabHistoryControls
+          canGoBack={canNavigateBack}
+          canGoForward={canNavigateForward}
+          onBack={() => void navigateActiveTabHistory(-1)}
+          onForward={() => void navigateActiveTabHistory(1)}
+        />
         <NoteTabs
           activePath={activePath}
           activeTabId={activeTabId}
@@ -6382,6 +6424,45 @@ function NotesPane({
         ))}
       </div>
     </section>
+  );
+}
+
+function TabHistoryControls({
+  canGoBack,
+  canGoForward,
+  onBack,
+  onForward,
+}: {
+  canGoBack: boolean;
+  canGoForward: boolean;
+  onBack: () => void;
+  onForward: () => void;
+}) {
+  return (
+    <div className="tab-history-controls chrome-interactive" role="group" aria-label="Note history">
+      <button
+        className="tab-history-button chrome-interactive"
+        type="button"
+        aria-label="Go back"
+        title="Go back"
+        disabled={!canGoBack}
+        onMouseDown={stopChromeMouseDown}
+        onClick={onBack}
+      >
+        <ChevronLeft size={19} />
+      </button>
+      <button
+        className="tab-history-button chrome-interactive"
+        type="button"
+        aria-label="Go forward"
+        title="Go forward"
+        disabled={!canGoForward}
+        onMouseDown={stopChromeMouseDown}
+        onClick={onForward}
+      >
+        <ChevronRight size={19} />
+      </button>
+    </div>
   );
 }
 

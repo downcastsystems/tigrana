@@ -153,4 +153,68 @@ describe("Note navigation persistence", () => {
 
     await act(async () => root.unmount());
   });
+
+  it("navigates backward and forward within a tab and clears a forward branch", async () => {
+    demoPersistence.set("tigrana-demo-v5", JSON.stringify({
+      folders: [],
+      notes: {
+        "Alpha.md": "# Alpha\n\nFirst note.",
+        "Beta.md": "# Beta\n\nSecond note.",
+        "Gamma.md": "# Gamma\n\nThird note.",
+      },
+    }));
+    const container = document.createElement("div");
+    document.body.appendChild(container);
+    containers.push(container);
+    const root = createRoot(container);
+
+    await act(async () => {
+      root.render(<App />);
+      await new Promise((resolve) => window.setTimeout(resolve, 50));
+    });
+
+    const back = container.querySelector<HTMLButtonElement>('button[aria-label="Go back"]');
+    const forward = container.querySelector<HTMLButtonElement>('button[aria-label="Go forward"]');
+    const title = () => container.querySelector<HTMLTextAreaElement>('textarea[aria-label="Note title"]')?.value;
+    const clickNote = async (path: string) => {
+      await act(async () => {
+        container.querySelector<HTMLButtonElement>(`button[data-note-path="${path}"]`)?.click();
+        await new Promise((resolve) => window.setTimeout(resolve, 20));
+      });
+    };
+    const clickHistory = async (button: HTMLButtonElement | null) => {
+      await act(async () => {
+        button?.click();
+        await new Promise((resolve) => window.setTimeout(resolve, 20));
+      });
+    };
+
+    expect(title()).toBe("Alpha");
+    expect(back?.disabled).toBe(true);
+    expect(forward?.disabled).toBe(true);
+
+    await clickNote("Beta.md");
+    await clickNote("Gamma.md");
+    expect(title()).toBe("Gamma");
+    expect(back?.disabled).toBe(false);
+    expect(forward?.disabled).toBe(true);
+
+    await clickHistory(back);
+    expect(title()).toBe("Beta");
+    expect(forward?.disabled).toBe(false);
+    await clickHistory(back);
+    expect(title()).toBe("Alpha");
+    expect(back?.disabled).toBe(true);
+
+    await clickHistory(forward);
+    await clickHistory(forward);
+    expect(title()).toBe("Gamma");
+
+    await clickHistory(back);
+    await clickNote("Alpha.md");
+    expect(title()).toBe("Alpha");
+    expect(forward?.disabled).toBe(true);
+
+    await act(async () => root.unmount());
+  });
 });
