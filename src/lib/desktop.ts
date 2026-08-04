@@ -15,6 +15,7 @@ export type AppMenuState = {
   rawMarkdownVisible: boolean;
   leftVisible: boolean;
   outlineVisible: boolean;
+  wordCountVisible: boolean;
   spellcheckEnabled: boolean;
   editorWidthMode: "comfortable" | "narrow" | "full";
   noteAlignment: "left" | "center";

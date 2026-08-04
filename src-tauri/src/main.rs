@@ -219,6 +219,8 @@ struct AppMenuState {
     raw_markdown_visible: bool,
     left_visible: bool,
     outline_visible: bool,
+    #[serde(default = "default_true")]
+    word_count_visible: bool,
     spellcheck_enabled: bool,
     editor_width_mode: String,
     note_alignment: String,
@@ -236,6 +238,7 @@ impl Default for AppMenuState {
             raw_markdown_visible: false,
             left_visible: true,
             outline_visible: true,
+            word_count_visible: true,
             spellcheck_enabled: true,
             editor_width_mode: "comfortable".to_string(),
             note_alignment: "left".to_string(),
@@ -1429,6 +1432,14 @@ fn build_app_menu(
         state.outline_visible,
         None::<&str>,
     )?;
+    let toggle_word_count = CheckMenuItem::with_id(
+        handle,
+        "toggle_word_count",
+        "Show Word Count",
+        has_open_note,
+        state.word_count_visible,
+        None::<&str>,
+    )?;
     let toggle_raw = CheckMenuItem::with_id(
         handle,
         "toggle_raw_markdown",
@@ -1749,6 +1760,7 @@ fn build_app_menu(
         &[
             &toggle_sidebar,
             &toggle_outline,
+            &toggle_word_count,
             &toggle_raw,
             &PredefinedMenuItem::separator(handle)?,
             &zoom_in,
@@ -2154,6 +2166,7 @@ pub fn run() {
             }
             "toggle_sidebar" => emit_menu_command(app, "toggle_sidebar"),
             "toggle_outline" => emit_menu_command(app, "toggle_outline"),
+            "toggle_word_count" => emit_menu_command(app, "toggle_word_count"),
             "toggle_raw_markdown" => emit_menu_command(app, "toggle_raw_markdown"),
             "zoom_in" => emit_menu_command(app, "zoom_in"),
             "zoom_out" => emit_menu_command(app, "zoom_out"),

@@ -116,6 +116,7 @@ import { LatestNotebookSnapshot } from "./lib/notebookSnapshot";
 import { PendingNoteContents } from "./lib/pendingNoteContents";
 import { buildRecentNoteViews } from "./lib/recentNotes";
 import { useNoteTextStats } from "./lib/useNoteTextStats";
+import { readStoredWordCountVisibility, writeStoredWordCountVisibility } from "./lib/wordCountVisibility";
 import { useNoteOutline } from "./lib/useNoteOutline";
 import type { BookmarkEntry, FolderEntry, LinkIndex, NavigationStyle, NotebookSnapshot, NotebookThemeColors, NoteEntry, NotePositionMetadata, WorkspaceMetadata } from "./types";
 
@@ -605,6 +606,7 @@ export default function App() {
   const [appMenuOpen, setAppMenuOpen] = useState(false);
   const [leftVisible, setLeftVisible] = useState(true);
   const [outlineVisible, setOutlineVisible] = useState(true);
+  const [wordCountVisible, setWordCountVisible] = useState(() => readStoredWordCountVisibility());
   const [noteScrollFades, setNoteScrollFades] = useState<ScrollFadeVisibility>({ top: false, bottom: false });
   const [dockedTitleState, setDockedTitleState] = useState({ visible: false, animate: false });
   const [rightSidebarMode, setRightSidebarMode] = useState<RightSidebarMode>("outline");
@@ -1060,6 +1062,10 @@ export default function App() {
   }, [noteAlignment]);
 
   useEffect(() => {
+    writeStoredWordCountVisibility(wordCountVisible);
+  }, [wordCountVisible]);
+
+  useEffect(() => {
     localStorage.setItem(folderPaneWidthKey, String(folderPaneWidth));
   }, [folderPaneWidth]);
 
@@ -1194,6 +1200,7 @@ export default function App() {
       rawMarkdownVisible: rawMarkdownVisible || Boolean(frontmatterError),
       leftVisible,
       outlineVisible,
+      wordCountVisible,
       spellcheckEnabled,
       editorWidthMode,
       noteAlignment,
@@ -1217,6 +1224,7 @@ export default function App() {
     rawMarkdownVisible,
     recentNotes,
     spellcheckEnabled,
+    wordCountVisible,
     workspace,
   ]);
 
@@ -1991,6 +1999,9 @@ export default function App() {
         break;
       case "toggle_outline":
         setOutlineVisible((value) => !value);
+        break;
+      case "toggle_word_count":
+        setWordCountVisible((value) => !value);
         break;
       case "toggle_raw_markdown":
         toggleRawMarkdownMode();
@@ -4874,7 +4885,7 @@ export default function App() {
             appError={appError}
           />
         )}
-        {noteOpen ? (
+        {noteOpen && wordCountVisible ? (
           <div className="note-status-bar">
             <span>{noteStats.words} {noteStats.words === 1 ? "word" : "words"}</span>
             <span>{noteStats.characters} {noteStats.characters === 1 ? "character" : "characters"}</span>
