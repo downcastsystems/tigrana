@@ -71,6 +71,7 @@ import {
   type ActiveNoteAccess,
 } from "./lib/activeNoteLifecycle";
 import { shouldDockNoteTitle } from "./lib/dockedTitle";
+import { DraftSaveRevisions, type DraftSaveRevision } from "./lib/draftSaveRevisions";
 import { buildNoteExportHtml, noteExportFileStem } from "./lib/exportNote";
 import { shouldApplyEditorUpdate } from "./lib/noteEditorUpdates";
 import {
@@ -460,6 +461,7 @@ type PersistDraftSnapshot = {
   frontmatter: string;
   rawMode: boolean;
   markdown: string;
+  saveRevision: DraftSaveRevision;
 };
 
 const themePresets: ThemePreset[] = [
@@ -729,6 +731,9 @@ export default function App() {
     savedTitle: "",
     titleDraft: "",
   });
+  const draftSaveRevisionsRef = useRef<DraftSaveRevisions | null>(null);
+  if (!draftSaveRevisionsRef.current) draftSaveRevisionsRef.current = new DraftSaveRevisions();
+  const draftSaveRevisions = draftSaveRevisionsRef.current;
   const persistDraftAttemptRef = useRef<() => Promise<string | undefined>>(async () => undefined);
   const flushPendingSavesRef = useRef<() => Promise<void>>(async () => {});
   const rawMarkdownInputRef = useRef<HTMLTextAreaElement | null>(null);
@@ -836,6 +841,10 @@ export default function App() {
   const hasUnsavedBody = Boolean(noteOpen) && rawMarkdownDraft !== savedRawMarkdownText;
   const hasUnsavedChanges = Boolean(noteOpen) && (hasUnsavedBody || titleDraft !== savedTitle);
   const activeNoteEditable = activeNoteAccess === "editable";
+
+  useLayoutEffect(() => {
+    draftSaveRevisions.observe(rawMarkdownDraft);
+  }, [draftSaveRevisions, rawMarkdownDraft]);
   backlinkPaneVisibleRef.current = outlineVisible && rightSidebarMode === "backlinks";
   const resolvedTheme = colorScheme === "system" ? (prefersDark ? "dark" : "light") : colorScheme;
   const themePreset = getThemePreset(themePresetId);
@@ -1640,6 +1649,7 @@ export default function App() {
     setActivePathAuthoritatively(null);
     activeNoteIdentityRef.current = null;
     activeDraftStateRef.current.pendingNote = null;
+    draftSaveRevisions.reset("");
     setPendingNote(null);
     setEditorRestorePosition(null);
     setTitleDraft("");
@@ -1651,7 +1661,7 @@ export default function App() {
     setFrontmatterError(null);
     selectedEditorTextRef.current = "";
     setSelectedEditorText("");
-  }, [activeNoteLifecycle, activePath, applyNoteAccess, cancelPendingNoteLoads, disarmUndoableNewNote, releaseActiveNoteLock, setActivePathAuthoritatively]);
+  }, [activeNoteLifecycle, activePath, applyNoteAccess, cancelPendingNoteLoads, disarmUndoableNewNote, draftSaveRevisions, releaseActiveNoteLock, setActivePathAuthoritatively]);
 
   useEffect(() => {
     if (!workspace) return;
@@ -2562,17 +2572,23 @@ export default function App() {
       (snapshot.pendingNote !== null && currentDraft.activePath === null);
 
     if (!sameNote) return;
+    const shouldSaveNewerDraft = draftSaveRevisions.complete(snapshot.saveRevision);
     currentDraft.savedRawMarkdownText = written;
     currentDraft.savedTitle = snapshot.title;
     setSavedRawMarkdownText(written);
     setSavedTitle(snapshot.title);
+    if (shouldSaveNewerDraft) {
+      void activeNoteLifecycle
+        .requestPersistence(() => persistDraftAttemptRef.current())
+        .catch(() => undefined);
+    }
     if (!sameDraft) return;
 
     setDraft(nextBody);
     setFrontmatterDraft(nextFrontmatter);
     setRawMarkdownText(written);
     if (!savedDocument.frontmatterError) setFrontmatterError(null);
-  }, []);
+  }, [activeNoteLifecycle, draftSaveRevisions]);
 
   const persistDraftAttempt = useCallback(async () => {
     setAppError(null);
@@ -2607,6 +2623,7 @@ export default function App() {
       frontmatter: frontmatterDraft,
       rawMode,
       markdown,
+      saveRevision: draftSaveRevisions.observe(markdown),
     };
 
     const pathWillChange = Boolean(snapshot.pendingNote || (snapshot.path && snapshot.title !== snapshot.savedTitle));
@@ -2658,6 +2675,7 @@ export default function App() {
         if (!nextPath) return;
 
         const savedPath = nextPath;
+        draftSaveRevisions.markRequested(snapshot.saveRevision);
         const written = await saveNote(snapshot.workspace, savedPath, snapshot.markdown);
         if (!metadataSessionRef.current.isActive(snapshot.workspace)) return;
         if (snapshot.path && snapshot.path !== savedPath) activeNoteLifecycle.forgetDiskContent(snapshot.path);
@@ -2680,6 +2698,7 @@ export default function App() {
     // Keep navigation ahead of disk without publishing a new content Map
     // through the whole React tree when autosave starts.
     pendingNoteContentsRef.current.stage(snapshot.path, snapshot.markdown);
+    draftSaveRevisions.markRequested(snapshot.saveRevision);
 
     enqueueNoteSave(snapshot.path, async () => {
       const savedPath = snapshot.path as string;
@@ -2712,7 +2731,7 @@ export default function App() {
       }
     });
     return snapshot.markdown;
-  }, [acceptSavedMarkdown, acquireActiveNoteLock, activeNoteEditable, activeNoteLifecycle, applyNoteAccess, draft, enqueueNoteSave, flushPendingEditorBody, frontmatterDraft, frontmatterError, navigationStyle, noteOpen, notebookPathMutations, placePathInActiveTab, rawMarkdownDraft, rawMarkdownVisible, recordNotePosition, refreshWorkspace, releaseActiveNoteLock, setActivePathAuthoritatively, titleDraft, updateMetadata, workspace]);
+  }, [acceptSavedMarkdown, acquireActiveNoteLock, activeNoteEditable, activeNoteLifecycle, applyNoteAccess, draft, draftSaveRevisions, enqueueNoteSave, flushPendingEditorBody, frontmatterDraft, frontmatterError, navigationStyle, noteOpen, notebookPathMutations, placePathInActiveTab, rawMarkdownDraft, rawMarkdownVisible, recordNotePosition, refreshWorkspace, releaseActiveNoteLock, setActivePathAuthoritatively, titleDraft, updateMetadata, workspace]);
 
   persistDraftAttemptRef.current = persistDraftAttempt;
   const persistDraft = useCallback(
@@ -3695,6 +3714,7 @@ export default function App() {
 
   function loadContentIntoEditor(note: NoteEntry | null, markdown: string, restorePosition: NotePositionMetadata | null = null) {
     const loadedDocument = readNoteDocument(markdown, note?.title ?? "");
+    draftSaveRevisionsRef.current?.reset(loadedDocument.markdown);
     activeNoteIdentityRef.current =
       loadedDocument.frontmatterFields.find((field) => field.key === "id")?.value.trim()
       || note?.path

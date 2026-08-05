@@ -6,6 +6,19 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 
 HTMLCanvasElement.prototype.getContext = (() => null) as typeof HTMLCanvasElement.prototype.getContext;
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
+const scrollIntoView = vi.fn();
+Object.defineProperty(HTMLElement.prototype, "scrollIntoView", {
+  configurable: true,
+  value: scrollIntoView,
+});
+Object.defineProperty(window.Range.prototype, "getClientRects", {
+  configurable: true,
+  value: () => [],
+});
+Object.defineProperty(window.Range.prototype, "getBoundingClientRect", {
+  configurable: true,
+  value: () => new DOMRect(),
+});
 
 vi.mock("../lib/markdown", async (importOriginal) => {
   const actual = await importOriginal<typeof import("../lib/markdown")>();
@@ -23,11 +36,68 @@ describe("Note editor typing performance", () => {
 
   afterEach(async () => {
     vi.useRealTimers();
-    vi.mocked(htmlToMarkdown).mockClear();
     await Promise.all(mounted.splice(0).map(async ({ container, root }) => {
       await act(async () => root.unmount());
       container.remove();
     }));
+    vi.mocked(htmlToMarkdown).mockClear();
+    scrollIntoView.mockClear();
+  });
+
+  it("keeps the keyboard-selected slash command in view", async () => {
+    const container = document.createElement("div");
+    document.body.appendChild(container);
+    const root = createRoot(container);
+    mounted.push({ container, root });
+
+    await act(async () => {
+      root.render(
+        <NotesEditor
+          content=""
+          commandRequest={null}
+          editable
+          findRequest={0}
+          focusAtEndRequest={0}
+          focusRequest={0}
+          historyKey="slash-note-id"
+          notePath="Slash.md"
+          onChange={() => undefined}
+          onLoadError={(error) => {
+            throw error;
+          }}
+          onPendingChange={() => undefined}
+          onPositionChange={() => undefined}
+          reloadRequest={0}
+          restorePosition={null}
+          spellcheckEnabled
+          workspace="/Notebook"
+        />,
+      );
+    });
+
+    const paragraph = container.querySelector<HTMLElement>(".ProseMirror p");
+    await act(async () => {
+      if (paragraph) paragraph.textContent = "/";
+      paragraph?.dispatchEvent(new InputEvent("input", {
+        bubbles: true,
+        data: "/",
+        inputType: "insertText",
+      }));
+      await Promise.resolve();
+    });
+
+    expect(container.querySelector(".slash-menu")).not.toBeNull();
+    scrollIntoView.mockClear();
+
+    for (let index = 0; index < 9; index += 1) {
+      await act(async () => {
+        window.dispatchEvent(new KeyboardEvent("keydown", { key: "ArrowDown" }));
+      });
+    }
+
+    expect(container.querySelector(".slash-item.is-selected strong")?.textContent).toBe("Task List");
+    expect(scrollIntoView).toHaveBeenCalledTimes(9);
+    expect(scrollIntoView).toHaveBeenCalledWith({ block: "nearest" });
   });
 
   it("coalesces a typing burst without recreating the editor or rerendering its parent per edit", async () => {

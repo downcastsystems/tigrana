@@ -4,7 +4,7 @@ import { Editor } from "@tiptap/core";
 import { Schema, type Node as ProseMirrorNode } from "@tiptap/pm/model";
 import { EditorState, NodeSelection, TextSelection } from "@tiptap/pm/state";
 import type { EditorProps, EditorView } from "@tiptap/pm/view";
-import StarterKit from "@tiptap/starter-kit";
+import { StarterKit } from "@tiptap/starter-kit";
 import { describe, expect, it } from "vitest";
 
 HTMLCanvasElement.prototype.getContext = (() => null) as typeof HTMLCanvasElement.prototype.getContext;
@@ -407,7 +407,7 @@ describe("editor history across Note loads", () => {
     try {
       editor.commands.setTextSelection(editor.state.doc.content.size);
       editor.commands.insertContent(" changed");
-      editor.commands.setContent("<p>Note B</p>", false);
+      editor.commands.setContent("<p>Note B</p>", { emitUpdate: false });
 
       resetEditorHistory(editor);
 
@@ -439,7 +439,7 @@ describe("editor history across Note loads", () => {
       editor.commands.insertContent(" changed");
       cacheCurrentNoteEditorState(cache, "Note A.md", editor);
 
-      editor.commands.setContent("<p>Note B</p>", false);
+      editor.commands.setContent("<p>Note B</p>", { emitUpdate: false });
       resetEditorHistory(editor);
       editor.commands.setTextSelection(editor.state.doc.content.size);
       editor.commands.insertContent(" changed");
@@ -469,10 +469,10 @@ describe("editor history across Note loads", () => {
 
     try {
       cacheCurrentNoteEditorState(cache, "A.md", editor);
-      editor.commands.setContent("<p>Note B</p>", false);
+      editor.commands.setContent("<p>Note B</p>", { emitUpdate: false });
       cacheCurrentNoteEditorState(cache, "B.md", editor);
       expect(cache.get("A.md")).toBeDefined();
-      editor.commands.setContent("<p>Note C</p>", false);
+      editor.commands.setContent("<p>Note C</p>", { emitUpdate: false });
       cacheCurrentNoteEditorState(cache, "C.md", editor);
 
       expect(cache.get("B.md")).toBeUndefined();

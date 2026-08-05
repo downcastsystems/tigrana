@@ -1,15 +1,10 @@
-import CodeBlockLowlight from "@tiptap/extension-code-block-lowlight";
+import { CodeBlockLowlight } from "@tiptap/extension-code-block-lowlight";
 import { Extension, InputRule, PasteRule } from "@tiptap/core";
-import Highlight from "@tiptap/extension-highlight";
-import Image from "@tiptap/extension-image";
-import Link from "@tiptap/extension-link";
-import Placeholder from "@tiptap/extension-placeholder";
-import { Table } from "@tiptap/extension-table";
-import { TableCell } from "@tiptap/extension-table-cell";
-import { TableHeader } from "@tiptap/extension-table-header";
-import { TableRow } from "@tiptap/extension-table-row";
-import TaskItem from "@tiptap/extension-task-item";
-import TaskList from "@tiptap/extension-task-list";
+import { Highlight } from "@tiptap/extension-highlight";
+import { Image } from "@tiptap/extension-image";
+import { TaskItem, TaskList } from "@tiptap/extension-list";
+import { Table, TableCell, TableHeader, TableRow } from "@tiptap/extension-table";
+import { Placeholder } from "@tiptap/extensions";
 import { joinBackward } from "@tiptap/pm/commands";
 import { DOMSerializer, Fragment as ProseMirrorFragment, type Node as ProseMirrorNode, type ResolvedPos } from "@tiptap/pm/model";
 import { liftListItem } from "@tiptap/pm/schema-list";
@@ -17,7 +12,7 @@ import { EditorState, NodeSelection, Plugin, PluginKey, Selection, TextSelection
 import { addColumnAfter, addColumnBefore, addRowAfter, addRowBefore, CellSelection, deleteColumn, deleteRow, TableMap } from "@tiptap/pm/tables";
 import { Decoration, DecorationSet, type EditorProps, type EditorView, type NodeView, type ViewMutationRecord } from "@tiptap/pm/view";
 import { EditorContent, NodeViewContent, NodeViewWrapper, Range, ReactNodeViewRenderer, useEditor, type Editor } from "@tiptap/react";
-import StarterKit from "@tiptap/starter-kit";
+import { StarterKit } from "@tiptap/starter-kit";
 import { convertFileSrc } from "@tauri-apps/api/core";
 import {
   Bold,
@@ -49,7 +44,7 @@ import {
   X,
 } from "lucide-react";
 import { common, createLowlight } from "lowlight";
-import { type CSSProperties, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { type CSSProperties, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { ensureParagraphAfterCurrentTable, filterSlashCommands, markCurrentTableAsTigranaHtml } from "./slashCommands";
 import { createDeferredCommit, type DeferredCommit } from "../lib/deferredCommit";
 import { emojiShortcodeToText } from "../lib/emoji";
@@ -465,7 +460,7 @@ function CodeBlockNodeView({
   updateAttributes,
 }: {
   editor: Editor;
-  getPos: () => number;
+  getPos: () => number | undefined;
   node: ProseMirrorNode;
   updateAttributes: (attrs: Record<string, unknown>) => void;
 }) {
@@ -657,7 +652,7 @@ function CodeBlockNodeView({
             {copied ? <Check size={14} /> : <Copy size={14} />}
           </button>
         </div>
-        <NodeViewContent as="code" className={language ? `language-${language}` : undefined} />
+        <NodeViewContent<"code"> as="code" className={language ? `language-${language}` : undefined} />
       </pre>
     </NodeViewWrapper>
   );
@@ -2459,6 +2454,7 @@ export function NotesEditor({ content, commandRequest, focusRequest, focusAtEndR
   const [findIndex, setFindIndex] = useState(0);
   const [findDocumentVersion, setFindDocumentVersion] = useState(0);
   const slashRef = useRef<SlashState | null>(null);
+  const selectedSlashItemRef = useRef<HTMLButtonElement | null>(null);
   const editorRef = useRef<Editor | null>(null);
   const findInputRef = useRef<HTMLInputElement | null>(null);
   const handledFindRequest = useRef(findRequest);
@@ -2516,8 +2512,26 @@ export function NotesEditor({ content, commandRequest, focusRequest, focusAtEndR
     () => [
       StarterKit.configure({
         codeBlock: false,
+        underline: false,
         heading: {
           levels: [1, 2, 3, 4, 5, 6],
+        },
+        link: {
+          autolink: true,
+          openOnClick: false,
+          // Don't render target="_blank" on links. In Tauri the webview's
+          // new-window flow can intercept those clicks before our JS handler
+          // gets a chance to route internal notebook hrefs to onInternalLinkClick.
+          // Routing for both internal and external happens via the React onClick
+          // on the editor-shell.
+          HTMLAttributes: { target: null, rel: null, class: null },
+          // The default isAllowedUri's regex treats `[.-:]` as a character range
+          // (including `/`), which causes it to reject bare relative paths like
+          // `Folder/Note.md` and strip their href at render time. We accept
+          // anything that doesn't use a dangerous scheme so internal notebook
+          // links survive round-tripping.
+          isAllowedUri: (href) =>
+            !href || !/^\s*(javascript|data|vbscript|file|about):/i.test(href),
         },
       }),
       CodeBlockWithControls.configure({ lowlight }),
@@ -2529,23 +2543,6 @@ export function NotesEditor({ content, commandRequest, focusRequest, focusAtEndR
       MarkdownImage.configure({
         inline: false,
         allowBase64: false,
-      }),
-      Link.configure({
-        autolink: true,
-        openOnClick: false,
-        // Don't render target="_blank" on links. In Tauri the webview's
-        // new-window flow can intercept those clicks before our JS handler
-        // gets a chance to route internal notebook hrefs to onInternalLinkClick.
-        // Routing for both internal and external happens via the React onClick
-        // on the editor-shell.
-        HTMLAttributes: { target: null, rel: null, class: null },
-        // The default isAllowedUri's regex treats `[.-:]` as a character range
-        // (including `/`), which causes it to reject bare relative paths like
-        // `Folder/Note.md` and strip their href at render time. We accept
-        // anything that doesn't use a dangerous scheme so internal notebook
-        // links survive round-tripping.
-        isAllowedUri: (href) =>
-          !href || !/^\s*(javascript|data|vbscript|file|about):/i.test(href),
       }),
       Placeholder.configure({
         placeholder: "Start writing, or type / for blocks...",
@@ -2609,6 +2606,10 @@ export function NotesEditor({ content, commandRequest, focusRequest, focusAtEndR
   }, [onRequestEmoji, onRequestImage, onRequestLink]);
 
   const editor = useEditor({
+    // Tiptap v3 defaults this to false. Keep it explicit because publishing
+    // React updates per ProseMirror transaction violates the editor's typing
+    // performance contract; dependent UI subscribes to targeted editor events.
+    shouldRerenderOnTransaction: false,
     extensions,
     editable,
     content: initialContent.html,
@@ -2810,7 +2811,7 @@ export function NotesEditor({ content, commandRequest, focusRequest, focusAtEndR
       if (!restoredHistory) {
         editor
           .chain()
-          .setContent(next, false)
+          .setContent(next, { emitUpdate: false })
           .command(({ tr, state }) => {
             const docSize = state.doc.content.size;
             const targetTo = hasValidRestore
@@ -3059,6 +3060,12 @@ export function NotesEditor({ content, commandRequest, focusRequest, focusAtEndR
   }, [editor, findIndex, findMatches.length, findOpen, findQuery]);
 
   const commands = slash ? filterSlashCommands(slash.query) : [];
+  const selectedSlashIndex = slash?.selected ?? -1;
+
+  useLayoutEffect(() => {
+    if (selectedSlashIndex < 0 || commands.length === 0) return;
+    selectedSlashItemRef.current?.scrollIntoView({ block: "nearest" });
+  }, [commands.length, selectedSlashIndex]);
 
   // Position the slash menu near the cursor in viewport coordinates.
   const slashMenuStyle = useMemo(() => {
@@ -3181,6 +3188,7 @@ export function NotesEditor({ content, commandRequest, focusRequest, focusAtEndR
               <button
                 className={index === slash.selected ? "slash-item is-selected" : "slash-item"}
                 key={command.id}
+                ref={index === slash.selected ? selectedSlashItemRef : undefined}
                 type="button"
                 onMouseDown={(event) => {
                   event.preventDefault();

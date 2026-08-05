@@ -17,6 +17,7 @@ rules that must remain consistent across UI flows.
 | `useNoteOutline.ts` | Live Note outline | Computes immediately on Note switches, then defers edits and skips work while the outline is hidden |
 | `deferredCommit.ts` | Flushable idle work | Keeps whole-document serialization off the input transaction while allowing navigation and shutdown to flush synchronously |
 | `pendingNoteContents.ts` | In-flight autosave content | Keeps navigation ahead of disk without publishing save-start updates through React and preserves newer drafts across older save completions |
+| `draftSaveRevisions.ts` | Active Note draft/save revisions | Requests a follow-up save when a completed write is older than the current draft while avoiding duplicate requests and stale Note generations |
 | `markdown.ts` | Convert readable Markdown and editor HTML | One round-trip policy shared by Note persistence and clipboard fragments |
 | `notebookStorage.ts` | `NotebookStorage` | Selects one Native or demo adapter and exposes explicit capability differences |
 | `notebookSnapshot.ts` | Latest-request Notebook refresh | Rejects stale and inactive refresh results before React state is replaced |

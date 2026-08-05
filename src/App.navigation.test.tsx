@@ -12,8 +12,13 @@ globalThis.ResizeObserver = class ResizeObserver {
   unobserve() {}
 };
 
-const { demoPersistence } = vi.hoisted(() => ({
+const { demoPersistence, delayedSaves } = vi.hoisted(() => ({
   demoPersistence: new Map<string, string>(),
+  delayedSaves: {
+    enabled: false,
+    markdown: [] as string[],
+    releases: [] as Array<() => void>,
+  },
 }));
 
 const browserPersistence = new Map<string, string>();
@@ -35,9 +40,18 @@ vi.mock("./lib/notebookStorage", async (importOriginal) => {
       demoPersistence.set(key, value);
     },
   };
+  const storage = actual.createDemoNotebookStorage(persistence);
+  const saveNote = storage.saveNote.bind(storage);
+  storage.saveNote = async (workspace, path, markdown) => {
+    if (delayedSaves.enabled) {
+      delayedSaves.markdown.push(markdown);
+      await new Promise<void>((resolve) => delayedSaves.releases.push(resolve));
+    }
+    return saveNote(workspace, path, markdown);
+  };
   return {
     ...actual,
-    notebookStorage: actual.createDemoNotebookStorage(persistence),
+    notebookStorage: storage,
   };
 });
 
@@ -73,13 +87,70 @@ async function settle() {
   });
 }
 
+async function waitFor(check: () => boolean, timeoutMs = 1_500) {
+  const deadline = Date.now() + timeoutMs;
+  while (!check()) {
+    if (Date.now() >= deadline) throw new Error("Timed out waiting for condition");
+    await act(async () => {
+      await new Promise((resolve) => window.setTimeout(resolve, 10));
+    });
+  }
+}
+
 describe("Note navigation persistence", () => {
   const containers: HTMLElement[] = [];
 
   afterEach(() => {
+    delayedSaves.enabled = false;
+    delayedSaves.releases.splice(0).forEach((release) => release());
+    delayedSaves.markdown.length = 0;
     localStorage.clear();
     demoPersistence.clear();
     containers.splice(0).forEach((container) => container.remove());
+  });
+
+  it("automatically saves a newer draft that arrives while an older save is in flight", async () => {
+    demoPersistence.set("tigrana-demo-v5", JSON.stringify({
+      folders: [],
+      notes: {
+        "Welcome.md": "# Welcome\n\nOriginal body.",
+      },
+    }));
+    const container = document.createElement("div");
+    document.body.appendChild(container);
+    containers.push(container);
+    const root = createRoot(container);
+
+    await act(async () => {
+      root.render(<App />);
+      await new Promise((resolve) => window.setTimeout(resolve, 50));
+    });
+
+    const body = container.querySelector<HTMLTextAreaElement>('textarea[aria-label="Test note body"]');
+    expect(body).not.toBeNull();
+    delayedSaves.enabled = true;
+
+    await act(async () => {
+      if (body) setReactTextareaValue(body, "First draft");
+    });
+    await waitFor(() => delayedSaves.markdown.length === 1);
+
+    await act(async () => {
+      if (body) setReactTextareaValue(body, "Second draft");
+    });
+    expect(container.querySelector(".save-state")?.textContent).toContain("Unsaved");
+
+    await act(async () => delayedSaves.releases.shift()?.());
+    await waitFor(() => delayedSaves.markdown.length === 2);
+    await act(async () => delayedSaves.releases.shift()?.());
+    await waitFor(() => container.querySelector(".save-state")?.textContent?.includes("Saved") ?? false);
+
+    const store = JSON.parse(demoPersistence.get("tigrana-demo-v5") ?? "{}") as {
+      notes?: Record<string, string>;
+    };
+    expect(store.notes?.["Welcome.md"]).toContain("Second draft");
+
+    await act(async () => root.unmount());
   });
 
   it.fails("does not navigate away when title validation prevents unsaved body content from being saved", async () => {
