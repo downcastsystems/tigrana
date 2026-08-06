@@ -2840,9 +2840,23 @@ export function NotesEditor({ content, commandRequest, focusRequest, focusAtEndR
 
   useEffect(() => {
     if (!editor || !focusRequest) return;
+    const scrollSurface = editor.view.dom.closest(".note-surface");
+    const preservedScrollTop = scrollSurface instanceof HTMLElement ? scrollSurface.scrollTop : null;
+    const restoreScroll = () => {
+      if (
+        preservedScrollTop !== null
+        && scrollSurface instanceof HTMLElement
+        && scrollSurface.isConnected
+        && scrollSurface.scrollTop !== preservedScrollTop
+      ) {
+        scrollSurface.scrollTop = preservedScrollTop;
+      }
+    };
     // Force a synchronous DOM focus first — Tiptap's chain().focus() defers
     // the actual view.focus() to rAF, which races with later effects (e.g. a
-    // content reload that blurs+refocuses) and can drop us back to BODY.
+    // content reload that blurs+refocuses) and can drop us back to BODY. WebKit
+    // may also scroll a tall empty contenteditable despite preventScroll, so
+    // pin the Note viewport through Tiptap's deferred focus frames.
     editor.view.dom.focus({ preventScroll: true });
     const chain = editor.chain().focus("start", { scrollIntoView: false });
     if (editable && !editor.state.doc.textContent.trim()) {
@@ -2850,6 +2864,16 @@ export function NotesEditor({ content, commandRequest, focusRequest, focusAtEndR
     } else {
       chain.run();
     }
+    restoreScroll();
+    let secondFrame = 0;
+    const firstFrame = window.requestAnimationFrame(() => {
+      restoreScroll();
+      secondFrame = window.requestAnimationFrame(restoreScroll);
+    });
+    return () => {
+      window.cancelAnimationFrame(firstFrame);
+      window.cancelAnimationFrame(secondFrame);
+    };
   }, [editable, editor, focusRequest]);
 
   useEffect(() => {

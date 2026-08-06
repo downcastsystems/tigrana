@@ -100,6 +100,64 @@ describe("Note editor typing performance", () => {
     expect(scrollIntoView).toHaveBeenCalledWith({ block: "nearest" });
   });
 
+  it("keeps the Note viewport pinned while focus moves from a new title to the empty editor", async () => {
+    const container = document.createElement("div");
+    const noteSurface = document.createElement("section");
+    noteSurface.className = "note-surface";
+    container.appendChild(noteSurface);
+    document.body.appendChild(container);
+    const root = createRoot(noteSurface);
+    mounted.push({ container, root });
+
+    const renderEditor = (focusRequest: number) => (
+      <NotesEditor
+        content=""
+        commandRequest={null}
+        editable
+        findRequest={0}
+        focusAtEndRequest={0}
+        focusRequest={focusRequest}
+        historyKey="new-note-id"
+        notePath="Untitled.md"
+        onChange={() => undefined}
+        onLoadError={(error) => {
+          throw error;
+        }}
+        onPendingChange={() => undefined}
+        onPositionChange={() => undefined}
+        reloadRequest={0}
+        restorePosition={null}
+        spellcheckEnabled
+        workspace="/Notebook"
+      />
+    );
+
+    await act(async () => root.render(renderEditor(0)));
+    const editorElement = container.querySelector<HTMLElement>(".ProseMirror");
+    expect(editorElement).not.toBeNull();
+
+    const nativeFocus = HTMLElement.prototype.focus;
+    Object.defineProperty(editorElement, "focus", {
+      configurable: true,
+      value: () => {
+        noteSurface.scrollTop = 48;
+        nativeFocus.call(editorElement);
+      },
+    });
+    noteSurface.scrollTop = 0;
+    const animationFrame = vi.spyOn(window, "requestAnimationFrame").mockImplementation((callback) => {
+      callback(0);
+      return 1;
+    });
+
+    try {
+      await act(async () => root.render(renderEditor(1)));
+      expect(noteSurface.scrollTop).toBe(0);
+    } finally {
+      animationFrame.mockRestore();
+    }
+  });
+
   it("coalesces a typing burst without recreating the editor or rerendering its parent per edit", async () => {
     vi.useFakeTimers();
     const container = document.createElement("div");
