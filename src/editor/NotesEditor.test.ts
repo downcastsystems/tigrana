@@ -5,15 +5,19 @@ import { Schema, type Node as ProseMirrorNode } from "@tiptap/pm/model";
 import { EditorState, NodeSelection, TextSelection } from "@tiptap/pm/state";
 import type { EditorProps, EditorView } from "@tiptap/pm/view";
 import { StarterKit } from "@tiptap/starter-kit";
-import { describe, expect, it } from "vitest";
+import { act, createElement } from "react";
+import { createRoot } from "react-dom/client";
+import { describe, expect, it, vi } from "vitest";
 
 HTMLCanvasElement.prototype.getContext = (() => null) as typeof HTMLCanvasElement.prototype.getContext;
+(globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 
 const {
   BoundedNoteStateCache,
   cacheCurrentNoteEditorState,
   collapseBoundarySelectionAt,
   findSlashQueryInState,
+  FormattingBubbleMenu,
   getTaskLineCutDeleteRange,
   getEditorDocumentLoadAction,
   handleNestedListBoundaryDelete,
@@ -544,6 +548,64 @@ describe("formatting selection eligibility", () => {
 
     expect(boundarySelection.empty).toBe(false);
     expect(isFormattingSelection(boundarySelection)).toBe(false);
+  });
+});
+
+describe("formatting bubble position", () => {
+  it("keeps its anchor while a formatting transaction changes the selected text geometry", async () => {
+    vi.useFakeTimers();
+    const doc = bulletDoc([bulletItem("Selected text")]);
+    const range = textRange(doc, "Selected text");
+    const listeners = new Map<string, Set<() => void>>();
+    let top = 120;
+    let left = 240;
+    const editor = {
+      state: { selection: TextSelection.create(doc, range.from, range.to) },
+      isActive: () => false,
+      isEditable: true,
+      isFocused: true,
+      view: {
+        coordsAtPos: (position: number) => ({
+          top,
+          bottom: top + 20,
+          left: position === range.from ? left - 20 : left + 20,
+          right: position === range.from ? left - 20 : left + 20,
+        }),
+      },
+      on: (event: string, listener: () => void) => {
+        const eventListeners = listeners.get(event) ?? new Set();
+        eventListeners.add(listener);
+        listeners.set(event, eventListeners);
+      },
+      off: (event: string, listener: () => void) => listeners.get(event)?.delete(listener),
+    } as unknown as Editor;
+    const container = document.createElement("div");
+    document.body.appendChild(container);
+    const root = createRoot(container);
+
+    try {
+      await act(async () => root.render(createElement(FormattingBubbleMenu, { editor })));
+      await act(async () => vi.advanceTimersByTime(80));
+      const bubble = container.querySelector<HTMLElement>(".format-bubble");
+      expect(bubble?.style.top).toBe("120px");
+      expect(bubble?.style.left).toBe("240px");
+
+      top = 80;
+      left = 280;
+      await act(async () => listeners.get("transaction")?.forEach((listener) => listener()));
+
+      expect(bubble?.style.top).toBe("120px");
+      expect(bubble?.style.left).toBe("240px");
+
+      await act(async () => window.dispatchEvent(new Event("scroll")));
+
+      expect(bubble?.style.top).toBe("80px");
+      expect(bubble?.style.left).toBe("280px");
+    } finally {
+      await act(async () => root.unmount());
+      container.remove();
+      vi.useRealTimers();
+    }
   });
 });
 

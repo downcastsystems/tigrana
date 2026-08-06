@@ -3312,7 +3312,7 @@ async function applyLinkToEditorSelection(
     .run();
 }
 
-function FormattingBubbleMenu({
+export function FormattingBubbleMenu({
   editor,
   onRequestLink,
 }: {
@@ -3321,35 +3321,49 @@ function FormattingBubbleMenu({
 }) {
   const [suppressed, setSuppressed] = useState(false);
   const [tick, setTick] = useState(0);
+  const [positionRevision, setPositionRevision] = useState(0);
   const [pendingShow, setPendingShow] = useState(false);
   const showTimerRef = useRef<number | null>(null);
   const hadTextSelectionRef = useRef(!editor.state.selection.empty);
+  const selectionRangeRef = useRef({
+    anchor: editor.state.selection.anchor,
+    head: editor.state.selection.head,
+  });
 
-  // Re-render the bubble when the editor's selection / document changes,
-  // when focus changes, and on window resize/scroll so positioning stays sticky.
+  // Editor transactions refresh button state, but only a genuinely new
+  // selection or viewport movement may move an already-visible bubble. This
+  // keeps block formatting (for example paragraph -> H1) from making the
+  // toolbar jump when the selected text's line box changes size.
   useEffect(() => {
     const refresh = () => setTick((value) => value + 1);
     const refreshSelection = () => {
-      const hasTextSelection = !editor.state.selection.empty;
+      const { selection } = editor.state;
+      const hasTextSelection = !selection.empty;
+      const previousRange = selectionRangeRef.current;
+      if (selection.anchor !== previousRange.anchor || selection.head !== previousRange.head) {
+        selectionRangeRef.current = { anchor: selection.anchor, head: selection.head };
+        setPositionRevision((value) => value + 1);
+      }
       if (hasTextSelection || hadTextSelectionRef.current) refresh();
       hadTextSelectionRef.current = hasTextSelection;
     };
     const refreshSelectedTransaction = () => {
       if (!editor.state.selection.empty) refresh();
     };
+    const refreshPosition = () => setPositionRevision((value) => value + 1);
     editor.on("selectionUpdate", refreshSelection);
     editor.on("transaction", refreshSelectedTransaction);
     editor.on("focus", refresh);
     editor.on("blur", refresh);
-    window.addEventListener("resize", refresh);
-    window.addEventListener("scroll", refresh, true);
+    window.addEventListener("resize", refreshPosition);
+    window.addEventListener("scroll", refreshPosition, true);
     return () => {
       editor.off("selectionUpdate", refreshSelection);
       editor.off("transaction", refreshSelectedTransaction);
       editor.off("focus", refresh);
       editor.off("blur", refresh);
-      window.removeEventListener("resize", refresh);
-      window.removeEventListener("scroll", refresh, true);
+      window.removeEventListener("resize", refreshPosition);
+      window.removeEventListener("scroll", refreshPosition, true);
     };
   }, [editor]);
 
@@ -3498,7 +3512,8 @@ function FormattingBubbleMenu({
     return undefined;
   }, [eligible, suppressed, pendingShow]);
 
-  const position = (() => {
+  const position = useMemo(() => {
+    void positionRevision;
     if (!visible) return null;
     const { from, to } = editor.state.selection;
     try {
@@ -3510,10 +3525,10 @@ function FormattingBubbleMenu({
     } catch {
       return null;
     }
-  })();
+  }, [editor, positionRevision, visible]);
 
-  // Reference `tick` so the closure stays subscribed to editor events without
-  // ESLint warning. Position is recomputed every render anyway.
+  // Reference `tick` so editor state changes still refresh button/visibility
+  // state without treating every transaction as an anchor invalidation.
   void tick;
 
   if (!visible || !position) return null;
