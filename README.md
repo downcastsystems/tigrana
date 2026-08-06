@@ -56,8 +56,8 @@ Prerequisites:
 Clone the repository, install dependencies, then build and install Tigrana:
 
 ```bash
-git clone https://github.com/elmogallen/notes-app.git
-cd notes-app
+git clone https://github.com/downcastsystems/tigrana.git
+cd tigrana
 npm install
 npm run install:app
 ```
@@ -80,8 +80,8 @@ Prerequisites:
 In PowerShell:
 
 ```powershell
-git clone https://github.com/elmogallen/notes-app.git
-cd notes-app
+git clone https://github.com/downcastsystems/tigrana.git
+cd tigrana
 npm install
 npm run tauri -- build
 ```
