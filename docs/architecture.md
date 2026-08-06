@@ -107,6 +107,13 @@ switches away, but it cannot replace the active Notebook's appearance,
 selection, tabs, or metadata. Settings mutations are accepted only after the
 active Notebook's metadata has loaded.
 
+Creation timestamps are stored portably as `created_at` in each Note's YAML
+frontmatter beside its stable `id`, so they travel with individual Markdown
+files across Notebooks. Existing Notes are backfilled from the oldest
+recoverable legacy metadata, filesystem, Note-history, prior-open, or bookmark
+timestamp when first encountered. The legacy `noteCreatedAt` Notebook-metadata
+map is read only as a migration fallback.
+
 Notebook metadata also carries a monotonic `revision`. Native whole-snapshot
 writes use compare-and-swap under the Native Notebook write lane. If another
 window or a path mutation has advanced the revision, the stale snapshot is not

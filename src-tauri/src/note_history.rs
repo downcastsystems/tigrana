@@ -1,10 +1,10 @@
 use crate::link_index::{
     ensure_note_id_in_content_with_preferred, read_frontmatter_field, read_link_index_file,
-    reindex_note_after_save, split_frontmatter,
+    reindex_note_after_save, set_tigrana_managed_fields_in_content, split_frontmatter,
 };
 use crate::notebook_paths::{app_dir, note_title_from_path};
 use serde::{Deserialize, Serialize};
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 use std::fs;
 use std::hash::{Hash, Hasher};
 use std::path::{Path, PathBuf};
@@ -261,6 +261,22 @@ pub fn list_note_versions(
     Ok(entries)
 }
 
+pub fn earliest_note_history_times(root: &Path) -> HashMap<String, u64> {
+    let mut earliest_by_note = HashMap::new();
+    let Ok(index) = read_note_history_index(root) else {
+        return earliest_by_note;
+    };
+    for entry in index.entries {
+        let key = note_history_entry_key(&entry);
+        let created_at = entry.created_at / 1000;
+        earliest_by_note
+            .entry(key)
+            .and_modify(|earliest: &mut u64| *earliest = (*earliest).min(created_at))
+            .or_insert(created_at);
+    }
+    earliest_by_note
+}
+
 pub fn read_note_version(root: &Path, id: &str) -> Result<String, String> {
     let index = read_note_history_index(root).unwrap_or_default();
     let entry = index
@@ -308,8 +324,17 @@ pub fn restore_note_version(
         )?;
     }
 
-    let (_id, content_with_id, _mutated) =
+    let current_created_at = current_content
+        .as_deref()
+        .and_then(|content| read_frontmatter_field(&split_frontmatter(content).0, "created_at"));
+    let version_created_at =
+        read_frontmatter_field(&split_frontmatter(&version_content).0, "created_at");
+    let (id, content_with_id, _mutated) =
         ensure_note_id_in_content_with_preferred(&version_content, current_id);
+    let content_with_id = current_created_at
+        .or(version_created_at)
+        .map(|created_at| set_tigrana_managed_fields_in_content(&content_with_id, &id, &created_at))
+        .unwrap_or(content_with_id);
     fs::write(note_path, &content_with_id).map_err(|error| error.to_string())?;
     let _ = reindex_note_after_save(root, path);
     Ok(content_with_id)

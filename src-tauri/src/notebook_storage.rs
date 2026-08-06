@@ -1,11 +1,15 @@
 use crate::link_index::{
-    ensure_note_id_in_content, forget_path_from_index, forget_subtree_from_index, move_index_path,
-    parse_links_for_note, plan_inbound_link_repairs, plan_subtree_path_repairs,
-    read_link_index_file, rebuild_index_for_root, reindex_note_after_save, set_note_id_in_content,
-    unique_note_relative, update_index_links_for_source, write_folder_sidecar,
-    write_link_index_file, FolderRecord, FolderSidecar, LinkIndex, NoteContentMutation, NoteRecord,
+    ensure_note_id_in_content_with_preferred, forget_path_from_index, forget_subtree_from_index,
+    move_index_path, parse_links_for_note, plan_inbound_link_repairs, plan_subtree_path_repairs,
+    read_frontmatter_field, read_link_index_file, rebuild_index_for_root, reindex_note_after_save,
+    set_tigrana_managed_fields_in_content, split_frontmatter, unique_note_relative,
+    update_index_links_for_source, write_folder_sidecar, write_link_index_file, FolderRecord,
+    FolderSidecar, LinkIndex, NoteContentMutation, NoteRecord,
 };
-use crate::note_history::{create_note_version_snapshot, note_history_reason, NoteSnapshotMode};
+use crate::note_history::{
+    create_note_version_snapshot, earliest_note_history_times, note_history_reason,
+    NoteSnapshotMode,
+};
 use crate::notebook_metadata::{
     read_workspace_metadata, repair_folder_path, repair_note_path, write_workspace_metadata,
     FolderPlacement, FolderSiblingPlacement, WorkspaceMetadata,
@@ -18,6 +22,7 @@ use std::collections::{BTreeMap, HashMap};
 use std::fs::{self, OpenOptions};
 use std::io::Write;
 use std::path::{Path, PathBuf};
+use time::{format_description::well_known::Rfc3339, OffsetDateTime};
 use uuid::Uuid;
 use walkdir::WalkDir;
 
@@ -26,6 +31,7 @@ pub struct NoteEntry {
     pub path: String,
     pub title: String,
     pub parent_path: String,
+    pub created_at: Option<u64>,
     pub updated_at: Option<u64>,
 }
 
@@ -66,6 +72,9 @@ pub fn read_notebook_snapshot(root: &Path) -> Result<NotebookSnapshot, String> {
 
 pub fn list_notes(root: &Path) -> Result<Vec<NoteEntry>, String> {
     let mut notes = Vec::new();
+    let link_index = read_link_index_file(root);
+    let metadata = read_workspace_metadata(root).unwrap_or_default();
+    let mut history_created_at = None;
 
     for entry in WalkDir::new(root)
         .into_iter()
@@ -85,16 +94,55 @@ pub fn list_notes(root: &Path) -> Result<Vec<NoteEntry>, String> {
             .and_then(|name| name.to_str())
             .unwrap_or("Untitled")
             .to_string();
-        let updated_at = fs::metadata(path)
-            .and_then(|metadata| metadata.modified())
-            .ok()
-            .and_then(|time| time.duration_since(std::time::UNIX_EPOCH).ok())
-            .map(|duration| duration.as_secs());
+        let raw = fs::read_to_string(path)
+            .map_err(|error| format!("Failed to read Note {relative}: {error}"))?;
+        let preferred_id = link_index.path_to_id.get(&relative).cloned();
+        let (note_id, content_with_id, id_was_added) =
+            ensure_note_id_in_content_with_preferred(&raw, preferred_id);
+        let (file_created_at, updated_at) = note_file_times(path);
+        let legacy_created_at = metadata
+            .note_created_at
+            .get(&note_id)
+            .and_then(|value| value.as_u64());
+        let created_at = portable_created_at_from_content(&content_with_id)
+            .or(legacy_created_at)
+            .or_else(|| {
+                let history =
+                    history_created_at.get_or_insert_with(|| earliest_note_history_times(root));
+                earliest_created_at(
+                    file_created_at,
+                    updated_at,
+                    history
+                        .get(&note_id)
+                        .copied()
+                        .or_else(|| history.get(&relative).copied()),
+                    earliest_metadata_note_evidence(&metadata, &relative),
+                )
+            });
+        if let Some(created_at_value) = created_at {
+            if let Some(created_at_text) = format_created_at(created_at_value) {
+                let migrated = set_tigrana_managed_fields_in_content(
+                    &content_with_id,
+                    &note_id,
+                    &created_at_text,
+                );
+                if migrated != raw {
+                    // Opening a Notebook is a read operation. Migration is useful,
+                    // but a read-only Note must remain openable when it cannot persist.
+                    if write_migration_preserving_modified_time(path, &migrated).is_ok()
+                        && id_was_added
+                    {
+                        let _ = reindex_note_after_save(root, &relative);
+                    }
+                }
+            }
+        }
 
         notes.push(NoteEntry {
             path: relative,
             title,
             parent_path,
+            created_at,
             updated_at,
         });
     }
@@ -157,21 +205,34 @@ pub fn save_note(root: &Path, path: &str, content: &str) -> Result<String, Strin
     if !note_path.is_file() {
         return Err("The Note no longer exists at that path.".to_string());
     }
-    let (_id, content_with_id, _mutated) = ensure_note_id_in_content(content);
-    if let Ok(existing) = fs::read_to_string(&note_path) {
-        let reason = note_history_reason(&existing, &content_with_id);
+    let existing = fs::read_to_string(&note_path)
+        .map_err(|error| format!("Failed to read Note before saving: {error}"))?;
+    let preferred_id = note_id_from_content(&existing)
+        .or_else(|| read_link_index_file(root).path_to_id.get(path).cloned());
+    let (note_id, content_with_id, _) =
+        ensure_note_id_in_content_with_preferred(content, preferred_id);
+    let created_at = portable_created_at_from_content(&content_with_id)
+        .or_else(|| portable_created_at_from_content(&existing))
+        .or_else(|| recover_note_created_at(root, path, &note_path, &note_id))
+        .unwrap_or_else(now_seconds);
+    let created_at_text = format_created_at(created_at)
+        .ok_or_else(|| "The Note creation timestamp is out of range.".to_string())?;
+    let managed_content =
+        set_tigrana_managed_fields_in_content(&content_with_id, &note_id, &created_at_text);
+    {
+        let reason = note_history_reason(&existing, &managed_content);
         let _ = create_note_version_snapshot(
             root,
             path,
             &existing,
-            &content_with_id,
+            &managed_content,
             &reason,
             NoteSnapshotMode::Throttled,
         );
     }
-    write_note_content_atomic(&note_path, &content_with_id)?;
+    write_note_content_atomic(&note_path, &managed_content)?;
     let _ = reindex_note_after_save(root, path);
-    Ok(content_with_id)
+    Ok(managed_content)
 }
 
 pub fn create_note(root: &Path, parent_path: &str, title: &str) -> Result<NoteEntry, String> {
@@ -199,7 +260,10 @@ pub fn create_note_with_content(
     }
 
     let new_id = Uuid::new_v4().to_string();
-    let initial_content = format!("---\nid: {new_id}\n---\n\n{body}");
+    let created_at = now_seconds();
+    let created_at_text = format_created_at(created_at)
+        .ok_or_else(|| "The Note creation timestamp is out of range.".to_string())?;
+    let initial_content = set_tigrana_managed_fields_in_content(body, &new_id, &created_at_text);
     let mut file = OpenOptions::new()
         .write(true)
         .create_new(true)
@@ -218,6 +282,7 @@ pub fn create_note_with_content(
     }
 
     let path = relative.to_string_lossy().replace('\\', "/");
+    let updated_at = note_file_times(&absolute).1;
     let mut index = read_link_index_file(root);
     index.notes_by_id.insert(
         new_id.clone(),
@@ -234,7 +299,8 @@ pub fn create_note_with_content(
         path: path.clone(),
         title: title.to_string(),
         parent_path: parent_path_for(&path),
-        updated_at: None,
+        created_at: Some(created_at),
+        updated_at,
     })
 }
 
@@ -262,11 +328,16 @@ pub fn duplicate_note(root: &Path, path: &str) -> Result<NoteEntry, String> {
 
     let source_content = fs::read_to_string(&source_path).map_err(|error| error.to_string())?;
     let new_id = Uuid::new_v4().to_string();
-    let duplicate_content = set_note_id_in_content(&source_content, &new_id);
+    let created_at = now_seconds();
+    let created_at_text = format_created_at(created_at)
+        .ok_or_else(|| "The Note creation timestamp is out of range.".to_string())?;
+    let duplicate_content =
+        set_tigrana_managed_fields_in_content(&source_content, &new_id, &created_at_text);
     fs::write(&new_path, &duplicate_content).map_err(|error| error.to_string())?;
 
     let path = new_relative.to_string_lossy().replace('\\', "/");
     let title = note_title_from_path(&path);
+    let updated_at = note_file_times(&new_path).1;
     let mut index = read_link_index_file(root);
     index.notes_by_id.insert(
         new_id.clone(),
@@ -285,7 +356,8 @@ pub fn duplicate_note(root: &Path, path: &str) -> Result<NoteEntry, String> {
         path: path.clone(),
         title,
         parent_path: parent_path_for(&path),
-        updated_at: None,
+        created_at: Some(created_at),
+        updated_at,
     })
 }
 
@@ -352,11 +424,14 @@ pub fn rename_note(root: &Path, path: &str, title: &str) -> Result<NoteEntry, St
         )?;
     }
 
+    let (_, updated_at) = note_file_times(&new_path);
+    let created_at = note_created_at_for_path(root, &new_rel_str, &new_path);
     Ok(NoteEntry {
         path: new_rel_str.clone(),
         title: title.trim().to_string(),
         parent_path: parent_path_for(&new_rel_str),
-        updated_at: None,
+        created_at,
+        updated_at,
     })
 }
 
@@ -548,11 +623,14 @@ pub fn move_note(root: &Path, path: &str, target_parent_path: &str) -> Result<No
     }
 
     let title = note_title_from_path(&new_rel_str);
+    let (_, updated_at) = note_file_times(&new_path);
+    let created_at = note_created_at_for_path(root, &new_rel_str, &new_path);
     Ok(NoteEntry {
         path: new_rel_str.clone(),
         title,
         parent_path: parent_path_for(&new_rel_str),
-        updated_at: None,
+        created_at,
+        updated_at,
     })
 }
 
@@ -811,6 +889,132 @@ fn parent_path_for(path: &str) -> String {
         .parent()
         .map(|parent| parent.to_string_lossy().replace('\\', "/"))
         .unwrap_or_default()
+}
+
+fn note_file_times(path: &Path) -> (Option<u64>, Option<u64>) {
+    let Ok(metadata) = fs::metadata(path) else {
+        return (None, None);
+    };
+    let to_unix_seconds = |time: Result<std::time::SystemTime, std::io::Error>| {
+        time.ok()
+            .and_then(|value| value.duration_since(std::time::UNIX_EPOCH).ok())
+            .map(|duration| duration.as_secs())
+    };
+    (
+        to_unix_seconds(metadata.created()),
+        to_unix_seconds(metadata.modified()),
+    )
+}
+
+fn note_id_from_content(content: &str) -> Option<String> {
+    read_frontmatter_field(&split_frontmatter(content).0, "id")
+}
+
+fn parse_created_at(value: &str) -> Option<u64> {
+    let unquoted = value
+        .trim()
+        .trim_matches(|character| character == '"' || character == '\'');
+    let timestamp = OffsetDateTime::parse(unquoted, &Rfc3339)
+        .ok()?
+        .unix_timestamp();
+    u64::try_from(timestamp).ok()
+}
+
+fn format_created_at(seconds: u64) -> Option<String> {
+    let timestamp = i64::try_from(seconds).ok()?;
+    OffsetDateTime::from_unix_timestamp(timestamp)
+        .ok()?
+        .format(&Rfc3339)
+        .ok()
+}
+
+fn portable_created_at_from_content(content: &str) -> Option<u64> {
+    let frontmatter = split_frontmatter(content).0;
+    parse_created_at(&read_frontmatter_field(&frontmatter, "created_at")?)
+}
+
+fn now_seconds() -> u64 {
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|duration| duration.as_secs())
+        .unwrap_or(0)
+}
+
+fn earliest_created_at(
+    file_created_at: Option<u64>,
+    file_updated_at: Option<u64>,
+    history_created_at: Option<u64>,
+    metadata_evidence_at: Option<u64>,
+) -> Option<u64> {
+    [
+        file_created_at,
+        file_updated_at,
+        history_created_at,
+        metadata_evidence_at,
+    ]
+    .into_iter()
+    .flatten()
+    .min()
+}
+
+fn earliest_metadata_note_evidence(metadata: &WorkspaceMetadata, relative: &str) -> Option<u64> {
+    let last_opened_at = metadata
+        .note_positions
+        .get(relative)
+        .and_then(|position| position.get("lastOpenedAt"))
+        .and_then(|value| value.as_u64())
+        .map(|milliseconds| milliseconds / 1000);
+    let bookmark_created_at = metadata
+        .bookmarks
+        .iter()
+        .filter(|bookmark| bookmark.get("kind").and_then(|value| value.as_str()) == Some("note"))
+        .filter(|bookmark| bookmark.get("path").and_then(|value| value.as_str()) == Some(relative))
+        .filter_map(|bookmark| bookmark.get("createdAt").and_then(|value| value.as_u64()))
+        .map(|milliseconds| milliseconds / 1000)
+        .min();
+    [last_opened_at, bookmark_created_at]
+        .into_iter()
+        .flatten()
+        .min()
+}
+
+fn recover_note_created_at(root: &Path, relative: &str, path: &Path, note_id: &str) -> Option<u64> {
+    let metadata = read_workspace_metadata(root).unwrap_or_default();
+    if let Some(created_at) = metadata
+        .note_created_at
+        .get(note_id)
+        .and_then(|value| value.as_u64())
+    {
+        return Some(created_at);
+    }
+    let (file_created_at, file_updated_at) = note_file_times(path);
+    let history = earliest_note_history_times(root);
+    earliest_created_at(
+        file_created_at,
+        file_updated_at,
+        history
+            .get(note_id)
+            .copied()
+            .or_else(|| history.get(relative).copied()),
+        earliest_metadata_note_evidence(&metadata, relative),
+    )
+}
+
+fn write_migration_preserving_modified_time(path: &Path, content: &str) -> Result<(), String> {
+    let modified_at = fs::metadata(path)
+        .and_then(|metadata| metadata.modified())
+        .map_err(|error| error.to_string())?;
+    fs::write(path, content).map_err(|error| error.to_string())?;
+    filetime::set_file_mtime(path, filetime::FileTime::from_system_time(modified_at))
+        .map_err(|error| error.to_string())
+}
+
+fn note_created_at_for_path(root: &Path, relative: &str, path: &Path) -> Option<u64> {
+    let content = fs::read_to_string(path).ok()?;
+    let note_id = note_id_from_content(&content)
+        .or_else(|| read_link_index_file(root).path_to_id.get(relative).cloned())?;
+    portable_created_at_from_content(&content)
+        .or_else(|| recover_note_created_at(root, relative, path, &note_id))
 }
 
 #[cfg(test)]
@@ -1108,9 +1312,242 @@ mod tests {
         let created = create_note_with_content(root, "", "Welcome", "Welcome body\n").unwrap();
         let content = read_note(root, &created.path).unwrap();
 
-        assert!(content.starts_with("---\nid: "));
+        assert!(content.starts_with(
+            "---\n# Tigrana-managed fields.\n# Changing id or created_at can break links and creation history.\nid: "
+        ));
         assert!(content.ends_with("Welcome body\n"));
+        let frontmatter = split_frontmatter(&content).0;
+        assert_eq!(
+            read_frontmatter_field(&frontmatter, "created_at")
+                .as_deref()
+                .and_then(parse_created_at),
+            created.created_at
+        );
+        assert!(created.updated_at.is_some());
+        assert!(serde_json::to_value(&created)
+            .unwrap()
+            .get("created_at")
+            .is_some());
         assert!(create_note_with_content(root, "", "Welcome", "replacement").is_err());
         assert_eq!(read_note(root, &created.path).unwrap(), content);
+    }
+
+    #[test]
+    fn atomic_saves_do_not_replace_the_note_creation_timestamp() {
+        let notebook = TestNotebook::new();
+        let root = &notebook.0;
+        write_note(root, "Dated.md", "dated-id", "Before");
+        let Some(created_before_save) = note_file_times(&root.join("Dated.md")).0 else {
+            return;
+        };
+
+        std::thread::sleep(std::time::Duration::from_millis(1_100));
+        save_note(root, "Dated.md", "---\nid: dated-id\n---\n\nAfter\n").unwrap();
+
+        let listed = list_notes(root).unwrap();
+        assert_eq!(listed[0].created_at, Some(created_before_save));
+        assert_ne!(listed[0].created_at, listed[0].updated_at);
+    }
+
+    #[test]
+    fn existing_notes_backfill_creation_from_their_earliest_history() {
+        let notebook = TestNotebook::new();
+        let root = &notebook.0;
+        let before = "---\nid: dated-id\n---\n\nBefore\n";
+        let after = "---\nid: dated-id\n---\n\nAfter\n";
+        write_note(root, "Dated.md", "dated-id", "Before");
+        create_note_version_snapshot(
+            root,
+            "Dated.md",
+            before,
+            after,
+            "save",
+            NoteSnapshotMode::Force,
+        )
+        .unwrap();
+        let history_path = root.join(".tigrana/history/notes/index.json");
+        let mut history: serde_json::Value =
+            serde_json::from_str(&fs::read_to_string(&history_path).unwrap()).unwrap();
+        let historical_created_at_ms = 1_700_000_000_000_u64;
+        history["entries"][0]["createdAt"] = serde_json::Value::from(historical_created_at_ms);
+        fs::write(&history_path, serde_json::to_vec_pretty(&history).unwrap()).unwrap();
+        write_note_content_atomic(&root.join("Dated.md"), after).unwrap();
+
+        let listed = list_notes(root).unwrap();
+        let migrated_content = fs::read_to_string(root.join("Dated.md")).unwrap();
+        let migrated_created_at =
+            read_frontmatter_field(&split_frontmatter(&migrated_content).0, "created_at")
+                .and_then(|value| parse_created_at(&value));
+
+        assert_eq!(listed[0].created_at, Some(historical_created_at_ms / 1000));
+        assert_eq!(migrated_created_at, Some(historical_created_at_ms / 1000));
+        assert!(migrated_content.contains("# Tigrana-managed fields."));
+    }
+
+    #[test]
+    fn opening_headerless_markdown_adds_portable_metadata_without_changing_the_body() {
+        let notebook = TestNotebook::new();
+        let root = &notebook.0;
+        let body = "# Plain Markdown\n\nNothing app-specific here.\n";
+        fs::write(root.join("Plain.md"), body).unwrap();
+
+        let snapshot = read_notebook_snapshot(root).unwrap();
+        let migrated = &snapshot.contents["Plain.md"];
+
+        assert!(migrated.contains("# Tigrana-managed fields."));
+        assert!(read_frontmatter_field(&split_frontmatter(migrated).0, "id").is_some());
+        assert!(portable_created_at_from_content(migrated).is_some());
+        assert!(migrated.ends_with(body));
+    }
+
+    #[test]
+    fn listing_a_new_headerless_note_keeps_its_minted_identity_in_the_link_index() {
+        let notebook = TestNotebook::new();
+        let root = &notebook.0;
+        fs::write(root.join("New.md"), "New body.\n").unwrap();
+
+        list_notes(root).unwrap();
+
+        let content = fs::read_to_string(root.join("New.md")).unwrap();
+        let id = read_frontmatter_field(&split_frontmatter(&content).0, "id").unwrap();
+        assert_eq!(
+            read_link_index_file(root)
+                .path_to_id
+                .get("New.md")
+                .map(String::as_str),
+            Some(id.as_str())
+        );
+    }
+
+    #[test]
+    fn portable_metadata_migration_preserves_the_note_modification_time() {
+        let notebook = TestNotebook::new();
+        let root = &notebook.0;
+        let path = root.join("Older.md");
+        fs::write(&path, "An older Note.\n").unwrap();
+        let original_modified_at = fs::metadata(&path).unwrap().modified().unwrap();
+
+        let snapshot = read_notebook_snapshot(root).unwrap();
+
+        assert!(snapshot.contents["Older.md"].contains("created_at:"));
+        assert_eq!(
+            fs::metadata(&path).unwrap().modified().unwrap(),
+            original_modified_at
+        );
+        assert_eq!(
+            snapshot.notes[0].updated_at,
+            original_modified_at
+                .duration_since(std::time::UNIX_EPOCH)
+                .ok()
+                .map(|duration| duration.as_secs())
+        );
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn read_only_headerless_notes_remain_openable_without_migration() {
+        use std::os::unix::fs::PermissionsExt;
+
+        let notebook = TestNotebook::new();
+        let root = &notebook.0;
+        let path = root.join("Read Only.md");
+        let body = "This Note can be read but not changed.\n";
+        fs::write(&path, body).unwrap();
+        fs::set_permissions(&path, fs::Permissions::from_mode(0o444)).unwrap();
+
+        let snapshot = read_notebook_snapshot(root).unwrap();
+
+        assert_eq!(snapshot.contents["Read Only.md"], body);
+        assert_eq!(fs::read_to_string(&path).unwrap(), body);
+    }
+
+    #[test]
+    fn failed_note_reads_never_replace_the_original_bytes() {
+        let notebook = TestNotebook::new();
+        let root = &notebook.0;
+        let path = root.join("Binary.md");
+        let original = b"valid prefix\xff\xfevalid suffix\n";
+        fs::write(&path, original).unwrap();
+
+        assert!(read_notebook_snapshot(root).is_err());
+        assert_eq!(fs::read(&path).unwrap(), original);
+        assert!(save_note(root, "Binary.md", "replacement").is_err());
+        assert_eq!(fs::read(&path).unwrap(), original);
+    }
+
+    #[test]
+    fn portable_metadata_preserves_unrelated_yaml_in_imported_notes() {
+        let notebook = TestNotebook::new();
+        let root = &notebook.0;
+        let markdown = "---\nauthor:\n  id: external-author-id\nstatus: draft\n---\n\nBody\n";
+        fs::write(root.join("Frontmatter.md"), markdown).unwrap();
+
+        let snapshot = read_notebook_snapshot(root).unwrap();
+        let migrated = &snapshot.contents["Frontmatter.md"];
+        let tigrana_id = read_frontmatter_field(&split_frontmatter(migrated).0, "id").unwrap();
+
+        assert!(migrated.contains("author:\n  id: external-author-id\nstatus: draft"));
+        assert_ne!(tigrana_id, "external-author-id");
+        assert!(migrated.ends_with("\nBody\n"));
+        assert!(portable_created_at_from_content(migrated).is_some());
+    }
+
+    #[test]
+    fn portable_creation_timestamp_follows_a_markdown_file_to_another_notebook() {
+        let source = TestNotebook::new();
+        let destination = TestNotebook::new();
+        let created = create_note_with_content(&source.0, "", "Portable", "Body\n").unwrap();
+        fs::copy(
+            source.0.join(&created.path),
+            destination.0.join("Portable.md"),
+        )
+        .unwrap();
+
+        let copied = read_notebook_snapshot(&destination.0).unwrap();
+
+        assert_eq!(copied.notes[0].created_at, created.created_at);
+        assert!(copied.contents["Portable.md"].contains("created_at:"));
+    }
+
+    #[test]
+    fn history_creation_recovery_covers_multiple_notes_from_one_index() {
+        let notebook = TestNotebook::new();
+        let root = &notebook.0;
+        for (path, id) in [("First.md", "first-id"), ("Second.md", "second-id")] {
+            let before = format!("---\nid: {id}\n---\n\nBefore\n");
+            let after = format!("---\nid: {id}\n---\n\nAfter\n");
+            fs::write(root.join(path), &before).unwrap();
+            create_note_version_snapshot(
+                root,
+                path,
+                &before,
+                &after,
+                "save",
+                NoteSnapshotMode::Force,
+            )
+            .unwrap();
+            fs::write(root.join(path), after).unwrap();
+        }
+        let history_path = root.join(".tigrana/history/notes/index.json");
+        let mut history: serde_json::Value =
+            serde_json::from_str(&fs::read_to_string(&history_path).unwrap()).unwrap();
+        for entry in history["entries"].as_array_mut().unwrap() {
+            let created_at = match entry["noteId"].as_str() {
+                Some("first-id") => 1_600_000_000_000_u64,
+                Some("second-id") => 1_500_000_000_000_u64,
+                note_id => panic!("unexpected history Note id: {note_id:?}"),
+            };
+            entry["createdAt"] = serde_json::Value::from(created_at);
+        }
+        fs::write(&history_path, serde_json::to_vec_pretty(&history).unwrap()).unwrap();
+
+        let listed = list_notes(root).unwrap();
+        let recovered = listed
+            .iter()
+            .map(|note| (note.path.as_str(), note.created_at))
+            .collect::<HashMap<_, _>>();
+
+        assert_eq!(recovered["First.md"], Some(1_600_000_000));
+        assert_eq!(recovered["Second.md"], Some(1_500_000_000));
     }
 }

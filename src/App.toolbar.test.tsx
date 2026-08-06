@@ -7,7 +7,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 HTMLCanvasElement.prototype.getContext = (() => null) as typeof HTMLCanvasElement.prototype.getContext;
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 
-const { EditorTopbar } = await import("./App");
+const { EditorTopbar, PropertiesPane, updateNoteEntryAfterSave } = await import("./App");
 
 describe("Editor topbar", () => {
   const containers: HTMLElement[] = [];
@@ -84,5 +84,59 @@ describe("Editor topbar", () => {
     expect(container.querySelector(".topbar-note-title")?.getAttribute("tabindex")).toBe("-1");
 
     await act(async () => root.unmount());
+  });
+
+  it("shows the Note creation and update datetimes in Properties", async () => {
+    const container = document.createElement("div");
+    document.body.appendChild(container);
+    containers.push(container);
+    const root = createRoot(container);
+    const createdAt = 1_700_000_000;
+    const updatedAt = 1_710_000_000;
+
+    await act(async () => {
+      root.render(
+        <PropertiesPane
+          activeNote={{
+            path: "Journal/Today.md",
+            title: "Today",
+            parent_path: "Journal",
+            created_at: createdAt,
+            updated_at: updatedAt,
+          }}
+          pendingNote={null}
+          workspace="/Notes"
+        />,
+      );
+    });
+
+    const properties = Object.fromEntries(
+      Array.from(container.querySelectorAll(".property-row")).map((row) => [
+        row.querySelector("span")?.textContent,
+        row.querySelector("strong, code")?.textContent,
+      ]),
+    );
+    expect(properties.Created).toBe(new Date(createdAt * 1000).toLocaleString());
+    expect(properties.Updated).toBe(new Date(updatedAt * 1000).toLocaleString());
+
+    await act(async () => root.unmount());
+  });
+
+  it("refreshes the Note creation datetime from the content accepted after a save", () => {
+    const note = {
+      path: "Journal/Today.md",
+      title: "Today",
+      parent_path: "Journal",
+      created_at: 1_700_000_000,
+      updated_at: 1_710_000_000,
+    };
+    const written = "---\ncreated_at: 2025-03-04T05:06:07Z\n---\n\nBody\n";
+
+    expect(updateNoteEntryAfterSave(note, note.path, written, 1_750_000_000)).toEqual({
+      ...note,
+      created_at: Date.parse("2025-03-04T05:06:07Z") / 1000,
+      updated_at: 1_750_000_000,
+    });
+    expect(updateNoteEntryAfterSave(note, "Other.md", written, 1_750_000_000)).toBe(note);
   });
 });

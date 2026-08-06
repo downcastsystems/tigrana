@@ -58,6 +58,15 @@ export function readNotePreview(markdown: string) {
   return previewBody(parseMarkdown(markdown, false).body);
 }
 
+export function readNoteCreatedAt(markdown: string): number | null {
+  const field = readNoteDocument(markdown, "").frontmatterFields
+    .find((candidate) => candidate.key === "created_at");
+  if (!field) return null;
+  const value = field.value.trim().replace(/^(['"])(.*)\1$/, "$2");
+  const milliseconds = Date.parse(value);
+  return Number.isFinite(milliseconds) ? milliseconds / 1000 : null;
+}
+
 export function createNoteDocument({ title, frontmatter, body }: NoteDocumentContent): NoteDocument {
   const validationError = validateFrontmatter(frontmatter);
   return buildNoteDocument({

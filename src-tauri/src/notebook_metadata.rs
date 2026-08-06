@@ -35,6 +35,8 @@ pub struct WorkspaceMetadata {
     pub note_icons: Map<String, Value>,
     #[serde(default)]
     pub note_positions: Map<String, Value>,
+    #[serde(default, skip_serializing_if = "Map::is_empty")]
+    pub note_created_at: Map<String, Value>,
     #[serde(default)]
     pub bookmarks: Vec<Value>,
     #[serde(default = "default_true")]
@@ -58,6 +60,7 @@ impl Default for WorkspaceMetadata {
             folder_colors: Map::new(),
             note_icons: Map::new(),
             note_positions: Map::new(),
+            note_created_at: Map::new(),
             bookmarks: Vec::new(),
             bookmarks_expanded: true,
             expanded_folders: Map::new(),

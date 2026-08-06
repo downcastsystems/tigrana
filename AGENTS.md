@@ -74,8 +74,10 @@ Hidden app folders are excluded from note/folder scans:
 Every note and folder has a UUID that travels with it so links survive moves
 and renames.
 
-- **Notes** carry `id: <uuid>` in YAML frontmatter at the top of the file.
-  Minted on workspace open if missing.
+- **Notes** carry Tigrana-managed `id: <uuid>` and ISO-8601 `created_at`
+  fields in YAML frontmatter at the top of the file. A YAML comment warns that
+  changing these fields can break links or creation history. Missing
+  frontmatter is added safely on Notebook open without changing the Note body.
 - **Folders** carry a sidecar `<folder>/.tigrana/folder.json` with `{ id }`.
 - `.tigrana/index.json` is the authoritative link cache: `notesById`,
   `foldersById`, `pathToId`, `outbound`, `inbound`. It is rebuildable from
@@ -113,8 +115,14 @@ The TypeScript shape is `WorkspaceMetadata` in `src/types.ts`:
   folderIcons: Record<string, string>;
   folderColors: Record<string, string>;
   noteIcons: Record<string, string>;
+  noteCreatedAt?: Record<string, number>; // legacy Created-date migration fallback
 }
 ```
+
+Notes store their portable creation timestamp as `created_at` in YAML
+frontmatter beside their stable `id`. `noteCreatedAt`, when present in older
+Notebook metadata, is keyed by stable Note UUID and is only a migration
+fallback for Notes that do not yet carry `created_at`.
 
 Lucide icon values use the portable token format `lucide:IconName`, for example `lucide:FileText`. Older plain-text or emoji icon values should still render as fallback custom marks.
 

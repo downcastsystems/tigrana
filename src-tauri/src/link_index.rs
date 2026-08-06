@@ -9,6 +9,8 @@ use uuid::Uuid;
 use walkdir::WalkDir;
 
 const INDEX_SCHEMA_VERSION: u32 = 1;
+pub const TIGRANA_MANAGED_FIELDS_COMMENT: &str =
+    "# Tigrana-managed fields.\n# Changing id or created_at can break links and creation history.";
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 #[serde(rename_all = "camelCase")]
@@ -194,7 +196,10 @@ pub fn split_frontmatter(content: &str) -> (String, String, bool) {
 
 pub fn read_frontmatter_field(frontmatter: &str, key: &str) -> Option<String> {
     for line in frontmatter.split('\n') {
-        let trimmed = line.trim_start();
+        if line.starts_with(' ') || line.starts_with('\t') {
+            continue;
+        }
+        let trimmed = line.trim();
         if trimmed.starts_with('#') {
             continue;
         }
@@ -216,37 +221,40 @@ fn insert_frontmatter_field(frontmatter: &str, key: &str, value: &str) -> String
     }
 }
 
-fn set_frontmatter_field(frontmatter: &str, key: &str, value: &str) -> String {
-    let mut replaced = false;
-    let lines = frontmatter.split('\n').map(|line| {
-        let trimmed = line.trim_start();
-        if !replaced && !trimmed.starts_with('#') {
-            if let Some((k, _)) = trimmed.split_once(':') {
-                if k.trim() == key {
-                    replaced = true;
-                    return format!("{key}: {value}");
-                }
-            }
-        }
-        line.to_string()
-    });
-    let updated = lines.collect::<Vec<_>>().join("\n");
-    if replaced {
-        updated
-    } else {
-        insert_frontmatter_field(&updated, key, value)
-    }
-}
-
-pub fn set_note_id_in_content(content: &str, id: &str) -> String {
+pub fn set_tigrana_managed_fields_in_content(content: &str, id: &str, created_at: &str) -> String {
     let normalized = content.replace("\r\n", "\n");
     let (frontmatter, body, has_frontmatter) = split_frontmatter(&normalized);
+    let remaining_frontmatter = frontmatter
+        .lines()
+        .filter(|line| {
+            if line.starts_with(' ') || line.starts_with('\t') {
+                return true;
+            }
+            let trimmed = line.trim();
+            if trimmed == "# Tigrana-managed fields."
+                || trimmed == "# Changing id or created_at can break links and creation history."
+            {
+                return false;
+            }
+            !matches!(
+                trimmed.split_once(':').map(|(key, _)| key.trim()),
+                Some("id" | "created_at")
+            )
+        })
+        .collect::<Vec<_>>()
+        .join("\n");
+    let managed = format!("{TIGRANA_MANAGED_FIELDS_COMMENT}\nid: {id}\ncreated_at: {created_at}");
+    let next_frontmatter = if remaining_frontmatter.trim().is_empty() {
+        managed
+    } else {
+        format!("{managed}\n{}", remaining_frontmatter.trim())
+    };
+
     if has_frontmatter {
-        let new_frontmatter = set_frontmatter_field(&frontmatter, "id", id);
-        format!("---\n{new_frontmatter}\n---\n{body}")
+        format!("---\n{next_frontmatter}\n---\n{body}")
     } else {
         format!(
-            "---\nid: {id}\n---\n\n{}",
+            "---\n{next_frontmatter}\n---\n\n{}",
             normalized.trim_start_matches('\n')
         )
     }
@@ -542,10 +550,11 @@ pub fn rebuild_index_for_root(root: &Path) -> Result<LinkIndex, String> {
 
     for note_abs in &notes {
         let rel = relative_path(root, note_abs)?;
-        let raw = fs::read_to_string(note_abs).unwrap_or_default();
+        let raw = fs::read_to_string(note_abs)
+            .map_err(|error| format!("Failed to read {rel} while rebuilding the index: {error}"))?;
         let (id, new_content, mutated) = ensure_note_id_in_content(&raw);
         if mutated {
-            if let Err(error) = fs::write(note_abs, &new_content) {
+            if let Err(error) = write_content_preserving_modified_time(note_abs, &new_content) {
                 return Err(format!("Failed to write id into {rel}: {error}"));
             }
         }
@@ -565,13 +574,23 @@ pub fn rebuild_index_for_root(root: &Path) -> Result<LinkIndex, String> {
         let path = index.notes_by_id.get(&note_id).map(|r| r.path.clone());
         let Some(rel) = path else { continue };
         let abs = root.join(&rel);
-        let raw = fs::read_to_string(&abs).unwrap_or_default();
+        let raw = fs::read_to_string(&abs)
+            .map_err(|error| format!("Failed to read {rel} while rebuilding the index: {error}"))?;
         let refs = parse_links_for_note(&note_id, &raw, &index);
         update_index_links_for_source(&mut index, &note_id, refs);
     }
 
     write_link_index_file(root, &index)?;
     Ok(index)
+}
+
+fn write_content_preserving_modified_time(path: &Path, content: &str) -> Result<(), String> {
+    let modified_at = fs::metadata(path)
+        .and_then(|metadata| metadata.modified())
+        .map_err(|error| error.to_string())?;
+    fs::write(path, content).map_err(|error| error.to_string())?;
+    filetime::set_file_mtime(path, filetime::FileTime::from_system_time(modified_at))
+        .map_err(|error| error.to_string())
 }
 
 pub fn parse_links_for_note(source_id: &str, content: &str, index: &LinkIndex) -> Vec<LinkRef> {

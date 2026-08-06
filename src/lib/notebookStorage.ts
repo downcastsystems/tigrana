@@ -22,6 +22,7 @@ const WELCOME_NOTE_CONTENT =
 type DemoStore = {
   notes: Record<string, string>;
   folders: string[];
+  noteTimes: Record<string, { createdAt: number; updatedAt: number }>;
 };
 
 type KeyValueStorage = Pick<Storage, "getItem" | "setItem">;
@@ -127,6 +128,7 @@ const initialDemo: DemoStore = {
     "Projects/Tigrana.md": "# Tigrana\n\n- [ ] Wire durable desktop file access\n- [x] Build the core writing surface\n- [ ] Add SQLite FTS indexing in the Tauri backend\n",
   },
   folders: ["Ideas", "Projects"],
+  noteTimes: {},
 };
 
 export const defaultWorkspaceMetadata = (): WorkspaceMetadata => ({
@@ -380,8 +382,22 @@ export function createDemoNotebookStorage(persistence: KeyValueStorage): Noteboo
       return store;
     }
     const parsed = JSON.parse(raw) as Partial<DemoStore>;
-    const store = { notes: parsed.notes ?? {}, folders: parsed.folders ?? [] };
-    if (!parsed.notes || !parsed.folders) persistence.setItem(DEMO_STORAGE_KEY, JSON.stringify(store));
+    const notes = parsed.notes ?? {};
+    const noteTimes = { ...(parsed.noteTimes ?? {}) };
+    const now = Date.now() / 1000;
+    let migrated = !parsed.notes || !parsed.folders || !parsed.noteTimes;
+    Object.keys(notes).forEach((path) => {
+      if (noteTimes[path]) return;
+      noteTimes[path] = { createdAt: now, updatedAt: now };
+      migrated = true;
+    });
+    Object.keys(noteTimes).forEach((path) => {
+      if (Object.prototype.hasOwnProperty.call(notes, path)) return;
+      delete noteTimes[path];
+      migrated = true;
+    });
+    const store = { notes, folders: parsed.folders ?? [], noteTimes };
+    if (migrated) persistence.setItem(DEMO_STORAGE_KEY, JSON.stringify(store));
     return store;
   };
   const writeStore = (store: DemoStore) => persistence.setItem(DEMO_STORAGE_KEY, JSON.stringify(store));
@@ -393,7 +409,8 @@ export function createDemoNotebookStorage(persistence: KeyValueStorage): Noteboo
       path,
       title: decodeTitleFromFilename(fileStem),
       parent_path: parts.slice(0, -1).join("/"),
-      updated_at: Date.now() / 1000,
+      created_at: store.noteTimes[path]?.createdAt ?? null,
+      updated_at: store.noteTimes[path]?.updatedAt ?? null,
     };
   });
   const folderEntries = (workspace: string, store: DemoStore): FolderEntry[] => {
@@ -457,6 +474,11 @@ export function createDemoNotebookStorage(persistence: KeyValueStorage): Noteboo
         throw new Error("The Note no longer exists at that path.");
       }
       store.notes[path] = content;
+      const now = Date.now() / 1000;
+      store.noteTimes[path] = {
+        createdAt: store.noteTimes[path]?.createdAt ?? now,
+        updatedAt: now,
+      };
       writeStore(store);
       return content;
     },
@@ -471,8 +493,16 @@ export function createDemoNotebookStorage(persistence: KeyValueStorage): Noteboo
         throw new Error("A note with that title already exists in this folder.");
       }
       store.notes[path] = initialContent;
+      const now = Date.now() / 1000;
+      store.noteTimes[path] = { createdAt: now, updatedAt: now };
       writeStore(store);
-      return { path, title: title.trim() || "Untitled", parent_path: parentPath, updated_at: Date.now() / 1000 };
+      return {
+        path,
+        title: title.trim() || "Untitled",
+        parent_path: parentPath,
+        created_at: now,
+        updated_at: now,
+      };
     },
 
     async duplicateNote(_workspace, path) {
@@ -484,12 +514,15 @@ export function createDemoNotebookStorage(persistence: KeyValueStorage): Noteboo
       const sourceStem = parts.at(-1)?.replace(/\.md$/, "") || "Untitled";
       const nextPath = uniqueDemoNotePath(store, parentPath, `Copy of ${sourceStem}`);
       store.notes[nextPath] = content;
+      const now = Date.now() / 1000;
+      store.noteTimes[nextPath] = { createdAt: now, updatedAt: now };
       writeStore(store);
       return {
         path: nextPath,
         title: decodeTitleFromFilename(nextPath.split("/").at(-1)?.replace(/\.md$/, "") ?? "Untitled"),
         parent_path: parentPath,
-        updated_at: Date.now() / 1000,
+        created_at: now,
+        updated_at: now,
       };
     },
 
@@ -515,6 +548,9 @@ export function createDemoNotebookStorage(persistence: KeyValueStorage): Noteboo
       store.notes = Object.fromEntries(
         Object.entries(store.notes).map(([notePath, content]) => [replacePathPrefix(notePath, path, nextPath), content]),
       );
+      store.noteTimes = Object.fromEntries(
+        Object.entries(store.noteTimes).map(([notePath, times]) => [replacePathPrefix(notePath, path, nextPath), times]),
+      );
       writeStore(store);
       return { path: nextPath, name: name.trim(), parent_path: parentPath };
     },
@@ -528,10 +564,19 @@ export function createDemoNotebookStorage(persistence: KeyValueStorage): Noteboo
       if (path !== nextPath && Object.prototype.hasOwnProperty.call(store.notes, nextPath)) {
         throw new Error("A note with that title already exists in this folder.");
       }
+      const times = store.noteTimes[path] ?? { createdAt: Date.now() / 1000, updatedAt: Date.now() / 1000 };
       store.notes[nextPath] = store.notes[path] ?? "";
+      store.noteTimes[nextPath] = times;
       if (path !== nextPath) delete store.notes[path];
+      if (path !== nextPath) delete store.noteTimes[path];
       writeStore(store);
-      return { path: nextPath, title: title.trim(), parent_path: parentPath, updated_at: Date.now() / 1000 };
+      return {
+        path: nextPath,
+        title: title.trim(),
+        parent_path: parentPath,
+        created_at: times.createdAt,
+        updated_at: times.updatedAt,
+      };
     },
 
     async moveNote(_workspace, path, targetParentPath) {
@@ -542,14 +587,18 @@ export function createDemoNotebookStorage(persistence: KeyValueStorage): Noteboo
       const nextPath = path === requestedPath || !Object.prototype.hasOwnProperty.call(store.notes, requestedPath)
         ? requestedPath
         : uniqueDemoNotePath(store, targetParentPath, fileStem);
+      const times = store.noteTimes[path] ?? { createdAt: Date.now() / 1000, updatedAt: Date.now() / 1000 };
       store.notes[nextPath] = store.notes[path] ?? "";
+      store.noteTimes[nextPath] = times;
       if (path !== nextPath) delete store.notes[path];
+      if (path !== nextPath) delete store.noteTimes[path];
       writeStore(store);
       return {
         path: nextPath,
         title: decodeTitleFromFilename(fileStem),
         parent_path: targetParentPath,
-        updated_at: Date.now() / 1000,
+        created_at: times.createdAt,
+        updated_at: times.updatedAt,
       };
     },
 
@@ -565,6 +614,9 @@ export function createDemoNotebookStorage(persistence: KeyValueStorage): Noteboo
       store.notes = Object.fromEntries(
         Object.entries(store.notes).map(([notePath, content]) => [replacePathPrefix(notePath, path, nextPath), content]),
       );
+      store.noteTimes = Object.fromEntries(
+        Object.entries(store.noteTimes).map(([notePath, times]) => [replacePathPrefix(notePath, path, nextPath), times]),
+      );
       writeStore(store);
       return { path: nextPath, name: decodeTitleFromFilename(name), parent_path: targetParentPath };
     },
@@ -572,6 +624,7 @@ export function createDemoNotebookStorage(persistence: KeyValueStorage): Noteboo
     async deleteNote(_workspace, path) {
       const store = readStore();
       delete store.notes[path];
+      delete store.noteTimes[path];
       writeStore(store);
     },
 
@@ -580,6 +633,9 @@ export function createDemoNotebookStorage(persistence: KeyValueStorage): Noteboo
       store.folders = store.folders.filter((folder) => folder !== path && !folder.startsWith(`${path}/`));
       Object.keys(store.notes).forEach((notePath) => {
         if (notePath.startsWith(`${path}/`)) delete store.notes[notePath];
+      });
+      Object.keys(store.noteTimes).forEach((notePath) => {
+        if (notePath.startsWith(`${path}/`)) delete store.noteTimes[notePath];
       });
       writeStore(store);
     },
@@ -678,7 +734,14 @@ function createMemoryStorage(): KeyValueStorage {
 }
 
 function cloneInitialDemo(): DemoStore {
-  return { notes: { ...initialDemo.notes }, folders: [...initialDemo.folders] };
+  const now = Date.now() / 1000;
+  return {
+    notes: { ...initialDemo.notes },
+    folders: [...initialDemo.folders],
+    noteTimes: Object.fromEntries(
+      Object.keys(initialDemo.notes).map((path) => [path, { createdAt: now, updatedAt: now }]),
+    ),
+  };
 }
 
 function uniqueDemoNotePath(store: DemoStore, parentPath: string, encodedStem: string): string {

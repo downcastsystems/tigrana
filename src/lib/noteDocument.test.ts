@@ -3,12 +3,27 @@ import {
   createNoteDocument,
   measureNoteText,
   normalizeNoteMarkdown,
+  readNoteCreatedAt,
   readNoteDocument,
   readNotePreview,
   reviseNoteDocument,
   updateNoteDocumentFrontmatterField,
 } from "./noteDocument";
 import { markdownToHtml } from "./markdown";
+
+describe("readNoteCreatedAt", () => {
+  it("reads a portable creation timestamp from saved frontmatter", () => {
+    expect(readNoteCreatedAt("---\ncreated_at: 2024-02-03T04:05:06Z\n---\n\nBody\n"))
+      .toBe(Date.parse("2024-02-03T04:05:06Z") / 1000);
+    expect(readNoteCreatedAt("---\ncreated_at: '2024-02-03T04:05:06Z'\n---\n"))
+      .toBe(Date.parse("2024-02-03T04:05:06Z") / 1000);
+  });
+
+  it("ignores missing or invalid creation timestamps", () => {
+    expect(readNoteCreatedAt("Body only\n")).toBeNull();
+    expect(readNoteCreatedAt("---\ncreated_at: someday\n---\n\nBody\n")).toBeNull();
+  });
+});
 
 describe("Note document", () => {
   it("reads frontmatter, body, and every derived value together", () => {

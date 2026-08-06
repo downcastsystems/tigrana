@@ -63,6 +63,7 @@ describe("notebook metadata", () => {
       ...base,
       revision: 6,
       folderColors: { Drafts: "#123456" },
+      noteCreatedAt: { "note-id": 1_700_000_000 },
     });
 
     expect(mergeWorkspaceMetadataChanges(base, local, durable)).toEqual({

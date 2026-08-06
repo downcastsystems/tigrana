@@ -88,6 +88,7 @@ import {
   createNoteDocument,
   measureNoteText,
   normalizeNoteMarkdown,
+  readNoteCreatedAt,
   readNoteDocument,
   readNotePreview,
   reviseNoteDocument,
@@ -2715,13 +2716,10 @@ export default function App() {
           next.set(savedPath, written);
           return next;
         });
-        setNotes((current) =>
-          current.map((note) =>
-            note.path === savedPath
-              ? { ...note, updated_at: Date.now() / 1000 }
-              : note,
-          ),
-        );
+        const savedAt = Date.now() / 1000;
+        setNotes((current) => current.map((note) =>
+          updateNoteEntryAfterSave(note, savedPath, written, savedAt)
+        ));
       });
       if (backlinkPaneVisibleRef.current) {
         const nextIndex = await readLinkIndex(snapshot.workspace);
@@ -7278,20 +7276,40 @@ function FrontmatterPane({
   );
 }
 
-function PropertiesPane({ activeNote, pendingNote, workspace }: { activeNote: NoteEntry | null; pendingNote: DraftNote | null; workspace: string }) {
+export function PropertiesPane({ activeNote, pendingNote, workspace }: { activeNote: NoteEntry | null; pendingNote: DraftNote | null; workspace: string }) {
   const notebookName = getNotebookName(workspace);
   const filePath = activeNote ? activeNote.path : pendingNote ? "Unsaved note" : "No note open";
   const folderPath = activeNote ? activeNote.parent_path || notebookName : pendingNote ? pendingNote.parentPath || notebookName : "None";
-  const updatedAt = activeNote?.updated_at ? new Date(activeNote.updated_at * 1000).toLocaleString() : "Not saved yet";
+  const createdAt = activeNote
+    ? activeNote.created_at != null ? new Date(activeNote.created_at * 1000).toLocaleString() : "Not available"
+    : "Not saved yet";
+  const updatedAt = activeNote
+    ? activeNote.updated_at != null ? new Date(activeNote.updated_at * 1000).toLocaleString() : "Not available"
+    : "Not saved yet";
 
   return (
     <div className="properties-list">
       <PropertyRow label="File path" value={filePath} code />
       <PropertyRow label="Folder" value={folderPath} code />
       <PropertyRow label="Notebook" value={workspace || "No notebook open"} code />
+      <PropertyRow label="Created" value={createdAt} />
       <PropertyRow label="Updated" value={updatedAt} />
     </div>
   );
+}
+
+export function updateNoteEntryAfterSave(
+  note: NoteEntry,
+  savedPath: string,
+  written: string,
+  savedAt: number,
+): NoteEntry {
+  if (note.path !== savedPath) return note;
+  return {
+    ...note,
+    created_at: readNoteCreatedAt(written) ?? note.created_at,
+    updated_at: savedAt,
+  };
 }
 
 function PropertyRow({ code, label, value }: { code?: boolean; label: string; value: string }) {

@@ -2,6 +2,7 @@ export type NoteEntry = {
   path: string;
   title: string;
   parent_path: string;
+  created_at?: number | null;
   updated_at?: number | null;
 };
 
@@ -109,6 +110,7 @@ export type WorkspaceMetadata = {
   folderColors: Record<string, string>;
   noteIcons: Record<string, string>;
   notePositions: Record<string, NotePositionMetadata>;
+  noteCreatedAt?: Record<string, number>;
   bookmarks: BookmarkEntry[];
   bookmarksExpanded: boolean;
   expandedFolders: Record<string, boolean>;

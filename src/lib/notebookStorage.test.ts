@@ -42,6 +42,28 @@ describe("Notebook storage adapters", () => {
     await expect(storage.saveNote(workspace, "Missing.md", "stale")).rejects.toThrow("no longer exists");
   });
 
+  it("keeps demo creation time stable while saves advance update time", async () => {
+    vi.useFakeTimers();
+    try {
+      vi.setSystemTime(new Date("2025-01-02T03:04:05Z"));
+      const storage = createDemoNotebookStorage(memoryStorage());
+      const created = await storage.createNote("/demo/Test", "", "Dated");
+
+      vi.setSystemTime(new Date("2025-02-03T04:05:06Z"));
+      await storage.saveNote("/demo/Test", created.path, "Changed");
+      const saved = (await storage.listNotes("/demo/Test")).find((note) => note.path === created.path);
+      const renamed = await storage.renameNote("/demo/Test", created.path, "Still Dated");
+
+      expect(created.created_at).toBe(new Date("2025-01-02T03:04:05Z").getTime() / 1000);
+      expect(saved?.created_at).toBe(created.created_at);
+      expect(saved?.updated_at).toBe(new Date("2025-02-03T04:05:06Z").getTime() / 1000);
+      expect(renamed.created_at).toBe(created.created_at);
+      expect(renamed.updated_at).toBe(saved?.updated_at);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it("persists Notebook metadata and initializes the welcome-note marker", async () => {
     const storage = createDemoNotebookStorage(memoryStorage());
     const metadata = defaultWorkspaceMetadata();
@@ -98,7 +120,15 @@ describe("Notebook storage adapters", () => {
 
   it("routes the native adapter through the Tauri command seam", async () => {
     const invokeCommand = vi.fn(async (command: string) => {
-      if (command === "list_notes") return [{ path: "Drafts／Plan.md", title: "Plan／A", parent_path: "Drafts／Plan" }];
+      if (command === "list_notes") {
+        return [{
+          path: "Drafts／Plan.md",
+          title: "Plan／A",
+          parent_path: "Drafts／Plan",
+          created_at: 1_700_000_000,
+          updated_at: 1_710_000_000,
+        }];
+      }
       return undefined;
     });
     const storage = createNativeNotebookStorage(
@@ -106,7 +136,13 @@ describe("Notebook storage adapters", () => {
     );
 
     await expect(storage.listNotes("/Notebook")).resolves.toEqual([
-      { path: "Drafts／Plan.md", title: "Plan/A", parent_path: "Drafts／Plan" },
+      {
+        path: "Drafts／Plan.md",
+        title: "Plan/A",
+        parent_path: "Drafts／Plan",
+        created_at: 1_700_000_000,
+        updated_at: 1_710_000_000,
+      },
     ]);
     expect(invokeCommand).toHaveBeenCalledWith("list_notes", { workspace: "/Notebook" });
     expect(storage.capabilities.durableLinkIndex).toBe(true);
