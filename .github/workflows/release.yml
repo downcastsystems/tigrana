@@ -1,0 +1,154 @@
+name: Official release
+
+on:
+  workflow_dispatch:
+    inputs:
+      bump:
+        description: Version change
+        required: true
+        default: patch
+        type: choice
+        options:
+          - patch
+          - minor
+          - major
+
+concurrency:
+  group: official-release
+  cancel-in-progress: false
+
+permissions: {}
+
+jobs:
+  prepare:
+    name: Verify and create version
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    outputs:
+      release_tag: ${{ steps.version.outputs.release_tag }}
+      release_version: ${{ steps.version.outputs.release_version }}
+      release_sha: ${{ steps.version.outputs.release_sha }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: main
+          fetch-depth: 0
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version: lts/*
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Run quality checks
+        run: |
+          npm run lint
+          npm test
+          npm run build
+
+      - name: Calculate and apply version
+        id: version
+        shell: bash
+        env:
+          VERSION_BUMP: ${{ inputs.bump }}
+        run: |
+          release_version="$(node scripts/bump-version.mjs "$VERSION_BUMP")"
+          release_tag="v${release_version}"
+
+          if git rev-parse "$release_tag" >/dev/null 2>&1; then
+            echo "Tag $release_tag already exists. Choose a higher version."
+            exit 1
+          fi
+
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add package.json package-lock.json src-tauri/Cargo.toml src-tauri/Cargo.lock src-tauri/tauri.conf.json
+          git commit -m "chore: release ${release_tag}"
+          git tag -a "$release_tag" -m "Tigrana ${release_tag}"
+          git push --atomic origin HEAD:main "refs/tags/${release_tag}"
+
+          echo "release_tag=$release_tag" >> "$GITHUB_OUTPUT"
+          echo "release_version=$release_version" >> "$GITHUB_OUTPUT"
+          echo "release_sha=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
+
+  build:
+    name: Build ${{ matrix.label }}
+    needs: prepare
+    permissions:
+      contents: write
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - label: macOS universal
+            platform: macos-latest
+            rust_targets: aarch64-apple-darwin,x86_64-apple-darwin
+            args: --target universal-apple-darwin --bundles dmg
+            apple_signing_identity: "-"
+          - label: Windows x64
+            platform: windows-latest
+            rust_targets: ""
+            args: --bundles nsis
+            apple_signing_identity: ""
+
+    runs-on: ${{ matrix.platform }}
+
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ needs.prepare.outputs.release_sha }}
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version: lts/*
+          cache: npm
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.rust_targets }}
+
+      - name: Cache Rust build files
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri
+
+      - name: Install frontend dependencies
+        run: npm ci
+
+      - name: Build and upload release asset
+        uses: tauri-apps/tauri-action@v1
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          APPLE_SIGNING_IDENTITY: ${{ matrix.apple_signing_identity }}
+        with:
+          tagName: ${{ needs.prepare.outputs.release_tag }}
+          releaseName: Tigrana ${{ needs.prepare.outputs.release_tag }}
+          releaseBody: Download the macOS DMG or Windows setup executable below.
+          releaseCommitish: ${{ needs.prepare.outputs.release_sha }}
+          releaseDraft: true
+          prerelease: false
+          generateReleaseNotes: true
+          uploadWorkflowArtifacts: false
+          args: ${{ matrix.args }}
+
+  publish:
+    name: Publish completed release
+    needs:
+      - prepare
+      - build
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Publish the completed draft
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ needs.prepare.outputs.release_tag }}
+        run: gh release edit "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" --draft=false
+
