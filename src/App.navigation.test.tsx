@@ -225,6 +225,53 @@ describe("Note navigation persistence", () => {
     await act(async () => root.unmount());
   });
 
+  it("toggles focus mode from the editor toolbar and restores the prior pane layout", async () => {
+    demoPersistence.set("tigrana-demo-v5", JSON.stringify({
+      folders: [],
+      notes: {
+        "Welcome.md": "# Welcome\n\nFocus mode test.",
+      },
+    }));
+    const container = document.createElement("div");
+    document.body.appendChild(container);
+    containers.push(container);
+    const root = createRoot(container);
+
+    await act(async () => {
+      root.render(<App />);
+      await new Promise((resolve) => window.setTimeout(resolve, 50));
+    });
+
+    const findButton = container.querySelector<HTMLButtonElement>('button[title="Find in note"]');
+    const focusButton = container.querySelector<HTMLButtonElement>('button[aria-label="Enter focus mode"]');
+    const editorOptions = container.querySelector<HTMLButtonElement>('button[title="Editor options"]');
+    const rightToggle = container.querySelector<HTMLButtonElement>(".outline-toggle");
+
+    expect(findButton?.nextElementSibling).toBe(focusButton);
+    expect(focusButton?.nextElementSibling?.contains(editorOptions ?? null)).toBe(true);
+    expect(focusButton?.getAttribute("aria-pressed")).toBe("false");
+
+    await act(async () => rightToggle?.click());
+    expect(container.querySelector("#left-navigation-panes")).not.toBeNull();
+    expect(container.querySelector("#right-note-sidebar")).toBeNull();
+
+    await act(async () => focusButton?.click());
+    expect(container.querySelector("#left-navigation-panes")).toBeNull();
+    expect(container.querySelector("#right-note-sidebar")).toBeNull();
+    expect(focusButton?.classList.contains("is-active")).toBe(true);
+    expect(focusButton?.getAttribute("aria-label")).toBe("Exit focus mode");
+    expect(focusButton?.getAttribute("aria-pressed")).toBe("true");
+
+    await act(async () => focusButton?.click());
+    expect(container.querySelector("#left-navigation-panes")).not.toBeNull();
+    expect(container.querySelector("#right-note-sidebar")).toBeNull();
+    expect(focusButton?.classList.contains("is-active")).toBe(false);
+    expect(focusButton?.getAttribute("aria-label")).toBe("Enter focus mode");
+    expect(focusButton?.getAttribute("aria-pressed")).toBe("false");
+
+    await act(async () => root.unmount());
+  });
+
   it("navigates backward and forward within a tab and clears a forward branch", async () => {
     demoPersistence.set("tigrana-demo-v5", JSON.stringify({
       folders: [],

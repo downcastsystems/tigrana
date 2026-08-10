@@ -1432,6 +1432,14 @@ fn build_app_menu(
         state.outline_visible,
         None::<&str>,
     )?;
+    let toggle_focus = CheckMenuItem::with_id(
+        handle,
+        "toggle_focus",
+        "Toggle Focus",
+        has_open_note,
+        !state.left_visible && !state.outline_visible,
+        None::<&str>,
+    )?;
     let toggle_word_count = CheckMenuItem::with_id(
         handle,
         "toggle_word_count",
@@ -1760,6 +1768,7 @@ fn build_app_menu(
         &[
             &toggle_sidebar,
             &toggle_outline,
+            &toggle_focus,
             &toggle_word_count,
             &toggle_raw,
             &PredefinedMenuItem::separator(handle)?,
@@ -2166,6 +2175,7 @@ pub fn run() {
             }
             "toggle_sidebar" => emit_menu_command(app, "toggle_sidebar"),
             "toggle_outline" => emit_menu_command(app, "toggle_outline"),
+            "toggle_focus" => emit_menu_command(app, "toggle_focus"),
             "toggle_word_count" => emit_menu_command(app, "toggle_word_count"),
             "toggle_raw_markdown" => emit_menu_command(app, "toggle_raw_markdown"),
             "zoom_in" => emit_menu_command(app, "zoom_in"),

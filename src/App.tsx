@@ -16,6 +16,7 @@ import {
   EllipsisVertical,
   FileCode2,
   FileText,
+  Focus,
   Folder,
   FolderOpen,
   History,
@@ -73,6 +74,7 @@ import {
 import { shouldDockNoteTitle } from "./lib/dockedTitle";
 import { DraftSaveRevisions, type DraftSaveRevision } from "./lib/draftSaveRevisions";
 import { buildNoteExportHtml, noteExportFileStem } from "./lib/exportNote";
+import { toggleFocusMode, type PaneVisibility } from "./lib/focusMode";
 import { shouldApplyEditorUpdate } from "./lib/noteEditorUpdates";
 import {
   createNoteTab,
@@ -609,6 +611,7 @@ export default function App() {
   const [appMenuOpen, setAppMenuOpen] = useState(false);
   const [leftVisible, setLeftVisible] = useState(true);
   const [outlineVisible, setOutlineVisible] = useState(true);
+  const focusRestoreRef = useRef<PaneVisibility | null>(null);
   const [wordCountVisible, setWordCountVisible] = useState(() => readStoredWordCountVisibility());
   const [noteScrollFades, setNoteScrollFades] = useState<ScrollFadeVisibility>({ top: false, bottom: false });
   const [dockedTitleState, setDockedTitleState] = useState({ visible: false, animate: false });
@@ -884,6 +887,7 @@ export default function App() {
   const canNavigateForward = Boolean(
     activeTabHistory && activeTabHistory.historyIndex < activeTabHistory.history.length - 1,
   );
+  const focusModeActive = !leftVisible && !outlineVisible;
   const frameStyle = {
     "--folder-pane-width": `${folderPaneWidth}px`,
     "--notes-pane-width": `${notesPaneWidth}px`,
@@ -2011,6 +2015,9 @@ export default function App() {
       case "toggle_outline":
         setOutlineVisible((value) => !value);
         break;
+      case "toggle_focus":
+        toggleEditorFocusMode();
+        break;
       case "toggle_word_count":
         setWordCountVisible((value) => !value);
         break;
@@ -2160,6 +2167,16 @@ export default function App() {
       setRawMarkdownText(markdown);
     }
     setRawMarkdownVisible((value) => !value);
+  }
+
+  function toggleEditorFocusMode() {
+    const transition = toggleFocusMode(
+      { leftVisible, outlineVisible },
+      focusRestoreRef.current,
+    );
+    focusRestoreRef.current = transition.restore;
+    setLeftVisible(transition.panes.leftVisible);
+    setOutlineVisible(transition.panes.outlineVisible);
   }
 
   function getRestorableNotePosition(current: WorkspaceMetadata, path: string, markdown: string) {
@@ -4633,6 +4650,16 @@ export default function App() {
                 onClick={() => setNoteFindRequest((v) => v + 1)}
               >
                 <Search size={17} />
+              </button>
+              <button
+                className={`icon-button ${focusModeActive ? "is-active" : ""}`}
+                type="button"
+                title={focusModeActive ? "Exit focus mode" : "Enter focus mode"}
+                aria-label={focusModeActive ? "Exit focus mode" : "Enter focus mode"}
+                aria-pressed={focusModeActive}
+                onClick={toggleEditorFocusMode}
+              >
+                <Focus size={17} />
               </button>
               <div className="note-view-control note-view-menu">
                 <button
