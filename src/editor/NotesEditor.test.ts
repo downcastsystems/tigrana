@@ -20,6 +20,7 @@ const {
   FormattingBubbleMenu,
   getTaskLineCutDeleteRange,
   getEditorDocumentLoadAction,
+  handleEmptyListItemBackspace,
   handleNestedListBoundaryDelete,
   handleOutermostListItemBackspace,
   handleSameLevelListItemBackspace,
@@ -233,6 +234,30 @@ describe("nested list boundary deletion", () => {
 });
 
 describe("same-level list item Backspace", () => {
+  it("removes a middle bullet after its text has been deleted", () => {
+    const editor = new Editor({
+      extensions: [StarterKit],
+      content: "<ul><li><p>a</p></li><li><p>b</p></li><li><p>c</p></li></ul>",
+    });
+
+    try {
+      const b = textRange(editor.state.doc, "b");
+      editor.commands.setTextSelection(b);
+      editor.commands.keyboardShortcut("Backspace");
+      expect(editor.getHTML()).toContain("<li><p></p></li>");
+
+      const handled = handleEmptyListItemBackspace(
+        editor.view,
+        new KeyboardEvent("keydown", { key: "Backspace" }),
+      );
+
+      expect(handled).toBe(true);
+      expect(editor.getHTML()).toBe("<ul><li><p>a</p></li><li><p>c</p></li></ul><p></p>");
+    } finally {
+      editor.destroy();
+    }
+  });
+
   it("joins the current item text into its previous sibling", () => {
     const doc = bulletDoc([
       bulletItem("a"),

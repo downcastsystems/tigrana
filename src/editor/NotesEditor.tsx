@@ -2642,7 +2642,7 @@ export function NotesEditor({ content, commandRequest, focusRequest, focusAtEndR
         keydown(_view, event) {
           if (handleNestedListBoundaryDelete(_view, event)) return true;
           if (handleSameLevelListItemBackspace(_view, event)) return true;
-          if (handleEmptyTaskItemBackspace(_view, event)) return true;
+          if (handleEmptyListItemBackspace(_view, event)) return true;
           if (handleEmptyTaskItemForwardDelete(_view, event)) return true;
           if (handleEmptyListItemDelete(_view, event)) return true;
           if (handleOutermostListItemBackspace(_view, event)) return true;
@@ -3885,13 +3885,20 @@ export function handleOutermostListItemBackspace(view: EditorView, event: Keyboa
   return handled;
 }
 
-function handleEmptyTaskItemBackspace(view: EditorView, event: KeyboardEvent) {
+export function handleEmptyListItemBackspace(view: EditorView, event: KeyboardEvent) {
   if (!isPlainDeleteKey(event, "Backspace")) return false;
   const { selection } = view.state;
   if (!selection.empty) return false;
 
   const item = findListItemAtSelection(selection.$from);
-  if (!item || item.node.type.name !== "taskItem" || item.node.textContent.trim()) return false;
+  if (!item || item.node.textContent.trim()) return false;
+
+  // Keep normal list-exit behavior for a trailing empty bullet. In the middle
+  // of a list, though, lifting the empty item splits one list into two with an
+  // empty paragraph between them. Remove that structural item instead.
+  const itemIndex = selection.$from.index(item.parentDepth);
+  const isMiddleListItem = itemIndex < item.parentNode.childCount - 1;
+  if (item.node.type.name !== "taskItem" && !isMiddleListItem) return false;
 
   event.preventDefault();
   deleteEmptyListItem(view, item, -1);
