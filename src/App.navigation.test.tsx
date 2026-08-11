@@ -6,11 +6,47 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 
 HTMLCanvasElement.prototype.getContext = (() => null) as typeof HTMLCanvasElement.prototype.getContext;
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
-globalThis.ResizeObserver = class ResizeObserver {
-  disconnect() {}
-  observe() {}
-  unobserve() {}
+
+type ResizeObserverRecord = {
+  callback: ResizeObserverCallback;
+  observed: Set<Element>;
+  observer: ResizeObserver;
 };
+
+const resizeObserverRecords = new Set<ResizeObserverRecord>();
+
+globalThis.ResizeObserver = class ResizeObserver {
+  private record: ResizeObserverRecord;
+
+  constructor(callback: ResizeObserverCallback) {
+    this.record = { callback, observed: new Set(), observer: this };
+    resizeObserverRecords.add(this.record);
+  }
+
+  disconnect() {
+    this.record.observed.clear();
+    resizeObserverRecords.delete(this.record);
+  }
+
+  observe(target: Element) {
+    this.record.observed.add(target);
+  }
+
+  unobserve(target: Element) {
+    this.record.observed.delete(target);
+  }
+
+  takeRecords(): ResizeObserverEntry[] {
+    return [];
+  }
+};
+
+function triggerElementResize(target: Element, width: number) {
+  resizeObserverRecords.forEach(({ callback, observed, observer }) => {
+    if (!observed.has(target)) return;
+    callback([{ target, contentRect: { width } } as ResizeObserverEntry], observer);
+  });
+}
 
 const { demoPersistence, delayedSaves } = vi.hoisted(() => ({
   demoPersistence: new Map<string, string>(),
@@ -106,6 +142,7 @@ describe("Note navigation persistence", () => {
     delayedSaves.markdown.length = 0;
     localStorage.clear();
     demoPersistence.clear();
+    resizeObserverRecords.clear();
     containers.splice(0).forEach((container) => container.remove());
   });
 
@@ -306,6 +343,47 @@ describe("Note navigation persistence", () => {
     });
 
     expect(container.querySelector(".topbar-note-title")?.classList.contains("is-visible")).toBe(true);
+
+    await act(async () => root.unmount());
+  });
+
+  it("resizes the Note title height when its available width changes", async () => {
+    const longTitle = "August 2026 - To Do";
+    demoPersistence.set("tigrana-demo-v5", JSON.stringify({
+      folders: [],
+      notes: {
+        [`${longTitle}.md`]: "# Body heading\n\nResponsive title test.",
+      },
+    }));
+    const container = document.createElement("div");
+    document.body.appendChild(container);
+    containers.push(container);
+    const root = createRoot(container);
+
+    await act(async () => {
+      root.render(<App />);
+      await new Promise((resolve) => window.setTimeout(resolve, 50));
+    });
+
+    const title = container.querySelector<HTMLTextAreaElement>('textarea[aria-label="Note title"]');
+    expect(title).not.toBeNull();
+    let measuredHeight = 47;
+    Object.defineProperty(title!, "scrollHeight", {
+      configurable: true,
+      get: () => measuredHeight,
+    });
+    title!.style.height = "94px";
+
+    await act(async () => {
+      triggerElementResize(title!, 620);
+    });
+    expect(title!.style.height).toBe("47px");
+
+    measuredHeight = 94;
+    await act(async () => {
+      triggerElementResize(title!, 360);
+    });
+    expect(title!.style.height).toBe("94px");
 
     await act(async () => root.unmount());
   });

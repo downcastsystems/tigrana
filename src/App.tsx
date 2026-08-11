@@ -2213,6 +2213,13 @@ export default function App() {
     );
   }, []);
 
+  const resizeNoteTitleInput = useCallback(() => {
+    const titleInput = titleInputRef.current;
+    if (!titleInput) return;
+    titleInput.style.height = "0px";
+    titleInput.style.height = `${titleInput.scrollHeight}px`;
+  }, []);
+
   useLayoutEffect(() => {
     dockedTitleAnimationReadyRef.current = false;
     setDockedTitleState({ visible: false, animate: false });
@@ -2251,8 +2258,17 @@ export default function App() {
     const titleInput = titleInputRef.current;
     if (!surface || !titleInput) return;
 
-    const updateWithoutAnimation = () => updateDockedNoteTitle(false);
-    const frame = requestAnimationFrame(updateWithoutAnimation);
+    let titleWidth = titleInput.getBoundingClientRect().width;
+    const updateWithoutAnimation = (entries?: ResizeObserverEntry[]) => {
+      const titleEntry = entries?.find((entry) => entry.target === titleInput);
+      const nextTitleWidth = titleEntry?.contentRect.width ?? titleInput.getBoundingClientRect().width;
+      if (Math.abs(nextTitleWidth - titleWidth) > 0.5) {
+        titleWidth = nextTitleWidth;
+        resizeNoteTitleInput();
+      }
+      updateDockedNoteTitle(false);
+    };
+    const frame = requestAnimationFrame(() => updateWithoutAnimation());
     const observer = typeof ResizeObserver === "undefined"
       ? null
       : new ResizeObserver(updateWithoutAnimation);
@@ -2263,7 +2279,7 @@ export default function App() {
       cancelAnimationFrame(frame);
       observer?.disconnect();
     };
-  }, [activePath, hasOpenNote, titleDraft, updateDockedNoteTitle]);
+  }, [activePath, hasOpenNote, resizeNoteTitleInput, titleDraft, updateDockedNoteTitle]);
 
   useEffect(() => {
     if (!hasOpenNote) {
@@ -3084,12 +3100,10 @@ export default function App() {
     }
   }
 
-  useEffect(() => {
-    const titleInput = titleInputRef.current;
-    if (!titleInput || !noteOpen) return;
-    titleInput.style.height = "0px";
-    titleInput.style.height = `${titleInput.scrollHeight}px`;
-  }, [noteOpen, titleDraft]);
+  useLayoutEffect(() => {
+    if (!noteOpen) return;
+    resizeNoteTitleInput();
+  }, [noteOpen, resizeNoteTitleInput, titleDraft]);
 
   async function addEmptyTab() {
     if (!workspace) return;
