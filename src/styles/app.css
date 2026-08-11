@@ -2941,7 +2941,7 @@ html[data-theme="dark"] .tab-list-separator {
 
 .title-shell {
   width: min(880px, calc(100% - 72px));
-  margin: 18px auto -4px;
+  margin: 0 auto -4px;
   padding-bottom: 14px;
   border-bottom: 1px solid rgba(52, 48, 43, 0.12);
 }

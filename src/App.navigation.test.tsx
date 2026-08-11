@@ -272,6 +272,44 @@ describe("Note navigation persistence", () => {
     await act(async () => root.unmount());
   });
 
+  it("docks a wrapped Note title as soon as the title text leaves the viewport", async () => {
+    const longTitle = "A long wrapped title that takes up several lines in the editor";
+    demoPersistence.set("tigrana-demo-v5", JSON.stringify({
+      folders: [],
+      notes: {
+        [`${longTitle}.md`]: "# Body heading\n\nTitle docking test.",
+      },
+    }));
+    const container = document.createElement("div");
+    document.body.appendChild(container);
+    containers.push(container);
+    const root = createRoot(container);
+
+    await act(async () => {
+      root.render(<App />);
+      await new Promise((resolve) => window.setTimeout(resolve, 50));
+    });
+
+    const surface = container.querySelector<HTMLElement>(".note-surface");
+    const titleShell = container.querySelector<HTMLElement>(".title-shell");
+    const title = container.querySelector<HTMLTextAreaElement>('textarea[aria-label="Note title"]');
+    expect(surface).not.toBeNull();
+    expect(titleShell).not.toBeNull();
+    expect(title).not.toBeNull();
+
+    vi.spyOn(surface!, "getBoundingClientRect").mockReturnValue({ top: 58, bottom: 658 } as DOMRect);
+    vi.spyOn(title!, "getBoundingClientRect").mockReturnValue({ top: -72, bottom: 58 } as DOMRect);
+    vi.spyOn(titleShell!, "getBoundingClientRect").mockReturnValue({ top: -72, bottom: 74 } as DOMRect);
+
+    await act(async () => {
+      surface?.dispatchEvent(new Event("scroll"));
+    });
+
+    expect(container.querySelector(".topbar-note-title")?.classList.contains("is-visible")).toBe(true);
+
+    await act(async () => root.unmount());
+  });
+
   it("navigates backward and forward within a tab and clears a forward branch", async () => {
     demoPersistence.set("tigrana-demo-v5", JSON.stringify({
       folders: [],

@@ -656,7 +656,6 @@ export default function App() {
   const [dictationTarget, setDictationTarget] = useState<DictationTarget | null>(null);
   const [titleFocusRequest, setTitleFocusRequest] = useState(0);
   const noteSurfaceRef = useRef<HTMLElement | null>(null);
-  const titleShellRef = useRef<HTMLDivElement | null>(null);
   const titleInputRef = useRef<HTMLTextAreaElement | null>(null);
   const dockedTitleAnimationReadyRef = useRef(false);
   const handledTitleFocusRequestRef = useRef(0);
@@ -2201,11 +2200,11 @@ export default function App() {
 
   const updateDockedNoteTitle = useCallback((animate: boolean) => {
     const surface = noteSurfaceRef.current;
-    const titleShell = titleShellRef.current;
+    const titleInput = titleInputRef.current;
     const visible = Boolean(
       surface
-      && titleShell
-      && shouldDockNoteTitle(titleShell.getBoundingClientRect(), surface.getBoundingClientRect()),
+      && titleInput
+      && shouldDockNoteTitle(titleInput.getBoundingClientRect(), surface.getBoundingClientRect()),
     );
     setDockedTitleState((current) =>
       current.visible === visible && current.animate === animate
@@ -2249,8 +2248,8 @@ export default function App() {
   useEffect(() => {
     if (!hasOpenNote) return;
     const surface = noteSurfaceRef.current;
-    const titleShell = titleShellRef.current;
-    if (!surface || !titleShell) return;
+    const titleInput = titleInputRef.current;
+    if (!surface || !titleInput) return;
 
     const updateWithoutAnimation = () => updateDockedNoteTitle(false);
     const frame = requestAnimationFrame(updateWithoutAnimation);
@@ -2258,7 +2257,7 @@ export default function App() {
       ? null
       : new ResizeObserver(updateWithoutAnimation);
     observer?.observe(surface);
-    observer?.observe(titleShell);
+    observer?.observe(titleInput);
 
     return () => {
       cancelAnimationFrame(frame);
@@ -4750,7 +4749,7 @@ export default function App() {
               }
             }}
           >
-            <div className="title-shell" ref={titleShellRef}>
+            <div className="title-shell">
               <textarea
                 ref={titleInputRef}
                 className="note-title-input"
