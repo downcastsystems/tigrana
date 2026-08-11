@@ -1736,6 +1736,7 @@ export default function App() {
     // run and the persist-tabs effect would then overwrite localStorage with
     // an empty session.
     restoredTabsWorkspaceRef.current = workspace;
+    autoSelectedWorkspaceRef.current = workspace;
     setOpenTabs(tabs);
     setActiveTabId(activeTab.id);
     void loadExistingNoteIntoEditor(activeTab.path);
@@ -3365,6 +3366,18 @@ export default function App() {
       return;
     }
     const deletesActiveNote = activePath === path;
+    const deletedNote = deletesActiveNote ? notes.find((note) => note.path === path) : null;
+    const orderedSiblings = deletedNote
+      ? orderNotes(
+          notes.filter((note) => note.parent_path === deletedNote.parent_path),
+          deletedNote.parent_path,
+          metadataRef.current,
+        )
+      : [];
+    const deletedIndex = orderedSiblings.findIndex((note) => note.path === path);
+    const replacementPath = deletedIndex === -1
+      ? null
+      : orderedSiblings[deletedIndex + 1]?.path ?? orderedSiblings[deletedIndex - 1]?.path ?? null;
     const deletionNavigationToken = deletesActiveNote ? beginNoteNavigation() : null;
     if (deletesActiveNote) {
       await releaseActiveNoteLock();
@@ -3378,8 +3391,10 @@ export default function App() {
       activeDraftStateRef.current.activePath,
       (targetPath) => targetPath === path,
     );
-    if (deletedTargetDisposition === "clearAndCancelNavigation") {
+    const shouldSelectReplacement = deletedTargetDisposition === "clearAndCancelNavigation" && replacementPath !== null;
+    if (deletedTargetDisposition === "clearAndCancelNavigation" && !shouldSelectReplacement) {
       clearCurrentNote();
+      setActiveTabId(null);
     } else if (deletedTargetDisposition === "clearAndPreserveNavigation") {
       clearCurrentNote(true);
     }
@@ -3387,6 +3402,13 @@ export default function App() {
       .filter((tab) => tab.path !== path)
       .map((tab) => pruneNoteTabHistory(tab, (historyPath) => historyPath === path)));
     updateMetadata((current) => removeNoteFromMetadata(current, path));
+    if (shouldSelectReplacement) {
+      await selectNote(replacementPath, {
+        preserveSelectedFolder: true,
+        skipPersist: true,
+        navigationToken: deletionNavigationToken ?? undefined,
+      });
+    }
     await refreshWorkspace(operationWorkspace);
   }
 

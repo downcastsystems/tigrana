@@ -451,4 +451,94 @@ describe("Note navigation persistence", () => {
 
     await act(async () => root.unmount());
   });
+
+  it.each([
+    {
+      label: "the Note below when deleting the top Note",
+      paths: ["Target/Above.md", "Target/Middle.md", "Target/Below.md"],
+      deletedPath: "Target/Above.md",
+      expectedTitle: "Middle",
+    },
+    {
+      label: "the Note below when deleting from the middle",
+      paths: ["Target/Above.md", "Target/Middle.md", "Target/Below.md"],
+      deletedPath: "Target/Middle.md",
+      expectedTitle: "Below",
+    },
+    {
+      label: "the Note above when deleting the bottom Note",
+      paths: ["Target/Above.md", "Target/Middle.md", "Target/Below.md"],
+      deletedPath: "Target/Below.md",
+      expectedTitle: "Middle",
+    },
+    {
+      label: "no Note when deleting the only Note in a folder",
+      paths: ["Target/Only.md"],
+      deletedPath: "Target/Only.md",
+      expectedTitle: null,
+    },
+  ])("selects $label without jumping to another folder", async ({ paths, deletedPath, expectedTitle }) => {
+    demoPersistence.set("tigrana-demo-v5", JSON.stringify({
+      folders: ["Other", "Target"],
+      notes: {
+        "Other/Elsewhere.md": "# Elsewhere\n\nPreviously restored Note.",
+        ...Object.fromEntries(paths.map((path) => [path, `# ${path.split("/").at(-1)?.replace(/\.md$/, "")}\n`])),
+      },
+    }));
+    demoPersistence.set("tigrana-meta:/demo/Tigrana", JSON.stringify({
+      revision: 0,
+      noteOrder: { Target: paths },
+      welcomeNoteAdded: true,
+    }));
+    localStorage.setItem("tigrana-session:/demo/Tigrana", JSON.stringify({
+      openTabs: ["Other/Elsewhere.md"],
+      activeTab: "Other/Elsewhere.md",
+    }));
+
+    const container = document.createElement("div");
+    document.body.appendChild(container);
+    containers.push(container);
+    const root = createRoot(container);
+
+    await act(async () => {
+      root.render(<App />);
+      await new Promise((resolve) => window.setTimeout(resolve, 50));
+    });
+
+    const title = () => container.querySelector<HTMLTextAreaElement>('textarea[aria-label="Note title"]')?.value ?? null;
+    expect(title()).toBe("Elsewhere");
+
+    await act(async () => {
+      container.querySelector<HTMLButtonElement>('[data-folder-path="Target"] > button.folder-select')?.click();
+      await new Promise((resolve) => window.setTimeout(resolve, 20));
+    });
+    await act(async () => {
+      container.querySelector<HTMLButtonElement>('button[data-note-path="' + deletedPath + '"]')?.click();
+      await new Promise((resolve) => window.setTimeout(resolve, 20));
+    });
+    expect(title()).toBe(deletedPath.split("/").at(-1)?.replace(/\.md$/, ""));
+
+    await act(async () => {
+      container.querySelector<HTMLButtonElement>('button[data-note-path="' + deletedPath + '"]')
+        ?.dispatchEvent(new MouseEvent("contextmenu", { bubbles: true, clientX: 20, clientY: 20 }));
+    });
+    const deleteButton = Array.from(container.querySelectorAll<HTMLButtonElement>(".context-menu button"))
+      .find((button) => button.textContent?.includes("Delete Note"));
+    expect(deleteButton).toBeDefined();
+
+    await act(async () => {
+      deleteButton?.click();
+    });
+    await waitFor(() => expectedTitle === null
+      ? container.querySelector('textarea[aria-label="Note title"]') === null
+      : title() === expectedTitle);
+
+    expect(title()).toBe(expectedTitle);
+    if (expectedTitle === null) {
+      expect(container.querySelector(".welcome-surface")?.textContent).toContain("No note selected");
+    }
+    expect(title()).not.toBe("Elsewhere");
+
+    await act(async () => root.unmount());
+  });
 });
