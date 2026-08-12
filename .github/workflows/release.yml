@@ -172,14 +172,30 @@ jobs:
         shell: bash
         run: |
           bundle_root="src-tauri/target/universal-apple-darwin/release/bundle"
-          app_path="$(find "$bundle_root/macos" -maxdepth 1 -name '*.app' -print -quit)"
-          dmg_path="$(find "$bundle_root/dmg" -maxdepth 1 -name '*.dmg' -print -quit)"
+          dmg_path="$(find "$bundle_root/dmg" -maxdepth 1 -type f -name '*.dmg' -print -quit)"
+          if [[ -z "$dmg_path" ]]; then
+            echo "::error::No macOS DMG was found under $bundle_root/dmg."
+            find "$bundle_root" -maxdepth 3 -print
+            exit 1
+          fi
 
-          test -n "$app_path"
-          test -n "$dmg_path"
+          mount_point="$RUNNER_TEMP/tigrana-release-dmg"
+          mkdir -p "$mount_point"
+          hdiutil attach "$dmg_path" -readonly -nobrowse -mountpoint "$mount_point"
+          cleanup() {
+            hdiutil detach "$mount_point" >/dev/null || true
+          }
+          trap cleanup EXIT
+
+          app_path="$(find "$mount_point" -maxdepth 2 -type d -name '*.app' -print -quit)"
+          if [[ -z "$app_path" ]]; then
+            echo "::error::The release DMG does not contain a macOS app bundle."
+            find "$mount_point" -maxdepth 3 -print
+            exit 1
+          fi
+
           codesign --verify --deep --strict --verbose=2 "$app_path"
           spctl --assess --type execute --verbose=4 "$app_path"
-          xcrun stapler validate "$app_path"
           xcrun stapler validate "$dmg_path"
 
   publish:
