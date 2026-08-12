@@ -1,6 +1,6 @@
 [package]
 name = "tigrana"
-version = "1.0.1"
+version = "1.0.2"
 description = "A simple, beautiful, file-native desktop notes app."
 authors = ["Tigrana contributors"]
 edition = "2021"
