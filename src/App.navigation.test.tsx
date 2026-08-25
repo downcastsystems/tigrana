@@ -48,7 +48,7 @@ function triggerElementResize(target: Element, width: number) {
   });
 }
 
-const { demoPersistence, delayedSaves, saveFailures } = vi.hoisted(() => ({
+const { demoPersistence, delayedSaves, noteLocks, saveFailures } = vi.hoisted(() => ({
   demoPersistence: new Map<string, string>(),
   delayedSaves: {
     enabled: false,
@@ -58,6 +58,9 @@ const { demoPersistence, delayedSaves, saveFailures } = vi.hoisted(() => ({
   saveFailures: {
     attempts: 0,
     remaining: 0,
+  },
+  noteLocks: {
+    denied: false,
   },
 }));
 
@@ -82,6 +85,12 @@ vi.mock("./lib/notebookStorage", async (importOriginal) => {
   };
   const storage = actual.createDemoNotebookStorage(persistence);
   const saveNote = storage.saveNote.bind(storage);
+  storage.acquireNoteEditLock = async (workspace, path) => noteLocks.denied
+    ? {
+        acquired: false,
+        owner: { windowLabel: "other-window", pid: 1, acquiredAt: 0, workspace, path },
+      }
+    : { acquired: true };
   storage.saveNote = async (workspace, path, markdown) => {
     saveFailures.attempts += 1;
     if (saveFailures.remaining > 0) {
@@ -151,10 +160,39 @@ describe("Note navigation persistence", () => {
     delayedSaves.markdown.length = 0;
     saveFailures.attempts = 0;
     saveFailures.remaining = 0;
+    noteLocks.denied = false;
     localStorage.clear();
     demoPersistence.clear();
     resizeObserverRecords.clear();
     containers.splice(0).forEach((container) => container.remove());
+  });
+
+  it("shows a lock beside the neutral dot when the note is read-only", async () => {
+    demoPersistence.set("tigrana-demo-v5", JSON.stringify({
+      folders: [],
+      notes: {
+        "Welcome.md": "# Welcome\n\nOriginal body.",
+      },
+    }));
+    noteLocks.denied = true;
+    const container = document.createElement("div");
+    document.body.appendChild(container);
+    containers.push(container);
+    const root = createRoot(container);
+
+    await act(async () => {
+      root.render(<App />);
+      await new Promise((resolve) => window.setTimeout(resolve, 50));
+    });
+
+    const status = container.querySelector(".save-state");
+    expect(status?.getAttribute("data-tooltip")).toBe("Read-only");
+    expect(status?.hasAttribute("title")).toBe(false);
+    expect(status?.classList.contains("is-read-only")).toBe(true);
+    expect(status?.children[0]?.classList.contains("save-state-lock")).toBe(true);
+    expect(status?.children[1]?.classList.contains("save-state-dot")).toBe(true);
+
+    await act(async () => root.unmount());
   });
 
   it("automatically saves a newer draft that arrives while an older save is in flight", async () => {
@@ -186,12 +224,14 @@ describe("Note navigation persistence", () => {
     await act(async () => {
       if (body) setReactTextareaValue(body, "Second draft");
     });
-    expect(container.querySelector(".save-state")?.textContent).toContain("Unsaved");
+    expect(container.querySelector(".save-state")?.getAttribute("data-tooltip")).toBe("Unsaved");
+    expect(container.querySelector(".save-state")?.classList.contains("is-unsaved")).toBe(true);
 
     await act(async () => delayedSaves.releases.shift()?.());
     await waitFor(() => delayedSaves.markdown.length === 2);
     await act(async () => delayedSaves.releases.shift()?.());
-    await waitFor(() => container.querySelector(".save-state")?.textContent?.includes("Saved") ?? false);
+    await waitFor(() => container.querySelector(".save-state")?.getAttribute("data-tooltip") === "Saved");
+    expect(container.querySelector(".save-state")?.classList.contains("is-saved")).toBe(true);
 
     const store = JSON.parse(demoPersistence.get("tigrana-demo-v5") ?? "{}") as {
       notes?: Record<string, string>;
@@ -226,12 +266,14 @@ describe("Note navigation persistence", () => {
     });
 
     await waitFor(() => saveFailures.attempts === 1);
-    expect(container.querySelector(".save-state")?.textContent).toContain("Unsaved");
+    expect(container.querySelector(".save-state")?.getAttribute("data-tooltip")).toBe("Unsaved");
+    expect(container.querySelector(".save-state")?.classList.contains("is-unsaved")).toBe(true);
     await waitFor(
       () => saveFailures.attempts >= 2
-        && (container.querySelector(".save-state")?.textContent?.includes("Saved") ?? false),
+        && container.querySelector(".save-state")?.getAttribute("data-tooltip") === "Saved",
       4_500,
     );
+    expect(container.querySelector(".save-state")?.classList.contains("is-saved")).toBe(true);
 
     const store = JSON.parse(demoPersistence.get("tigrana-demo-v5") ?? "{}") as {
       notes?: Record<string, string>;

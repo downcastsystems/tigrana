@@ -22,6 +22,7 @@ import {
   History,
   LayoutList,
   Link2,
+  Lock,
   Mic,
   Moon,
   MoveRight,
@@ -846,6 +847,10 @@ export default function App() {
   const hasUnsavedBody = Boolean(noteOpen) && rawMarkdownDraft !== savedRawMarkdownText;
   const hasUnsavedChanges = Boolean(noteOpen) && (hasUnsavedBody || titleDraft !== savedTitle);
   const activeNoteEditable = activeNoteAccess === "editable";
+  const noteSaveState = !activeNoteEditable ? "read-only" : hasUnsavedChanges ? "unsaved" : "saved";
+  const noteSaveStateLabel = noteSaveState === "read-only"
+    ? "Read-only"
+    : noteSaveState === "unsaved" ? "Unsaved" : "Saved";
 
   useLayoutEffect(() => {
     draftSaveRevisions.observe(rawMarkdownDraft);
@@ -4689,9 +4694,15 @@ export default function App() {
         >
           {noteOpen ? (
             <>
-              <div className="save-state">
-                <Check size={15} />
-                <span>{!activeNoteEditable ? "Read-only" : hasUnsavedChanges ? "Unsaved" : "Saved"}</span>
+              <div
+                className={`save-state is-${noteSaveState}`}
+                role="status"
+                aria-label={noteSaveStateLabel}
+                data-tooltip={noteSaveStateLabel}
+              >
+                {noteSaveState === "read-only" ? <Lock className="save-state-lock" size={13} aria-hidden="true" /> : null}
+                <span className="save-state-dot" aria-hidden="true" />
+                <span className="save-state-label">{noteSaveStateLabel}</span>
               </div>
               <button
                 className="icon-button"

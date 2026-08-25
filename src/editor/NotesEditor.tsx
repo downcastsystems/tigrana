@@ -2564,22 +2564,29 @@ export function NotesEditor({ content, commandRequest, focusRequest, focusAtEndR
     const currentState = slashRef.current;
     if (!currentState || !currentEditor) return false;
 
-    const currentSlash = findSlashQuery(currentEditor) ?? currentState;
+    const currentSlash = findSlashQuery(currentEditor);
+    if (!currentSlash) {
+      slashRef.current = null;
+      setSlash(null);
+      return false;
+    }
     const currentCommands = filterSlashCommands(currentSlash.query);
 
     if (event.key === "ArrowDown") {
+      if (currentCommands.length === 0) return false;
       event.preventDefault();
       setSlash((current) =>
-        current ? { ...current, selected: (current.selected + 1) % Math.max(currentCommands.length, 1) } : current,
+        current ? { ...current, selected: (current.selected + 1) % currentCommands.length } : current,
       );
       return true;
     }
 
     if (event.key === "ArrowUp") {
+      if (currentCommands.length === 0) return false;
       event.preventDefault();
       setSlash((current) =>
         current
-          ? { ...current, selected: (current.selected - 1 + Math.max(currentCommands.length, 1)) % Math.max(currentCommands.length, 1) }
+          ? { ...current, selected: (current.selected - 1 + currentCommands.length) % currentCommands.length }
           : current,
       );
       return true;
@@ -2704,6 +2711,22 @@ export function NotesEditor({ content, commandRequest, focusRequest, focusAtEndR
       setSlash(nextSlash);
     },
     onSelectionUpdate({ editor }) {
+      const currentSlash = slashRef.current;
+      if (currentSlash) {
+        const match = findSlashQuery(editor);
+        if (!match) {
+          slashRef.current = null;
+          setSlash(null);
+        } else if (
+          match.query !== currentSlash.query
+          || match.range.from !== currentSlash.range.from
+          || match.range.to !== currentSlash.range.to
+        ) {
+          const nextSlash = { ...match, selected: 0 };
+          slashRef.current = nextSlash;
+          setSlash(nextSlash);
+        }
+      }
       onPositionChange({
         selectedText: getSelectedText(editor),
         selectionFrom: editor.state.selection.from,
@@ -3105,12 +3128,6 @@ export function NotesEditor({ content, commandRequest, focusRequest, focusAtEndR
     if (top + menuHeight > vh - 8) top = coords.top - menuHeight - 4;
     return { top, left } as CSSProperties;
   }, [slash, editor, commands.length]);
-
-  useEffect(() => {
-    if (!slash || !editor) return;
-    window.addEventListener("keydown", handleSlashKeyDown, true);
-    return () => window.removeEventListener("keydown", handleSlashKeyDown, true);
-  }, [editor, handleSlashKeyDown, slash]);
 
   return (
     <div

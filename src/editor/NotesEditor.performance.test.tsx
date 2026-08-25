@@ -94,16 +94,131 @@ describe("Note editor typing performance", () => {
 
     expect(container.querySelector(".slash-menu")).not.toBeNull();
     scrollIntoView.mockClear();
+    const editorElement = container.querySelector<HTMLElement>(".ProseMirror");
 
     for (let index = 0; index < 9; index += 1) {
       await act(async () => {
-        window.dispatchEvent(new KeyboardEvent("keydown", { key: "ArrowDown" }));
+        editorElement?.dispatchEvent(new KeyboardEvent("keydown", { bubbles: true, key: "ArrowDown" }));
       });
     }
 
     expect(container.querySelector(".slash-item.is-selected strong")?.textContent).toBe("Task List");
     expect(scrollIntoView).toHaveBeenCalledTimes(9);
     expect(scrollIntoView).toHaveBeenCalledWith({ block: "nearest" });
+  });
+
+  it("leaves vertical cursor movement alone when a slash query has no commands", async () => {
+    const container = document.createElement("div");
+    document.body.appendChild(container);
+    const root = createRoot(container);
+    mounted.push({ container, root });
+
+    await act(async () => {
+      root.render(
+        <NotesEditor
+          content=""
+          commandRequest={null}
+          editable
+          findRequest={0}
+          focusAtEndRequest={0}
+          focusRequest={0}
+          historyKey="slash-list-note-id"
+          notePath="Slash list.md"
+          onChange={() => undefined}
+          onLoadError={(error) => {
+            throw error;
+          }}
+          onPendingChange={() => undefined}
+          onPositionChange={() => undefined}
+          reloadRequest={0}
+          restorePosition={null}
+          spellcheckEnabled
+          workspace="/Notebook"
+        />,
+      );
+    });
+
+    const paragraph = container.querySelector<HTMLElement>(".ProseMirror p");
+    await act(async () => {
+      if (paragraph) paragraph.textContent = "/not-a-command";
+      paragraph?.dispatchEvent(new InputEvent("input", {
+        bubbles: true,
+        data: "/not-a-command",
+        inputType: "insertText",
+      }));
+      await Promise.resolve();
+    });
+
+    expect(container.querySelector(".slash-menu")).toBeNull();
+    const arrowDown = new KeyboardEvent("keydown", {
+      bubbles: true,
+      cancelable: true,
+      key: "ArrowDown",
+    });
+    await act(async () => {
+      paragraph?.dispatchEvent(arrowDown);
+    });
+
+    expect(arrowDown.defaultPrevented).toBe(false);
+  });
+
+  it("does not capture arrow keys after focus leaves an open slash menu", async () => {
+    const container = document.createElement("div");
+    const rootHost = document.createElement("div");
+    const outsideInput = document.createElement("input");
+    container.append(rootHost, outsideInput);
+    document.body.appendChild(container);
+    const root = createRoot(rootHost);
+    mounted.push({ container, root });
+
+    await act(async () => {
+      root.render(
+        <NotesEditor
+          content=""
+          commandRequest={null}
+          editable
+          findRequest={0}
+          focusAtEndRequest={0}
+          focusRequest={0}
+          historyKey="slash-focus-note-id"
+          notePath="Slash focus.md"
+          onChange={() => undefined}
+          onLoadError={(error) => {
+            throw error;
+          }}
+          onPendingChange={() => undefined}
+          onPositionChange={() => undefined}
+          reloadRequest={0}
+          restorePosition={null}
+          spellcheckEnabled
+          workspace="/Notebook"
+        />,
+      );
+    });
+
+    const paragraph = container.querySelector<HTMLElement>(".ProseMirror p");
+    await act(async () => {
+      if (paragraph) paragraph.textContent = "/";
+      paragraph?.dispatchEvent(new InputEvent("input", {
+        bubbles: true,
+        data: "/",
+        inputType: "insertText",
+      }));
+      await Promise.resolve();
+    });
+
+    expect(container.querySelector(".slash-menu")).not.toBeNull();
+    outsideInput.focus();
+    const arrowDown = new KeyboardEvent("keydown", {
+      bubbles: true,
+      cancelable: true,
+      key: "ArrowDown",
+    });
+    await act(async () => {
+      outsideInput.dispatchEvent(arrowDown);
+    });
+
+    expect(arrowDown.defaultPrevented).toBe(false);
   });
 
   it("keeps the find field focused while an arrow button advances and scrolls to a match", async () => {
