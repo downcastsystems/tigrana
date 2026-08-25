@@ -143,6 +143,15 @@ pub fn repair_note_path(
     }
 }
 
+pub fn place_note_in_order(
+    metadata: &mut WorkspaceMetadata,
+    parent: &str,
+    path: &str,
+    sibling_placement: FolderSiblingPlacement<'_>,
+) {
+    place_in_order(&mut metadata.note_order, parent, path, sibling_placement);
+}
+
 pub fn repair_folder_path(
     metadata: &mut WorkspaceMetadata,
     old_path: &str,

@@ -10,6 +10,7 @@ import {
   moveNoteInMetadata,
   orderFolders,
   orderNotes,
+  placeNoteInOrder,
   reorderBookmarks,
   removeFolderFromMetadata,
   removeNoteFromMetadata,
@@ -351,6 +352,26 @@ describe("notebook metadata", () => {
     expect(addFolderToOrder(current, "", "Archive").folderOrder[""]).toEqual(["Inbox", "Archive"]);
     expect(setMetadataValue(current, "noteIcons", "Inbox/One.md", "").noteIcons).toEqual({});
     expect(setMetadataValue(current, "folderColors", "Inbox", "#abcdef").folderColors).toEqual({ Inbox: "#abcdef" });
+  });
+
+  it("places a Note after a requested sibling", () => {
+    const notes = [
+      note("Ideas/First.md", "First", "Ideas"),
+      note("Ideas/Second.md", "Second", "Ideas"),
+    ];
+    const current = metadata({ noteOrder: { Ideas: notes.map((entry) => entry.path) } });
+
+    expect(placeNoteInOrder(
+      current,
+      notes,
+      "Ideas",
+      "Ideas/New.md",
+      { targetPath: "Ideas/First.md", placement: "after" },
+    ).noteOrder.Ideas).toEqual([
+      "Ideas/First.md",
+      "Ideas/New.md",
+      "Ideas/Second.md",
+    ]);
   });
 
   it("orders folders by custom order with title fallback", () => {

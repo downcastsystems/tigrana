@@ -70,10 +70,13 @@ export type NotebookStorageCapabilities = {
   workspaceWatching: boolean;
 };
 
-export type FolderSiblingPlacement = {
+export type SiblingPlacement = {
   targetPath: string;
   placement: "before" | "after";
 };
+
+export type FolderSiblingPlacement = SiblingPlacement;
+export type NoteSiblingPlacement = SiblingPlacement;
 
 export type NotebookStorage = {
   readonly capabilities: NotebookStorageCapabilities;
@@ -93,7 +96,12 @@ export type NotebookStorage = {
   createFolder(workspace: string, parentPath: string, name: string): Promise<FolderEntry>;
   renameFolder(workspace: string, path: string, name: string): Promise<FolderEntry>;
   renameNote(workspace: string, path: string, title: string): Promise<NoteEntry>;
-  moveNote(workspace: string, path: string, targetParentPath: string): Promise<NoteEntry>;
+  moveNote(
+    workspace: string,
+    path: string,
+    targetParentPath: string,
+    siblingPlacement?: NoteSiblingPlacement,
+  ): Promise<NoteEntry>;
   moveFolder(
     workspace: string,
     path: string,
@@ -265,9 +273,17 @@ export function createNativeNotebookStorage(invokeCommand: InvokeCommand = invok
       return decodeNoteEntry(entry);
     },
 
-    async moveNote(workspace, path, targetParentPath) {
+    async moveNote(workspace, path, targetParentPath, siblingPlacement) {
       const entry = await invokeCommand<NoteEntry>("move_note", {
-        payload: { workspace, path, target_parent_path: targetParentPath },
+        payload: {
+          workspace,
+          path,
+          target_parent_path: targetParentPath,
+          ...(siblingPlacement ? {
+            sibling_target_path: siblingPlacement.targetPath,
+            sibling_placement: siblingPlacement.placement,
+          } : {}),
+        },
       });
       return decodeNoteEntry(entry);
     },

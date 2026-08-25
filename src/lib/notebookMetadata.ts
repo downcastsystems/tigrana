@@ -145,6 +145,34 @@ export function orderNotes(notes: NoteEntry[], folderPath: string, metadata: Wor
   });
 }
 
+export function placeNoteInOrder(
+  metadata: WorkspaceMetadata,
+  notes: NoteEntry[],
+  folderPath: string,
+  notePath: string,
+  siblingPlacement: { targetPath: string; placement: "before" | "after" },
+): WorkspaceMetadata {
+  const orderedPaths = orderNotes(
+    notes.filter((note) => note.parent_path === folderPath && note.path !== notePath),
+    folderPath,
+    metadata,
+  ).map((note) => note.path);
+  const nextOrder = orderedPaths.filter((path) => path !== notePath);
+  const targetIndex = nextOrder.indexOf(siblingPlacement.targetPath);
+  if (targetIndex < 0) {
+    nextOrder.push(notePath);
+  } else {
+    nextOrder.splice(targetIndex + (siblingPlacement.placement === "after" ? 1 : 0), 0, notePath);
+  }
+  return {
+    ...metadata,
+    noteOrder: {
+      ...metadata.noteOrder,
+      [folderPath]: nextOrder,
+    },
+  };
+}
+
 export function addToOrder(metadata: WorkspaceMetadata, folder: string, notePath: string): WorkspaceMetadata {
   return {
     ...metadata,

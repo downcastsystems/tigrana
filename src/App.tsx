@@ -44,7 +44,7 @@ import {
 } from "lucide-react";
 import * as LucideIcons from "lucide-react";
 import type { LucideIcon } from "lucide-react";
-import type { CSSProperties, ReactNode } from "react";
+import type { CSSProperties, KeyboardEvent as ReactKeyboardEvent, ReactNode } from "react";
 import { Component, startTransition, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { NotesEditor, type PendingEditorChange } from "./editor/NotesEditor";
 import { GlobalSearchModal } from "./components/GlobalSearchModal";
@@ -108,6 +108,7 @@ import {
   getNotebookName,
   orderFolders,
   orderNotes,
+  placeNoteInOrder,
   reorderBookmarks,
   setMetadataValue,
   type BookmarkView,
@@ -332,6 +333,14 @@ type NoteDragPreview = {
   y: number;
   overTarget: boolean;
 };
+
+type NoteCreationTarget = {
+  afterPath?: string;
+  parentName: string;
+  parentPath: string;
+};
+
+type FolderCreationTarget = Pick<NoteCreationTarget, "parentName" | "parentPath">;
 
 type ColorScheme = "system" | "light" | "dark";
 type ThemePresetId =
@@ -762,16 +771,14 @@ export default function App() {
     chooseWorkspace: (intent: "open" | "new") => void;
     hasOpenNote: () => boolean;
     persistDraft: () => void;
-    requestCreateNote: (parentPath?: string) => void;
-    selectedFolder: string;
+    requestCreateNoteInContext: () => void;
     toggleRawMarkdown: () => void;
   }>({
     addEmptyTab: () => {},
     chooseWorkspace: () => {},
     hasOpenNote: () => false,
     persistDraft: () => {},
-    requestCreateNote: () => {},
-    selectedFolder: "",
+    requestCreateNoteInContext: () => {},
     toggleRawMarkdown: () => {},
   });
 
@@ -874,6 +881,18 @@ export default function App() {
     if (!activePath) return null;
     return notes.find((note) => note.path === activePath)?.parent_path ?? null;
   }, [activePath, notes]);
+  const mainCreationFolderPath = navigationStyle === "section-view" ? selectedSection : selectedFolder;
+  const currentCreationFolderPath = activeNote?.parent_path ?? selectedFolder;
+  const noteCreationTargets = useMemo(
+    () => buildNoteCreationTargets(
+      mainCreationFolderPath,
+      currentCreationFolderPath,
+      activeNote,
+      folders,
+      workspace,
+    ),
+    [activeNote, currentCreationFolderPath, folders, mainCreationFolderPath, workspace],
+  );
   const bookmarks = useMemo(() => buildBookmarkViews(metadata.bookmarks, folders, notes, metadata, workspace), [folders, metadata, notes, workspace]);
   const recentNotes = useMemo(
     () => buildRecentNoteViews(notes, metadata),
@@ -1957,7 +1976,7 @@ export default function App() {
         await chooseWorkspace("new", true);
         break;
       case "new_note":
-        await requestCreateNote(selectedFolder);
+        await requestCreateNoteInCurrentContext();
         break;
       case "new_folder":
         requestCreateFolder(selectedFolder);
@@ -2854,8 +2873,7 @@ export default function App() {
     chooseWorkspace: (intent: "open" | "new") => void chooseWorkspace(intent),
     hasOpenNote: () => Boolean(noteOpen),
     persistDraft: persistDraftInBackground,
-    requestCreateNote,
-    selectedFolder,
+    requestCreateNoteInContext: () => void requestCreateNoteInCurrentContext(),
     toggleRawMarkdown: toggleRawMarkdownMode,
   };
 
@@ -2895,7 +2913,7 @@ export default function App() {
       }
       if (command && key === "n") {
         event.preventDefault();
-        actions.requestCreateNote(actions.selectedFolder);
+        actions.requestCreateNoteInContext();
         return;
       }
       if (command && key === "t") {
@@ -2956,23 +2974,40 @@ export default function App() {
   }, [activeNoteEditable, activeNoteLifecycle, hasUnsavedBody, pendingNote, persistDraftInBackground, titleDraft]);
 
 
-  async function requestCreateNote(parentPath = selectedFolder) {
+  async function requestCreateNote(
+    parentPath = selectedFolder,
+    afterPath?: string,
+  ) {
     if (!workspace) {
       setAppError("Open a notes folder before creating a note.");
       return;
     }
     const operationWorkspace = workspace;
+    const followsActivePath = Boolean(afterPath && afterPath === activeDraftStateRef.current.activePath);
+    let placementTargetPath = afterPath;
     const navigationToken = beginNoteNavigation();
     const navigationIsCurrent = () =>
       isWorkspaceActive(operationWorkspace) && isCurrentNoteNavigation(navigationToken);
+    const placeCreatedNote = (current: WorkspaceMetadata, createdNote: NoteEntry) => {
+      const targetPath = placementTargetPath;
+      if (!targetPath) return addToOrder(current, createdNote.parent_path, createdNote.path);
+      const orderingNotes = targetPath !== afterPath
+        ? notes.map((note) => note.path === afterPath ? { ...note, path: targetPath } : note)
+        : notes;
+      return placeNoteInOrder(current, orderingNotes, createdNote.parent_path, createdNote.path, {
+        targetPath,
+        placement: "after",
+      });
+    };
     const reconcileCreatedNote = async (createdNote: NoteEntry) => {
       if (!isWorkspaceActive(operationWorkspace)) return;
-      updateMetadata((current) => addToOrder(current, createdNote.parent_path, createdNote.path));
+      updateMetadata((current) => placeCreatedNote(current, createdNote));
       await refreshWorkspace(operationWorkspace);
     };
     try {
       if (!await persistDraftForNavigation()) return;
       if (!navigationIsCurrent()) return;
+      if (followsActivePath) placementTargetPath = activeDraftStateRef.current.activePath ?? afterPath;
 
       cancelPendingNoteLoads();
       await releaseActiveNoteLock();
@@ -3032,7 +3067,7 @@ export default function App() {
       recordNotePosition(createdNote.path, content, { lastOpenedAt: Date.now() });
       setSelectedFolder(navigationStyle === "section-view" ? getTopLevelFolderPath(createdNote.parent_path) : createdNote.parent_path);
       placePathInActiveTab(createdNote.path);
-      updateMetadata((current) => addToOrder(current, createdNote.parent_path, createdNote.path));
+      updateMetadata((current) => placeCreatedNote(current, createdNote));
       setTitleFocusRequest((value) => value + 1);
       activeNoteLifecycle.settleNavigation(navigationToken);
       await refreshWorkspace(operationWorkspace);
@@ -3041,6 +3076,13 @@ export default function App() {
         setAppError(error instanceof Error ? error.message : String(error));
       }
     }
+  }
+
+  async function requestCreateNoteInCurrentContext() {
+    const target = activeNote
+      ? { parentPath: activeNote.parent_path, afterPath: activeNote.path }
+      : noteCreationTargets.at(-1);
+    await requestCreateNote(target?.parentPath ?? selectedFolder, target?.afterPath);
   }
 
   useLayoutEffect(() => {
@@ -3828,7 +3870,9 @@ export default function App() {
     else setAppError(null);
   }
 
-  function handleNoteDrop(targetPath: string, placement: DropPlacement = "before") {
+  async function handleNoteDrop(targetPath: string, placement: DropPlacement = "before") {
+    if (!workspace) return;
+    const operationWorkspace = workspace;
     const sourceItem = draggingItem?.kind === "note" ? draggingItem : draggingItemRef.current?.kind === "note" ? draggingItemRef.current : null;
     const source = sourceItem?.path ?? null;
     if (!source || source === targetPath) return;
@@ -3836,24 +3880,35 @@ export default function App() {
       showReadOnlyNoteWarning();
       return;
     }
-    const note = notes.find((entry) => entry.path === targetPath);
-    const folder = note?.parent_path ?? selectedFolder;
-    if (!notes.find((entry) => entry.path === source && entry.parent_path === folder)) return;
-    const ordered = orderNotes(notes.filter((entry) => entry.parent_path === folder), folder, metadata).map((entry) => entry.path);
-    const nextOrder = ordered.filter((path) => path !== source);
-    const targetIndex = Math.max(0, nextOrder.indexOf(targetPath));
-    nextOrder.splice(targetIndex + (placement === "after" ? 1 : 0), 0, source);
-    updateMetadata((current) => ({
-      ...current,
-      noteOrder: {
-        ...current.noteOrder,
-        [folder]: nextOrder,
-      },
-    }));
-    setDraggingItem(null);
-    draggingItemRef.current = null;
-    setDropTargetFolder(null);
-    setNoteDragPreview(null);
+    const sourceNote = notes.find((entry) => entry.path === source);
+    const targetNote = notes.find((entry) => entry.path === targetPath);
+    if (!sourceNote || !targetNote) return;
+    try {
+      if (sourceNote.parent_path === targetNote.parent_path) {
+        updateMetadata((current) => placeNoteInOrder(
+          current,
+          notes,
+          targetNote.parent_path,
+          source,
+          { targetPath, placement },
+        ));
+      } else {
+        await notebookPathMutations.moveNote(source, targetNote.parent_path, {
+          siblingPlacement: { targetPath, placement },
+        });
+      }
+    } catch (error) {
+      if (isWorkspaceActive(operationWorkspace)) {
+        setAppError(error instanceof Error ? error.message : String(error));
+      }
+    } finally {
+      if (isWorkspaceActive(operationWorkspace)) {
+        setDraggingItem(null);
+        draggingItemRef.current = null;
+        setDropTargetFolder(null);
+        setNoteDragPreview(null);
+      }
+    }
   }
 
   async function handleDropOnFolder(targetFolderPath: string, droppedItem = draggingItem ?? draggingItemRef.current) {
@@ -3999,7 +4054,10 @@ export default function App() {
   }
 
   function beginFolderPointerDrag(path: string, event: React.PointerEvent<HTMLElement>, orderingMode: FolderOrderingMode) {
-    if (event.button !== 0) return;
+    if (event.button !== 0 || event.ctrlKey) {
+      event.preventDefault();
+      return;
+    }
     if ((event.target as HTMLElement | null)?.closest("[data-no-folder-drag]")) return;
     const folder = folders.find((entry) => entry.path === path);
     if (!folder || !folder.path) return;
@@ -4067,7 +4125,10 @@ export default function App() {
   }
 
   function beginNotePointerDrag(path: string, event: React.PointerEvent<HTMLElement>) {
-    if (event.button !== 0) return;
+    if (event.button !== 0 || event.ctrlKey) {
+      event.preventDefault();
+      return;
+    }
     if ((event.target as HTMLElement | null)?.closest("[data-no-note-drag]")) return;
     if (!canMutateNotePath(path)) return;
 
@@ -4104,8 +4165,7 @@ export default function App() {
       } else {
         // No folder under cursor — check for a sibling note (reorder).
         const candidate = noteDropTargetAtPoint(moveEvent.clientX, moveEvent.clientY);
-        const targetParent = candidate ? notes.find((entry) => entry.path === candidate.path)?.parent_path : undefined;
-        if (candidate && candidate.path !== drag.path && sourceParent !== undefined && sourceParent === targetParent) {
+        if (candidate && candidate.path !== drag.path && sourceParent !== undefined) {
           setNoteDropIndicator(candidate);
           setDropTargetFolder(null);
           overTarget = true;
@@ -4122,7 +4182,6 @@ export default function App() {
             setDropTargetFolder(null);
           }
         } else {
-          // Cursor is over a cross-folder note row — no visual feedback.
           setNoteDropIndicator(null);
           setDropTargetFolder(null);
         }
@@ -4165,7 +4224,7 @@ export default function App() {
         if (targetFolder !== null) {
           void handleDropOnFolder(targetFolder, { kind: "note", path: drag.path });
         } else if (targetNote && targetNote.path !== drag.path) {
-          handleNoteDrop(targetNote.path, targetNote.placement);
+          void handleNoteDrop(targetNote.path, targetNote.placement);
         } else {
           const paneRoot = document.elementFromPoint(upEvent.clientX, upEvent.clientY)?.closest<HTMLElement>("[data-pane-root-path]");
           const paneRootPath = paneRoot?.dataset.paneRootPath;
@@ -4197,7 +4256,10 @@ export default function App() {
   }
 
   function beginSectionPointerDrag(path: string, event: React.PointerEvent<HTMLElement>) {
-    if (event.button !== 0) return;
+    if (event.button !== 0 || event.ctrlKey) {
+      event.preventDefault();
+      return;
+    }
     const folder = folders.find((entry) => entry.path === path);
     if (!folder || folder.parent_path !== "") return;
 
@@ -4512,6 +4574,7 @@ export default function App() {
               activePath={activePath}
               bookmarks={bookmarks}
               bookmarksExpanded={metadata.bookmarksExpanded}
+              createNoteTargets={noteCreationTargets}
               createParentPath={selectedFolder}
               contents={contents}
               folderDropIntent={folderDropIntent}
@@ -4592,6 +4655,7 @@ export default function App() {
               <PaneResizer label="Resize folder pane" variant="inner" onPointerDown={startFolderPaneResize} />
               <UnifiedTreePane
                 activePath={activePath}
+                createNoteTargets={noteCreationTargets}
                 createParentPath={selectedFolder}
                 contents={contents}
                 folderDropIntent={folderDropIntent}
@@ -4663,12 +4727,13 @@ export default function App() {
               <PaneResizer label="Resize folder pane" variant="inner" onPointerDown={startFolderPaneResize} />
               <NotesPane
                 activePath={activePath}
+                createNoteTargets={noteCreationTargets}
                 draggingPath={draggingItem?.kind === "note" ? draggingItem.path : null}
                 folderTitle={selectedFolderTitle}
                 metadata={metadata}
                 contents={contents}
                 notes={visibleNotes}
-                selectedFolder={selectedFolder}
+                onCreateFolder={requestCreateFolder}
                 onCreateNote={requestCreateNote}
                 onContextMenu={openContextMenu}
                 onPin={toggleNotePin}
@@ -5094,7 +5159,6 @@ export default function App() {
           activeCreateNoteParentName={
             showActiveCreateNoteFolder ? displayFolderName(activeCreateNoteFolderPath, folders, workspace) : undefined
           }
-          createFolderLabel={contextMenu.source === "sections-pane" ? "New Section" : undefined}
           createFolderParentName={displayFolderName(createParent, folders, workspace)}
           createNoteParentName={displayFolderName(createParent, folders, workspace)}
           showCreateSection={contextMenu.source === "sections-pane"}
@@ -5167,7 +5231,7 @@ export default function App() {
                 <Folder size={18} />
               </span>
               <div>
-                <h2>{navigationStyle === "section-view" ? "New section" : "New folder"}</h2>
+                <h2>{navigationStyle === "section-view" && folderDialogParent === "" ? "New section" : "New folder"}</h2>
                 <p>{folderDialogParent ? `Create in ${folderDialogParent}` : "Create at the notebook root"}</p>
               </div>
               <button className="icon-button" type="button" title="Close" onClick={() => setFolderDialogParent(null)}>
@@ -5182,7 +5246,7 @@ export default function App() {
               id="folder-name"
               value={folderName}
               onChange={(event) => setFolderName(event.target.value)}
-              placeholder={navigationStyle === "section-view" ? "Section name" : "Folder name"}
+              placeholder={navigationStyle === "section-view" && folderDialogParent === "" ? "Section name" : "Folder name"}
               autoFocus
             />
             {appError ? <p className="dialog-error">{appError}</p> : null}
@@ -6077,6 +6141,135 @@ function SectionViewFolderPane({
 
 // ---------- Unified Tree (Single Pane / Section View second pane) ----------
 
+export function PaneCreateMenu({
+  disabled = false,
+  folderTargets,
+  noteTargets,
+  onCreateFolder,
+  onCreateNote,
+}: {
+  disabled?: boolean;
+  folderTargets: FolderCreationTarget[];
+  noteTargets: NoteCreationTarget[];
+  onCreateFolder?: (parentPath?: string) => void;
+  onCreateNote: (parentPath?: string, afterPath?: string) => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const controlRef = useRef<HTMLDivElement | null>(null);
+  const buttonRef = useRef<HTMLButtonElement | null>(null);
+  const firstActionRef = useRef<HTMLButtonElement | null>(null);
+  const focusFirstActionOnOpenRef = useRef(false);
+
+  useLayoutEffect(() => {
+    if (open && focusFirstActionOnOpenRef.current) firstActionRef.current?.focus();
+  }, [open]);
+
+  useEffect(() => {
+    if (!open) return;
+    const handleMouseDown = (event: MouseEvent) => {
+      if (event.target instanceof Node && controlRef.current?.contains(event.target)) return;
+      setOpen(false);
+    };
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key !== "Escape") return;
+      event.preventDefault();
+      setOpen(false);
+      buttonRef.current?.focus();
+    };
+    document.addEventListener("mousedown", handleMouseDown);
+    document.addEventListener("keydown", handleKeyDown);
+    return () => {
+      document.removeEventListener("mousedown", handleMouseDown);
+      document.removeEventListener("keydown", handleKeyDown);
+    };
+  }, [open]);
+
+  const choose = (action: () => void) => {
+    setOpen(false);
+    action();
+  };
+
+  const handleMenuKeyDown = (event: ReactKeyboardEvent<HTMLDivElement>) => {
+    const items = Array.from(
+      event.currentTarget.querySelectorAll<HTMLButtonElement>('button[role="menuitem"]:not(:disabled)'),
+    );
+    if (!items.length) return;
+
+    const currentIndex = items.indexOf(document.activeElement as HTMLButtonElement);
+    let nextIndex: number;
+    switch (event.key) {
+      case "ArrowDown":
+        nextIndex = currentIndex < 0 ? 0 : (currentIndex + 1) % items.length;
+        break;
+      case "ArrowUp":
+        nextIndex = currentIndex < 0 ? items.length - 1 : (currentIndex - 1 + items.length) % items.length;
+        break;
+      case "Home":
+        nextIndex = 0;
+        break;
+      case "End":
+        nextIndex = items.length - 1;
+        break;
+      default:
+        return;
+    }
+
+    event.preventDefault();
+    items[nextIndex]?.focus();
+  };
+
+  return (
+    <div className="pane-create-control" ref={controlRef}>
+      <button
+        ref={buttonRef}
+        className="icon-button pane-create-button"
+        type="button"
+        disabled={disabled}
+        title="Add Note or Folder"
+        aria-label="Add Note or Folder"
+        aria-haspopup="menu"
+        aria-expanded={open}
+        onClick={(event) => {
+          focusFirstActionOnOpenRef.current = !open && event.detail === 0;
+          setOpen((value) => !value);
+        }}
+      >
+        <Plus size={16} />
+      </button>
+      {open ? (
+        <div className="pane-create-menu" role="menu" onKeyDown={handleMenuKeyDown}>
+          {noteTargets.map((target, index) => (
+            <button
+              ref={index === 0 ? firstActionRef : undefined}
+              key={`${target.parentPath}:${target.afterPath ?? "end"}`}
+              type="button"
+              role="menuitem"
+              onClick={() => choose(() => onCreateNote(target.parentPath, target.afterPath))}
+            >
+              <FileText size={16} />
+              <span>New Note in {target.parentName}</span>
+            </button>
+          ))}
+          {noteTargets.length > 0 && onCreateFolder && folderTargets.length > 0 ? (
+            <div className="pane-create-menu-separator" role="separator" />
+          ) : null}
+          {onCreateFolder ? folderTargets.map((target) => (
+            <button
+              key={target.parentPath}
+              type="button"
+              role="menuitem"
+              onClick={() => choose(() => onCreateFolder(target.parentPath))}
+            >
+              <Folder size={16} />
+              <span>New Folder in {target.parentName}</span>
+            </button>
+          )) : null}
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
 function UnifiedNode({
   activePath,
   contents,
@@ -6324,6 +6517,7 @@ function UnifiedTreePane({
   activePath,
   bookmarks = [],
   bookmarksExpanded = true,
+  createNoteTargets,
   createParentPath,
   contents,
   folderDropIntent,
@@ -6367,6 +6561,7 @@ function UnifiedTreePane({
   activePath: string | null;
   bookmarks?: BookmarkView[];
   bookmarksExpanded?: boolean;
+  createNoteTargets?: NoteCreationTarget[];
   createParentPath?: string;
   contents: Map<string, string>;
   folderDropIntent?: FolderDropIntent | null;
@@ -6389,7 +6584,7 @@ function UnifiedTreePane({
   workspace: string;
   onContextMenu: (event: React.MouseEvent, state: ContextMenuTarget) => void;
   onCreateFolder?: (parentPath?: string) => void;
-  onCreateNote?: (parentPath?: string) => void;
+  onCreateNote?: (parentPath?: string, afterPath?: string) => void;
   onFolderPointerDragStart: (path: string, event: React.PointerEvent<HTMLElement>) => void;
   onManageNotebooks?: () => void;
   onNewNotebook?: () => void;
@@ -6408,26 +6603,33 @@ function UnifiedTreePane({
   onToggleSearch?: () => void;
 }) {
   const parentForCreate = createParentPath ?? rootPath;
+  const noteTargetsForCreate = createNoteTargets ?? [{ parentName: title, parentPath: parentForCreate }];
+  const folderTargetsForCreate = noteTargetsForCreate.map(({ parentName, parentPath }) => ({ parentName, parentPath }));
 
   return (
     <section className="unified-tree-pane">
       <div className="pane-header">
-        <strong>{title}</strong>
+        <strong
+          onContextMenu={rootPath
+            ? (event) => onContextMenu(event, { kind: "folder", path: rootPath })
+            : undefined}
+        >
+          {title}
+        </strong>
         <div className="pane-actions">
           {showSearch && onToggleSearch ? (
             <button className="icon-button" type="button" disabled={!workspace} title="Search" onClick={onToggleSearch}>
               <Search size={16} />
             </button>
           ) : null}
-          {onCreateFolder ? (
-            <button className="icon-button" type="button" disabled={!workspace} title="New folder" onClick={() => onCreateFolder(parentForCreate)}>
-              <Folder size={16} />
-            </button>
-          ) : null}
           {onCreateNote ? (
-            <button className="icon-button" type="button" disabled={!workspace} title="New note" onClick={() => onCreateNote(parentForCreate)}>
-              <Plus size={16} />
-            </button>
+            <PaneCreateMenu
+              disabled={!workspace}
+              folderTargets={onCreateFolder ? folderTargetsForCreate : []}
+              noteTargets={noteTargetsForCreate}
+              onCreateFolder={onCreateFolder}
+              onCreateNote={onCreateNote}
+            />
           ) : null}
         </div>
       </div>
@@ -6495,11 +6697,12 @@ function UnifiedTreePane({
 function NotesPane({
   activePath,
   contents,
+  createNoteTargets,
   draggingPath,
   folderTitle,
   metadata,
   notes,
-  selectedFolder,
+  onCreateFolder,
   onCreateNote,
   onContextMenu,
   onPin,
@@ -6508,12 +6711,13 @@ function NotesPane({
 }: {
   activePath: string | null;
   contents: Map<string, string>;
+  createNoteTargets: NoteCreationTarget[];
   draggingPath: string | null;
   folderTitle: string;
   metadata: WorkspaceMetadata;
   notes: NoteEntry[];
-  selectedFolder: string;
-  onCreateNote: (parentPath?: string) => void;
+  onCreateFolder: (parentPath?: string) => void;
+  onCreateNote: (parentPath?: string, afterPath?: string) => void;
   onContextMenu: (event: React.MouseEvent, state: ContextMenuTarget) => void;
   onPin: (path: string) => void;
   onPointerDragStart: (path: string, event: React.PointerEvent<HTMLElement>) => void;
@@ -6527,9 +6731,12 @@ function NotesPane({
       <div className="pane-header">
         <strong>{folderTitle}</strong>
         <div className="pane-actions">
-          <button className="icon-button" type="button" title="New note" onClick={() => onCreateNote(selectedFolder)}>
-            <Plus size={16} />
-          </button>
+          <PaneCreateMenu
+            folderTargets={createNoteTargets.map(({ parentName, parentPath }) => ({ parentName, parentPath }))}
+            noteTargets={createNoteTargets}
+            onCreateFolder={onCreateFolder}
+            onCreateNote={onCreateNote}
+          />
         </div>
       </div>
       <div className="notes-list">
@@ -8138,7 +8345,7 @@ function SearchIconPreview({ value }: { value: string }) {
 
 function useClampedContextMenuPosition(x: number, y: number) {
   const menuRef = useRef<HTMLDivElement | null>(null);
-  const [menuStyle, setMenuStyle] = useState<CSSProperties>({ left: x, top: y });
+  const menuStyle = useMemo<CSSProperties>(() => ({ left: x, top: y }), [x, y]);
 
   const updateMenuPosition = useCallback(() => {
     const menu = menuRef.current;
@@ -8151,7 +8358,8 @@ function useClampedContextMenuPosition(x: number, y: number) {
     const left = Math.min(Math.max(x, padding), maxLeft);
     const top = Math.min(Math.max(y, padding), maxTop);
 
-    setMenuStyle((current) => (current.left === left && current.top === top ? current : { left, top }));
+    menu.style.left = `${left}px`;
+    menu.style.top = `${top}px`;
   }, [x, y]);
 
   useLayoutEffect(() => {
@@ -8196,7 +8404,6 @@ function TabContextMenu({
 function ContextMenu({
   activeCreateNoteParentName,
   createFolderParentName,
-  createFolderLabel,
   createNoteParentName,
   folderColorSubject,
   isBookmarked,
@@ -8222,7 +8429,6 @@ function ContextMenu({
 }: {
   activeCreateNoteParentName?: string;
   createFolderParentName: string;
-  createFolderLabel?: string;
   createNoteParentName: string;
   folderColorSubject: "folder" | "section";
   isBookmarked: boolean;
@@ -8247,6 +8453,7 @@ function ContextMenu({
   onClose: () => void;
 }) {
   const { menuRef, menuStyle } = useClampedContextMenuPosition(state.x, state.y);
+  const showCreateFolder = !showCreateSection || (state.kind === "folder" && state.path !== "");
 
   return (
     <div className="context-menu" ref={menuRef} style={menuStyle} onClick={onClose}>
@@ -8262,10 +8469,15 @@ function ContextMenu({
               <span>New Note in {activeCreateNoteParentName}</span>
             </button>
           ) : null}
-          <button type="button" onClick={onCreateFolder}>
-            <Folder size={14} />
-            <span>{createFolderLabel ?? "New Folder"} in {createFolderParentName}</span>
-          </button>
+          {state.kind === "empty" ? (
+            <div className="context-menu-separator" role="separator" />
+          ) : null}
+          {showCreateFolder ? (
+            <button type="button" onClick={onCreateFolder}>
+              <Folder size={14} />
+              <span>New Folder in {createFolderParentName}</span>
+            </button>
+          ) : null}
         </>
       ) : null}
       {showCreateSection ? (
@@ -8302,7 +8514,7 @@ function ContextMenu({
           ) : null}
           <button type="button" onClick={onSetFolderIcon}>
             <FileText size={14} />
-            <span>Change Folder Icon</span>
+            <span>Change {folderColorSubject === "section" ? "Section" : "Folder"} Icon</span>
           </button>
           <button type="button" onClick={onSetFolderColor}>
             <Palette size={14} />
@@ -8349,7 +8561,9 @@ function ContextMenu({
       {state.kind !== "empty" && state.path ? (
         <button className="danger-item" type="button" onClick={onDelete}>
           <Trash2 size={14} />
-          <span>{state.kind === "note" ? "Delete Note" : "Delete Folder"}</span>
+          <span>{state.kind === "note"
+            ? "Delete Note"
+            : folderColorSubject === "section" ? "Delete Section" : "Delete Folder"}</span>
         </button>
       ) : null}
     </div>
@@ -9694,6 +9908,29 @@ function displayFolderName(path: string, folders: FolderEntry[], workspace: stri
   if (match) return match;
   const tail = path.split("/").at(-1) || path;
   return decodeTitleFromFilename(tail);
+}
+
+export function buildNoteCreationTargets(
+  baseParentPath: string,
+  currentParentPath: string,
+  activeNote: NoteEntry | null,
+  folders: FolderEntry[],
+  workspace: string,
+): NoteCreationTarget[] {
+  const baseTarget: NoteCreationTarget = {
+    parentName: displayFolderName(baseParentPath, folders, workspace),
+    parentPath: baseParentPath,
+    ...(activeNote?.parent_path === baseParentPath ? { afterPath: activeNote.path } : {}),
+  };
+  if (currentParentPath === baseParentPath) return [baseTarget];
+  return [
+    baseTarget,
+    {
+      ...(activeNote?.parent_path === currentParentPath ? { afterPath: activeNote.path } : {}),
+      parentName: displayFolderName(currentParentPath, folders, workspace),
+      parentPath: currentParentPath,
+    },
+  ];
 }
 
 function getTopLevelFolderPath(path: string) {

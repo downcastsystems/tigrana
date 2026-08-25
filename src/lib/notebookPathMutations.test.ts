@@ -25,6 +25,66 @@ function storageSeam(overrides: Partial<NotebookStorage>): NotebookStorage {
 }
 
 describe("Notebook path mutations", () => {
+  it("moves a Note into a requested sibling position", async () => {
+    let metadata: WorkspaceMetadata = {
+      ...defaultWorkspaceMetadata(),
+      noteOrder: {
+        Meetings: ["Meetings/Source.md"],
+        "Meetings/August": ["Meetings/August/Planning.md", "Meetings/August/Review.md"],
+      },
+    };
+    const storage = storageSeam({
+      capabilities: {
+        atomicPathMutations: false,
+        durableLinkIndex: false,
+        noteHistory: false,
+        recentlyDeleted: false,
+        workspaceWatching: false,
+      },
+      moveNote: vi.fn(async () => ({
+        path: "Meetings/August/Source.md",
+        title: "Source",
+        parent_path: "Meetings/August",
+      })),
+    });
+    const placement = { targetPath: "Meetings/August/Review.md", placement: "before" as const };
+    const mutations = createNotebookPathMutations({
+      activePath: null,
+      activeNoteLockRef: { current: null },
+      folders: [],
+      getMetadata: () => metadata,
+      navigationStyle: "section-view",
+      notes: [
+        { path: "Meetings/Source.md", title: "Source", parent_path: "Meetings" },
+        { path: "Meetings/August/Planning.md", title: "Planning", parent_path: "Meetings/August" },
+        { path: "Meetings/August/Review.md", title: "Review", parent_path: "Meetings/August" },
+      ],
+      refreshWorkspace: vi.fn(async () => {}),
+      selectedFolder: "Meetings",
+      setActivePath: vi.fn(),
+      setOpenTabs: vi.fn(),
+      setSelectedFolder: vi.fn(),
+      updateMetadata: (updater) => { metadata = updater(metadata); },
+      workspace: "/Notebook",
+      storage,
+    });
+
+    await mutations.moveNote("Meetings/Source.md", "Meetings/August", { siblingPlacement: placement });
+
+    expect(storage.moveNote).toHaveBeenCalledWith(
+      "/Notebook",
+      "Meetings/Source.md",
+      "Meetings/August",
+      placement,
+    );
+    expect(metadata.noteOrder.Meetings).toEqual([]);
+    expect(metadata.noteOrder["Meetings/August"]).toEqual([
+      "Meetings/August/Planning.md",
+      "Meetings/August/Source.md",
+      "Meetings/August/Review.md",
+    ]);
+  });
+
   it("repairs active paths, tabs, locks, and in-memory metadata after a Native Note rename", async () => {
     let activePath: string | null = "Drafts/Old.md";
     let selectedFolder = "Drafts";

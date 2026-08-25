@@ -135,6 +135,16 @@ function setReactTextareaValue(textarea: HTMLTextAreaElement, value: string) {
   textarea.dispatchEvent(new Event("input", { bubbles: true }));
 }
 
+function setReactInputValue(input: HTMLInputElement, value: string) {
+  const setter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")?.set;
+  setter?.call(input, value);
+  input.dispatchEvent(new Event("input", { bubbles: true }));
+}
+
+function pointerEvent(type: string, clientX: number, clientY: number) {
+  return new MouseEvent(type, { bubbles: true, button: 0, cancelable: true, clientX, clientY });
+}
+
 async function settle() {
   await act(async () => {
     await new Promise((resolve) => window.setTimeout(resolve, 0));
@@ -164,7 +174,570 @@ describe("Note navigation persistence", () => {
     localStorage.clear();
     demoPersistence.clear();
     resizeObserverRecords.clear();
+    Reflect.deleteProperty(document, "elementFromPoint");
+    vi.restoreAllMocks();
     containers.splice(0).forEach((container) => container.remove());
+  });
+
+  it("offers the section and active nested folder from the Note-list add menu", async () => {
+    demoPersistence.set("tigrana-demo-v5", JSON.stringify({
+      folders: ["Meetings", "Meetings/August 2026"],
+      notes: {
+        "Meetings/Overview.md": "# Overview\n",
+        "Meetings/August 2026/Planning.md": "# Planning\n",
+      },
+    }));
+    demoPersistence.set("tigrana-meta:/demo/Tigrana", JSON.stringify({
+      revision: 0,
+      navigationStyle: "section-view",
+      expandedFolders: { "Meetings/August 2026": true },
+      welcomeNoteAdded: true,
+    }));
+    localStorage.setItem("tigrana-session:/demo/Tigrana", JSON.stringify({
+      openTabs: ["Meetings/August 2026/Planning.md"],
+      activeTab: "Meetings/August 2026/Planning.md",
+    }));
+    const container = document.createElement("div");
+    document.body.appendChild(container);
+    containers.push(container);
+    const root = createRoot(container);
+
+    await act(async () => {
+      root.render(<App />);
+      await new Promise((resolve) => window.setTimeout(resolve, 60));
+    });
+
+    const createButton = container.querySelector<HTMLButtonElement>(".unified-tree-pane .pane-create-button");
+    await act(async () => {
+      createButton?.dispatchEvent(new MouseEvent("pointerdown", { bubbles: true, button: 0 }));
+      createButton?.dispatchEvent(new MouseEvent("click", { bubbles: true, button: 0, detail: 1 }));
+    });
+    const menuButtons = Array.from(container.querySelectorAll<HTMLButtonElement>(".pane-create-menu button"));
+    const actions = menuButtons.map((button) => button.textContent?.trim());
+
+    expect(document.activeElement).not.toBe(menuButtons[0]);
+    expect(actions).toEqual([
+      "New Note in Meetings",
+      "New Note in August 2026",
+      "New Folder in Meetings",
+      "New Folder in August 2026",
+    ]);
+    const separator = container.querySelector<HTMLElement>('.pane-create-menu [role="separator"]');
+    expect(separator?.previousElementSibling).toBe(menuButtons[1]);
+    expect(separator?.nextElementSibling).toBe(menuButtons[2]);
+
+    await act(async () => {
+      createButton?.dispatchEvent(new MouseEvent("click", { bubbles: true, button: 0, detail: 1 }));
+    });
+    await act(async () => {
+      container.querySelector<HTMLElement>(".unified-tree-scroll")?.dispatchEvent(new MouseEvent("contextmenu", {
+        bubbles: true,
+        clientX: 500,
+        clientY: 700,
+      }));
+    });
+    const contextMenuButtons = Array.from(container.querySelectorAll<HTMLButtonElement>(".context-menu button"));
+    const contextMenuSeparator = container.querySelector<HTMLElement>('.context-menu [role="separator"]');
+    expect(contextMenuSeparator?.previousElementSibling).toBe(contextMenuButtons[1]);
+    expect(contextMenuSeparator?.nextElementSibling).toBe(contextMenuButtons[2]);
+    await act(async () => {
+      contextMenuButtons[2]?.click();
+    });
+    expect(container.querySelector(".dialog h2")?.textContent).toBe("New folder");
+    expect(container.querySelector<HTMLInputElement>("#folder-name")?.placeholder).toBe("Folder name");
+    await act(async () => {
+      container.querySelector<HTMLButtonElement>('.dialog button[title="Close"]')?.click();
+    });
+    createButton?.focus();
+    await act(async () => {
+      createButton?.dispatchEvent(new MouseEvent("click", { bubbles: true, detail: 0 }));
+    });
+    const keyboardMenuButtons = Array.from(container.querySelectorAll<HTMLButtonElement>(".pane-create-menu button"));
+    expect(document.activeElement).toBe(keyboardMenuButtons[0]);
+    await act(async () => {
+      keyboardMenuButtons[0]?.dispatchEvent(new KeyboardEvent("keydown", { bubbles: true, key: "ArrowDown" }));
+    });
+    expect(document.activeElement).toBe(keyboardMenuButtons[1]);
+    await act(async () => {
+      keyboardMenuButtons[1]?.dispatchEvent(new KeyboardEvent("keydown", { bubbles: true, key: "End" }));
+    });
+    expect(document.activeElement).toBe(keyboardMenuButtons[3]);
+    await act(async () => {
+      keyboardMenuButtons[3]?.dispatchEvent(new KeyboardEvent("keydown", { bubbles: true, key: "Home" }));
+    });
+    expect(document.activeElement).toBe(keyboardMenuButtons[0]);
+    await act(async () => {
+      keyboardMenuButtons[0]?.dispatchEvent(new KeyboardEvent("keydown", { bubbles: true, key: "ArrowUp" }));
+    });
+    expect(document.activeElement).toBe(keyboardMenuButtons[3]);
+
+    await act(async () => {
+      keyboardMenuButtons[1]?.click();
+    });
+    await waitFor(() => {
+      const store = JSON.parse(demoPersistence.get("tigrana-demo-v5") ?? "{}") as { notes?: Record<string, string> };
+      return Object.prototype.hasOwnProperty.call(store.notes, "Meetings/August 2026/Untitled.md");
+    });
+    const store = JSON.parse(demoPersistence.get("tigrana-demo-v5") ?? "{}") as { notes?: Record<string, string> };
+    expect(store.notes?.["Meetings/Untitled.md"]).toBeUndefined();
+
+    await act(async () => {
+      createButton?.dispatchEvent(new MouseEvent("click", { bubbles: true, button: 0, detail: 1 }));
+    });
+    const nestedFolderAction = Array.from(container.querySelectorAll<HTMLButtonElement>(".pane-create-menu button"))
+      .find((button) => button.textContent?.trim() === "New Folder in August 2026");
+    expect(nestedFolderAction).toBeDefined();
+    await act(async () => {
+      nestedFolderAction?.click();
+    });
+    await act(async () => {
+      const input = container.querySelector<HTMLInputElement>("#folder-name");
+      if (input) setReactInputValue(input, "Follow Ups");
+    });
+    await act(async () => {
+      container.querySelector<HTMLFormElement>(".dialog")
+        ?.dispatchEvent(new Event("submit", { bubbles: true, cancelable: true }));
+    });
+    await waitFor(() => {
+      const nextStore = JSON.parse(demoPersistence.get("tigrana-demo-v5") ?? "{}") as { folders?: string[] };
+      return nextStore.folders?.includes("Meetings/August 2026/Follow Ups") ?? false;
+    });
+    const nextStore = JSON.parse(demoPersistence.get("tigrana-demo-v5") ?? "{}") as { folders?: string[] };
+    expect(nextStore.folders).not.toContain("Meetings/Follow Ups");
+
+    await act(async () => root.unmount());
+  });
+
+  it("opens section actions from the Note-list section title", async () => {
+    demoPersistence.set("tigrana-demo-v5", JSON.stringify({
+      folders: ["Battle Plans", "Battle Plans/2026"],
+      notes: {
+        "Battle Plans/2026/May.md": "# May\n",
+      },
+    }));
+    demoPersistence.set("tigrana-meta:/demo/Tigrana", JSON.stringify({
+      revision: 0,
+      navigationStyle: "section-view",
+      expandedFolders: { "Battle Plans/2026": true },
+      welcomeNoteAdded: true,
+    }));
+    localStorage.setItem("tigrana-session:/demo/Tigrana", JSON.stringify({
+      openTabs: ["Battle Plans/2026/May.md"],
+      activeTab: "Battle Plans/2026/May.md",
+    }));
+    const container = document.createElement("div");
+    document.body.appendChild(container);
+    containers.push(container);
+    const root = createRoot(container);
+
+    await act(async () => {
+      root.render(<App />);
+      await new Promise((resolve) => window.setTimeout(resolve, 60));
+    });
+
+    const sectionTitle = Array.from(container.querySelectorAll<HTMLElement>(".unified-tree-pane .pane-header strong"))
+      .find((element) => element.textContent === "Battle Plans");
+    expect(sectionTitle).toBeDefined();
+
+    const sectionsPane = container.querySelector<HTMLElement>(".section-view-folder-pane");
+    await act(async () => {
+      sectionsPane?.dispatchEvent(new MouseEvent("contextmenu", {
+        bubbles: true,
+        clientX: 30,
+        clientY: 700,
+      }));
+    });
+    const emptyPaneActions = Array.from(container.querySelectorAll<HTMLButtonElement>(".context-menu button"))
+      .map((button) => button.textContent?.trim());
+    expect(emptyPaneActions.filter((action) => action?.startsWith("New Section"))).toEqual(["New Section"]);
+
+    const sectionRow = container.querySelector<HTMLElement>('.section-view-folder-pane [data-folder-path="Battle Plans"]');
+    await act(async () => {
+      sectionRow?.dispatchEvent(new MouseEvent("contextmenu", {
+        bubbles: true,
+        clientX: 40,
+        clientY: 80,
+      }));
+    });
+    const sectionRowActions = Array.from(container.querySelectorAll<HTMLButtonElement>(".context-menu button"))
+      .map((button) => button.textContent?.trim());
+    expect(sectionRowActions).toContain("New Folder in Battle Plans");
+    expect(sectionRowActions.filter((action) => action?.startsWith("New Section"))).toEqual(["New Section"]);
+
+    await act(async () => {
+      sectionTitle?.dispatchEvent(new MouseEvent("contextmenu", {
+        bubbles: true,
+        clientX: 40,
+        clientY: 40,
+      }));
+    });
+
+    const actions = Array.from(container.querySelectorAll<HTMLButtonElement>(".context-menu button"))
+      .map((button) => button.textContent?.trim());
+    expect(actions).toContain("Rename Folder");
+    expect(actions).toContain("Change Section Icon");
+    expect(actions).toContain("Change Section Color");
+    expect(actions).toContain("Delete Section");
+    expect(actions).not.toContain("Change Folder Icon");
+    expect(actions).not.toContain("Delete Folder");
+
+    const renameButton = Array.from(container.querySelectorAll<HTMLButtonElement>(".context-menu button"))
+      .find((button) => button.textContent?.trim() === "Rename Folder");
+    await act(async () => {
+      renameButton?.click();
+    });
+    expect(container.querySelector<HTMLInputElement>("#property-value")?.value).toBe("Battle Plans");
+
+    await act(async () => root.unmount());
+  });
+
+  it("opens folder actions after creating a section and nested folder", async () => {
+    demoPersistence.set("tigrana-demo-v5", JSON.stringify({ folders: [], notes: {} }));
+    demoPersistence.set("tigrana-meta:/demo/Tigrana", JSON.stringify({
+      revision: 0,
+      navigationStyle: "section-view",
+      welcomeNoteAdded: true,
+    }));
+    const container = document.createElement("div");
+    document.body.appendChild(container);
+    containers.push(container);
+    const root = createRoot(container);
+
+    await act(async () => {
+      root.render(<App />);
+      await new Promise((resolve) => window.setTimeout(resolve, 60));
+    });
+
+    await act(async () => {
+      container.querySelector<HTMLButtonElement>('.section-view-folder-pane button[title="New Section"]')?.click();
+    });
+    expect(container.querySelector(".dialog h2")?.textContent).toBe("New section");
+    expect(container.querySelector<HTMLInputElement>("#folder-name")?.placeholder).toBe("Section name");
+    await act(async () => {
+      const input = container.querySelector<HTMLInputElement>("#folder-name");
+      if (input) setReactInputValue(input, "New Section");
+    });
+    await act(async () => {
+      container.querySelector<HTMLFormElement>(".dialog")
+        ?.dispatchEvent(new Event("submit", { bubbles: true, cancelable: true }));
+    });
+    await waitFor(() => {
+      const store = JSON.parse(demoPersistence.get("tigrana-demo-v5") ?? "{}") as { folders?: string[] };
+      return store.folders?.includes("New Section") ?? false;
+    });
+
+    await act(async () => {
+      container.querySelector<HTMLButtonElement>(".unified-tree-pane .pane-create-button")?.click();
+    });
+    const newFolder = Array.from(container.querySelectorAll<HTMLButtonElement>(".pane-create-menu button"))
+      .find((button) => button.textContent?.trim() === "New Folder in New Section");
+    expect(newFolder).toBeDefined();
+    await act(async () => {
+      newFolder?.click();
+    });
+    await act(async () => {
+      const input = container.querySelector<HTMLInputElement>("#folder-name");
+      if (input) setReactInputValue(input, "Subfolder");
+    });
+    await act(async () => {
+      container.querySelector<HTMLFormElement>(".dialog")
+        ?.dispatchEvent(new Event("submit", { bubbles: true, cancelable: true }));
+    });
+    await waitFor(() => {
+      const store = JSON.parse(demoPersistence.get("tigrana-demo-v5") ?? "{}") as { folders?: string[] };
+      return store.folders?.includes("New Section/Subfolder") ?? false;
+    });
+
+    const subfolder = container.querySelector<HTMLElement>('.unified-tree-pane [data-folder-path="New Section/Subfolder"]');
+    expect(subfolder).not.toBeNull();
+
+    await act(async () => {
+      subfolder?.click();
+    });
+    await waitFor(() => subfolder?.classList.contains("is-active") ?? false);
+    expect(container.querySelector(".note-load-fallback")).toBeNull();
+
+    const createButton = container.querySelector<HTMLButtonElement>(".unified-tree-pane .pane-create-button");
+    await act(async () => {
+      createButton?.dispatchEvent(new MouseEvent("click", { bubbles: true, button: 0, detail: 1 }));
+    });
+    expect(Array.from(container.querySelectorAll<HTMLButtonElement>(".pane-create-menu button"))
+      .map((button) => button.textContent?.trim())).toEqual([
+      "New Note in New Section",
+      "New Note in Subfolder",
+      "New Folder in New Section",
+      "New Folder in Subfolder",
+    ]);
+    await act(async () => {
+      createButton?.dispatchEvent(new MouseEvent("click", { bubbles: true, button: 0, detail: 1 }));
+    });
+
+    Object.defineProperty(document, "elementFromPoint", {
+      configurable: true,
+      value: vi.fn(() => subfolder),
+    });
+    let dragStartedDuringControlClick = false;
+    let controlPointerDefaultPrevented = false;
+    await act(async () => {
+      const pointerDown = new MouseEvent("pointerdown", {
+        bubbles: true,
+        button: 0,
+        cancelable: true,
+        clientX: 40,
+        clientY: 80,
+        ctrlKey: true,
+      });
+      subfolder?.dispatchEvent(pointerDown);
+      controlPointerDefaultPrevented = pointerDown.defaultPrevented;
+      window.dispatchEvent(pointerEvent("pointermove", 60, 100));
+      dragStartedDuringControlClick = document.body.classList.contains("is-dragging-folder");
+      window.dispatchEvent(pointerEvent("pointerup", 60, 100));
+    });
+    expect(controlPointerDefaultPrevented).toBe(true);
+    expect(dragStartedDuringControlClick).toBe(false);
+
+    await act(async () => {
+      subfolder?.dispatchEvent(new MouseEvent("contextmenu", {
+        bubbles: true,
+        button: 0,
+        clientX: 40,
+        clientY: 80,
+        ctrlKey: true,
+      }));
+    });
+
+    const actions = Array.from(container.querySelectorAll<HTMLButtonElement>(".context-menu button"))
+      .map((button) => button.textContent?.trim());
+    expect(actions).toContain("Rename Folder");
+    expect(actions).toContain("Change Folder Icon");
+    expect(actions).toContain("Change Folder Color");
+    expect(actions).toContain("Delete Folder");
+    expect(container.querySelector(".note-load-fallback")).toBeNull();
+
+    await act(async () => root.unmount());
+  });
+
+  it("switches directly between section and nested-folder context menus", async () => {
+    demoPersistence.set("tigrana-demo-v5", JSON.stringify({
+      folders: ["Battle Plans", "Battle Plans/Subfolder"],
+      notes: {},
+    }));
+    demoPersistence.set("tigrana-meta:/demo/Tigrana", JSON.stringify({
+      revision: 0,
+      navigationStyle: "section-view",
+      expandedFolders: { "Battle Plans/Subfolder": true },
+      welcomeNoteAdded: true,
+    }));
+    const container = document.createElement("div");
+    document.body.appendChild(container);
+    containers.push(container);
+    const root = createRoot(container);
+
+    await act(async () => {
+      root.render(<App />);
+      await new Promise((resolve) => window.setTimeout(resolve, 60));
+    });
+
+    const section = Array.from(container.querySelectorAll<HTMLElement>(".section-view-folder-pane [data-folder-path]"))
+      .find((element) => element.dataset.folderPath === "Battle Plans");
+    expect(section).toBeDefined();
+    await act(async () => {
+      section?.click();
+    });
+    await waitFor(() => Array.from(container.querySelectorAll<HTMLElement>(".unified-tree-pane .pane-header strong"))
+      .some((element) => element.textContent === "Battle Plans"));
+    const subfolder = container.querySelector<HTMLElement>('[data-folder-path="Battle Plans/Subfolder"]');
+    expect(subfolder).not.toBeNull();
+
+    const originalGetBoundingClientRect = HTMLElement.prototype.getBoundingClientRect;
+    vi.spyOn(HTMLElement.prototype, "getBoundingClientRect").mockImplementation(function (this: HTMLElement) {
+      if (!this.classList.contains("context-menu")) return originalGetBoundingClientRect.call(this);
+      const left = Number.parseFloat(this.style.left || "0");
+      const width = left > 850 ? 240 : 120;
+      return {
+        bottom: 320,
+        height: 300,
+        left,
+        right: left + width,
+        top: 20,
+        width,
+        x: left,
+        y: 20,
+        toJSON: () => ({}),
+      };
+    });
+
+    for (let index = 0; index < 20; index += 1) {
+      const target = index % 2 === 0 ? section : subfolder;
+      await act(async () => {
+        target?.dispatchEvent(new MouseEvent("contextmenu", {
+          bubbles: true,
+          button: 2,
+          clientX: index % 2 === 0 ? 20 : 1000,
+          clientY: index % 2 === 0 ? 760 : 740,
+        }));
+      });
+    }
+
+    const menu = container.querySelector<HTMLElement>(".context-menu");
+    expect(menu).not.toBeNull();
+    expect(container.querySelectorAll(".context-menu")).toHaveLength(1);
+    expect(container.querySelector(".app-shell")).not.toBeNull();
+    expect(container.querySelector(".note-load-fallback")).toBeNull();
+    expect(Array.from(container.querySelectorAll(".is-context-target")))
+      .toEqual([subfolder]);
+
+    await act(async () => root.unmount());
+  });
+
+  it("creates the shortcut Note after the active Note in its nested folder", async () => {
+    demoPersistence.set("tigrana-demo-v5", JSON.stringify({
+      folders: ["Meetings", "Meetings/August 2026"],
+      notes: {
+        "Meetings/Overview.md": "# Overview\n",
+        "Meetings/August 2026/Planning.md": "# Planning\n",
+        "Meetings/August 2026/Review.md": "# Review\n",
+      },
+    }));
+    demoPersistence.set("tigrana-meta:/demo/Tigrana", JSON.stringify({
+      revision: 0,
+      navigationStyle: "section-view",
+      noteOrder: {
+        "Meetings/August 2026": [
+          "Meetings/August 2026/Planning.md",
+          "Meetings/August 2026/Review.md",
+        ],
+      },
+      welcomeNoteAdded: true,
+    }));
+    localStorage.setItem("tigrana-session:/demo/Tigrana", JSON.stringify({
+      openTabs: ["Meetings/August 2026/Planning.md"],
+      activeTab: "Meetings/August 2026/Planning.md",
+    }));
+    const container = document.createElement("div");
+    document.body.appendChild(container);
+    containers.push(container);
+    const root = createRoot(container);
+
+    await act(async () => {
+      root.render(<App />);
+      await new Promise((resolve) => window.setTimeout(resolve, 60));
+    });
+    await waitFor(() => container.querySelector<HTMLTextAreaElement>('textarea[aria-label="Note title"]')?.value === "Planning");
+    await act(async () => {
+      window.dispatchEvent(new KeyboardEvent("keydown", { bubbles: true, ctrlKey: true, key: "n" }));
+    });
+    await waitFor(() => {
+      const store = JSON.parse(demoPersistence.get("tigrana-demo-v5") ?? "{}") as { notes?: Record<string, string> };
+      return Object.prototype.hasOwnProperty.call(store.notes, "Meetings/August 2026/Untitled.md");
+    });
+    await waitFor(() => {
+      const metadata = JSON.parse(demoPersistence.get("tigrana-meta:/demo/Tigrana") ?? "{}") as {
+        noteOrder?: Record<string, string[]>;
+      };
+      return metadata.noteOrder?.["Meetings/August 2026"]?.[1] === "Meetings/August 2026/Untitled.md";
+    });
+
+    const store = JSON.parse(demoPersistence.get("tigrana-demo-v5") ?? "{}") as { notes?: Record<string, string> };
+    expect(store.notes?.["Untitled.md"]).toBeUndefined();
+    const metadata = JSON.parse(demoPersistence.get("tigrana-meta:/demo/Tigrana") ?? "{}") as {
+      noteOrder?: Record<string, string[]>;
+    };
+    expect(metadata.noteOrder?.["Meetings/August 2026"]).toEqual([
+      "Meetings/August 2026/Planning.md",
+      "Meetings/August 2026/Untitled.md",
+      "Meetings/August 2026/Review.md",
+    ]);
+
+    await act(async () => root.unmount());
+  });
+
+  it("moves a root Note before a specific nested Note in one drag", async () => {
+    demoPersistence.set("tigrana-demo-v5", JSON.stringify({
+      folders: ["Meetings", "Meetings/August 2026"],
+      notes: {
+        "Meetings/Source.md": "# Source\n",
+        "Meetings/August 2026/Planning.md": "# Planning\n",
+        "Meetings/August 2026/Review.md": "# Review\n",
+      },
+    }));
+    demoPersistence.set("tigrana-meta:/demo/Tigrana", JSON.stringify({
+      revision: 0,
+      navigationStyle: "section-view",
+      expandedFolders: { "Meetings/August 2026": true },
+      noteOrder: {
+        Meetings: ["Meetings/Source.md"],
+        "Meetings/August 2026": [
+          "Meetings/August 2026/Planning.md",
+          "Meetings/August 2026/Review.md",
+        ],
+      },
+      welcomeNoteAdded: true,
+    }));
+    localStorage.setItem("tigrana-session:/demo/Tigrana", JSON.stringify({
+      openTabs: ["Meetings/Source.md"],
+      activeTab: "Meetings/Source.md",
+    }));
+    const container = document.createElement("div");
+    document.body.appendChild(container);
+    containers.push(container);
+    const root = createRoot(container);
+
+    await act(async () => {
+      root.render(<App />);
+      await new Promise((resolve) => window.setTimeout(resolve, 60));
+    });
+
+    const source = container.querySelector<HTMLElement>('[data-note-path="Meetings/Source.md"]');
+    const target = container.querySelector<HTMLElement>('[data-note-path="Meetings/August 2026/Review.md"]');
+    expect(source).not.toBeNull();
+    expect(target).not.toBeNull();
+    target!.getBoundingClientRect = () => ({
+      bottom: 140,
+      height: 40,
+      left: 0,
+      right: 240,
+      top: 100,
+      width: 240,
+      x: 0,
+      y: 100,
+      toJSON: () => ({}),
+    });
+    Object.defineProperty(document, "elementFromPoint", {
+      configurable: true,
+      value: vi.fn(() => target),
+    });
+
+    await act(async () => {
+      source?.dispatchEvent(pointerEvent("pointerdown", 20, 20));
+      window.dispatchEvent(pointerEvent("pointermove", 40, 110));
+    });
+    expect(target?.classList.contains("is-reorder-before")).toBe(true);
+
+    await act(async () => {
+      window.dispatchEvent(pointerEvent("pointerup", 40, 110));
+    });
+    await waitFor(() => {
+      const store = JSON.parse(demoPersistence.get("tigrana-demo-v5") ?? "{}") as { notes?: Record<string, string> };
+      return Boolean(store.notes?.["Meetings/August 2026/Source.md"]);
+    });
+    await waitFor(() => {
+      const metadata = JSON.parse(demoPersistence.get("tigrana-meta:/demo/Tigrana") ?? "{}") as {
+        noteOrder?: Record<string, string[]>;
+      };
+      return metadata.noteOrder?.["Meetings/August 2026"]?.[1] === "Meetings/August 2026/Source.md";
+    });
+
+    const metadata = JSON.parse(demoPersistence.get("tigrana-meta:/demo/Tigrana") ?? "{}") as {
+      noteOrder?: Record<string, string[]>;
+    };
+    expect(metadata.noteOrder?.["Meetings/August 2026"]).toEqual([
+      "Meetings/August 2026/Planning.md",
+      "Meetings/August 2026/Source.md",
+      "Meetings/August 2026/Review.md",
+    ]);
+
+    await act(async () => root.unmount());
   });
 
   it("shows a lock beside the neutral dot when the note is read-only", async () => {
@@ -340,10 +913,13 @@ describe("Note navigation persistence", () => {
       await new Promise((resolve) => window.setTimeout(resolve, 50));
     });
 
-    const newNote = container.querySelector<HTMLButtonElement>('button[title="New note"]');
+    const newNote = container.querySelector<HTMLButtonElement>(".pane-create-button");
     expect(newNote).not.toBeNull();
     await act(async () => {
       newNote?.click();
+    });
+    await act(async () => {
+      container.querySelector<HTMLButtonElement>(".pane-create-menu button")?.click();
       await new Promise((resolve) => window.setTimeout(resolve, 50));
     });
 

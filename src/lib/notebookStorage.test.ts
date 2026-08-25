@@ -198,4 +198,26 @@ describe("Notebook storage adapters", () => {
       },
     });
   });
+
+  it("passes Note sibling placement through the native command seam", async () => {
+    const invokeCommand = vi.fn(async () => ({ path: "Archive/Draft.md", title: "Draft", parent_path: "Archive" }));
+    const storage = createNativeNotebookStorage(
+      invokeCommand as unknown as Parameters<typeof createNativeNotebookStorage>[0],
+    );
+
+    await storage.moveNote("/Notebook", "Draft.md", "Archive", {
+      targetPath: "Archive/Review.md",
+      placement: "after",
+    });
+
+    expect(invokeCommand).toHaveBeenCalledWith("move_note", {
+      payload: {
+        workspace: "/Notebook",
+        path: "Draft.md",
+        target_parent_path: "Archive",
+        sibling_target_path: "Archive/Review.md",
+        sibling_placement: "after",
+      },
+    });
+  });
 });

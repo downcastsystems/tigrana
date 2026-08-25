@@ -11,8 +11,8 @@ use crate::note_history::{
     NoteSnapshotMode,
 };
 use crate::notebook_metadata::{
-    read_workspace_metadata, repair_folder_path, repair_note_path, write_workspace_metadata,
-    FolderPlacement, FolderSiblingPlacement, WorkspaceMetadata,
+    place_note_in_order, read_workspace_metadata, repair_folder_path, repair_note_path,
+    write_workspace_metadata, FolderPlacement, FolderSiblingPlacement, WorkspaceMetadata,
 };
 use crate::notebook_paths::{
     is_hidden_entry, normalize_relative, note_title_from_path, relative_path, validate_note_title,
@@ -545,9 +545,33 @@ pub fn rename_folder(root: &Path, path: &str, name: &str) -> Result<FolderEntry,
     })
 }
 
-pub fn move_note(root: &Path, path: &str, target_parent_path: &str) -> Result<NoteEntry, String> {
+pub fn move_note(
+    root: &Path,
+    path: &str,
+    target_parent_path: &str,
+    sibling_target_path: Option<&str>,
+    sibling_placement: Option<FolderPlacement>,
+) -> Result<NoteEntry, String> {
     let old_relative = normalize_relative(path)?;
     let target_parent = normalize_relative(target_parent_path)?;
+    let sibling_placement = match (sibling_target_path, sibling_placement) {
+        (None, None) => None,
+        (Some(target_path), Some(placement)) => {
+            let target = normalize_relative(target_path)?;
+            let target_path = target.to_string_lossy().replace('\\', "/");
+            if parent_path_for(&target_path) != target_parent_path {
+                return Err(
+                    "The Note sibling placement target must be in the destination folder."
+                        .to_string(),
+                );
+            }
+            if !root.join(&target).is_file() {
+                return Err("The Note sibling placement target does not exist.".to_string());
+            }
+            Some((target_path, placement))
+        }
+        _ => return Err("Note sibling placement is incomplete.".to_string()),
+    };
     let file_name = old_relative
         .file_name()
         .ok_or_else(|| "Invalid note path.".to_string())?;
@@ -610,6 +634,17 @@ pub fn move_note(root: &Path, path: &str, target_parent_path: &str) -> Result<No
             &parent_path_for(&old_rel_str),
             &parent_path_for(&new_rel_str),
         );
+        if let Some((target_path, placement)) = sibling_placement.as_ref() {
+            place_note_in_order(
+                &mut next_metadata,
+                &parent_path_for(&new_rel_str),
+                &new_rel_str,
+                FolderSiblingPlacement {
+                    target_path,
+                    placement: *placement,
+                },
+            );
+        }
         commit_path_mutation(
             root,
             &old_path,
@@ -1192,7 +1227,7 @@ mod tests {
         write_note(root, "Draft.md", "draft-id", "original");
         rebuild_index_for_root(root).unwrap();
 
-        move_note(root, "Draft.md", "Archive").unwrap();
+        move_note(root, "Draft.md", "Archive", None, None).unwrap();
         let result = save_note(
             root,
             "Draft.md",
@@ -1209,6 +1244,53 @@ mod tests {
         assert_eq!(
             index.path_to_id.get("Archive/Draft.md").map(String::as_str),
             Some("draft-id")
+        );
+    }
+
+    #[test]
+    fn move_note_places_it_beside_the_requested_destination_note() {
+        let notebook = TestNotebook::new();
+        let root = &notebook.0;
+        write_note(root, "Meetings/Source.md", "source-id", "# Source");
+        write_note(
+            root,
+            "Meetings/August/Planning.md",
+            "planning-id",
+            "# Planning",
+        );
+        write_note(root, "Meetings/August/Review.md", "review-id", "# Review");
+        rebuild_index_for_root(root).unwrap();
+        let metadata: WorkspaceMetadata = serde_json::from_value(json!({
+            "noteOrder": {
+                "Meetings": ["Meetings/Source.md"],
+                "Meetings/August": [
+                    "Meetings/August/Planning.md",
+                    "Meetings/August/Review.md"
+                ]
+            }
+        }))
+        .unwrap();
+        write_workspace_metadata(root, &metadata).unwrap();
+
+        let moved = move_note(
+            root,
+            "Meetings/Source.md",
+            "Meetings/August",
+            Some("Meetings/August/Review.md"),
+            Some(FolderPlacement::Before),
+        )
+        .unwrap();
+
+        assert_eq!(moved.path, "Meetings/August/Source.md");
+        let persisted = serde_json::to_value(read_workspace_metadata(root).unwrap()).unwrap();
+        assert_eq!(persisted["noteOrder"]["Meetings"], json!([]));
+        assert_eq!(
+            persisted["noteOrder"]["Meetings/August"],
+            json!([
+                "Meetings/August/Planning.md",
+                "Meetings/August/Source.md",
+                "Meetings/August/Review.md"
+            ])
         );
     }
 
@@ -1267,7 +1349,7 @@ mod tests {
             Some("Book/Scene.md")
         );
 
-        let moved = move_note(root, "Book/Scene.md", "").unwrap();
+        let moved = move_note(root, "Book/Scene.md", "", None, None).unwrap();
         let after = read_notebook_snapshot(root).unwrap();
         assert_eq!(moved.path, "Scene.md");
         assert!(!after.contents.contains_key("Book/Scene.md"));

@@ -1,9 +1,10 @@
 import type { Dispatch, MutableRefObject, SetStateAction } from "react";
-import { notebookStorage, type FolderSiblingPlacement, type NotebookStorage } from "./notebookStorage";
+import { notebookStorage, type FolderSiblingPlacement, type NotebookStorage, type NoteSiblingPlacement } from "./notebookStorage";
 import {
   moveFolderInMetadata,
   moveNoteInMetadata,
   mergeWorkspaceMetadataChanges,
+  placeNoteInOrder,
   replaceFolderPathPrefix,
   replaceOrderedPath,
   replacePathPrefix,
@@ -55,6 +56,10 @@ type NotebookPathMutationOptions = {
 type MoveFolderOptions = {
   selectMovedFolder?: boolean;
   siblingPlacement?: FolderSiblingPlacement;
+};
+
+type MoveNoteOptions = {
+  siblingPlacement?: NoteSiblingPlacement;
 };
 
 export function createNotebookPathMutations({
@@ -124,16 +129,22 @@ export function createNotebookPathMutations({
     }
   };
 
-  const moveNote = async (path: string, targetParentPath: string) => {
+  const moveNote = async (path: string, targetParentPath: string, options: MoveNoteOptions = {}) => {
     const sourceNote = notes.find((entry) => entry.path === path);
     if (!sourceNote || sourceNote.parent_path === targetParentPath) return null;
 
     const moved = await runDurableMutation(async () => {
       const metadataBeforeMutation = getMetadata();
-      const result = await storage.moveNote(workspace, path, targetParentPath);
+      const result = await storage.moveNote(workspace, path, targetParentPath, options.siblingPlacement);
+      const repair = (current: WorkspaceMetadata) => {
+        const relocated = moveNoteInMetadata(current, path, result.path, sourceNote.parent_path, result.parent_path);
+        return options.siblingPlacement
+          ? placeNoteInOrder(relocated, notes, result.parent_path, result.path, options.siblingPlacement)
+          : relocated;
+      };
       await syncMetadataAfterPathMutation(
         metadataBeforeMutation,
-        (current) => moveNoteInMetadata(current, path, result.path, sourceNote.parent_path, result.parent_path),
+        repair,
         (current) => moveNoteInMetadata(current, result.path, path, result.parent_path, sourceNote.parent_path),
       );
       return result;

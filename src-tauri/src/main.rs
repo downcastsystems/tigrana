@@ -460,7 +460,19 @@ async fn move_note(
 ) -> Result<NoteEntry, String> {
     let workspace = payload.workspace.clone();
     run_notebook_write(state, workspace, move |root| {
-        let moved = move_note_in_notebook(root, &payload.path, &payload.target_parent_path)?;
+        let sibling_placement = match payload.sibling_placement.as_deref() {
+            None => None,
+            Some("before") => Some(FolderPlacement::Before),
+            Some("after") => Some(FolderPlacement::After),
+            Some(_) => return Err("Note sibling placement must be before or after.".to_string()),
+        };
+        let moved = move_note_in_notebook(
+            root,
+            &payload.path,
+            &payload.target_parent_path,
+            payload.sibling_target_path.as_deref(),
+            sibling_placement,
+        )?;
         let lock_state = app.state::<NoteEditLockState>();
         repair_note_edit_lock_paths(
             &lock_state,
