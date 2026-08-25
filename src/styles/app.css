@@ -15,6 +15,7 @@
   --accent-muted: rgba(49, 95, 89, 0.12);
   --accent-bright: color-mix(in srgb, var(--accent) 65%, #ffffff 35%);
   --accent-bright-glow: color-mix(in srgb, var(--accent) 35%, transparent);
+  --drag-indicator: var(--accent-bright);
   --link-color: var(--accent);
   --app-bg: #f7f4ef;
   --shadow-popover: 0 10px 28px rgba(35, 30, 24, 0.16);
@@ -806,7 +807,7 @@ body.is-dragging-section * {
   left: 8px;
   right: 8px;
   height: 2px;
-  background: var(--accent);
+  background: var(--drag-indicator);
   border-radius: 2px;
   pointer-events: none;
   z-index: 1;
@@ -839,7 +840,7 @@ body.is-dragging-section * {
   left: 8px;
   right: 8px;
   height: 2px;
-  background: var(--accent);
+  background: var(--drag-indicator);
   border-radius: 2px;
   pointer-events: none;
   z-index: 2;
@@ -1109,7 +1110,7 @@ body.is-dragging-section * {
   left: 22px;
   height: 2px;
   border-radius: 999px;
-  background: var(--accent-strong);
+  background: var(--drag-indicator);
   pointer-events: none;
 }
 
@@ -2940,6 +2941,7 @@ html[data-theme="dark"] .tab-list-separator {
 }
 
 .title-shell {
+  position: relative;
   width: min(880px, calc(100% - 72px));
   margin: 0 auto -4px;
   padding-bottom: 14px;
@@ -3008,7 +3010,17 @@ html[data-theme="dark"] .tab-list-separator {
 }
 
 .note-error {
-  margin: 10px 0 0;
+  position: absolute;
+  top: calc(100% + 8px);
+  right: 0;
+  left: 0;
+  z-index: 20;
+  margin: 0;
+  padding: 8px 10px;
+  border: 1px solid color-mix(in srgb, currentColor 28%, transparent);
+  border-radius: 7px;
+  background: var(--surface-strong);
+  box-shadow: var(--shadow-popover);
   text-align: left;
 }
 

@@ -69,6 +69,8 @@ export class ActiveNoteLifecycle {
   readonly activeLockRef: { current: ActiveNoteLock | null } = { current: null };
 
   private acceptedDiskContent = new Map<string, string>();
+  private expectedDiskContent = new Map<string, Map<string, number>>();
+  private diskContentGeneration = 0;
   private lockGeneration = 0;
   private loadGeneration = 0;
   private navigationGeneration = 0;
@@ -89,7 +91,9 @@ export class ActiveNoteLifecycle {
     this.lockGeneration += 1;
     this.navigationGeneration += 1;
     this.navigationTarget = null;
+    this.diskContentGeneration += 1;
     this.acceptedDiskContent.clear();
+    this.expectedDiskContent.clear();
     this.pathMutationScopes = [];
     this.cancelLoads();
   }
@@ -175,16 +179,48 @@ export class ActiveNoteLifecycle {
 
   forgetDiskContent(path: string) {
     this.acceptedDiskContent.delete(path);
+    this.expectedDiskContent.delete(path);
   }
 
   observeDiskContent(path: string, content: string, editorContent?: string): DiskChangeKind {
     const normalized = normalizeNoteMarkdown(content);
     if (this.acceptedDiskContent.get(path) === normalized) return "acceptedWrite";
+    if (this.expectedDiskContent.get(path)?.has(normalized)) {
+      this.acceptedDiskContent.set(path, normalized);
+      return "acceptedWrite";
+    }
     if (editorContent !== undefined && normalizeNoteMarkdown(editorContent) === normalized) {
       this.acceptedDiskContent.set(path, normalized);
       return "matchesEditor";
     }
     return "externalChange";
+  }
+
+  async runExpectedDiskWrite(
+    path: string,
+    intendedContent: string,
+    work: () => Promise<string>,
+  ) {
+    const generation = this.diskContentGeneration;
+    const normalized = normalizeNoteMarkdown(intendedContent);
+    const expectedForPath = this.expectedDiskContent.get(path) ?? new Map<string, number>();
+    expectedForPath.set(normalized, (expectedForPath.get(normalized) ?? 0) + 1);
+    this.expectedDiskContent.set(path, expectedForPath);
+    try {
+      const written = await work();
+      if (generation === this.diskContentGeneration) this.acceptDiskContent(path, written);
+      return written;
+    } finally {
+      const nextCount = (expectedForPath.get(normalized) ?? 1) - 1;
+      if (nextCount > 0) expectedForPath.set(normalized, nextCount);
+      else expectedForPath.delete(normalized);
+      if (
+        expectedForPath.size === 0
+        && this.expectedDiskContent.get(path) === expectedForPath
+      ) {
+        this.expectedDiskContent.delete(path);
+      }
+    }
   }
 
   async acquireLock(path: string): Promise<ActiveNoteAccess> {
@@ -349,6 +385,12 @@ export class ActiveNoteLifecycle {
     while (this.saveQueues.size > 0) {
       await Promise.allSettled(Array.from(this.saveQueues.values()));
     }
+  }
+
+  hasSaveInFlight(path: string | null) {
+    return this.persistenceRun !== null
+      || this.pathChangeTail !== null
+      || (path !== null && this.saveQueues.has(path));
   }
 
   async flushPendingSaves() {

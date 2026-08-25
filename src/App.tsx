@@ -216,6 +216,8 @@ const windowSizeKey = "tigrana-window-size";
 const windowPositionKey = "tigrana-window-position";
 const sessionKeyPrefix = "tigrana-session:";
 const notePositionFreshMs = 24 * 60 * 60 * 1000;
+const autosaveDelayMs = 650;
+const autosaveRetryDelayMs = 1_500;
 const defaultLightAccent = "#666666";
 const defaultAppFontFamily = 'Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif';
 const defaultEditorFontFamily = defaultAppFontFamily;
@@ -2710,10 +2712,13 @@ export default function App() {
 
         const savedPath = nextPath;
         draftSaveRevisions.markRequested(snapshot.saveRevision);
-        const written = await saveNote(snapshot.workspace, savedPath, snapshot.markdown);
+        const written = await activeNoteLifecycle.runExpectedDiskWrite(
+          savedPath,
+          snapshot.markdown,
+          () => saveNote(snapshot.workspace, savedPath, snapshot.markdown),
+        );
         if (!metadataSessionRef.current.isActive(snapshot.workspace)) return;
         if (snapshot.path && snapshot.path !== savedPath) activeNoteLifecycle.forgetDiskContent(snapshot.path);
-        activeNoteLifecycle.acceptDiskContent(savedPath, written);
         recordNotePosition(savedPath, written);
         acceptSavedMarkdown(savedPath, written, snapshot);
         setContents((current) => {
@@ -2736,9 +2741,12 @@ export default function App() {
 
     enqueueNoteSave(snapshot.path, async () => {
       const savedPath = snapshot.path as string;
-      const written = await saveNote(snapshot.workspace, savedPath, snapshot.markdown);
+      const written = await activeNoteLifecycle.runExpectedDiskWrite(
+        savedPath,
+        snapshot.markdown,
+        () => saveNote(snapshot.workspace, savedPath, snapshot.markdown),
+      );
       if (!metadataSessionRef.current.isActive(snapshot.workspace)) return;
-      activeNoteLifecycle.acceptDiskContent(savedPath, written);
       recordNotePosition(savedPath, written);
       pendingNoteContentsRef.current.accept(savedPath, snapshot.markdown);
       startTransition(() => {
@@ -2929,10 +2937,17 @@ export default function App() {
     if (!activeNoteEditable) return;
     if (!hasUnsavedBody) return;
     if (pendingNote && !titleDraft.trim()) return;
-    const handle = window.setTimeout(() => {
+    const persistIfIdle = () => {
+      const path = activeDraftStateRef.current.activePath;
+      if (activeNoteLifecycle.hasSaveInFlight(path)) return;
       persistDraftInBackground();
-    }, 650);
-    return () => window.clearTimeout(handle);
+    };
+    const initialHandle = window.setTimeout(persistIfIdle, autosaveDelayMs);
+    const retryHandle = window.setInterval(persistIfIdle, autosaveRetryDelayMs);
+    return () => {
+      window.clearTimeout(initialHandle);
+      window.clearInterval(retryHandle);
+    };
   }, [activeNoteEditable, activeNoteLifecycle, hasUnsavedBody, pendingNote, persistDraftInBackground, titleDraft]);
 
 
@@ -4696,6 +4711,16 @@ export default function App() {
               >
                 <Focus size={17} />
               </button>
+              <button
+                className={`icon-button ${rawMarkdownVisible || frontmatterError ? "is-active" : ""}`}
+                type="button"
+                title={rawMarkdownVisible ? "Show rich editor" : "Show raw Markdown"}
+                aria-label={rawMarkdownVisible ? "Show rich editor" : "Show raw Markdown"}
+                aria-pressed={rawMarkdownVisible || Boolean(frontmatterError)}
+                onClick={toggleRawMarkdownMode}
+              >
+                <FileCode2 size={17} />
+              </button>
               <div className="note-view-control note-view-menu">
                 <button
                   className={`icon-button ${widthMenuOpen ? "is-active" : ""}`}
@@ -4713,6 +4738,22 @@ export default function App() {
                 </button>
                 {widthMenuOpen ? (
                   <div className="note-view-dropdown" role="menu" aria-label="Editor options">
+                    <button
+                      type="button"
+                      className={focusModeActive ? "is-active" : ""}
+                      role="menuitemcheckbox"
+                      aria-checked={focusModeActive}
+                      onClick={() => {
+                        toggleEditorFocusMode();
+                        setWidthMenuOpen(false);
+                      }}
+                    >
+                      <span>
+                        <strong>{focusModeActive ? "Exit focus mode" : "Enter focus mode"}</strong>
+                        <small>Hide navigation and outline</small>
+                      </span>
+                      <Focus size={16} />
+                    </button>
                     <button
                       type="button"
                       className={rawMarkdownVisible || frontmatterError ? "is-active" : ""}

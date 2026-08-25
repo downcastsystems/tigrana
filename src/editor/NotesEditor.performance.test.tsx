@@ -31,6 +31,12 @@ vi.mock("../lib/markdown", async (importOriginal) => {
 const { NotesEditor } = await import("./NotesEditor");
 const { htmlToMarkdown } = await import("../lib/markdown");
 
+function setReactInputValue(input: HTMLInputElement, value: string) {
+  const setter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")?.set;
+  setter?.call(input, value);
+  input.dispatchEvent(new Event("input", { bubbles: true }));
+}
+
 describe("Note editor typing performance", () => {
   const mounted: Array<{ container: HTMLElement; root: Root }> = [];
 
@@ -98,6 +104,70 @@ describe("Note editor typing performance", () => {
     expect(container.querySelector(".slash-item.is-selected strong")?.textContent).toBe("Task List");
     expect(scrollIntoView).toHaveBeenCalledTimes(9);
     expect(scrollIntoView).toHaveBeenCalledWith({ block: "nearest" });
+  });
+
+  it("keeps the find field focused while an arrow button advances and scrolls to a match", async () => {
+    const container = document.createElement("div");
+    const noteSurface = document.createElement("section");
+    noteSurface.className = "note-surface";
+    container.appendChild(noteSurface);
+    document.body.appendChild(container);
+    const root = createRoot(noteSurface);
+    mounted.push({ container, root });
+    const scrollTo = vi.fn();
+    Object.defineProperty(noteSurface, "scrollTo", {
+      configurable: true,
+      value: scrollTo,
+    });
+    const sharedProps = {
+      commandRequest: null,
+      content: "query first\n\nquery second\n\nquery third",
+      editable: true,
+      focusAtEndRequest: 0,
+      focusRequest: 0,
+      historyKey: "find-note-id",
+      notePath: "Find.md",
+      onChange: () => undefined,
+      onLoadError: (error: unknown) => {
+        throw error;
+      },
+      onPendingChange: () => undefined,
+      onPositionChange: () => undefined,
+      reloadRequest: 0,
+      restorePosition: null,
+      spellcheckEnabled: true,
+      workspace: "/Notebook",
+    };
+
+    await act(async () => root.render(<NotesEditor {...sharedProps} findRequest={0} />));
+    await act(async () => root.render(<NotesEditor {...sharedProps} findRequest={1} />));
+    await act(async () => {
+      await new Promise((resolve) => window.setTimeout(resolve, 0));
+    });
+
+    const findInput = container.querySelector<HTMLInputElement>('input[aria-label="Find in current note"]');
+    expect(findInput).not.toBeNull();
+    await act(async () => {
+      if (findInput) setReactInputValue(findInput, "query");
+      await Promise.resolve();
+    });
+    expect(container.querySelector(".find-count")?.textContent).toBe("1/3");
+
+    findInput?.focus();
+    const nextButton = container.querySelector<HTMLButtonElement>('button[title="Next match"]');
+    const mouseDown = new MouseEvent("mousedown", { bubbles: true, cancelable: true });
+    await act(async () => {
+      nextButton?.dispatchEvent(mouseDown);
+    });
+    expect(mouseDown.defaultPrevented).toBe(true);
+
+    await act(async () => {
+      nextButton?.click();
+      await new Promise((resolve) => window.setTimeout(resolve, 25));
+    });
+    expect(container.querySelector(".find-count")?.textContent).toBe("2/3");
+    expect(scrollTo).toHaveBeenCalled();
+    expect(document.activeElement).toBe(findInput);
   });
 
   it("keeps the Note viewport pinned while focus moves from a new title to the empty editor", async () => {

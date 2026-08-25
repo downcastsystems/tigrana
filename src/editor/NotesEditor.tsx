@@ -3191,10 +3191,22 @@ export function NotesEditor({ content, commandRequest, focusRequest, focusAtEndR
             </div>
           ) : null}
           <div className="note-find-controls">
-            <button type="button" title="Previous match" disabled={!findMatches.length} onClick={() => selectFindMatch(findIndex - 1)}>
+            <button
+              type="button"
+              title="Previous match"
+              disabled={!findMatches.length}
+              onMouseDown={(event) => event.preventDefault()}
+              onClick={() => selectFindMatch(findIndex - 1)}
+            >
               <ChevronUp size={14} />
             </button>
-            <button type="button" title="Next match" disabled={!findMatches.length} onClick={() => selectFindMatch(findIndex + 1)}>
+            <button
+              type="button"
+              title="Next match"
+              disabled={!findMatches.length}
+              onMouseDown={(event) => event.preventDefault()}
+              onClick={() => selectFindMatch(findIndex + 1)}
+            >
               <ChevronDown size={14} />
             </button>
             <button type="button" title="Close find" onClick={() => { setFindOpen(false); setReplaceOpen(false); }}>

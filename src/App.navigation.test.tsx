@@ -48,12 +48,16 @@ function triggerElementResize(target: Element, width: number) {
   });
 }
 
-const { demoPersistence, delayedSaves } = vi.hoisted(() => ({
+const { demoPersistence, delayedSaves, saveFailures } = vi.hoisted(() => ({
   demoPersistence: new Map<string, string>(),
   delayedSaves: {
     enabled: false,
     markdown: [] as string[],
     releases: [] as Array<() => void>,
+  },
+  saveFailures: {
+    attempts: 0,
+    remaining: 0,
   },
 }));
 
@@ -79,6 +83,11 @@ vi.mock("./lib/notebookStorage", async (importOriginal) => {
   const storage = actual.createDemoNotebookStorage(persistence);
   const saveNote = storage.saveNote.bind(storage);
   storage.saveNote = async (workspace, path, markdown) => {
+    saveFailures.attempts += 1;
+    if (saveFailures.remaining > 0) {
+      saveFailures.remaining -= 1;
+      throw new Error("Simulated transient save failure");
+    }
     if (delayedSaves.enabled) {
       delayedSaves.markdown.push(markdown);
       await new Promise<void>((resolve) => delayedSaves.releases.push(resolve));
@@ -140,6 +149,8 @@ describe("Note navigation persistence", () => {
     delayedSaves.enabled = false;
     delayedSaves.releases.splice(0).forEach((release) => release());
     delayedSaves.markdown.length = 0;
+    saveFailures.attempts = 0;
+    saveFailures.remaining = 0;
     localStorage.clear();
     demoPersistence.clear();
     resizeObserverRecords.clear();
@@ -186,6 +197,46 @@ describe("Note navigation persistence", () => {
       notes?: Record<string, string>;
     };
     expect(store.notes?.["Welcome.md"]).toContain("Second draft");
+
+    await act(async () => root.unmount());
+  });
+
+  it("retries a transient autosave failure without waiting for another edit", async () => {
+    demoPersistence.set("tigrana-demo-v5", JSON.stringify({
+      folders: [],
+      notes: {
+        "Welcome.md": "# Welcome\n\nOriginal body.",
+      },
+    }));
+    const container = document.createElement("div");
+    document.body.appendChild(container);
+    containers.push(container);
+    const root = createRoot(container);
+
+    await act(async () => {
+      root.render(<App />);
+      await new Promise((resolve) => window.setTimeout(resolve, 50));
+    });
+
+    saveFailures.attempts = 0;
+    saveFailures.remaining = 1;
+    const body = container.querySelector<HTMLTextAreaElement>('textarea[aria-label="Test note body"]');
+    await act(async () => {
+      if (body) setReactTextareaValue(body, "Recovered autosave body");
+    });
+
+    await waitFor(() => saveFailures.attempts === 1);
+    expect(container.querySelector(".save-state")?.textContent).toContain("Unsaved");
+    await waitFor(
+      () => saveFailures.attempts >= 2
+        && (container.querySelector(".save-state")?.textContent?.includes("Saved") ?? false),
+      4_500,
+    );
+
+    const store = JSON.parse(demoPersistence.get("tigrana-demo-v5") ?? "{}") as {
+      notes?: Record<string, string>;
+    };
+    expect(store.notes?.["Welcome.md"]).toContain("Recovered autosave body");
 
     await act(async () => root.unmount());
   });
@@ -262,7 +313,7 @@ describe("Note navigation persistence", () => {
     await act(async () => root.unmount());
   });
 
-  it("toggles focus mode from the editor toolbar and restores the prior pane layout", async () => {
+  it("offers focus mode in the toolbar and editor options, then restores the prior pane layout", async () => {
     demoPersistence.set("tigrana-demo-v5", JSON.stringify({
       folders: [],
       notes: {
@@ -281,12 +332,32 @@ describe("Note navigation persistence", () => {
 
     const findButton = container.querySelector<HTMLButtonElement>('button[title="Find in note"]');
     const focusButton = container.querySelector<HTMLButtonElement>('button[aria-label="Enter focus mode"]');
+    const markdownButton = container.querySelector<HTMLButtonElement>('button[aria-label="Show raw Markdown"]');
     const editorOptions = container.querySelector<HTMLButtonElement>('button[title="Editor options"]');
     const rightToggle = container.querySelector<HTMLButtonElement>(".outline-toggle");
 
     expect(findButton?.nextElementSibling).toBe(focusButton);
-    expect(focusButton?.nextElementSibling?.contains(editorOptions ?? null)).toBe(true);
+    expect(focusButton?.nextElementSibling).toBe(markdownButton);
+    expect(markdownButton?.nextElementSibling?.contains(editorOptions ?? null)).toBe(true);
     expect(focusButton?.getAttribute("aria-pressed")).toBe("false");
+
+    await act(async () => editorOptions?.click());
+    const focusMenuItem = Array.from(container.querySelectorAll<HTMLButtonElement>('[role="menuitemcheckbox"]'))
+      .find((button) => button.textContent?.includes("Enter focus mode"));
+    expect(focusMenuItem?.textContent).toContain("Hide navigation and outline");
+    expect(focusMenuItem?.getAttribute("aria-checked")).toBe("false");
+    await act(async () => focusMenuItem?.click());
+    expect(container.querySelector("#left-navigation-panes")).toBeNull();
+    expect(container.querySelector("#right-note-sidebar")).toBeNull();
+    expect(focusButton?.getAttribute("aria-label")).toBe("Exit focus mode");
+
+    await act(async () => editorOptions?.click());
+    const exitFocusMenuItem = Array.from(container.querySelectorAll<HTMLButtonElement>('[role="menuitemcheckbox"]'))
+      .find((button) => button.textContent?.includes("Exit focus mode"));
+    expect(exitFocusMenuItem?.getAttribute("aria-checked")).toBe("true");
+    await act(async () => exitFocusMenuItem?.click());
+    expect(container.querySelector("#left-navigation-panes")).not.toBeNull();
+    expect(container.querySelector("#right-note-sidebar")).not.toBeNull();
 
     await act(async () => rightToggle?.click());
     expect(container.querySelector("#left-navigation-panes")).not.toBeNull();
@@ -305,6 +376,47 @@ describe("Note navigation persistence", () => {
     expect(focusButton?.classList.contains("is-active")).toBe(false);
     expect(focusButton?.getAttribute("aria-label")).toBe("Enter focus mode");
     expect(focusButton?.getAttribute("aria-pressed")).toBe("false");
+
+    await act(async () => root.unmount());
+  });
+
+  it("offers raw Markdown in both the editor toolbar and editor options", async () => {
+    demoPersistence.set("tigrana-demo-v5", JSON.stringify({
+      folders: [],
+      notes: {
+        "Welcome.md": "# Welcome\n\nMarkdown toggle test.",
+      },
+    }));
+    const container = document.createElement("div");
+    document.body.appendChild(container);
+    containers.push(container);
+    const root = createRoot(container);
+
+    await act(async () => {
+      root.render(<App />);
+      await new Promise((resolve) => window.setTimeout(resolve, 50));
+    });
+
+    const markdownButton = container.querySelector<HTMLButtonElement>('button[aria-label="Show raw Markdown"]');
+    const editorOptions = container.querySelector<HTMLButtonElement>('button[title="Editor options"]');
+    expect(markdownButton?.getAttribute("aria-pressed")).toBe("false");
+
+    await act(async () => markdownButton?.click());
+    expect(container.querySelector('textarea[aria-label="Raw Markdown"]')).not.toBeNull();
+    expect(markdownButton?.getAttribute("aria-label")).toBe("Show rich editor");
+    expect(markdownButton?.getAttribute("aria-pressed")).toBe("true");
+
+    await act(async () => editorOptions?.click());
+    const markdownMenuItem = Array.from(container.querySelectorAll<HTMLButtonElement>('[role="menuitemcheckbox"]'))
+      .find((button) => button.textContent?.includes("Show rich editor"));
+    expect(markdownMenuItem?.textContent).toContain("Markdown editor style");
+    expect(markdownMenuItem?.getAttribute("aria-checked")).toBe("true");
+    await act(async () => markdownMenuItem?.click());
+
+    expect(container.querySelector('textarea[aria-label="Raw Markdown"]')).toBeNull();
+    expect(container.querySelector('textarea[aria-label="Test note body"]')).not.toBeNull();
+    expect(markdownButton?.getAttribute("aria-label")).toBe("Show raw Markdown");
+    expect(markdownButton?.getAttribute("aria-pressed")).toBe("false");
 
     await act(async () => root.unmount());
   });

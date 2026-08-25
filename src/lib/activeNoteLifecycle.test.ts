@@ -142,9 +142,11 @@ describe("active Note lifecycle", () => {
     await Promise.resolve();
     await Promise.resolve();
     expect(order).toEqual(["first:start"]);
+    expect(subject.hasSaveInFlight("Note.md")).toBe(true);
     first.resolve();
     await Promise.all([firstSave, secondSave]);
     expect(order).toEqual(["first:start", "first:end", "second"]);
+    expect(subject.hasSaveInFlight("Note.md")).toBe(false);
   });
 
   it("waits for a queued body save before a rename path change", async () => {
@@ -318,6 +320,44 @@ describe("active Note lifecycle", () => {
     expect(subject.observeDiskContent("Note.md", "saved")).toBe("acceptedWrite");
     expect(subject.observeDiskContent("Note.md", "draft", "draft\n")).toBe("matchesEditor");
     expect(subject.observeDiskContent("Note.md", "someone else's edit", "draft")).toBe("externalChange");
+  });
+
+  it("recognizes its own disk content while a native save is still returning", async () => {
+    const { subject } = lifecycle();
+    const nativeSave = deferred();
+    const write = subject.runExpectedDiskWrite("Note.md", "saved snapshot", async () => {
+      await nativeSave.promise;
+      return "saved snapshot";
+    });
+
+    await Promise.resolve();
+    expect(subject.observeDiskContent("Note.md", "saved snapshot", "newer local draft"))
+      .toBe("acceptedWrite");
+
+    nativeSave.resolve();
+    await expect(write).resolves.toBe("saved snapshot");
+    expect(subject.observeDiskContent("Note.md", "external edit", "newer local draft"))
+      .toBe("externalChange");
+  });
+
+  it("does not let an old Notebook write replace a new Notebook watcher baseline", async () => {
+    const { subject } = lifecycle();
+    const oldNativeSave = deferred();
+    const oldWrite = subject.runExpectedDiskWrite("Note.md", "old Notebook", async () => {
+      await oldNativeSave.promise;
+      return "old Notebook";
+    });
+
+    await Promise.resolve();
+    subject.resetWorkspace();
+    subject.acceptDiskContent("Note.md", "new Notebook");
+    oldNativeSave.resolve();
+    await oldWrite;
+
+    expect(subject.observeDiskContent("Note.md", "new Notebook", "new Notebook"))
+      .toBe("acceptedWrite");
+    expect(subject.observeDiskContent("Note.md", "old Notebook", "new Notebook"))
+      .toBe("externalChange");
   });
 
   it("defers a same-identity watcher mismatch throughout an internal title path change", () => {
