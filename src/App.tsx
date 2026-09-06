@@ -1,3 +1,4 @@
+import { ReleaseNotice } from "./components/ReleaseNotice";
 import { invoke } from "@tauri-apps/api/core";
 import { WindowsMenuBar, isWindowsDesktop } from "./components/WindowsMenuBar";
 import { open } from "@tauri-apps/plugin-dialog";
@@ -4567,6 +4568,7 @@ export default function App() {
           onClose={(tabId) => void closeTab(tabId)}
           onCloseAll={() => void closeAllTabs()}
         />
+        <ReleaseNotice />
       </header>
 
       <div className={`app-frame ${leftVisible ? "" : "is-left-hidden"} ${outlineVisible ? "" : "is-outline-hidden"} ${navigationStyle === "single-pane" ? "is-single-col" : ""}`} style={frameStyle}>
