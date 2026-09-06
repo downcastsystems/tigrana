@@ -78,6 +78,10 @@ describe("notebook metadata", () => {
   it("gets the Notebook display name from the selected path", () => {
     expect(getNotebookName("/Users/dhaynes/Notes/Tigrana")).toBe("Tigrana");
     expect(getNotebookName("")).toBe("Notebook");
+    expect(getNotebookName("/Users/Notes/Personal\\Archive")).toBe("Personal\\Archive");
+    expect(getNotebookName("G:\\My Drive\\Notes\\Personal")).toBe("Personal");
+    expect(getNotebookName("G:\\My Drive\\Notes\\Personal\\")).toBe("Personal");
+    expect(getNotebookName("\\\\server\\share\\Personal")).toBe("Personal");
   });
 
   it("orders notes with pins first, then custom order, then title", () => {

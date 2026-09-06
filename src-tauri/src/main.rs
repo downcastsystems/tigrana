@@ -1010,6 +1010,35 @@ fn update_app_menu_state(
     rebuild_app_menu(&app, &notebook_state)
 }
 
+// Invoked before showing each Windows webview. Other platforms keep their
+// existing decorations and menu behavior.
+#[tauri::command]
+fn prepare_windows_chrome(window: WebviewWindow) -> Result<(), String> {
+    if cfg!(target_os = "windows") {
+        window.hide_menu().map_err(|error| error.to_string())?;
+        window.set_decorations(false).map_err(|error| error.to_string())?;
+    }
+    Ok(())
+}
+
+#[tauri::command]
+fn popup_windows_menu(window: WebviewWindow, menu: String, x: f64, y: f64) -> Result<(), String> {
+    if !cfg!(target_os = "windows") {
+        return Ok(());
+    }
+    let native_menu = window.menu().ok_or("Window menu is unavailable")?;
+    for item in native_menu.items().map_err(|error| error.to_string())? {
+        if let Some(submenu) = item.as_submenu() {
+            if submenu.text().map_err(|error| error.to_string())? == menu {
+                return window
+                    .popup_menu_at(submenu, tauri::PhysicalPosition::new(x, y))
+                    .map_err(|error| error.to_string());
+            }
+        }
+    }
+    Err(format!("Unknown application menu: {menu}"))
+}
+
 #[tauri::command]
 fn write_export_text_file(payload: WriteExportTextPayload) -> Result<(), String> {
     fs::write(payload.path, payload.contents).map_err(|error| error.to_string())
@@ -1885,7 +1914,20 @@ fn rebuild_app_menu(app: &AppHandle, state: &NotebookWindowState) -> Result<(), 
     };
     notebooks.sort_by(|a, b| a.name.cmp(&b.name).then(a.workspace.cmp(&b.workspace)));
     let menu = build_app_menu(app, &notebooks, &active_state).map_err(|error| error.to_string())?;
-    app.set_menu(menu).map_err(|error| error.to_string())?;
+    if cfg!(target_os = "windows") {
+        // Keep the hidden menu attached: set_menu removes/reinstalls the Win32
+        // menu and resizes the webview on each dirty/save transition.
+        if let Some(current) = app.menu() {
+            for item in current.items().map_err(|error| error.to_string())? {
+                current.remove(&item).map_err(|error| error.to_string())?;
+            }
+            for item in menu.items().map_err(|error| error.to_string())? {
+                current.append(&item).map_err(|error| error.to_string())?;
+            }
+        }
+    } else {
+        app.set_menu(menu).map_err(|error| error.to_string())?;
+    }
     remove_macos_system_dictation_menu_item(app);
     Ok(())
 }
@@ -2271,6 +2313,8 @@ pub fn run() {
             register_notebook_window,
             unregister_notebook_window,
             update_app_menu_state,
+            prepare_windows_chrome,
+            popup_windows_menu,
             focus_notebook_window,
             read_app_preferences,
             write_app_preferences,

@@ -41,7 +41,9 @@ function isJsonObject(value: unknown): value is Record<string, unknown> {
 }
 
 export function getNotebookName(workspace: string) {
-  return workspace.split("/").filter(Boolean).at(-1) || "Notebook";
+  // A backslash is a valid character in an absolute POSIX folder name.
+  const separator = workspace.startsWith("/") ? "/" : /[\\/]/;
+  return workspace.split(separator).filter(Boolean).at(-1) || "Notebook";
 }
 
 export function buildFolderTree(folders: FolderEntry[], workspace: string, metadata: WorkspaceMetadata): FolderNode[] {

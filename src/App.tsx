@@ -1,3 +1,5 @@
+import { invoke } from "@tauri-apps/api/core";
+import { WindowsMenuBar, isWindowsDesktop } from "./components/WindowsMenuBar";
 import { open } from "@tauri-apps/plugin-dialog";
 import { listen } from "@tauri-apps/api/event";
 import { availableMonitors, getCurrentWindow, LogicalPosition, LogicalSize, PhysicalPosition, PhysicalSize, type Monitor } from "@tauri-apps/api/window";
@@ -935,6 +937,7 @@ export default function App() {
     if (isTauri()) document.documentElement.dataset.tauri = "true";
     const platform = navigator.platform || "";
     if (/Mac|iPhone|iPad/.test(platform)) document.documentElement.dataset.platform = "mac";
+    else if (/Win/.test(platform)) document.documentElement.dataset.platform = "windows";
   }, []);
 
   useEffect(() => {
@@ -1341,6 +1344,7 @@ export default function App() {
 
     const restoreWindowGeometry = async () => {
       try {
+        if (isWindowsDesktop()) await invoke("prepare_windows_chrome");
         const savedSize = readStoredWindowSize();
         if (savedSize) {
           const clampedW = Math.max(600, Math.min(Math.round(savedSize.width), window.screen.availWidth - 40));
@@ -3385,12 +3389,13 @@ export default function App() {
     const label = `tigrana-notebook-${Date.now()}`;
     const webview = new WebviewWindow(label, {
       url: `/?${params.toString()}`,
-      title: path.split("/").filter(Boolean).at(-1) || "Tigrana",
+      title: getNotebookName(path),
       width: 1280,
       height: 860,
       minWidth: 920,
       minHeight: 620,
-      decorations: true,
+      decorations: !isWindowsDesktop(),
+      ...(isWindowsDesktop() ? { visible: false } : {}),
       resizable: true,
       titleBarStyle: "overlay",
       hiddenTitle: true,
@@ -4389,7 +4394,8 @@ export default function App() {
       height: 860,
       minWidth: 920,
       minHeight: 620,
-      decorations: true,
+      decorations: !isWindowsDesktop(),
+      ...(isWindowsDesktop() ? { visible: false } : {}),
       resizable: true,
       titleBarStyle: "overlay",
       hiddenTitle: true,
@@ -4527,6 +4533,7 @@ export default function App() {
 
   return (
     <div className="app-shell">
+      {isWindowsDesktop() ? <WindowsMenuBar onError={setAppError} onMouseDown={handleChromeMouseDown} onDoubleClick={handleChromeDoubleClick} /> : null}
       <header
         className="app-titlebar"
         data-tauri-drag-region=""
@@ -9800,6 +9807,7 @@ function readRecentNotebooks(): RecentNotebook[] {
     const parsed = JSON.parse(raw) as Partial<RecentNotebook>[];
     return parsed
       .filter((entry): entry is RecentNotebook => Boolean(entry.path && entry.name && entry.lastOpenedAt))
+      .map((entry) => ({ ...entry, name: getNotebookName(entry.path) }))
       .sort((a, b) => b.lastOpenedAt - a.lastOpenedAt);
   } catch {
     return [];
@@ -9816,7 +9824,7 @@ function touchRecentNotebook(notebooks: RecentNotebook[], path: string) {
   const next = [
     {
       path,
-      name: path.split("/").filter(Boolean).at(-1) || "Notebook",
+      name: getNotebookName(path),
       lastOpenedAt: Date.now(),
     },
     ...notebooks.filter((notebook) => notebook.path !== path),
