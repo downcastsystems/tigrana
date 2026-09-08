@@ -28,6 +28,8 @@ vi.mock("../lib/markdown", async (importOriginal) => {
   };
 });
 
+import type { EditorPersistenceHandle } from "./NotesEditor";
+
 const { NotesEditor } = await import("./NotesEditor");
 const { htmlToMarkdown } = await import("../lib/markdown");
 
@@ -48,6 +50,37 @@ describe("Note editor typing performance", () => {
     }));
     vi.mocked(htmlToMarkdown).mockClear();
     scrollIntoView.mockClear();
+  });
+
+  it.each([
+    "A paragraph with  two spaces and **bold** and *italic*.\n\nNext paragraph.",
+    "- [ ] Unfinished task\n- [x] Finished task\n  - nested item",
+    "| Name | Value |\n| --- | --- |\n| Cell | **Bold** |",
+    "```typescript\nconst code =  1;\n  // keep indentation\n```",
+    "> Quoted text\n\n---\n\n![alt](image.png)",
+    "# Heading\n\nText with :smile: and `inline code`.",
+  ])("does not rewrite unchanged rich content at a save boundary: %s", async (content) => {
+    vi.useFakeTimers();
+    const container = document.createElement("div");
+    document.body.appendChild(container);
+    const root = createRoot(container);
+    mounted.push({ container, root });
+    const onChange = vi.fn();
+    let handle: EditorPersistenceHandle | null = null;
+    await act(async () => {
+      root.render(<NotesEditor content={content} commandRequest={null} editable findRequest={0}
+        focusAtEndRequest={0} focusRequest={0} historyKey="note-id" notePath="Note.md"
+        onChange={onChange} onLoadError={(error) => { throw error; }}
+        onPendingChange={() => undefined} onPositionChange={() => undefined}
+        onPersistenceReady={(next) => { handle = next; }}
+        reloadRequest={0} restorePosition={null} spellcheckEnabled workspace="/Notebook" />);
+    });
+    await act(async () => { await vi.advanceTimersByTimeAsync(80); });
+    onChange.mockClear();
+    await act(async () => {
+      expect(handle!.capture()).toBeNull();
+    });
+    expect(onChange).not.toHaveBeenCalled();
   });
 
   it("keeps the keyboard-selected slash command in view", async () => {

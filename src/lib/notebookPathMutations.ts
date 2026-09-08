@@ -30,6 +30,8 @@ type DurablePathMutationScope = {
 
 type NotebookPathMutationOptions = {
   activePath: string | null;
+  getActivePath?: () => string | null;
+  withSavedEditor?: <T>(path: string, operation: (path: string) => Promise<T>) => Promise<T>;
   activeNoteLockRef: MutableRefObject<NoteEditLock | null>;
   folders: FolderEntry[];
   getMetadata: () => WorkspaceMetadata;
@@ -64,6 +66,8 @@ type MoveNoteOptions = {
 
 export function createNotebookPathMutations({
   activePath,
+  getActivePath = () => activePath,
+  withSavedEditor = (path, operation) => operation(path),
   activeNoteLockRef,
   folders,
   getMetadata,
@@ -113,7 +117,7 @@ export function createNotebookPathMutations({
   };
 
   const repairActiveNotePath = (oldPath: string, newPath: string) => {
-    if (activePath !== oldPath) return;
+    if (getActivePath() !== oldPath) return;
     setActivePath(newPath);
     if (activeNoteLockRef.current?.path === oldPath) {
       activeNoteLockRef.current = { ...activeNoteLockRef.current, path: newPath };
@@ -121,6 +125,7 @@ export function createNotebookPathMutations({
   };
 
   const repairActiveNotePrefix = (oldPrefix: string, newPrefix: string) => {
+    const activePath = getActivePath();
     if (!activePath?.startsWith(`${oldPrefix}/`)) return;
     const nextActivePath = replacePathPrefix(activePath, oldPrefix, newPrefix);
     setActivePath(nextActivePath);
@@ -133,28 +138,30 @@ export function createNotebookPathMutations({
     const sourceNote = notes.find((entry) => entry.path === path);
     if (!sourceNote || sourceNote.parent_path === targetParentPath) return null;
 
-    const moved = await runDurableMutation(async () => {
-      const metadataBeforeMutation = getMetadata();
-      const result = await storage.moveNote(workspace, path, targetParentPath, options.siblingPlacement);
-      const repair = (current: WorkspaceMetadata) => {
-        const relocated = moveNoteInMetadata(current, path, result.path, sourceNote.parent_path, result.parent_path);
-        return options.siblingPlacement
-          ? placeNoteInOrder(relocated, notes, result.parent_path, result.path, options.siblingPlacement)
-          : relocated;
-      };
-      await syncMetadataAfterPathMutation(
-        metadataBeforeMutation,
-        repair,
-        (current) => moveNoteInMetadata(current, result.path, path, result.parent_path, sourceNote.parent_path),
-      );
-      return result;
-    }, { path, includesDescendants: false });
-    if (!isWorkspaceActive()) return moved;
-    repairActiveNotePath(path, moved.path);
-    replaceOpenTabPath(path, moved.path);
-    setSelectedFolder(moved.parent_path);
-    await refreshWorkspace(workspace);
-    return moved;
+    return withSavedEditor(path, async (path) => {
+      const moved = await runDurableMutation(async () => {
+        const metadataBeforeMutation = getMetadata();
+        const result = await storage.moveNote(workspace, path, targetParentPath, options.siblingPlacement);
+        const repair = (current: WorkspaceMetadata) => {
+          const relocated = moveNoteInMetadata(current, path, result.path, sourceNote.parent_path, result.parent_path);
+          return options.siblingPlacement
+            ? placeNoteInOrder(relocated, notes, result.parent_path, result.path, options.siblingPlacement)
+            : relocated;
+        };
+        await syncMetadataAfterPathMutation(
+          metadataBeforeMutation,
+          repair,
+          (current) => moveNoteInMetadata(current, result.path, path, result.parent_path, sourceNote.parent_path),
+        );
+        return result;
+      }, { path, includesDescendants: false });
+      if (!isWorkspaceActive()) return moved;
+      repairActiveNotePath(path, moved.path);
+      replaceOpenTabPath(path, moved.path);
+      setSelectedFolder(moved.parent_path);
+      await refreshWorkspace(workspace);
+      return moved;
+    });
   };
 
   const renameNote = async (path: string, title: string) => {
@@ -179,62 +186,64 @@ export function createNotebookPathMutations({
     const sourceFolder = folders.find((entry) => entry.path === path);
     if (!sourceFolder || !sourceFolder.path || sourceFolder.parent_path === targetParentPath) return null;
 
-    const moved = await runDurableMutation(async () => {
-      const metadataBeforeMutation = getMetadata();
-      const result = await storage.moveFolder(workspace, path, targetParentPath, options.siblingPlacement);
-      const repair = (current: WorkspaceMetadata) => {
-        const relocated = moveFolderInMetadata(current, path, result.path, sourceFolder.parent_path, result.parent_path);
-        if (!options.siblingPlacement) return relocated;
+    return withSavedEditor(path, async (path) => {
+      const moved = await runDurableMutation(async () => {
+        const metadataBeforeMutation = getMetadata();
+        const result = await storage.moveFolder(workspace, path, targetParentPath, options.siblingPlacement);
+        const repair = (current: WorkspaceMetadata) => {
+          const relocated = moveFolderInMetadata(current, path, result.path, sourceFolder.parent_path, result.parent_path);
+          if (!options.siblingPlacement) return relocated;
 
-        const targetFolder = folders.find((entry) => entry.path === options.siblingPlacement?.targetPath);
-        if (!targetFolder) return relocated;
+          const targetFolder = folders.find((entry) => entry.path === options.siblingPlacement?.targetPath);
+          if (!targetFolder) return relocated;
 
-        const siblingPaths = folders
-          .filter((folder) => folder.parent_path === targetFolder.parent_path && folder.path !== sourceFolder.path)
-          .map((folder) => folder.path)
-          .filter((siblingPath) => siblingPath !== result.path)
-          .sort((a, b) => {
-            const order = relocated.folderOrder[targetFolder.parent_path] ?? [];
-            const aIndex = order.indexOf(a);
-            const bIndex = order.indexOf(b);
-            if (aIndex !== -1 || bIndex !== -1) {
-              return (aIndex === -1 ? Number.MAX_SAFE_INTEGER : aIndex) - (bIndex === -1 ? Number.MAX_SAFE_INTEGER : bIndex);
-            }
-            const aName = folders.find((folder) => folder.path === a)?.name ?? a;
-            const bName = folders.find((folder) => folder.path === b)?.name ?? b;
-            return aName.localeCompare(bName);
-          });
-        const targetIndex = Math.max(0, siblingPaths.indexOf(targetFolder.path));
-        siblingPaths.splice(targetIndex + (options.siblingPlacement.placement === "after" ? 1 : 0), 0, result.path);
-        return {
-          ...relocated,
-          folderOrder: {
-            ...relocated.folderOrder,
-            [targetFolder.parent_path]: siblingPaths,
-          },
+          const siblingPaths = folders
+            .filter((folder) => folder.parent_path === targetFolder.parent_path && folder.path !== sourceFolder.path)
+            .map((folder) => folder.path)
+            .filter((siblingPath) => siblingPath !== result.path)
+            .sort((a, b) => {
+              const order = relocated.folderOrder[targetFolder.parent_path] ?? [];
+              const aIndex = order.indexOf(a);
+              const bIndex = order.indexOf(b);
+              if (aIndex !== -1 || bIndex !== -1) {
+                return (aIndex === -1 ? Number.MAX_SAFE_INTEGER : aIndex) - (bIndex === -1 ? Number.MAX_SAFE_INTEGER : bIndex);
+              }
+              const aName = folders.find((folder) => folder.path === a)?.name ?? a;
+              const bName = folders.find((folder) => folder.path === b)?.name ?? b;
+              return aName.localeCompare(bName);
+            });
+          const targetIndex = Math.max(0, siblingPaths.indexOf(targetFolder.path));
+          siblingPaths.splice(targetIndex + (options.siblingPlacement.placement === "after" ? 1 : 0), 0, result.path);
+          return {
+            ...relocated,
+            folderOrder: {
+              ...relocated.folderOrder,
+              [targetFolder.parent_path]: siblingPaths,
+            },
+          };
         };
-      };
-      await syncMetadataAfterPathMutation(
-        metadataBeforeMutation,
-        repair,
-        (current) => moveFolderInMetadata(current, result.path, path, result.parent_path, sourceFolder.parent_path),
-      );
-      return result;
-    }, { path, includesDescendants: true });
+        await syncMetadataAfterPathMutation(
+          metadataBeforeMutation,
+          repair,
+          (current) => moveFolderInMetadata(current, result.path, path, result.parent_path, sourceFolder.parent_path),
+        );
+        return result;
+      }, { path, includesDescendants: true });
 
-    if (!isWorkspaceActive()) return moved;
-    if (selectedFolder === path || selectedFolder.startsWith(`${path}/`)) {
-      setSelectedFolder(replacePathPrefix(selectedFolder, path, moved.path));
-    } else if (options.selectMovedFolder) {
-      setSelectedFolder(moved.path);
-    }
-    repairActiveNotePrefix(path, moved.path);
-    replaceOpenTabPrefix(path, moved.path);
-    await refreshWorkspace(workspace);
-    return moved;
+      if (!isWorkspaceActive()) return moved;
+      if (selectedFolder === path || selectedFolder.startsWith(`${path}/`)) {
+        setSelectedFolder(replacePathPrefix(selectedFolder, path, moved.path));
+      } else if (options.selectMovedFolder) {
+        setSelectedFolder(moved.path);
+      }
+      repairActiveNotePrefix(path, moved.path);
+      replaceOpenTabPrefix(path, moved.path);
+      await refreshWorkspace(workspace);
+      return moved;
+    });
   };
 
-  const renameFolder = async (path: string, name: string) => {
+  const renameFolder = async (path: string, name: string) => withSavedEditor(path, async (path) => {
     const renamed = await runDurableMutation(async () => {
       const metadataBeforeMutation = getMetadata();
       const result = await storage.renameFolder(workspace, path, name);
@@ -253,7 +262,7 @@ export function createNotebookPathMutations({
     replaceOpenTabPrefix(path, renamed.path);
     await refreshWorkspace(workspace);
     return renamed;
-  };
+  });
 
   const renameActiveNote = async (path: string, title: string) => {
     const renamed = await renameNote(path, title);
@@ -267,7 +276,7 @@ export function createNotebookPathMutations({
     moveNote,
     renameActiveNote,
     renameFolder,
-    renameNote,
+    renameNote: (path: string, title: string) => withSavedEditor(path, (path) => renameNote(path, title)),
   };
 }
 

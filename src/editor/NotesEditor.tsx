@@ -6,7 +6,7 @@ import { TaskItem, TaskList } from "@tiptap/extension-list";
 import { Table, TableCell, TableHeader, TableRow } from "@tiptap/extension-table";
 import { Placeholder } from "@tiptap/extensions";
 import { joinBackward } from "@tiptap/pm/commands";
-import { DOMSerializer, Fragment as ProseMirrorFragment, type Node as ProseMirrorNode, type ResolvedPos } from "@tiptap/pm/model";
+import { DOMParser as ProseMirrorDOMParser, DOMSerializer, Fragment as ProseMirrorFragment, type Node as ProseMirrorNode, type ResolvedPos, type TagParseRule } from "@tiptap/pm/model";
 import { liftListItem } from "@tiptap/pm/schema-list";
 import { EditorState, NodeSelection, Plugin, PluginKey, Selection, TextSelection, type Transaction } from "@tiptap/pm/state";
 import { addColumnAfter, addColumnBefore, addRowAfter, addRowBefore, CellSelection, deleteColumn, deleteRow, TableMap } from "@tiptap/pm/tables";
@@ -71,6 +71,7 @@ type NotesEditorProps = {
   workspace: string;
   onChange: (markdown: string, sourceNotePath: string | null) => void;
   onPendingChange: (change: PendingEditorChange | null) => void;
+  onPersistenceReady?: (handle: EditorPersistenceHandle | null) => void;
   onLoadError: (error: unknown) => void;
   onPositionChange: (position: { selectedText: string; selectionFrom: number; selectionTo: number }) => void;
   onInternalLinkClick?: (href: string) => void;
@@ -82,6 +83,11 @@ type NotesEditorProps = {
 export type EditorMarkdownSnapshot = {
   markdown: string;
   sourceNotePath: string | null;
+};
+
+export type EditorPersistenceHandle = {
+  capture(): EditorMarkdownSnapshot | null;
+  setReadOnly(readOnly: boolean): void;
 };
 
 export type PendingEditorChange = {
@@ -2445,7 +2451,7 @@ const MarkdownImage = Image.extend({
   },
 });
 
-export function NotesEditor({ content, commandRequest, focusRequest, focusAtEndRequest, findRequest, historyKey, reloadRequest, notePath, restorePosition, editable, spellcheckEnabled, workspace, onChange, onPendingChange, onLoadError, onPositionChange, onInternalLinkClick, onRequestEmoji, onRequestLink, onRequestImage }: NotesEditorProps) {
+export function NotesEditor({ content, commandRequest, focusRequest, focusAtEndRequest, findRequest, historyKey, reloadRequest, notePath, restorePosition, editable, spellcheckEnabled, workspace, onChange, onPendingChange, onPersistenceReady, onLoadError, onPositionChange, onInternalLinkClick, onRequestEmoji, onRequestLink, onRequestImage }: NotesEditorProps) {
   const [slash, setSlash] = useState<SlashState | null>(null);
   const [findOpen, setFindOpen] = useState(false);
   const [replaceOpen, setReplaceOpen] = useState(false);
@@ -2456,6 +2462,8 @@ export function NotesEditor({ content, commandRequest, focusRequest, focusAtEndR
   const slashRef = useRef<SlashState | null>(null);
   const selectedSlashItemRef = useRef<HTMLButtonElement | null>(null);
   const editorRef = useRef<Editor | null>(null);
+  const editableRef = useRef(editable);
+  editableRef.current = editable;
   const findInputRef = useRef<HTMLInputElement | null>(null);
   const handledFindRequest = useRef(findRequest);
   const handledCommandRequest = useRef(commandRequest?.id ?? 0);
@@ -2734,6 +2742,42 @@ export function NotesEditor({ content, commandRequest, focusRequest, focusAtEndR
       });
     },
   });
+
+  useLayoutEffect(() => {
+    if (!editor || !onPersistenceReady) return;
+    onPersistenceReady({
+      capture() {
+        if (!editableRef.current) return null;
+        if (editor.view.composing) throw new Error("Finish entering text before moving this Note.");
+        // A native accessibility replacement can precede the browser's mutation
+        // notification. Reconcile visible content only at an explicit navigation
+        // boundary, never on the typing/autosave path. Keep the change undoable.
+        const parseOptions = {
+          preserveWhitespace: true as const,
+          // Use the same node-view rules as ProseMirror's DOM-change reader.
+          // Parsing raw editor HTML would include table/code controls and lose
+          // task-list attributes. Keep this internal adapter covered by fixtures.
+          ruleFromNode(node: Node) {
+            const description = (node as Node & {
+              pmViewDesc?: { parseRule(): Omit<TagParseRule, "tag"> | null };
+            }).pmViewDesc;
+            if (description) return description.parseRule();
+            if (node.nodeName === "BR" && node === node.parentNode?.lastChild) return { ignore: true };
+            return null;
+          },
+        };
+        const visible = ProseMirrorDOMParser.fromSchema(editor.schema).parse(editor.view.dom, parseOptions);
+        if (!visible.eq(editor.state.doc)) {
+          editor.view.dispatch(editor.state.tr.replaceWith(0, editor.state.doc.content.size, visible.content));
+        }
+        return deferredMarkdownRef.current?.flush() ?? null;
+      },
+      setReadOnly(readOnly) {
+        setEditorEditableSilently(editor, !readOnly && editableRef.current);
+      },
+    });
+    return () => onPersistenceReady(null);
+  }, [editor, onPersistenceReady]);
 
   useEffect(() => {
     slashRef.current = slash;

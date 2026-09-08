@@ -49,7 +49,8 @@ import * as LucideIcons from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 import type { CSSProperties, KeyboardEvent as ReactKeyboardEvent, ReactNode } from "react";
 import { Component, startTransition, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
-import { NotesEditor, type PendingEditorChange } from "./editor/NotesEditor";
+import { flushSync } from "react-dom";
+import { NotesEditor, type EditorPersistenceHandle, type PendingEditorChange } from "./editor/NotesEditor";
 import { GlobalSearchModal } from "./components/GlobalSearchModal";
 import {
   exportTextFile,
@@ -725,6 +726,15 @@ export default function App() {
     [],
   );
   const positionWriteTimerRef = useRef<number | null>(null);
+  const editorPersistenceRef = useRef<EditorPersistenceHandle | null>(null);
+  const appShellRef = useRef<HTMLDivElement | null>(null);
+  const userPathMutationRef = useRef(false);
+  const withSavedEditorRef = useRef<<T>(path: string, operation: (path: string) => Promise<T>) => Promise<T>>(
+    () => Promise.reject(new Error("The Notebook is still loading.")),
+  );
+  const registerEditorPersistence = useCallback((handle: EditorPersistenceHandle | null) => {
+    editorPersistenceRef.current = handle;
+  }, []);
   const pendingEditorChangeRef = useRef<PendingEditorChange | null>(null);
   const activeNoteIdentityRef = useRef<string | null>(null);
   const pendingNoteContentsRef = useRef(new PendingNoteContents());
@@ -1811,6 +1821,8 @@ export default function App() {
 
   const notebookPathMutations = useMemo(() => createNotebookPathMutations({
     activePath,
+    getActivePath: () => activeDraftStateRef.current.activePath,
+    withSavedEditor: (path, operation) => withSavedEditorRef.current(path, operation),
     activeNoteLockRef,
     folders,
     getMetadata: () => metadataSessionRef.current.isActive(workspace)
@@ -1962,6 +1974,7 @@ export default function App() {
   }
 
   async function handleMenuCommand(command: string) {
+    if (userPathMutationRef.current) return;
     if (command.startsWith("open_recent_note:")) {
       const index = Number(command.slice("open_recent_note:".length));
       const recentNote = Number.isInteger(index) ? recentNotes[index] : undefined;
@@ -2810,6 +2823,50 @@ export default function App() {
     void persistDraft().catch(() => undefined);
   }, [persistDraft]);
 
+  withSavedEditorRef.current = async (path, operation) => {
+    if (userPathMutationRef.current) throw new Error("Wait for the current move or rename to finish.");
+    if (activeNoteLifecycle.isLoading) throw new Error("Wait for the Note to finish loading before moving or renaming it.");
+    const operationWorkspace = workspace;
+    const navigationToken = captureNoteNavigation();
+    const originalActivePath = activeDraftStateRef.current.activePath;
+    const editor = editorPersistenceRef.current;
+    const shell = appShellRef.current;
+    userPathMutationRef.current = true;
+    try {
+      // Capture DOM-only accessibility changes as well as deferred transactions
+      // before freezing input. Persistence must read the committed React draft.
+      flushSync(() => {
+        if (!activeNoteEditable) return;
+        const snapshot = editor?.capture();
+        if (snapshot && snapshot.sourceNotePath === originalActivePath) setDraft(snapshot.markdown);
+        if (titleInputRef.current) setTitleDraft(titleInputRef.current.value);
+        if ((rawMarkdownVisible || frontmatterError) && rawMarkdownInputRef.current) {
+          handleRawMarkdownChange(rawMarkdownInputRef.current.value);
+        }
+      });
+      if (activeNoteEditable && originalActivePath) validateNoteTitle(activeDraftStateRef.current.titleDraft);
+      editor?.setReadOnly(true);
+      if (shell) shell.inert = true;
+      const persisted = await activeNoteLifecycle.requestPersistence(() => persistDraftAttemptRef.current());
+      await activeNoteLifecycle.flushPendingSaves();
+      if (!isWorkspaceActive(operationWorkspace) || !isCurrentNoteNavigation(navigationToken)) {
+        throw new Error("The open Note changed before the move or rename could finish. Try again.");
+      }
+      const current = activeDraftStateRef.current;
+      // A validation error must not silently turn a failed save into a move.
+      if (activeNoteEditable && current.activePath && (persisted === undefined || current.titleDraft.trim() !== current.savedTitle)) {
+        throw new Error("Save a valid Note title before moving or renaming it.");
+      }
+      // Saving a pending title may itself have renamed the source file.
+      const resolvedPath = originalActivePath === path ? current.activePath ?? path : path;
+      return await operation(resolvedPath);
+    } finally {
+      if (shell) shell.inert = false;
+      editorPersistenceRef.current?.setReadOnly(false);
+      userPathMutationRef.current = false;
+    }
+  };
+
   const commitTitleAndFocusEditor = useCallback(async () => {
     if (!activeNoteEditable) return;
     disarmPendingTitleFocus();
@@ -2884,6 +2941,7 @@ export default function App() {
 
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
+      if (userPathMutationRef.current) return;
       const actions = keyboardActionsRef.current;
       const command = event.metaKey || event.ctrlKey;
       const key = event.key.toLowerCase();
@@ -4533,7 +4591,7 @@ export default function App() {
   }
 
   return (
-    <div className="app-shell">
+    <div className="app-shell" ref={appShellRef}>
       {isWindowsDesktop() ? <WindowsMenuBar onError={setAppError} onMouseDown={handleChromeMouseDown} onDoubleClick={handleChromeDoubleClick} /> : null}
       <header
         className="app-titlebar"
@@ -5070,6 +5128,7 @@ export default function App() {
                     if (!shouldApplyEditorUpdate(activePath, sourceNotePath, activeNoteEditable)) return;
                     setDraft(markdown);
                   }}
+                  onPersistenceReady={registerEditorPersistence}
                   onPendingChange={(change) => {
                     pendingEditorChangeRef.current = change;
                   }}

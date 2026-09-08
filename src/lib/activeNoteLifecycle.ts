@@ -77,6 +77,7 @@ export class ActiveNoteLifecycle {
   private navigationTarget: string | null = null;
   private lockOperationTail: Promise<void> = Promise.resolve();
   private activeLoadToken = 0;
+  private saveErrors = new Map<string, unknown>();
   private saveQueues = new Map<string, Promise<void>>();
   private savingPathCounts = new Map<string, number>();
   private pathMutationScopes: Array<{ path: string; includesDescendants: boolean }> = [];
@@ -93,6 +94,7 @@ export class ActiveNoteLifecycle {
     this.navigationTarget = null;
     this.diskContentGeneration += 1;
     this.acceptedDiskContent.clear();
+    this.saveErrors.clear();
     this.expectedDiskContent.clear();
     this.pathMutationScopes = [];
     this.cancelLoads();
@@ -180,6 +182,7 @@ export class ActiveNoteLifecycle {
   forgetDiskContent(path: string) {
     this.acceptedDiskContent.delete(path);
     this.expectedDiskContent.delete(path);
+    this.saveErrors.delete(path);
   }
 
   observeDiskContent(path: string, content: string, editorContent?: string): DiskChangeKind {
@@ -297,12 +300,19 @@ export class ActiveNoteLifecycle {
   }
 
   enqueueSave(path: string, work: () => Promise<void>) {
+    const generation = this.diskContentGeneration;
     const previousSave = this.saveQueues.get(path);
     const previous = previousSave ?? Promise.resolve();
     const next = previous
       .catch(() => undefined)
       .then(work)
-      .catch(this.options.onError)
+      .then(() => {
+        if (generation === this.diskContentGeneration) this.saveErrors.delete(path);
+      })
+      .catch((error) => {
+        if (generation === this.diskContentGeneration) this.saveErrors.set(path, error);
+        this.options.onError(error);
+      })
       .finally(() => {
         if (this.saveQueues.get(path) !== next) return;
         this.saveQueues.delete(path);
@@ -385,6 +395,7 @@ export class ActiveNoteLifecycle {
     while (this.saveQueues.size > 0) {
       await Promise.allSettled(Array.from(this.saveQueues.values()));
     }
+    if (this.saveErrors.size) throw this.saveErrors.values().next().value;
   }
 
   hasSaveInFlight(path: string | null) {
@@ -394,9 +405,12 @@ export class ActiveNoteLifecycle {
   }
 
   async flushPendingSaves() {
-    while (this.persistenceRun) await this.persistenceRun;
-    while (this.pathChangeTail) await this.pathChangeTail;
-    await this.waitForPendingSaves();
+    do {
+      while (this.persistenceRun) await this.persistenceRun;
+      while (this.pathChangeTail) await this.pathChangeTail;
+      await this.waitForPendingSaves();
+      // Completing a queued save can request persistence of a newer draft.
+    } while (this.persistenceRun || this.pathChangeTail || this.saveQueues.size);
   }
 
   private async drainPersistenceRequests() {

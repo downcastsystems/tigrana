@@ -94,6 +94,16 @@ A Native Note or Folder rename/move is planned and committed as one mutation:
 7. Repair Native edit-lock owner paths, then return the completed path to
    React for ephemeral session repair.
 
+User-requested moves and Folder renames pass through `withSavedEditor` before
+starting the Native mutation. The editor captures pending transactions and
+unobserved accessibility DOM replacements, then input is held read-only until
+saving, path repair, and refresh finish. Save failures abort the operation and
+leave the draft open for retry. Saving a pending title can rename the source;
+the move resolves the resulting active path instead of using the old filename.
+The internal title-save rename bypasses this outer guard to avoid waiting on
+its own persistence request. `src/App.move.test.tsx` exercises these flows with
+the real editor and isolated storage.
+
 Frontend Notebook metadata writes and Native path mutations share a
 per-Notebook queue. The queue retains idempotent metadata updaters rather than
 stale whole snapshots, coalesces deferred Note-position updates, and replays
@@ -150,6 +160,12 @@ whole-Note text statistics run off the main thread, and outline extraction is
 deferred until typing is idle. Markdown serialization is also deferred, but
 navigation, raw-mode entry, export, printing, external-change reconciliation,
 and window shutdown flush the pending editor snapshot before continuing.
+
+The move/rename capture reads the visible DOM using ProseMirror's node-view
+parse rules, preserving task attributes and excluding table/code controls.
+This internal parser adapter is covered by rich-content fixtures in
+`NotesEditor.performance.test.tsx`; it must be rechecked when ProseMirror is
+upgraded. It runs only at the explicit move/rename boundary, not on autosave.
 
 The hot typing path must remain local to ProseMirror. Native webview
 spellchecking handles incremental spelling feedback; cursor and scroll

@@ -149,6 +149,46 @@ describe("active Note lifecycle", () => {
     expect(subject.hasSaveInFlight("Note.md")).toBe(false);
   });
 
+  it("rejects a flush after a failed background save and clears the failure on retry", async () => {
+    const { subject } = lifecycle();
+    const failure = new Error("Disk full");
+    await subject.enqueueSave("Note.md", async () => { throw failure; });
+    await expect(subject.flushPendingSaves()).rejects.toBe(failure);
+    await subject.enqueueSave("Note.md", async () => {});
+    await expect(subject.flushPendingSaves()).resolves.toBeUndefined();
+  });
+
+  it("does not carry a late save failure into a different Notebook", async () => {
+    const { subject } = lifecycle();
+    const pending = deferred();
+    const save = subject.enqueueSave("Note.md", async () => {
+      await pending.promise;
+      throw new Error("Old Notebook failed");
+    });
+    subject.resetWorkspace();
+    pending.resolve();
+    await save;
+    await expect(subject.flushPendingSaves()).resolves.toBeUndefined();
+  });
+
+  it("flushes persistence requested by a completing save", async () => {
+    const { subject } = lifecycle();
+    const nextPersistence = deferred();
+    let completed = false;
+    subject.enqueueSave("Note.md", async () => {
+      void subject.requestPersistence(async () => {
+        await nextPersistence.promise;
+        return "newer draft";
+      });
+    });
+    const flush = subject.flushPendingSaves().then(() => { completed = true; });
+    for (let i = 0; i < 20; i += 1) await Promise.resolve();
+    expect(completed).toBe(false);
+    nextPersistence.resolve();
+    await flush;
+    expect(completed).toBe(true);
+  });
+
   it("waits for a queued body save before a rename path change", async () => {
     const { subject } = lifecycle();
     const body = deferred();
