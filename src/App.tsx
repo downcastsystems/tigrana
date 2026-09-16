@@ -1,3 +1,4 @@
+import { isSortCommand, type SortCommand } from "./editor/sortLines";
 import { ReleaseNotice } from "./components/ReleaseNotice";
 import { invoke } from "@tauri-apps/api/core";
 import { WindowsMenuBar, isWindowsDesktop } from "./components/WindowsMenuBar";
@@ -359,6 +360,7 @@ type ThemePresetId =
   | "catppuccin-mocha";
 type RightSidebarMode = "outline" | "frontmatter" | "properties" | "backlinks";
 type EditorCommand =
+  | SortCommand
   | "bold"
   | "italic"
   | "strike"
@@ -610,6 +612,7 @@ export default function App() {
   const [frontmatterError, setFrontmatterError] = useState<string | null>(null);
   const [activeNoteAccess, setActiveNoteAccess] = useState<ActiveNoteAccess>("editable");
   const [noteLockMessage, setNoteLockMessage] = useState<string | null>(null);
+  const [hasEditorSelection, setHasEditorSelection] = useState(false);
   const [selectedEditorText, setSelectedEditorText] = useState("");
   const [editorRestorePosition, setEditorRestorePosition] = useState<NotePositionMetadata | null>(null);
   const [searchOpen, setSearchOpen] = useState(false);
@@ -1249,6 +1252,7 @@ export default function App() {
       hasWorkspace: Boolean(workspace),
       hasOpenNote,
       activeNoteEditable,
+      hasEditorSelection,
       hasUnsavedChanges,
       rawMarkdownVisible: rawMarkdownVisible || Boolean(frontmatterError),
       leftVisible,
@@ -1267,6 +1271,7 @@ export default function App() {
     return () => window.clearTimeout(handle);
   }, [
     activeNoteEditable,
+    hasEditorSelection,
     editorWidthMode,
     frontmatterError,
     hasOpenNote,
@@ -1706,6 +1711,7 @@ export default function App() {
     setFrontmatterError(null);
     selectedEditorTextRef.current = "";
     setSelectedEditorText("");
+    setHasEditorSelection(false);
   }, [activeNoteLifecycle, activePath, applyNoteAccess, cancelPendingNoteLoads, disarmUndoableNewNote, draftSaveRevisions, releaseActiveNoteLock, setActivePathAuthoritatively]);
 
   useEffect(() => {
@@ -1975,6 +1981,10 @@ export default function App() {
 
   async function handleMenuCommand(command: string) {
     if (userPathMutationRef.current) return;
+    if (isSortCommand(command)) {
+      if (activeNoteEditable && !rawMarkdownVisible && !frontmatterError && hasEditorSelection) requestEditorCommand(command);
+      return;
+    }
     if (command.startsWith("open_recent_note:")) {
       const index = Number(command.slice("open_recent_note:".length));
       const recentNote = Number.isInteger(index) ? recentNotes[index] : undefined;
@@ -2377,6 +2387,7 @@ export default function App() {
   }
 
   function handleEditorPositionChange(position: { selectedText: string; selectionFrom: number; selectionTo: number }) {
+    setHasEditorSelection(position.selectionFrom !== position.selectionTo);
     const previousSelection = editorSelectionRef.current;
     const selectionChanged = previousSelection?.from !== position.selectionFrom || previousSelection.to !== position.selectionTo;
     editorSelectionRef.current = { from: position.selectionFrom, to: position.selectionTo };
@@ -3905,6 +3916,7 @@ export default function App() {
     setFrontmatterError(loadedDocument.frontmatterError);
     selectedEditorTextRef.current = "";
     setSelectedEditorText("");
+    setHasEditorSelection(false);
     if (loadedDocument.frontmatterError) {
       setRawMarkdownVisible(true);
       setRightSidebarMode("frontmatter");

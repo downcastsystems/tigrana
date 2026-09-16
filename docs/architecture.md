@@ -190,6 +190,20 @@ and Link index reads are async Tauri commands whose blocking filesystem and
 history/index work runs on the blocking worker pool instead of the webview
 command executor.
 
+### Selection sorting
+
+Edit > Sort Lines sorts the whole lines or sibling list items touched by the
+rich-editor selection. A-Z and Z-A compare lowercase keys; the Case Sensitive
+variants compare the original strings in Unicode order. Equal keys retain their
+order. Nested lists stay with their parent item and selected sublists sort
+independently. Inline formatting and task checkbox state travel with the content.
+
+Tables sort selected body rows by the first column, keeping header rows fixed.
+Tables containing merged cells are left unchanged. Sorting is disabled in raw
+Markdown mode and for read-only Notes. The transformation in
+`src/editor/sortLines.ts` runs only on command and creates one undoable edit,
+without a Markdown serialization/reload cycle.
+
 ## Search plan
 
 The current frontend Fuse.js search supports the demo. Native search can move

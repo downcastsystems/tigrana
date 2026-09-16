@@ -1,3 +1,5 @@
+import { isSortCommand, sortSelectedLines, type SortCommand } from "./sortLines";
+import { closeHistory } from "@tiptap/pm/history";
 import { CodeBlockLowlight } from "@tiptap/extension-code-block-lowlight";
 import { Extension, InputRule, PasteRule } from "@tiptap/core";
 import { Highlight } from "@tiptap/extension-highlight";
@@ -95,6 +97,7 @@ export type PendingEditorChange = {
 };
 
 export type EditorCommand =
+  | SortCommand
   | "bold"
   | "italic"
   | "strike"
@@ -3039,6 +3042,16 @@ export function NotesEditor({ content, commandRequest, focusRequest, focusAtEndR
 
   const applyEditorCommand = useCallback((request: EditorCommandRequest) => {
     if (!editor) return;
+    if (isSortCommand(request.command)) {
+      if (!editor.isEditable) return;
+      const tr = sortSelectedLines(editor.state, request.command);
+      if (tr) {
+        editor.view.dispatch(tr);
+        editor.view.dispatch(closeHistory(editor.state.tr));
+      }
+      editor.view.focus();
+      return;
+    }
     if (request.command === "findNext") {
       setFindOpen(true);
       selectFindMatch(findIndex + 1);

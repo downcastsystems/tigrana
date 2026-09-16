@@ -215,6 +215,8 @@ struct AppMenuState {
     has_workspace: bool,
     has_open_note: bool,
     active_note_editable: bool,
+    #[serde(default)]
+    has_editor_selection: bool,
     has_unsaved_changes: bool,
     raw_markdown_visible: bool,
     left_visible: bool,
@@ -234,6 +236,7 @@ impl Default for AppMenuState {
             has_workspace: false,
             has_open_note: false,
             active_note_editable: false,
+            has_editor_selection: false,
             has_unsaved_changes: false,
             raw_markdown_visible: false,
             left_visible: true,
@@ -1779,6 +1782,21 @@ fn build_app_menu(
             &PredefinedMenuItem::close_window(handle, None)?,
         ],
     )?;
+    let can_sort = state.has_open_note
+        && state.active_note_editable
+        && state.has_editor_selection
+        && !state.raw_markdown_visible;
+    let sort_az = MenuItem::with_id(handle, "sort_az", "A-Z", can_sort, None::<&str>)?;
+    let sort_za = MenuItem::with_id(handle, "sort_za", "Z-A", can_sort, None::<&str>)?;
+    let sort_az_case = MenuItem::with_id(
+        handle, "sort_az_case", "A-Z (Case Sensitive)", can_sort, None::<&str>,
+    )?;
+    let sort_za_case = MenuItem::with_id(
+        handle, "sort_za_case", "Z-A (Case Sensitive)", can_sort, None::<&str>,
+    )?;
+    let sort_lines = Submenu::with_items(
+        handle, "Sort Lines", can_sort, &[&sort_az, &sort_za, &sort_az_case, &sort_za_case],
+    )?;
     let edit_menu = Submenu::with_items(
         handle,
         "Edit",
@@ -1791,6 +1809,8 @@ fn build_app_menu(
             &PredefinedMenuItem::copy(handle, None)?,
             &PredefinedMenuItem::paste(handle, None)?,
             &PredefinedMenuItem::select_all(handle, None)?,
+            &PredefinedMenuItem::separator(handle)?,
+            &sort_lines,
             &PredefinedMenuItem::separator(handle)?,
             &find_note,
             &find_next,
@@ -2216,6 +2236,9 @@ pub fn run() {
             "export_markdown" => emit_menu_command(app, "export_markdown"),
             "export_html" => emit_menu_command(app, "export_html"),
             "print_note" => emit_menu_command(app, "print_note"),
+            "sort_az" | "sort_za" | "sort_az_case" | "sort_za_case" => {
+                emit_menu_command(app, event.id().as_ref());
+            }
             "find_note" => emit_menu_command(app, "find_note"),
             "find_next" => emit_menu_command(app, "find_next"),
             "find_previous" => emit_menu_command(app, "find_previous"),

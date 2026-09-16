@@ -11,6 +11,7 @@ export type AppMenuState = {
   hasWorkspace: boolean;
   hasOpenNote: boolean;
   activeNoteEditable: boolean;
+  hasEditorSelection: boolean;
   hasUnsavedChanges: boolean;
   rawMarkdownVisible: boolean;
   leftVisible: boolean;
