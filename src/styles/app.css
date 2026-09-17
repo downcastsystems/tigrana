@@ -5999,3 +5999,14 @@ html[data-tauri="true"][data-platform="windows"] .note-surface {
   outline: 2px solid var(--accent);
   outline-offset: -2px;
 }
+
+/* Use the same solid accent and contrast color for selections in both modes. */
+.app-shell .app-titlebar .note-tab.is-active,
+html[data-accent-titlebar="true"] .app-shell .app-titlebar .note-tab.is-active {
+  background: var(--accent);
+  color: var(--accent-contrast);
+}
+
+.app-shell .section-view-folder-pane .folder-row:is(.is-active, .is-context-target, :hover) .folder-select {
+  color: var(--accent-contrast);
+}

@@ -45,16 +45,6 @@ html[data-accent-titlebar="true"] .app-shell[data-plasma] .app-titlebar {
   --plasma-titlebar-fill: color-mix(in srgb, var(--titlebar-bg, var(--accent)) 80%, transparent);
 }
 
-/* Selections stay opaque and readable over the moving glass background. */
-.app-shell[data-plasma] .app-titlebar .note-tab.is-active {
-  background: var(--accent);
-  color: var(--accent-contrast);
-}
-
-.app-shell[data-plasma] .section-view-folder-pane .folder-row:is(.is-active, .is-context-target, :hover) .folder-select {
-  color: var(--accent-contrast);
-}
-
 .app-shell[data-plasma] .app-frame {
   padding: 18px 16px 16px;
   gap: 0;
