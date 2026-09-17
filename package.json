@@ -1,6 +1,6 @@
 {
   "name": "tigrana",
-  "version": "1.0.9",
+  "version": "1.0.10",
   "private": true,
   "description": "A simple, beautiful, file-native desktop notes app.",
   "type": "module",
@@ -11,7 +11,7 @@
     "test:watch": "vitest",
     "preview": "vite preview",
     "tauri": "tauri",
-    "install:app": "npm run tauri -- build --bundles app && rm -rf \"/Applications/Tigrana.app\" && ditto \"src-tauri/target/release/bundle/macos/Tigrana.app\" \"/Applications/Tigrana.app\" && echo \"\u2713 Installed to /Applications\"",
+    "install:app": "npm run tauri -- build --bundles app && rm -rf \"/Applications/Tigrana.app\" && ditto \"src-tauri/target/release/bundle/macos/Tigrana.app\" \"/Applications/Tigrana.app\" && echo \"✓ Installed to /Applications\"",
     "lint": "eslint . --ext ts,tsx --report-unused-disable-directives --max-warnings 0",
     "postinstall": "patch-package --error-on-fail"
   },
