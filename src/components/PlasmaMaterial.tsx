@@ -27,6 +27,8 @@ export default function PlasmaMaterial({ theme, accentColor, frost, backgroundBl
       maxSurfaces: 4,
       pointerDrop: false,
       ambientDrops: false,
+      // Keep borders locked to panel bounds during resizing and layout changes.
+      animateSurfaces: false,
       reducedMotion: reducedMotion.matches,
       stretch: 0,
       flow: 0,
