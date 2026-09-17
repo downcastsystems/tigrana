@@ -1,0 +1,37 @@
+diff --git a/node_modules/@cruxgarden/plasma-ui/dist/index.js b/node_modules/@cruxgarden/plasma-ui/dist/index.js
+index d4aa606..91e4572 100644
+--- a/node_modules/@cruxgarden/plasma-ui/dist/index.js
++++ b/node_modules/@cruxgarden/plasma-ui/dist/index.js
+@@ -879,6 +879,20 @@ var PlasmaRenderer = class _PlasmaRenderer {
+     gl.useProgram(bl.pr);
+     gl.uniform1i(bl.u.uTex, 0);
+     gl.activeTexture(gl.TEXTURE0);
++    // Tigrana: blur only the background texture, before drawing panel masks,
++    // lighting and refraction. Reuse scratch targets; Sharp adds no passes.
++    const backgroundBlur = Math.min(40, Math.max(0, s.backgroundBlur || 0));
++    if (backgroundBlur > 0) {
++      const step = backgroundBlur * this.dpr * MASK_SCALE / 4;
++      pass(this.rtBg, this.rtBgM, 0, 0);
++      for (let n = 0; n < 3; n++) {
++        pass(this.rtBgM, this.rtB, step, 0);
++        pass(this.rtB, this.rtBgM, 0, step);
++      }
++      gl.viewport(0, 0, this.rtBg.w, this.rtBg.h);
++      pass(this.rtBgM, this.rtBg, 0, 0);
++      gl.viewport(0, 0, this.rtA.w, this.rtA.h);
++    }
+     if (list.some((_, i) => this.FR[i] > 2e-3)) {
+       pass(this.rtBg, this.rtBgM, 1.5 * k, 0);
+       pass(this.rtBgM, this.rtB, 0, 2.5 * k);
+diff --git a/node_modules/@cruxgarden/plasma-ui/dist/renderer.d.ts b/node_modules/@cruxgarden/plasma-ui/dist/renderer.d.ts
+index 1634c04..0721e15 100644
+--- a/node_modules/@cruxgarden/plasma-ui/dist/renderer.d.ts
++++ b/node_modules/@cruxgarden/plasma-ui/dist/renderer.d.ts
+@@ -1,5 +1,7 @@
+ import { Box } from "./snap";
+ export interface RendererSettings {
++    /** Tigrana: background-only blur radius in CSS pixels, 0–40. */
++    backgroundBlur?: number;
+     colors: [string, string, string];
+     blend: number;
+     refraction: number;

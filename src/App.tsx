@@ -1,3 +1,4 @@
+import PlasmaTheme from "./components/PlasmaTheme";
 import { isSortCommand, type SortCommand } from "./editor/sortLines";
 import { ReleaseNotice } from "./components/ReleaseNotice";
 import { invoke } from "@tauri-apps/api/core";
@@ -206,6 +207,9 @@ function isEditableNoteTextCursorTarget(target: EventTarget | null) {
 }
 
 const workspaceKey = "tigrana-workspace";
+const plasmaBackgroundBlurKey = "tigrana-plasma-background-blur";
+const plasmaFrostKey = "tigrana-plasma-frost";
+const plasmaThemeKey = "tigrana-plasma-theme";
 const themeKey = "tigrana-theme";
 const accentKey = "tigrana-accent";
 const themePresetKey = "tigrana-theme-preset";
@@ -586,6 +590,16 @@ export default function App() {
   const [workspace, setWorkspace] = useState(() => readInitialWorkspace());
   const [colorScheme, setColorScheme] = useState<ColorScheme>(() => readStoredColorScheme());
   const [prefersDark, setPrefersDark] = useState(() => window.matchMedia?.("(prefers-color-scheme: dark)").matches ?? false);
+  const [plasmaBackgroundBlur, setPlasmaBackgroundBlur] = useState(() => {
+    const stored = Number(localStorage.getItem(plasmaBackgroundBlurKey) ?? 0);
+    return Number.isFinite(stored) ? Math.min(40, Math.max(0, stored)) : 0;
+  });
+  const [plasmaFrost, setPlasmaFrost] = useState(() => {
+    const stored = localStorage.getItem(plasmaFrostKey);
+    const value = stored === null ? 80 : Number(stored);
+    return Number.isFinite(value) ? Math.min(100, Math.max(0, value)) : 80;
+  });
+  const [plasmaEnabled, setPlasmaEnabled] = useState(() => localStorage.getItem(plasmaThemeKey) === "true");
   const [themePresetId, setThemePresetId] = useState<ThemePresetId>(() => readStoredThemePreset());
   const [themeColors, setThemeColors] = useState<NotebookThemeColorSettings>(() => readStoredNotebookThemeColors());
   const [accentTitlebar, setAccentTitlebar] = useState<boolean>(() => localStorage.getItem(accentTitlebarKey) === "true");
@@ -1063,6 +1077,18 @@ export default function App() {
       localStorage.setItem(lastPathKey, JSON.stringify({ workspace, path: activePath }));
     }
   }, [activePath, workspace]);
+
+  useEffect(() => {
+    localStorage.setItem(plasmaBackgroundBlurKey, String(plasmaBackgroundBlur));
+  }, [plasmaBackgroundBlur]);
+
+  useEffect(() => {
+    localStorage.setItem(plasmaFrostKey, String(plasmaFrost));
+  }, [plasmaFrost]);
+
+  useEffect(() => {
+    localStorage.setItem(plasmaThemeKey, String(plasmaEnabled));
+  }, [plasmaEnabled]);
 
   useEffect(() => {
     document.documentElement.dataset.theme = resolvedTheme;
@@ -4603,7 +4629,11 @@ export default function App() {
   }
 
   return (
-    <div className="app-shell" ref={appShellRef}>
+    <div className="app-shell" ref={appShellRef} data-plasma={plasmaEnabled || undefined} style={plasmaEnabled ? {
+      "--plasma-panel-opacity": `${plasmaFrost * 0.9}%`,
+      "--plasma-editor-opacity": `${Math.min(95, plasmaFrost * 1.1)}%`,
+    } as CSSProperties : undefined}>
+      {plasmaEnabled ? <PlasmaTheme backgroundBlur={plasmaBackgroundBlur} frost={plasmaFrost / 100} theme={resolvedTheme} accentColor={effectiveAccentColor} layoutKey={`${leftVisible}-${outlineVisible}-${navigationStyle}`} /> : null}
       {isWindowsDesktop() ? <WindowsMenuBar onError={setAppError} onMouseDown={handleChromeMouseDown} onDoubleClick={handleChromeDoubleClick} /> : null}
       <header
         className="app-titlebar"
@@ -5434,6 +5464,12 @@ export default function App() {
             navigationStyle={navigationStyle}
             resolvedTheme={resolvedTheme}
             spellcheckEnabled={spellcheckEnabled}
+            plasmaBackgroundBlur={plasmaBackgroundBlur}
+            onPlasmaBackgroundBlurChange={setPlasmaBackgroundBlur}
+            plasmaFrost={plasmaFrost}
+            onPlasmaFrostChange={setPlasmaFrost}
+            plasmaEnabled={plasmaEnabled}
+            onPlasmaEnabledChange={setPlasmaEnabled}
             themePresetId={themePreset.id}
             onAccentChange={(color) => updateThemeColor(resolvedTheme, { accentColor: color })}
             onAccentReset={() => updateThemeColor(resolvedTheme, { accentColor: null })}
@@ -7750,6 +7786,12 @@ function SettingsModal({
   resolvedTheme,
   spellcheckEnabled,
   themePresetId,
+  plasmaEnabled,
+  plasmaFrost,
+  plasmaBackgroundBlur,
+  onPlasmaBackgroundBlurChange,
+  onPlasmaFrostChange,
+  onPlasmaEnabledChange,
   accentTitlebar,
   titlebarColor,
   titlebarUseAccent,
@@ -7781,6 +7823,12 @@ function SettingsModal({
   resolvedTheme: "light" | "dark";
   spellcheckEnabled: boolean;
   themePresetId: ThemePresetId;
+  plasmaEnabled: boolean;
+  plasmaFrost: number;
+  plasmaBackgroundBlur: number;
+  onPlasmaBackgroundBlurChange: (value: number) => void;
+  onPlasmaFrostChange: (value: number) => void;
+  onPlasmaEnabledChange: (enabled: boolean) => void;
   titlebarColor: string | null;
   titlebarUseAccent: boolean;
   onAccentChange: (color: string) => void;
@@ -7868,6 +7916,58 @@ function SettingsModal({
               ))}
             </select>
           </div>
+          <div className="setting-row">
+            <span>
+              <strong>Plasma UI · Experimental</strong>
+              <small>Glass panes with subtle lighting. Uses more graphics power. Saved on this computer.</small>
+            </span>
+            <label className="switch">
+              <input aria-label="Plasma UI" type="checkbox" checked={plasmaEnabled} onChange={(event) => onPlasmaEnabledChange(event.target.checked)} />
+              <span className="switch-track" />
+            </label>
+          </div>
+          {plasmaEnabled ? (
+            <div className="setting-row setting-row-sub">
+              <span>
+                <strong>Panel frostiness</strong>
+                <small>Lower values make panels clearer and more transparent; higher values add blur and opacity. Saved on this computer.</small>
+              </span>
+              <div className="plasma-frost-control">
+                <input
+                  aria-label="Panel frostiness"
+                  aria-valuetext={`${plasmaFrost}% frosted`}
+                  type="range"
+                  min="0"
+                  max="100"
+                  step="1"
+                  value={plasmaFrost}
+                  onChange={(event) => onPlasmaFrostChange(Number(event.target.value))}
+                />
+                <output>{plasmaFrost}%</output>
+              </div>
+            </div>
+          ) : null}
+          {plasmaEnabled ? (
+            <div className="setting-row setting-row-sub">
+              <span>
+                <strong>Background blur</strong>
+                <small>Soften the swirls while keeping panel borders and text sharp. Saved on this computer.</small>
+              </span>
+              <div className="plasma-frost-control">
+                <input
+                  aria-label="Background blur"
+                  aria-valuetext={plasmaBackgroundBlur === 0 ? "Sharp" : `${plasmaBackgroundBlur} pixels of blur`}
+                  type="range"
+                  min="0"
+                  max="40"
+                  step="1"
+                  value={plasmaBackgroundBlur}
+                  onChange={(event) => onPlasmaBackgroundBlurChange(Number(event.target.value))}
+                />
+                <output>{plasmaBackgroundBlur === 0 ? "Sharp" : `${plasmaBackgroundBlur}px`}</output>
+              </div>
+            </div>
+          ) : null}
           <div className="setting-row">
             <span>
               <strong>Accent color</strong>
