@@ -46,6 +46,7 @@ import {
   X,
 } from "lucide-react";
 import { common, createLowlight } from "lowlight";
+import { createPortal } from "react-dom";
 import { type CSSProperties, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { ensureParagraphAfterCurrentTable, filterSlashCommands, markCurrentTableAsTigranaHtml } from "./slashCommands";
 import { createDeferredCommit, type DeferredCommit } from "../lib/deferredCommit";
@@ -3429,6 +3430,7 @@ export function FormattingBubbleMenu({
   editor: Editor;
   onRequestLink?: () => Promise<{ href: string; title: string } | null>;
 }) {
+  const bubbleRef = useRef<HTMLDivElement>(null);
   const [suppressed, setSuppressed] = useState(false);
   const [tick, setTick] = useState(0);
   const [positionRevision, setPositionRevision] = useState(0);
@@ -3631,11 +3633,26 @@ export function FormattingBubbleMenu({
       const end = editor.view.coordsAtPos(to);
       const top = Math.min(start.top, end.top);
       const left = (start.left + end.left) / 2;
-      return { top, left };
+      return { top, left, bottom: Math.max(start.bottom, end.bottom) };
     } catch {
       return null;
     }
   }, [editor, positionRevision, visible]);
+
+  useLayoutEffect(() => {
+    const bubble = bubbleRef.current;
+    if (!position || !bubble) return;
+    const { width, height } = bubble.getBoundingClientRect();
+    const margin = 8;
+    const left = Math.max(margin, Math.min(position.left - width / 2, window.innerWidth - width - margin));
+    const above = position.top - height - margin;
+    const top = Math.max(margin, Math.min(
+      above >= margin ? above : position.bottom + margin,
+      window.innerHeight - height - margin,
+    ));
+    bubble.style.left = `${left}px`;
+    bubble.style.top = `${top}px`;
+  }, [position]);
 
   // Reference `tick` so editor state changes still refresh button/visibility
   // state without treating every transaction as an anchor invalidation.
@@ -3643,14 +3660,17 @@ export function FormattingBubbleMenu({
 
   if (!visible || !position) return null;
 
-  return (
+  return createPortal(
     <div
+      ref={bubbleRef}
       className="format-bubble"
       style={{
         position: "fixed",
         top: position.top,
         left: position.left,
-        transform: "translate(-50%, calc(-100% - 8px))",
+        maxWidth: "calc(100vw - 16px)",
+        boxSizing: "border-box",
+        overflowX: "auto",
         zIndex: 55,
       }}
       onMouseDown={(event) => event.preventDefault()}
@@ -3672,7 +3692,8 @@ export function FormattingBubbleMenu({
           </button>
         );
       })}
-    </div>
+    </div>,
+    document.body,
   );
 }
 

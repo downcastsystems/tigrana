@@ -1049,6 +1049,12 @@ fn write_export_text_file(payload: WriteExportTextPayload) -> Result<(), String>
 }
 
 #[tauri::command]
+fn write_theme_package(path: String, contents: Vec<u8>) -> Result<(), String> {
+    if contents.len() > 8 * 1024 * 1024 { return Err("Theme package exceeds 8 MB".into()); }
+    fs::write(path, contents).map_err(|error| error.to_string())
+}
+
+#[tauri::command]
 fn print_current_webview(app: AppHandle) -> Result<(), String> {
     let Some(window) = active_menu_window(&app) else {
         return Err("No active window to print.".to_string());
@@ -2306,6 +2312,7 @@ pub fn run() {
         .invoke_handler(tauri::generate_handler![
             themes::list_themes,
             themes::save_theme,
+            themes::delete_theme,
             ensure_workspace,
             watch_workspace,
             list_folders,
@@ -2353,6 +2360,7 @@ pub fn run() {
             reveal_path,
             open_external,
             write_export_text_file,
+            write_theme_package,
             print_current_webview
         ])
         .run(tauri::generate_context!())

@@ -121,3 +121,13 @@ describe("Notebook appearance", () => {
     expect(notebookB).toEqual({ ...defaults, editorFontSize: 20 });
   });
 });
+
+it('keeps notebook Plasma overrides separate from the selected theme default', () => {
+  const theme = { ...exampleTheme(), plasma: { enabled: true, frost: 60, backgroundBlur: 12 } };
+  const manual = { enabled: false, frost: 70, backgroundBlur: 8 };
+  expect(resolveNotebookAppearance({ customTheme: theme, plasma: manual }, defaults, ['default']).plasma).toEqual(manual);
+  expect(resolveNotebookAppearance({ customTheme: theme }, defaults, ['default']).plasma).toEqual(theme.plasma);
+  expect(theme.plasma.enabled).toBe(true);
+  const standard = { ...theme, plasma: { ...theme.plasma, enabled: false } };
+  expect(resolveNotebookAppearance({ customTheme: standard, plasma: { ...manual, enabled: true } }, defaults, ['default']).plasma?.enabled).toBe(true);
+});

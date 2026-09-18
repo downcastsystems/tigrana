@@ -2,9 +2,12 @@
 import { beforeEach, describe, expect, it } from "vitest";
 import {
   listThemes,
+  uniqueThemeName,
+  themeDisplayNames,
   opaqueThemeColor,
   parseTheme,
   saveTheme,
+  deleteTheme,
   themeAppearance,
   themesMatch,
 } from "./themes";
@@ -95,4 +98,41 @@ it("preserves Plasma settings in JSON and detects differences while accepting le
   ]) {
     expect(() => parseTheme({ ...theme, plasma })).toThrow();
   }
+});
+
+it("rejects duplicate names but permits editing the same identity", async () => {
+  const theme = exampleTheme();
+  await saveTheme(theme, null);
+  await expect(saveTheme({ ...theme, id: "other", name: `  ${theme.name.toUpperCase()}  ` }, null)).rejects.toThrow("name already exists");
+  await saveTheme({ ...theme, editorFontSize: 19 }, theme);
+  expect((await listThemes()).themes).toHaveLength(1);
+});
+it("allocates unique copy names and distinct legacy labels without changing snapshots", () => {
+  const a = { ...exampleTheme(), id: "a", name: "Starfall copy" };
+  const b = { ...a, id: "b" };
+  const c = { ...a, id: "c", name: "Starfall copy (2)" };
+  expect(uniqueThemeName(a.name, [a,c])).toBe("Starfall copy (3)");
+  expect(themeDisplayNames([b,c,a])).toEqual({ a: "Starfall copy", b: "Starfall copy (3)", c: "Starfall copy (2)" });
+  expect(b.name).toBe(a.name);
+  expect(uniqueThemeName("x".repeat(100), [{ ...a, name: "x".repeat(100) }]).length).toBe(100);
+});
+
+it("deletes only the reviewed shared copy and rejects stale deletion", async () => {
+  const theme = exampleTheme();
+  await saveTheme(theme, null);
+  const changed = { ...theme, name: "Changed" };
+  await saveTheme(changed, theme);
+  await expect(deleteTheme(theme)).rejects.toThrow("changed");
+  expect((await listThemes()).themes).toEqual([changed]);
+  await deleteTheme(changed);
+  expect((await listThemes()).themes).toEqual([]);
+  expect(JSON.parse(localStorage.getItem("tigrana-shared-themes-v1-trash")!)).toHaveLength(1);
+  expect(theme.name).not.toBe(changed.name);
+});
+
+it('resets Plasma to the selected theme default, including legacy themes', () => {
+  expect(themeAppearance(exampleTheme()).plasma?.enabled).toBe(false);
+  const plasma = { enabled: true, frost: 45, backgroundBlur: 7 };
+  expect(themeAppearance({ ...exampleTheme(), plasma }).plasma).toEqual(plasma);
+  expect(themeAppearance({ ...exampleTheme(), plasma: { ...plasma, enabled: false } }).plasma?.enabled).toBe(false);
 });

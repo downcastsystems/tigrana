@@ -1,0 +1,53 @@
+{
+  "schemaVersion": 2,
+  "id": "tigrana-example",
+  "name": "Quiet paper",
+  "light": {
+    "background": "#f7f4ef",
+    "surface": "#eeeae3",
+    "surfaceSoft": "#f3efe8",
+    "surfaceStrong": "#ffffff",
+    "surfaceMuted": "#e5e0d8",
+    "border": "#c9c2b8",
+    "text": "#22211f",
+    "textMuted": "#716b63",
+    "accent": "#315f59",
+    "titlebar": "#315f59"
+  },
+  "dark": {
+    "background": "#202122",
+    "surface": "#191a1b",
+    "surfaceSoft": "#252628",
+    "surfaceStrong": "#2b2d30",
+    "surfaceMuted": "#151617",
+    "border": "#45474a",
+    "text": "#eeeae3",
+    "textMuted": "#b4b0a8",
+    "accent": "#5ea896",
+    "titlebar": "#315f59"
+  },
+  "appFontFamily": "system-ui",
+  "appFontSize": 14,
+  "editorFontFamily": "Georgia, serif",
+  "editorFontSize": 17,
+  "accentTitlebar": false,
+  "plasma": {
+    "enabled": false,
+    "frost": 80,
+    "backgroundBlur": 0
+  },
+  "design": {
+    "apiVersion": 1,
+    "author": "Tigrana example",
+    "version": "1.0.0",
+    "license": "",
+    "supportsPlasma": true,
+    "css": "",
+    "assets": {},
+    "metrics": {
+      "radius": 4,
+      "spacing": 1,
+      "lineHeight": 1.7
+    }
+  }
+}

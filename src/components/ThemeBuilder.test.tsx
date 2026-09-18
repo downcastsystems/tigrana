@@ -1,10 +1,17 @@
 // @vitest-environment jsdom
+import { webcrypto } from "node:crypto";
+import type { ThemeDifferenceAcknowledgement } from "../types";
 import { act } from "react";
 import { createRoot } from "react-dom/client";
-import { beforeEach, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { ThemeBuilder, ThemeReconciliation } from "./ThemeBuilder";
+import { defaultThemeDesign } from "../lib/themeDesign";
 import { exampleTheme } from "../lib/themes.fixture";
-import { listThemes, saveTheme } from "../lib/themes";
+import {
+  listThemes,
+  saveTheme,
+  themeDifferenceFingerprint,
+} from "../lib/themes";
 (
   globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }
 ).IS_REACT_ACT_ENVIRONMENT = true;
@@ -26,10 +33,19 @@ vi.mock("./PlasmaTheme", () => ({
     />
   ),
 }));
-beforeEach(() => localStorage.clear());
+beforeEach(() => {
+  localStorage.clear();
+  HTMLDialogElement.prototype.showModal = vi.fn(function (this: HTMLDialogElement) { this.setAttribute("open", ""); });
+  HTMLDialogElement.prototype.close = vi.fn(function (this: HTMLDialogElement) { this.removeAttribute("open"); });
+  vi.stubGlobal("crypto", webcrypto);
+});
+afterEach(() => {
+  vi.unstubAllGlobals();
+  vi.restoreAllMocks();
+});
 function button(host: HTMLElement, text: string) {
   return [...host.querySelectorAll("button")].find(
-    (b) => b.textContent === text,
+    (b) => (b.querySelector(".theme-choice-label")?.textContent ?? b.textContent) === text,
   )!;
 }
 it("keeps draft edits local until save and lets the user cancel", async () => {
@@ -44,9 +60,25 @@ it("keeps draft edits local until save and lets the user cancel", async () => {
     );
     await act(async () => button(host, "Create theme").click());
     expect(
-      host.querySelector('[aria-label="dark theme preview"]'),
+      host.querySelector('[aria-label="dark full theme preview"]'),
     ).not.toBeNull();
     expect(apply).not.toHaveBeenCalled();
+    expect(host.textContent).toContain("Advanced surfaces");
+    expect(host.querySelector('input[aria-label="Editor opacity"]')).not.toBeNull();
+    const tabs = host.querySelectorAll<HTMLButtonElement>('[role="tab"]');
+    expect(tabs).toHaveLength(2);
+    expect(tabs[0].getAttribute("aria-selected")).toBe("true");
+    await act(async () => tabs[1].click());
+    expect(tabs[1].getAttribute("aria-selected")).toBe("true");
+    expect(host.querySelector('[role="tabpanel"]')?.getAttribute("aria-labelledby")).toBe(tabs[1].id);
+    expect(button(host, "CSS reference and examples")).toBeDefined();
+    const generated = host.querySelector<HTMLTextAreaElement>('[aria-label="Generated visual CSS"]')!;
+    expect(generated.readOnly).toBe(true);
+    expect(generated.value).toContain(':scope.theme-light');
+    expect(generated.value).toContain(':scope.theme-dark');
+    expect(host.querySelector<HTMLTextAreaElement>('[aria-label="Theme CSS"]')!.readOnly).toBe(false);
+    await act(async () => tabs[1].dispatchEvent(new KeyboardEvent("keydown", { key: "ArrowLeft", bubbles: true })));
+    expect(tabs[0].getAttribute("aria-selected")).toBe("true");
     expect(host.querySelector('select[aria-label="Theme"]')).toBeNull();
     expect(host.querySelector('select[aria-label="Color scheme"]')).toBeNull();
     expect(button(host, "Create theme")).toBeUndefined();
@@ -55,6 +87,7 @@ it("keeps draft edits local until save and lets the user cancel", async () => {
     expect((await listThemes()).themes).toHaveLength(0);
     await act(async () => button(host, "Create theme").click());
     await act(async () => button(host, "Save and use").click());
+    await act(async () => button(host, "Confirm and save").click());
     expect(apply).toHaveBeenCalledOnce();
     expect((await listThemes()).themes).toHaveLength(1);
   } finally {
@@ -74,7 +107,9 @@ it("keeps differing notebook appearance until shared copy is explicitly chosen",
     );
     expect(host.textContent).toContain("Theme copies differ");
     expect(apply).not.toHaveBeenCalled();
-    await act(async () => button(host, "Use shared in notebook").click());
+    await act(async () =>
+      button(host, "Replace this notebook's theme with the app-wide version").click(),
+    );
     expect(apply).toHaveBeenCalledWith(shared);
   } finally {
     await act(async () => root.unmount());
@@ -89,7 +124,13 @@ it("can replace the shared copy with the notebook snapshot", async () => {
     await act(async () =>
       root.render(<ThemeReconciliation current={local} onApply={vi.fn()} />),
     );
-    await act(async () => button(host, "Replace shared with notebook").click());
+    const recommended = button(host, "Replace the app-wide theme with this notebook's version");
+    expect(recommended.classList.contains("is-recommended")).toBe(true);
+    expect(recommended.textContent).toContain("(Recommended)");
+    expect(host.querySelector(".theme-actions button")).toBe(recommended);
+    await act(async () =>
+      button(host, "Replace the app-wide theme with this notebook's version").click(),
+    );
     expect((await listThemes()).themes).toEqual([local]);
   } finally {
     await act(async () => root.unmount());
@@ -113,8 +154,10 @@ it("does not prompt for matching themes and offers to register a missing theme",
         />,
       ),
     );
-    expect(host.textContent).toContain("Add this theme");
-    await act(async () => button(host, "Add to shared library").click());
+    expect(host.textContent).toContain("Make this theme available app-wide?");
+    await act(async () =>
+      button(host, "Make theme available app-wide").click(),
+    );
     expect((await listThemes()).themes).toHaveLength(2);
   } finally {
     await act(async () => root.unmount());
@@ -130,7 +173,7 @@ it("does not repeat a deferred conflict when unrelated notebook metadata is adop
     await act(async () =>
       root.render(<ThemeReconciliation current={local} onApply={vi.fn()} />),
     );
-    await act(async () => button(host, "Keep notebook for now").click());
+    await act(async () => button(host, "Keep both versions unchanged").click());
     await act(async () =>
       root.render(
         <ThemeReconciliation current={{ ...local }} onApply={vi.fn()} />,
@@ -166,7 +209,7 @@ it("uses one selector for built-in and saved themes, including overlapping IDs",
       'select[aria-label="Theme"]',
     )!;
     expect(picker.value).toBe(`saved:${theme.id}`);
-    expect(picker.options).toHaveLength(2);
+    expect(picker.options).toHaveLength(3);
     await act(async () => {
       picker.value = `builtin:${theme.id}`;
       picker.dispatchEvent(new Event("change", { bubbles: true }));
@@ -200,22 +243,43 @@ it("previews Plasma locally and saves its settings with the theme", async () => 
     const toggle = [
       ...host.querySelectorAll<HTMLInputElement>('input[type="checkbox"]'),
     ].find((input) => input.parentElement?.textContent?.includes("Plasma UI"))!;
-    expect(host.querySelector('[data-testid="plasma-renderer"]')).toBeNull();
+    expect(
+      host
+        .querySelector(".theme-workbench-preview")
+        ?.shadowRoot?.querySelector('[data-testid="plasma-renderer"]'),
+    ).toBeNull();
+    expect(toggle.closest(".theme-advanced-surfaces")).not.toBeNull();
     await act(async () => toggle.click());
-    const renderer = host.querySelector('[data-testid="plasma-renderer"]')!;
-    expect(renderer.getAttribute("data-preview")).toBe("true");
+    const renderer = host
+      .querySelector(".theme-workbench-preview")!
+      .shadowRoot!.querySelector('[data-testid="plasma-renderer"]')!;
+    const previewRoot = host.querySelector(".theme-workbench-preview")!.shadowRoot!;
+    expect(previewRoot.querySelector(".main-pane > .topbar .sidebar-toggle")).not.toBeNull();
+    expect(previewRoot.querySelector(".main-pane > .pane-header")).toBeNull();
+    expect(previewRoot.querySelector(".title-shell > .note-title-input")).not.toBeNull();
+    expect(previewRoot.querySelector(".editor-shell > .editor-content > .ProseMirror")).not.toBeNull();
+    expect(previewRoot.querySelector(".section-view-folder-pane .pane-header strong")?.textContent).toBe("Sections");
+    expect(previewRoot.querySelectorAll(".folder-select")).toHaveLength(3);
+    expect(renderer.getAttribute("data-preview")).toBe("undefined");
     expect(renderer.getAttribute("data-frost")).toBe("0.6");
     expect(renderer.getAttribute("data-blur")).toBe("12");
     expect(renderer.getAttribute("data-accent")).toBe(theme.dark.accent);
     expect(
-      host.querySelector('.theme-preview[data-plasma-preview="true"]'),
+      host
+        .querySelector(".theme-workbench-preview")
+        ?.shadowRoot?.querySelector('.app-shell[data-plasma="true"]'),
     ).not.toBeNull();
     expect(apply).not.toHaveBeenCalled();
     expect((await listThemes()).themes).toHaveLength(0);
     await act(async () => toggle.click());
-    expect(host.querySelector('[data-testid="plasma-renderer"]')).toBeNull();
+    expect(
+      host
+        .querySelector(".theme-workbench-preview")
+        ?.shadowRoot?.querySelector('[data-testid="plasma-renderer"]'),
+    ).toBeNull();
     await act(async () => toggle.click());
     await act(async () => button(host, "Save and use").click());
+    await act(async () => button(host, "Confirm and save").click());
     expect(apply.mock.calls[0][0].plasma).toEqual({
       enabled: true,
       frost: 60,
@@ -229,4 +293,263 @@ it("previews Plasma locally and saves its settings with the theme", async () => 
   } finally {
     await act(async () => root.unmount());
   }
+});
+
+it("saves edits to the existing app-wide theme while retaining author credit", async () => {
+  const original = {
+    ...exampleTheme(),
+    schemaVersion: 2 as const,
+    design: { ...defaultThemeDesign, author: "Theme creator" },
+  };
+  await saveTheme(original, null);
+  const host = document.createElement("div"),
+    root = createRoot(host),
+    apply = vi.fn();
+  try {
+    await act(async () =>
+      root.render(
+        <ThemeBuilder current={{ ...original, editorFontSize: 22 }} seed={original} onApply={apply} />,
+      ),
+    );
+    await act(async () => button(host, "Edit theme").click());
+    await act(async () => button(host, "Save and use").click());
+    await act(async () => button(host, "Confirm and save").click());
+    expect(apply).toHaveBeenCalledOnce();
+    expect(apply.mock.calls[0][0].id).toBe(original.id);
+    expect(apply.mock.calls[0][0].design.author).toBe("Theme creator");
+    const library = (await listThemes()).themes;
+    expect(library).toHaveLength(1);
+    expect(library.find((t) => t.id === original.id)).toMatchObject({ ...original, editorFontSize: 22 });
+  } finally {
+    await act(async () => root.unmount());
+  }
+});
+
+async function settleThemeCheck() {
+  await act(async () => {
+    await new Promise((resolve) => setTimeout(resolve, 20));
+  });
+}
+it.each(["notebook", "app-wide"])(
+  "remembers an accepted difference after remount and asks again when the %s theme changes",
+  async (side) => {
+    const local = exampleTheme(),
+      shared = { ...local, name: "App-wide" };
+    await saveTheme(shared, null);
+    const host = document.createElement("div"),
+      root = createRoot(host);
+    let saved: ThemeDifferenceAcknowledgement | undefined;
+    const keep = vi.fn((value: ThemeDifferenceAcknowledgement) => {
+      saved = JSON.parse(JSON.stringify(value));
+    });
+    const apply = vi.fn();
+    try {
+      await act(async () =>
+        root.render(
+          <ThemeReconciliation
+            current={local}
+            onApply={apply}
+            onKeepBoth={keep}
+          />,
+        ),
+      );
+      await act(async () =>
+        button(host, "Keep both versions unchanged").click(),
+      );
+      await settleThemeCheck();
+      expect(keep).toHaveBeenCalledOnce();
+      expect(saved?.notebook).toMatch(/^[a-f0-9]{64}$/);
+      expect(apply).not.toHaveBeenCalled();
+      expect((await listThemes()).themes).toEqual([shared]);
+      await act(async () => root.render(null));
+      await act(async () =>
+        root.render(
+          <ThemeReconciliation
+            current={{ ...local }}
+            onApply={apply}
+            acknowledgedDifference={saved}
+            onKeepBoth={keep}
+          />,
+        ),
+      );
+      await settleThemeCheck();
+      expect(host.textContent).toBe("");
+      await act(async () => root.render(null));
+      if (side === "app-wide")
+        await saveTheme(
+          { ...shared, editorFontSize: shared.editorFontSize + 1 },
+          shared,
+        );
+      const nextLocal =
+        side === "notebook"
+          ? { ...local, editorFontSize: local.editorFontSize + 1 }
+          : local;
+      await act(async () =>
+        root.render(
+          <ThemeReconciliation
+            current={nextLocal}
+            onApply={apply}
+            acknowledgedDifference={saved}
+            onKeepBoth={keep}
+          />,
+        ),
+      );
+      await settleThemeCheck();
+      expect(host.textContent).toContain("Theme copies differ");
+    } finally {
+      await act(async () => root.unmount());
+    }
+  },
+);
+it("remembers keeping a notebook-only theme and notices when an app-wide copy appears", async () => {
+  const local = exampleTheme(),
+    acknowledged = await themeDifferenceFingerprint(local, null);
+  const host = document.createElement("div"),
+    root = createRoot(host);
+  try {
+    await act(async () =>
+      root.render(
+        <ThemeReconciliation
+          current={local}
+          onApply={vi.fn()}
+          acknowledgedDifference={acknowledged}
+        />,
+      ),
+    );
+    await settleThemeCheck();
+    expect(host.textContent).toBe("");
+    await act(async () => root.render(null));
+    await saveTheme({ ...local, name: "New app-wide copy" }, null);
+    await act(async () =>
+      root.render(
+        <ThemeReconciliation
+          current={local}
+          onApply={vi.fn()}
+          acknowledgedDifference={acknowledged}
+        />,
+      ),
+    );
+    await settleThemeCheck();
+    expect(host.textContent).toContain("Theme copies differ");
+  } finally {
+    await act(async () => root.unmount());
+  }
+});
+
+
+it("reviews both modes before saving and returns to the untouched draft on cancel", async () => {
+  const host = document.createElement("div"), root = createRoot(host), apply = vi.fn(), saved = vi.fn();
+  const seed = { ...exampleTheme(), plasma: { enabled: false, frost: 60, backgroundBlur: 12 } };
+  try {
+    await act(async () => root.render(<ThemeBuilder current={null} seed={seed} onApply={apply} onSaved={saved} />));
+    await act(async () => button(host, "Create theme").click());
+    const name = host.querySelector<HTMLInputElement>('[aria-label="Theme name"]')!.value;
+    await act(async () => button(host, "Save and use").click());
+    const dialog = host.querySelector("dialog")!;
+    expect(dialog.open).toBe(true);
+    expect(dialog.querySelector('[aria-label="light full theme preview"]')).not.toBeNull();
+    expect(dialog.querySelector('[aria-label="dark full theme preview"]')).not.toBeNull();
+    expect(apply).not.toHaveBeenCalled();
+    expect(saved).not.toHaveBeenCalled();
+    expect((await listThemes()).themes).toHaveLength(0);
+    await act(async () => dialog.querySelector<HTMLInputElement>('input[type="checkbox"]')!.click());
+    for (const preview of dialog.querySelectorAll(".theme-workbench-preview")) {
+      expect(preview.shadowRoot!.querySelector('[data-testid="plasma-renderer"]')).not.toBeNull();
+    }
+    await act(async () => button(host, "Back to editing").click());
+    expect(host.querySelector("dialog")).toBeNull();
+    expect(host.querySelector<HTMLInputElement>('[aria-label="Theme name"]')!.value).toBe(name);
+    expect(apply).not.toHaveBeenCalled();
+    expect(saved).not.toHaveBeenCalled();
+    await act(async () => button(host, "Save and use").click());
+    expect(host.querySelector<HTMLInputElement>('dialog input[type="checkbox"]')!.checked).toBe(false);
+    await act(async () => button(host, "Confirm and save").click());
+    expect(apply).toHaveBeenCalledOnce();
+    expect(saved).toHaveBeenCalledOnce();
+    expect(apply.mock.calls[0][0].plasma).toEqual(seed.plasma);
+    expect(host.querySelector("dialog")).toBeNull();
+  } finally { await act(async () => root.unmount()); }
+});
+
+it("requires confirmation to delete a saved theme and switches to Default", async () => {
+  const theme = exampleTheme();
+  await saveTheme(theme, null);
+  const host = document.createElement("div"), root = createRoot(host), switchTheme = vi.fn();
+  try {
+    await act(async () => root.render(<ThemeBuilder current={theme} seed={theme} onApply={vi.fn()} onBuiltInChange={switchTheme}/>));
+    await act(async () => button(host, "Delete theme").click());
+    expect(host.textContent).toContain("Other notebooks keep their saved copies");
+    expect(host.querySelector("dialog")?.open).toBe(true);
+    expect((await listThemes()).themes).toHaveLength(1);
+    await act(async () => button(host, "Cancel").click());
+    expect(host.querySelector("dialog")).toBeNull();
+    expect(switchTheme).not.toHaveBeenCalled();
+    await act(async () => button(host, "Delete theme").click());
+    await act(async () => host.querySelector("dialog")!.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true })));
+    expect(host.querySelector("dialog")).toBeNull();
+    expect((await listThemes()).themes).toHaveLength(1);
+    await act(async () => button(host, "Delete theme").click());
+    await act(async () => button(host, "Delete saved theme").click());
+    expect((await listThemes()).themes).toHaveLength(0);
+    expect(switchTheme).toHaveBeenCalledWith("default");
+  } finally { await act(async () => root.unmount()); }
+});
+
+it("offers bundled Starfall, keeps its assets portable, and edits a personal copy", async () => {
+  const { bundledThemes } = await import("../lib/bundledThemes");
+  const starfall = bundledThemes[0];
+  const host = document.createElement("div"), root = createRoot(host), apply = vi.fn();
+  try {
+    await act(async () => root.render(<ThemeBuilder current={null} seed={exampleTheme()} onApply={apply}/>));
+    const select = host.querySelector<HTMLSelectElement>('[aria-label="Theme"]')!;
+    const option = select.querySelector<HTMLOptionElement>(`option[value="bundled:${starfall.id}"]`)!;
+    expect(option.parentElement?.getAttribute("label")).toBe("Built-in");
+    await act(async () => {
+      select.value = option.value;
+      select.dispatchEvent(new Event("change", { bubbles: true }));
+    });
+    expect(apply).toHaveBeenCalledWith(starfall);
+    expect(starfall.plasma?.enabled).toBe(true);
+    expect(starfall.light.selectedText).toBe("#241533");
+    expect(Object.keys(starfall.design!.assets)).toHaveLength(2);
+    await act(async () => root.render(<ThemeBuilder current={starfall} seed={starfall} onApply={apply}/>));
+    expect(host.querySelector<HTMLSelectElement>('[aria-label="Theme"]')!.value).toBe(`bundled:${starfall.id}`);
+    expect([...host.querySelectorAll("button")].some(b => b.textContent === "Delete theme")).toBe(false);
+    await act(async () => button(host, "Edit theme").click());
+    expect(host.querySelector<HTMLInputElement>('[aria-label="Theme name"]')!.value).toBe("Starfall Studio copy");
+    await act(async () => button(host, "Save and use").click());
+    await act(async () => button(host, "Confirm and save").click());
+    const saved = (await listThemes()).themes[0];
+    expect(saved.id).not.toBe(starfall.id);
+    expect(saved.design?.assets).toEqual(starfall.design?.assets);
+    expect(saved.plasma?.enabled).toBe(true);
+  } finally { await act(async () => root.unmount()); }
+});
+
+it("does not ask to register an unchanged built-in theme in the shared library", async () => {
+  const { bundledThemes } = await import("../lib/bundledThemes");
+  const host = document.createElement("div"), root = createRoot(host);
+  try {
+    await act(async () => root.render(<ThemeReconciliation current={bundledThemes[0]} onApply={vi.fn()}/>));
+    expect(host.textContent).toBe("");
+    expect((await listThemes()).themes).toHaveLength(0);
+  } finally { await act(async () => root.unmount()); }
+});
+
+
+it("keeps the theme editor open when saving fails", async () => {
+  const theme = exampleTheme();
+  await saveTheme(theme, null);
+  const host = document.createElement("div"), root = createRoot(host), saved = vi.fn(), apply = vi.fn();
+  try {
+    await act(async () => root.render(<ThemeBuilder current={theme} seed={theme} onApply={apply} onSaved={saved}/>));
+    await act(async () => button(host, "Edit theme").click());
+    await saveTheme({ ...theme, editorFontSize: 24 }, theme);
+    await act(async () => button(host, "Save and use").click());
+    await act(async () => button(host, "Confirm and save").click());
+    expect(saved).not.toHaveBeenCalled();
+    expect(apply).not.toHaveBeenCalled();
+    expect(host.querySelector("dialog")?.open).toBe(true);
+    expect(host.querySelector('dialog [role="alert"]')).not.toBeNull();
+  } finally { await act(async () => root.unmount()); }
 });

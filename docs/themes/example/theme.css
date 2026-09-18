@@ -1,0 +1,6 @@
+/* Supported hooks work in the notebook and the isolated preview. */
+.theme-dark .ProseMirror h2 { color: #97cbbb; }
+.theme-light .ProseMirror h2 { color: #315f59; }
+.ProseMirror h1 { font-weight: 500; letter-spacing: -0.03em; }
+.ProseMirror blockquote { border-left-width: 2px; }
+.note-tab { border-radius: 4px; }

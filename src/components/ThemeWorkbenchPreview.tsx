@@ -1,0 +1,254 @@
+import { useCallback, useMemo, useState } from "react";
+import { createPortal } from "react-dom";
+import { FileText, Plus, X, Folder, PanelLeftClose, PanelRightClose, Ellipsis } from "lucide-react";
+import appCss from "../styles/app.css?inline";
+import plasmaCss from "../styles/plasma.css?inline";
+import apiCss from "../styles/theme-api.css?inline";
+import type { ThemeDocument } from "../lib/themes";
+import { themeStylesheet, themeVariables } from "../lib/themeRuntime";
+import PlasmaTheme from "./PlasmaTheme";
+
+const previewCss = (appCss + plasmaCss)
+  .replace(/:root/g, ":host")
+  .replace(/html((?:\[[^\]]+\]|:not\([^)]*\))*)/g, (_, attrs: string) =>
+    attrs ? `:host(${attrs})` : ":host",
+  )
+  .replace(/(?<![-\w.])body\b/g, ".preview-body");
+const fixtureCss = `:host{display:block;isolation:isolate;clip-path:inset(0 round 8px);position:relative;contain:style;}
+.preview-body{min-width:0;min-height:0;background:var(--app-bg);font-family:var(--app-font-family);font-size:var(--app-font-size);color:var(--text)}
+.app-shell{height:auto;min-height:520px}.app-titlebar{z-index:1}.app-frame{display:grid;grid-template-columns:136px minmax(0,1fr);min-height:460px;padding:0;gap:0}
+.app-frame>.folder-pane{width:auto;min-width:0;display:block}.app-frame>.main-pane{min-width:0;display:block;overflow:hidden}.note-title-input{height:1.3em;flex-shrink:0}.note-surface{padding:14px;overflow:auto;max-height:650px}.ProseMirror{flex-shrink:0;min-height:0;padding:0;font-size:var(--editor-font-size);font-family:var(--editor-font-family)}
+.app-shell[data-plasma] .app-frame{padding:18px 16px 16px;gap:20px}.app-shell[data-plasma] .note-surface{padding:12px}.note-tab{width:160px;text-align:left}.note-tab-add{flex-shrink:0}.folder-row{margin-left:0;margin-right:6px;width:calc(100% - 6px)}.folder-select{min-width:0}.folder-select span{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.title-shell,.editor-shell{width:100%;margin:0}.editor-shell{padding:28px 0 40px}.preview-controls{display:flex;gap:6px;flex-wrap:wrap;margin-top:14px}.preview-controls input{width:100%;min-width:0}
+.plasma-background{position:fixed!important;inset:0;z-index:-1}.plasma-background canvas{position:fixed!important;width:100vw!important;height:100vh!important;inset:0}
+`;
+
+/** Uses the production styles and editor DOM contract, isolated from the authoring form. */
+export function ThemeWorkbenchPreview({
+  theme,
+  mode,
+}: {
+  theme: ThemeDocument;
+  mode: "light" | "dark";
+}) {
+  const [root, setRoot] = useState<ShadowRoot | null>(null);
+  const attach = useCallback((host: HTMLDivElement | null) => {
+    if (host) setRoot(host.shadowRoot ?? host.attachShadow({ mode: "open" }));
+  }, []);
+  const compiled = useMemo(() => {
+    try {
+      return { css: themeStylesheet(theme, mode, "preview"), error: "" };
+    } catch (e) {
+      return {
+        css: themeStylesheet({ ...theme, design: undefined }, mode, "preview"),
+        error: String(e),
+      };
+    }
+  }, [theme, mode]);
+  const plasma =
+    theme.plasma?.enabled && theme.design?.supportsPlasma !== false;
+  return (
+    <>
+      {compiled.error ? (
+        <p role="alert">Preview uses visual settings until the CSS is valid.</p>
+      ) : null}
+      <div
+        ref={attach}
+        className="theme-workbench-preview"
+        data-theme={mode}
+        data-theme-preset="custom"
+        data-accent-titlebar={theme.accentTitlebar ? "true" : "false"}
+        aria-label={`${mode} full theme preview`}
+        style={themeVariables(theme, mode) as React.CSSProperties}
+      />
+      {root &&
+        createPortal(
+          <>
+            <style>{previewCss + apiCss + fixtureCss}</style>
+            <style>{compiled.css}</style>
+            <div className="preview-body">
+              <div
+                className="app-shell"
+                data-plasma={plasma || undefined}
+                style={
+                  {
+                    "--plasma-panel-opacity": `${(theme.plasma?.frost ?? 80) * 0.9}%`,
+                    "--plasma-editor-opacity": `${Math.min(95, (theme.plasma?.frost ?? 80) * 1.1)}%`,
+                  } as React.CSSProperties
+                }
+              >
+                {plasma ? (
+                  <PlasmaTheme
+                    theme={mode}
+                    accentColor={theme[mode].accent}
+                    frost={(theme.plasma?.frost ?? 80) / 100}
+                    backgroundBlur={theme.plasma?.backgroundBlur ?? 0}
+                    layoutKey="workbench"
+                  />
+                ) : null}
+                <header
+                  className={`app-titlebar theme-${mode} ${plasma ? "theme-plasma" : "theme-standard"}`}
+                  data-theme-region="preview"
+                  data-theme-api={theme.design ? "1" : undefined}
+                >
+                  <div className="note-tabs">
+                    <button className="note-tab is-active">
+                      <FileText size={14} className="note-tab-icon" />
+                      <span className="note-tab-label">Notes</span>
+                      <span className="tab-close" aria-hidden="true">
+                        <X size={13} />
+                      </span>
+                    </button>
+                    <button className="note-tab">
+                      <FileText size={14} className="note-tab-icon" />
+                      <span className="note-tab-label">Ideas</span>
+                    </button>
+                  </div>
+                  <button className="note-tab-add" aria-label="Preview new tab">
+                    <Plus size={16} />
+                  </button>
+                </header>
+                <div
+                  className={`app-frame theme-${mode} ${plasma ? "theme-plasma" : "theme-standard"}`}
+                  data-theme-region="preview"
+                  data-theme-api={theme.design ? "1" : undefined}
+                >
+                  <aside className="folder-pane section-view-folder-pane">
+                    <div className="pane-header"><strong>Sections</strong><button className="icon-button" aria-label="Preview add section"><Plus size={16} /></button></div>
+                    {["Notes", "Ideas", "Projects"].map((name, index) => (
+                      <div key={name} className={`folder-row${index === 0 ? " is-active" : ""}`}>
+                        <button className="folder-select"><span><Folder size={15} /></span><span>{name}</span></button>
+                      </div>
+                    ))}
+                  </aside>
+                  <main className="main-pane">
+                    <header className="topbar">
+                      <button className="icon-button sidebar-toggle" aria-label="Preview hide sidebar"><PanelLeftClose size={17} /></button>
+                      <div className="topbar-actions">
+                        <button className="icon-button" aria-label="Preview editor options"><Ellipsis size={17} /></button>
+                        <button className="icon-button outline-toggle" aria-label="Preview show outline"><PanelRightClose size={17} /></button>
+                      </div>
+                    </header>
+                    <div className="note-surface">
+                      <div className="title-shell"><textarea
+                        className="note-title-input"
+                        aria-label="Preview note title"
+                        value="Notes"
+                        readOnly
+                        rows={1}
+                      /></div>
+                      <div className="editor-shell"><div className="editor-content"><div
+                        className="ProseMirror"
+                        role="document"
+                        aria-label="Sample note"
+                      >
+                        <h1>A fresh page</h1>
+                        <p>
+                          A quiet space to <strong>think</strong>,{" "}
+                          <em>write</em>, and explore.
+                        </p>
+                        <p>
+                          <a href="#sample" onClick={(e) => e.preventDefault()}>
+                            A link to another idea
+                          </a>{" "}
+                          and <mark>highlighted text</mark>.
+                        </p>
+                        <h2>A new thought</h2>
+                        <blockquote>
+                          <p>Make room for a new thought.</p>
+                        </blockquote>
+                        <h3>Things to explore</h3>
+                        <ul>
+                          <li>
+                            <p>A bulleted idea</p>
+                          </li>
+                          <li>
+                            <p>Another idea</p>
+                          </li>
+                        </ul>
+                        <ol>
+                          <li>
+                            <p>First step</p>
+                          </li>
+                        </ol>
+                        <ul data-type="taskList">
+                          <li data-type="taskItem" data-checked="false">
+                            <label>
+                              <input type="checkbox" readOnly />
+                              <span />
+                            </label>
+                            <div>
+                              <p>Unfinished task</p>
+                            </div>
+                          </li>
+                          <li data-type="taskItem" data-checked="true">
+                            <label>
+                              <input type="checkbox" checked readOnly />
+                              <span />
+                            </label>
+                            <div>
+                              <p>Completed task</p>
+                            </div>
+                          </li>
+                        </ul>
+                        <p>
+                          Inline <code>code</code> and <s>removed text</s>.
+                        </p>
+                        <pre>
+                          <code>const idea = "Keep it simple";</code>
+                        </pre>
+                        <hr />
+                        <table>
+                          <thead>
+                            <tr>
+                              <th>
+                                <p>Topic</p>
+                              </th>
+                              <th>
+                                <p>Status</p>
+                              </th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            <tr>
+                              <td>
+                                <p>Themes</p>
+                              </td>
+                              <td>
+                                <p>Exploring</p>
+                              </td>
+                            </tr>
+                          </tbody>
+                        </table>
+                        <p>
+                          <small>Edited just now</small>
+                        </p>
+                      </div>
+                      </div></div>
+                      <div className="preview-controls">
+                        <button className="toolbar-button">Button</button>
+                        <button className="toolbar-button" disabled>
+                          Disabled
+                        </button>
+                        <input
+                          className="settings-text-input"
+                          aria-label="Sample text field"
+                          defaultValue="Text field"
+                        />
+                        <select
+                          className="settings-select"
+                          aria-label="Sample select"
+                        >
+                          <option>Menu choice</option>
+                        </select>
+                      </div>
+                    </div>
+                  </main>
+                </div>
+              </div>
+            </div>
+          </>,
+          root,
+        )}
+    </>
+  );
+}

@@ -52,7 +52,11 @@ export function resolveNotebookAppearance(
 ): ResolvedNotebookAppearance {
   if (!appearance) return cloneResolvedAppearance(defaults);
   const theme = readTheme(appearance.customTheme);
-  if (theme) appearance = { ...appearance, ...themeAppearance(theme) };
+  if (theme) {
+    const selected = themeAppearance(theme);
+    // The notebook's manual toggle survives reloads without changing the theme default.
+    appearance = { ...appearance, ...selected, plasma: appearance.plasma ?? selected.plasma };
+  }
 
   const navigationStyle = resolveNavigationStyle(
     appearance.navigationStyle as string | undefined,

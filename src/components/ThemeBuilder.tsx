@@ -1,16 +1,31 @@
+import { bundledThemes, isBundledTheme } from "../lib/bundledThemes";
+import { ThemeDeleteDialog } from "./ThemeDeleteDialog";
+import { visualCssHints } from "../lib/themeVisualCss";
+import { ThemeSurfacesEditor } from "./ThemeSurfacesEditor";
+import { ThemeVerificationDialog } from "./ThemeVerificationDialog";
+import type { ThemeDifferenceAcknowledgement } from "../types";
+import { ThemeWorkbenchPreview } from "./ThemeWorkbenchPreview";
+import { ThemeDesignEditor } from "./ThemeDesignEditor";
+import { defaultThemeDesign, themePackageLimit } from "../lib/themeDesign";
+import { decodeThemePackage, encodeThemePackage } from "../lib/themePackage";
 import { ThemePreviewPanel } from "./ThemePreviewHost";
 import { ChevronLeft, ChevronRight, FileText, Plus, X } from "lucide-react";
 import { defaultPlasmaSettings } from "../lib/themes";
 import PlasmaTheme from "./PlasmaTheme";
 import { ThemeColorField } from "./ThemeColorField";
-import { useEffect, useRef, useState, type CSSProperties } from "react";
-import { exportTextFile } from "../lib/desktop";
+import { useEffect, useId, useMemo, useRef, useState, type CSSProperties } from "react";
+import { exportThemePackageFile } from "../lib/desktop";
 import {
   listThemes,
+  uniqueThemeName,
+  themeDisplayNames,
   paletteKeys,
+  optionalPaletteKeys,
   parseTheme,
   saveTheme,
+  deleteTheme,
   themesMatch,
+  themeDifferenceFingerprint,
   type ThemeDocument,
 } from "../lib/themes";
 
@@ -21,7 +36,11 @@ const labels = {
   surfaceStrong: "Raised surface",
   surfaceMuted: "Muted surface",
   border: "Borders",
-  text: "Text",
+  text: "Interface text",
+  editorText: "Editor text",
+  selectedText: "Selected item text",
+  highlightText: "Highlighted text",
+  highlightBackground: "Highlight background",
   textMuted: "Secondary text",
   accent: "Accent",
   titlebar: "Title bar (if colored)",
@@ -92,10 +111,10 @@ export function ThemePreview({
         <div className="theme-preview-tabs" aria-label="Note tabs preview">
           <span
             className="theme-preview-tab is-active"
-            style={{ background: p.accent, color: contrast(p.accent) }}
+            style={{ background: p.accent, color: p.selectedText ?? contrast(p.accent) }}
           >
             <FileText size={16} aria-hidden="true" />
-            <span>Field notes</span>
+            <span>Notes</span>
             <X size={14} aria-hidden="true" />
           </span>
           <span
@@ -126,12 +145,12 @@ export function ThemePreview({
           <div
             style={{
               background: p.accent,
-              color: contrast(p.accent),
+              color: p.selectedText ?? contrast(p.accent),
               padding: 8,
               borderRadius: 5,
             }}
           >
-            Field notes
+            Notes
           </div>
           <p>Ideas</p>
         </aside>
@@ -143,11 +162,12 @@ export function ThemePreview({
             borderColor: plasma
               ? `color-mix(in srgb, ${p.text} 14%, transparent)`
               : p.border,
+            color: p.editorText ?? p.text,
             fontFamily: theme.editorFontFamily,
             fontSize: theme.editorFontSize,
           }}
         >
-          <h2>Field notes</h2>
+          <h2>Notes</h2>
           <p>A quiet space to think, write, and explore.</p>
           <p className="theme-preview-link">A link to another idea</p>
           <blockquote
@@ -189,6 +209,8 @@ export function ThemeBuilder({
   current,
   seed,
   onApply,
+  onSaved,
+  quickAppearanceControls,
   builtInThemes = [],
   builtInThemeId = "default",
   onBuiltInChange,
@@ -198,6 +220,8 @@ export function ThemeBuilder({
   current: ThemeDocument | null;
   seed: ThemeDocument;
   onApply: (theme: ThemeDocument) => void;
+  onSaved?: () => void;
+  quickAppearanceControls?: React.ReactNode;
   builtInThemes?: { id: string; name: string }[];
   builtInThemeId?: string;
   onBuiltInChange?: (id: string) => void;
@@ -207,10 +231,16 @@ export function ThemeBuilder({
   const importInput = useRef<HTMLInputElement>(null);
   const [themes, setThemes] = useState<ThemeDocument[]>([]);
   const [draft, setDraft] = useState<ThemeDocument | null>(null);
+  const displayNames = themeDisplayNames([...themes.filter(t => t.id !== current?.id), ...(current ? [current] : [])]);
   const [expected, setExpected] = useState<ThemeDocument | null>(null);
+  const [cssMode, setCssMode] = useState(false);
+  const editorId = useId();
   const [mode, setMode] = useState<"light" | "dark">("dark");
+  const cssHints = useMemo(() => visualCssHints(draft?.design?.css ?? "", mode), [draft?.design?.css, mode]);
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
+  const [deleting, setDeleting] = useState<ThemeDocument | null>(null);
+  const [verifying, setVerifying] = useState(false);
   async function reload() {
     try {
       const result = await listThemes();
@@ -238,15 +268,31 @@ export function ThemeBuilder({
     setExpected(null);
     setDraft({
       ...(current ?? seed),
+      schemaVersion: 2,
+      design: current?.design ?? defaultThemeDesign,
       plasma: current?.plasma ?? seed.plasma ?? defaultPlasmaSettings,
       id: crypto.randomUUID(),
-      name: `${current?.name ?? "My"} theme`,
+      name: uniqueThemeName(`${current?.name ?? "My"} theme`, themes),
     });
   }
+  const currentIsBundled = useMemo(() => isBundledTheme(current), [current]);
   const update = (patch: Partial<ThemeDocument>) =>
     setDraft(draft ? { ...draft, ...patch } : null);
   return (
     <div className="theme-builder">
+      {deleting && <ThemeDeleteDialog
+        name={displayNames[deleting.id] ?? deleting.name}
+        busy={busy}
+        error={error}
+        onCancel={() => { setDeleting(null); setError(""); }}
+        onDelete={() => void run(async () => {
+          await deleteTheme(deleting);
+          onBuiltInChange?.("default");
+          setDeleting(null);
+          await reload();
+        })}
+      />}
+
       {!draft ? (
         <>
           <div className="setting-row">
@@ -279,13 +325,16 @@ export function ThemeBuilder({
               aria-label="Theme"
               disabled={busy}
               value={
-                current ? `saved:${current.id}` : `builtin:${builtInThemeId}`
+                current ? `${currentIsBundled ? "bundled" : "saved"}:${current.id}` : `builtin:${builtInThemeId}`
               }
               onChange={(e) => {
                 const value = e.target.value;
                 if (value.startsWith("builtin:"))
                   onBuiltInChange?.(value.slice(8));
-                else {
+                else if (value.startsWith("bundled:")) {
+                  const theme = bundledThemes.find((t) => `bundled:${t.id}` === value);
+                  if (theme) onApply(theme);
+                } else {
                   const theme = themes.find((t) => `saved:${t.id}` === value);
                   if (theme) onApply(theme);
                 }
@@ -297,25 +346,27 @@ export function ThemeBuilder({
                     {t.name}
                   </option>
                 ))}
+                {bundledThemes.map((t) => <option key={t.id} value={`bundled:${t.id}`}>{t.name}</option>)}
               </optgroup>
-              {current || themes.length ? (
+              {(current && !currentIsBundled) || themes.length ? (
                 <optgroup label="Saved">
-                  {current ? (
+                  {current && !currentIsBundled ? (
                     <option value={`saved:${current.id}`}>
-                      {current.name}
+                      {displayNames[current.id] ?? current.name}
                     </option>
                   ) : null}
                   {themes
                     .filter((t) => t.id !== current?.id)
                     .map((t) => (
                       <option key={t.id} value={`saved:${t.id}`}>
-                        {t.name}
+                        {displayNames[t.id] ?? t.name}
                       </option>
                     ))}
                 </optgroup>
               ) : null}
             </select>
           </div>
+          {themes.some(t => displayNames[t.id] !== t.name) && <p className="settings-description">Some older themes share a name. Numbered labels distinguish them here; editing and saving one gives it a unique name.</p>}
           <div className="theme-actions">
             <button className="toolbar-button" onClick={create} disabled={busy}>
               Create theme
@@ -327,27 +378,35 @@ export function ThemeBuilder({
                 onClick={() => {
                   setDraft({
                     ...current,
+                    id: currentIsBundled ? crypto.randomUUID() : current.id,
+                    name: uniqueThemeName(currentIsBundled ? `${current.name} copy` : current.name, themes, currentIsBundled ? undefined : current.id),
                     plasma:
                       current.plasma ?? seed.plasma ?? defaultPlasmaSettings,
                   });
-                  setExpected(themes.find((t) => t.id === current.id) ?? null);
+                  setExpected(currentIsBundled ? null : themes.find((t) => t.id === current.id) ?? null);
                 }}
               >
                 Edit theme
               </button>
+            ) : null}
+            {current && onBuiltInChange && themes.some(t => t.id === current.id) ? (
+              <button className="toolbar-button" disabled={busy} onClick={() => {
+                setError("");
+                setDeleting(themes.find(t => t.id === current.id) ?? null);
+              }}>Delete theme</button>
             ) : null}
             <button
               className="toolbar-button"
               disabled={busy}
               onClick={() => importInput.current?.click()}
             >
-              Import JSON
+              Import theme
             </button>
             <input
               ref={importInput}
-              aria-label="Import theme JSON"
+              aria-label="Import theme package or JSON"
               type="file"
-              accept=".json,application/json"
+              accept=".json,.zip,.tigrana-theme,application/json,application/zip"
               disabled={busy}
               hidden
               onChange={(e) => {
@@ -355,9 +414,13 @@ export function ThemeBuilder({
                 e.target.value = "";
                 if (!file) return;
                 void run(async () => {
-                  if (file.size > 100_000)
-                    throw new Error("Theme files must be smaller than 100 KB.");
-                  const theme = parseTheme(JSON.parse(await file.text()));
+                  if (file.size > themePackageLimit)
+                    throw new Error(
+                      "Theme packages must be smaller than 8 MB.",
+                    );
+                  const theme = decodeThemePackage(
+                    new Uint8Array(await file.arrayBuffer()),
+                  );
                   const library = await listThemes();
                   const existing = library.themes.find(
                     (t) => t.id === theme.id,
@@ -370,9 +433,9 @@ export function ThemeBuilder({
                       ? {
                           ...theme,
                           id: crypto.randomUUID(),
-                          name: `${theme.name.slice(0, 95)} copy`,
+                          name: uniqueThemeName(`${theme.name.slice(0, 95)} copy`, library.themes),
                         }
-                      : theme,
+                      : { ...theme, name: uniqueThemeName(theme.name, library.themes, theme.id) },
                   );
                 });
               }}
@@ -383,15 +446,14 @@ export function ThemeBuilder({
                 disabled={busy}
                 onClick={() =>
                   void run(async () => {
-                    await exportTextFile(
-                      `${current.name.replace(/[^a-zA-Z0-9_-]/g, "-")}.json`,
-                      JSON.stringify(current, null, 2),
-                      [{ name: "Tigrana theme", extensions: ["json"] }],
+                    await exportThemePackageFile(
+                      `${current.name.replace(/[^a-zA-Z0-9_-]/g, "-")}.tigrana-theme`,
+                      encodeThemePackage(current),
                     );
                   })
                 }
               >
-                Export JSON
+                Export theme
               </button>
             ) : null}
             <button
@@ -406,6 +468,7 @@ export function ThemeBuilder({
               Reload library
             </button>
           </div>
+          {quickAppearanceControls}
         </>
       ) : null}
       {error ? <p role="alert">{error}</p> : null}
@@ -424,151 +487,175 @@ export function ThemeBuilder({
                 />
               </label>
             </div>
-            <label className="theme-preview-toggle">
-              <input
-                type="checkbox"
-                checked={draft.plasma?.enabled ?? false}
-                onChange={(event) =>
-                  update({
-                    plasma: {
-                      ...(draft.plasma ?? defaultPlasmaSettings),
-                      enabled: event.target.checked,
-                    },
-                  })
-                }
+            <div
+              className="theme-mode-tabs"
+              role="tablist"
+              aria-label="Theme editor mode"
+              onKeyDown={(event) => {
+                if (
+                  !["ArrowLeft", "ArrowRight", "Home", "End"].includes(
+                    event.key,
+                  )
+                )
+                  return;
+                event.preventDefault();
+                const next =
+                  event.key === "Home"
+                    ? false
+                    : event.key === "End"
+                      ? true
+                      : !cssMode;
+                setCssMode(next);
+                const tabs = event.currentTarget.querySelectorAll<HTMLButtonElement>('[role="tab"]');
+                tabs[next ? 1 : 0]?.focus();
+              }}
+            >
+              <button
+                type="button"
+                role="tab"
+                id={`${editorId}-visual`}
+                aria-controls={`${editorId}-panel`}
+                aria-selected={!cssMode}
+                tabIndex={cssMode ? -1 : 0}
+                onClick={() => setCssMode(false)}
+              >
+                Visual
+              </button>
+              <button
+                type="button"
+                role="tab"
+                id={`${editorId}-css`}
+                aria-controls={`${editorId}-panel`}
+                aria-selected={cssMode}
+                tabIndex={cssMode ? 0 : -1}
+                onClick={() => setCssMode(true)}
+              >
+                Advanced CSS
+              </button>
+            </div>
+            <div
+              role="tabpanel"
+              id={`${editorId}-panel`}
+              aria-labelledby={`${editorId}-${cssMode ? "css" : "visual"}`}
+            >
+              <div hidden={cssMode}>
+                <div className="theme-color-grid">
+                  {[...paletteKeys, ...optionalPaletteKeys].map((key) => (
+                    <ThemeColorField
+                      key={`${mode}:${key}`}
+                      label={labels[key]}
+                      name={`${mode} ${labels[key]}`}
+                      cssHint={cssHints[key]}
+                      value={draft[mode][key] ?? (key === "selectedText" ? contrast(draft[mode].accent) : key === "highlightText" ? "#000000" : key === "highlightBackground" ? "#ffff00" : draft[mode].text)}
+                      onChange={(color) =>
+                        update({ [mode]: { ...draft[mode], [key]: color } })
+                      }
+                    />
+                  ))}
+                </div>
+                <ThemeSurfacesEditor theme={draft} mode={mode} change={update} />
+                <div className="theme-font-grid">
+                  {(["app", "editor"] as const).map((part) => (
+                    <label key={part}>
+                      {part === "app" ? "Interface font" : "Note font"}
+                      {(cssHints[`${part}FontFamily`] || cssHints[`${part}FontSize`]) && <span className="theme-css-hint" title={cssHints[`${part}FontFamily`] || cssHints[`${part}FontSize`]}>Custom CSS</span>}
+                      <input
+                        className="settings-text-input"
+                        aria-label={`${part} theme font`}
+                        value={draft[`${part}FontFamily`]}
+                        onChange={(e) =>
+                          update({ [`${part}FontFamily`]: e.target.value })
+                        }
+                      />
+                      <input
+                        aria-label={`${part} theme font size`}
+                        type="number"
+                        min={11}
+                        max={28}
+                        value={draft[`${part}FontSize`]}
+                        onChange={(e) =>
+                          update({
+                            [`${part}FontSize`]: Number(e.target.value),
+                          })
+                        }
+                      />
+                    </label>
+                  ))}
+                </div>
+                <label>
+                  <input
+                    type="checkbox"
+                    checked={draft.accentTitlebar}
+                    onChange={(e) =>
+                      update({ accentTitlebar: e.target.checked })
+                    }
+                  />{" "}
+                  Colored title bar
+                </label>
+              </div>
+              <ThemeDesignEditor
+                theme={draft}
+                onChange={update}
+                cssMode={cssMode}
               />
-              Plasma UI
-            </label>
-            <p className="settings-description">
-              Plasma settings are saved with this theme.
-            </p>
-            {draft.plasma?.enabled ? (
-              <>
-                <label className="setting-row">
-                  Panel frostiness
-                  <input
-                    type="range"
-                    min={0}
-                    max={100}
-                    value={draft.plasma.frost}
-                    onChange={(e) =>
-                      update({
-                        plasma: {
-                          ...draft.plasma!,
-                          frost: Number(e.target.value),
-                        },
-                      })
-                    }
-                  />
-                </label>
-                <label className="setting-row">
-                  Background blur
-                  <input
-                    type="range"
-                    min={0}
-                    max={40}
-                    value={draft.plasma.backgroundBlur}
-                    onChange={(e) =>
-                      update({
-                        plasma: {
-                          ...draft.plasma!,
-                          backgroundBlur: Number(e.target.value),
-                        },
-                      })
-                    }
-                  />
-                </label>
-              </>
-            ) : null}
-            <div className="theme-color-grid">
-              {paletteKeys.map((key) => (
-                <ThemeColorField
-                  key={`${mode}:${key}`}
-                  label={labels[key]}
-                  name={`${mode} ${labels[key]}`}
-                  value={draft[mode][key]}
-                  onChange={(color) =>
-                    update({ [mode]: { ...draft[mode], [key]: color } })
-                  }
-                />
-              ))}
             </div>
-            <div className="theme-font-grid">
-              {(["app", "editor"] as const).map((part) => (
-                <label key={part}>
-                  {part === "app" ? "Interface font" : "Note font"}
-                  <input
-                    className="settings-text-input"
-                    aria-label={`${part} theme font`}
-                    value={draft[`${part}FontFamily`]}
-                    onChange={(e) =>
-                      update({ [`${part}FontFamily`]: e.target.value })
-                    }
-                  />
-                  <input
-                    aria-label={`${part} theme font size`}
-                    type="number"
-                    min={11}
-                    max={28}
-                    value={draft[`${part}FontSize`]}
-                    onChange={(e) =>
-                      update({ [`${part}FontSize`]: Number(e.target.value) })
-                    }
-                  />
-                </label>
-              ))}
-            </div>
-            <label>
-              <input
-                type="checkbox"
-                checked={draft.accentTitlebar}
-                onChange={(e) => update({ accentTitlebar: e.target.checked })}
-              />{" "}
-              Colored title bar
-            </label>
             <p>
               Save updates the shared library and this notebook. Other notebooks
               choose whether to adopt the changes when opened.
             </p>
-            <div className="theme-actions">
-              <button
-                className="toolbar-button"
-                disabled={busy}
-                onClick={() =>
-                  void run(async () => {
-                    const theme = parseTheme(draft);
-                    await saveTheme(theme, expected);
-                    onApply(theme);
-                    setDraft(null);
-                    await reload();
-                  })
-                }
-              >
-                {busy ? "Saving…" : "Save and use"}
-              </button>
-              <button
-                className="toolbar-button"
-                disabled={busy}
-                onClick={() => {
-                  setDraft({
-                    ...draft,
-                    id: crypto.randomUUID(),
-                    name: `${draft.name} copy`,
-                  });
-                  setExpected(null);
-                }}
-              >
-                Make a copy
-              </button>
-              <button
-                className="toolbar-button"
-                disabled={busy}
-                onClick={() => setDraft(null)}
-              >
-                Cancel
-              </button>
-            </div>
           </div>
+          <div className="theme-actions theme-editor-actions">
+            <button
+              className="toolbar-button"
+              disabled={busy}
+              onClick={() => {
+                setError("");
+                try {
+                  parseTheme(draft);
+                  setVerifying(true);
+                } catch (e) {
+                  setError(String(e));
+                }
+              }}
+            >
+              {busy ? "Saving…" : "Save and use"}
+            </button>
+            <button
+              className="toolbar-button"
+              disabled={busy}
+              onClick={() => {
+                setDraft({
+                  ...draft,
+                  id: crypto.randomUUID(),
+                  name: uniqueThemeName(`${draft.name.slice(0, 95)} copy`, themes),
+                });
+                setExpected(null);
+              }}
+            >
+              Make a copy
+            </button>
+            <button
+              className="toolbar-button"
+              disabled={busy}
+              onClick={() => setDraft(null)}
+            >
+              Cancel
+            </button>
+          </div>
+          {verifying ? (
+            <ThemeVerificationDialog theme={draft} busy={busy} error={error}
+              onCancel={() => { setVerifying(false); setError(""); }}
+              onConfirm={() => void run(async () => {
+                const theme = parseTheme(draft);
+                await saveTheme(theme, expected);
+                onApply(theme);
+                setVerifying(false);
+                setDraft(null);
+                await reload();
+                onSaved?.();
+              })}
+            />
+          ) : null}
           <ThemePreviewPanel>
             <div className="theme-editor-preview">
               <div className="theme-preview-heading">
@@ -583,7 +670,7 @@ export function ThemeBuilder({
                   <option value="light">Light</option>
                 </select>
               </div>
-              <ThemePreview theme={draft} mode={mode} />
+              <ThemeWorkbenchPreview theme={draft} mode={mode} />
             </div>
           </ThemePreviewPanel>
         </div>
@@ -596,10 +683,23 @@ export function ThemeBuilder({
 export function ThemeReconciliation({
   current,
   onApply,
+  acknowledgedDifference,
+  onKeepBoth,
 }: {
   current: ThemeDocument | null;
   onApply: (theme: ThemeDocument) => void;
+  acknowledgedDifference?: ThemeDifferenceAcknowledgement;
+  onKeepBoth?: (difference: ThemeDifferenceAcknowledgement) => void;
 }) {
+  const mounted = useRef(true);
+  useEffect(() => {
+    mounted.current = true;
+    return () => {
+      mounted.current = false;
+    };
+  }, []);
+  const acknowledgedNotebook = acknowledgedDifference?.notebook;
+  const acknowledgedAppWide = acknowledgedDifference?.appWide;
   const [shared, setShared] = useState<ThemeDocument | null>(null);
   const [missing, setMissing] = useState(false);
   const [error, setError] = useState("");
@@ -614,11 +714,23 @@ export function ThemeReconciliation({
     setMissing(false);
     setDismissed(false);
     setError("");
-    if (snapshot)
+    if (snapshot && !isBundledTheme(snapshot))
       void listThemes()
-        .then((result) => {
+        .then(async (result) => {
           if (cancelled) return;
           const match = result.themes.find((t) => t.id === snapshot.id);
+          if (acknowledgedNotebook) {
+            const difference = await themeDifferenceFingerprint(
+              snapshot,
+              match ?? null,
+            );
+            if (cancelled) return;
+            if (
+              difference.notebook === acknowledgedNotebook &&
+              difference.appWide === acknowledgedAppWide
+            )
+              return;
+          }
           setShared(match && !themesMatch(snapshot, match) ? match : null);
           setMissing(!match);
         })
@@ -628,7 +740,7 @@ export function ThemeReconciliation({
     return () => {
       cancelled = true;
     };
-  }, [snapshotJson, refresh]);
+  }, [snapshotJson, refresh, acknowledgedNotebook, acknowledgedAppWide]);
   if (!current || dismissed || (!shared && !missing && !error)) return null;
   return (
     <div className="dialog-backdrop settings-backdrop">
@@ -642,30 +754,61 @@ export function ThemeReconciliation({
           {shared
             ? "Theme copies differ"
             : missing
-              ? "Add this theme to your library?"
-              : "Theme library unavailable"}
+              ? "Make this theme available app-wide?"
+              : "App-wide themes unavailable"}
         </h2>
         <p>
           {shared
-            ? `“${current.name}” differs from the shared copy. This notebook is still using its saved appearance.`
+            ? `“${current.name}” differs from the app-wide theme available to other notebooks on this computer. This notebook is still using its saved appearance.`
             : missing
-              ? `“${current.name}” is saved in this notebook but is not in this computer's theme library.`
+              ? `“${current.name}” is saved in this notebook but is not yet available to other notebooks on this computer.`
               : "The notebook's saved theme is still available."}
         </p>
         {shared ? (
           <div className="theme-conflict-previews">
             <div>
-              <h3>Notebook</h3>
+              <h3>This notebook</h3>
               <ThemePreview theme={current} mode="dark" />
             </div>
             <div>
-              <h3>Shared library</h3>
+              <h3>App-wide theme</h3>
               <ThemePreview theme={shared} mode="dark" />
             </div>
           </div>
         ) : null}
         {error ? <p role="alert">{error}</p> : null}
         <div className="theme-actions">
+          {shared || missing ? (
+            <button
+              className="toolbar-button is-recommended"
+              disabled={busy}
+              onClick={() => {
+                setBusy(true);
+                setError("");
+                void (async () => {
+                  const library = await listThemes();
+                  const registered = { ...current, name: uniqueThemeName(current.name, library.themes, current.id) };
+                  await saveTheme(registered, shared);
+                  if (registered.name !== current.name) onApply(registered);
+                  setDismissed(true);
+                })()
+                  .catch((e) => setError(String(e)))
+                  .finally(() => setBusy(false));
+              }}
+            >
+              {shared ? (
+                <>
+                  <span className="theme-choice-label">
+                    Replace the app-wide theme with this notebook's version
+                  </span>
+                  <span className="theme-recommendation">(Recommended)</span>
+                  <small>Available to all notebooks on this computer.</small>
+                </>
+              ) : (
+                "Make theme available app-wide"
+              )}
+            </button>
+          ) : null}
           {shared ? (
             <button
               className="toolbar-button"
@@ -675,25 +818,7 @@ export function ThemeReconciliation({
                 setDismissed(true);
               }}
             >
-              Use shared in notebook
-            </button>
-          ) : null}
-          {shared || missing ? (
-            <button
-              className="toolbar-button"
-              disabled={busy}
-              onClick={() => {
-                setBusy(true);
-                setError("");
-                void saveTheme(current, shared)
-                  .then(() => setDismissed(true))
-                  .catch((e) => setError(String(e)))
-                  .finally(() => setBusy(false));
-              }}
-            >
-              {shared
-                ? "Replace shared with notebook"
-                : "Add to shared library"}
+              Replace this notebook's theme with the app-wide version
             </button>
           ) : null}
           {error ? (
@@ -702,15 +827,31 @@ export function ThemeReconciliation({
               disabled={busy}
               onClick={() => setRefresh((n) => n + 1)}
             >
-              Reload library
+              Reload app-wide themes
             </button>
           ) : null}
           <button
             className="toolbar-button"
             disabled={busy}
-            onClick={() => setDismissed(true)}
+            onClick={() => {
+              if (!onKeepBoth || error) {
+                setDismissed(true);
+                return;
+              }
+              setBusy(true);
+              void themeDifferenceFingerprint(current, shared)
+                .then((difference) => {
+                  if (!mounted.current) return;
+                  onKeepBoth(difference);
+                  setDismissed(true);
+                })
+                .catch((e) => setError(String(e)))
+                .finally(() => setBusy(false));
+            }}
           >
-            Keep notebook for now
+            {shared
+              ? "Keep both versions unchanged"
+              : "Keep theme in this notebook only"}
           </button>
         </div>
       </section>

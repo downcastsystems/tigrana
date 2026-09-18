@@ -29,7 +29,15 @@ pub fn list_themes(app: AppHandle) -> Result<Vec<ThemeFile>, String> {
         }
         files.push(ThemeFile {
             name: entry.file_name().to_string_lossy().into_owned(),
-            contents: fs::read_to_string(entry.path()).unwrap_or_default(),
+            contents: if entry
+                .metadata()
+                .map(|m| m.len() <= 8 * 1024 * 1024)
+                .unwrap_or(false)
+            {
+                fs::read_to_string(entry.path()).unwrap_or_default()
+            } else {
+                String::new()
+            },
         });
     }
     files.sort_by(|a, b| a.name.cmp(&b.name));
@@ -48,10 +56,13 @@ pub fn save_theme(app: AppHandle, theme: Value, expected: Option<Value>) -> Resu
 
 fn normalize_theme(theme: &Value) -> Result<Value, String> {
     let mut clean = serde_json::Map::new();
-    if theme["schemaVersion"].as_u64() != Some(1) {
+    if !matches!(theme["schemaVersion"].as_u64(), Some(1 | 2)) {
         return Err("Unsupported theme version".into());
     }
-    clean.insert("schemaVersion".into(), Value::from(1));
+    clean.insert("schemaVersion".into(), theme["schemaVersion"].clone());
+    if theme["schemaVersion"] == 2 {
+        clean.insert("design".into(), normalize_design(&theme["design"])?);
+    }
     for key in ["id", "name", "appFontFamily", "editorFontFamily"] {
         let text = theme[key]
             .as_str()
@@ -122,6 +133,29 @@ fn normalize_theme(theme: &Value) -> Result<Value, String> {
         }
         clean.insert("plasma".into(), Value::Object(settings));
     }
+    if let Some(surfaces) = theme.get("surfaces") {
+        let mut settings = serde_json::Map::new();
+        let color = surfaces["background"].as_str().ok_or("Invalid surface background")?;
+        if color.len() != 7 || !color.starts_with('#') || !color.as_bytes()[1..].iter().all(u8::is_ascii_hexdigit) {
+            return Err("Invalid surface background".into());
+        }
+        settings.insert("background".into(), Value::from(color.to_ascii_lowercase()));
+        for key in ["navigation", "editor", "outline", "titlebar"] {
+            let n = surfaces[key].as_f64().ok_or("Invalid surface opacity")?;
+            if !(0.0..=100.0).contains(&n) { return Err("Invalid surface opacity".into()); }
+            settings.insert(key.into(), if n.fract() == 0.0 { Value::from(n as u64) } else { Value::from(n) });
+        }
+        if let Some(image) = surfaces.get("image") {
+            let path = image.as_str().ok_or("Invalid surface image")?;
+            let name = path.strip_prefix("assets/").ok_or("Invalid surface image")?;
+            let (stem, ext) = name.rsplit_once('.').ok_or("Invalid surface image")?;
+            if stem.is_empty() || !stem.bytes().all(|b| b.is_ascii_alphanumeric() || b == b'_' || b == b'-') || !["png", "jpg", "jpeg", "webp"].contains(&ext) {
+                return Err("Invalid surface image".into());
+            }
+            settings.insert("image".into(), Value::from(path));
+        }
+        clean.insert("surfaces".into(), Value::Object(settings));
+    }
     for mode in ["light", "dark"] {
         let mut colors = serde_json::Map::new();
         for key in [
@@ -147,9 +181,104 @@ fn normalize_theme(theme: &Value) -> Result<Value, String> {
             }
             colors.insert(key.into(), Value::from(color.to_ascii_lowercase()));
         }
+        // Optional text colors preserve legacy snapshots and their conflict fingerprints.
+        for key in ["editorText", "selectedText", "highlightText", "highlightBackground"] {
+            if let Some(value) = theme[mode].get(key) {
+                let color = value.as_str().ok_or_else(|| format!("Invalid {mode} {key} color"))?;
+                if color.len() != 7 || !color.starts_with('#')
+                    || !color.as_bytes()[1..].iter().all(u8::is_ascii_hexdigit) {
+                    return Err(format!("Invalid {mode} {key} color"));
+                }
+                colors.insert(key.into(), Value::from(color.to_ascii_lowercase()));
+            }
+        }
         clean.insert(mode.into(), Value::Object(colors));
     }
     Ok(Value::Object(clean))
+}
+
+// CSS is inert storage here. The frontend parses and scopes it before rendering.
+fn normalize_design(v: &Value) -> Result<Value, String> {
+    use serde_json::json;
+    if v["apiVersion"].as_u64() != Some(1) {
+        return Err("Unsupported theme API".into());
+    }
+    let text = |key: &str, max: usize| -> Result<String, String> {
+        let s = v[key]
+            .as_str()
+            .ok_or_else(|| format!("Invalid theme {key}"))?;
+        if s.encode_utf16().count() > max {
+            return Err(format!("Theme {key} exceeds limit"));
+        }
+        Ok(s.to_owned())
+    };
+    let version = text("version", 40)?;
+    let parts: Vec<_> = version.split('.').collect();
+    if parts.len() != 3
+        || parts
+            .iter()
+            .any(|p| p.is_empty() || !p.bytes().all(|b| b.is_ascii_digit()))
+    {
+        return Err("Invalid theme version".into());
+    }
+    let supports = v["supportsPlasma"]
+        .as_bool()
+        .ok_or("Invalid Plasma support")?;
+    let mut metrics = serde_json::Map::new();
+    for (key, min, max) in [
+        ("radius", 0.0, 24.0),
+        ("spacing", 0.75, 1.5),
+        ("lineHeight", 1.2, 2.2),
+    ] {
+        let n = v["metrics"][key].as_f64().ok_or("Invalid theme metric")?;
+        if !(min..=max).contains(&n) {
+            return Err("Invalid theme metric".into());
+        }
+        metrics.insert(
+            key.into(),
+            if n.fract() == 0.0 {
+                json!(n as u64)
+            } else {
+                json!(n)
+            },
+        );
+    }
+    let entries = v["assets"].as_object().ok_or("Invalid assets")?;
+    if entries.len() > 32 {
+        return Err("Too many theme assets".into());
+    }
+    let mut assets = serde_json::Map::new();
+    let mut total = 0;
+    for (path, a) in entries {
+        let name = path.strip_prefix("assets/").ok_or("Invalid asset path")?;
+        let (stem, ext) = name.rsplit_once('.').ok_or("Invalid asset path")?;
+        if stem.is_empty()
+            || !stem
+                .bytes()
+                .all(|b| b.is_ascii_alphanumeric() || b == b'_' || b == b'-')
+        {
+            return Err("Invalid asset path".into());
+        }
+        let mime = match ext {
+            "png" => "image/png",
+            "jpg" | "jpeg" => "image/jpeg",
+            "webp" => "image/webp",
+            "woff2" => "font/woff2",
+            _ => return Err("Unsupported asset type".into()),
+        };
+        if a["mime"].as_str() != Some(mime) {
+            return Err("Invalid asset type".into());
+        }
+        let data = a["data"].as_str().ok_or("Invalid asset data")?;
+        total += data.len();
+        if data.len() > 2_800_000 || total > 6_000_000 {
+            return Err("Theme assets exceed size limit".into());
+        }
+        assets.insert(path.clone(), json!({"mime":mime,"data":data}));
+    }
+    Ok(
+        json!({"apiVersion":1,"author":text("author",100)?,"version":version,"license":text("license",20_000)?,"supportsPlasma":supports,"css":text("css",100_000)?,"assets":assets,"metrics":metrics}),
+    )
 }
 
 fn save_in_dir(dir: &Path, theme: Value, expected: Option<Value>) -> Result<(), String> {
@@ -167,7 +296,10 @@ fn save_in_dir(dir: &Path, theme: Value, expected: Option<Value>) -> Result<(), 
     {
         return Err("Invalid theme ID".into());
     }
-    if theme.get("schemaVersion").and_then(Value::as_u64) != Some(1) {
+    if !matches!(
+        theme.get("schemaVersion").and_then(Value::as_u64),
+        Some(1 | 2)
+    ) {
         return Err("Unsupported theme version".into());
     }
     fs::create_dir_all(dir).map_err(|e| e.to_string())?;
@@ -190,6 +322,19 @@ fn save_in_dir(dir: &Path, theme: Value, expected: Option<Value>) -> Result<(), 
     };
     if current != expected {
         return Err("The shared theme changed. Reload the library and try again.".into());
+    }
+    // Check under the same directory lock as the write: two app windows cannot
+    // create different IDs with the same display name concurrently.
+    let name_key = theme["name"].as_str().unwrap().trim().to_lowercase();
+    for entry in fs::read_dir(dir).map_err(|e| e.to_string())? {
+        let candidate = entry.map_err(|e| e.to_string())?.path();
+        if candidate == path || candidate.extension().and_then(|s| s.to_str()) != Some("json") { continue; }
+        let bytes = fs::read(&candidate).map_err(|e| e.to_string())?;
+        if let Ok(other) = serde_json::from_slice::<Value>(&bytes) {
+            if other["name"].as_str().map(|s| s.trim().to_lowercase()) == Some(name_key.clone()) {
+                return Err("A theme with this name already exists. Choose a different name.".into());
+            }
+        }
     }
     let temp = dir.join(format!(".{}.tmp", uuid::Uuid::new_v4()));
     let contents = serde_json::to_string_pretty(&theme).map_err(|e| e.to_string())?;
@@ -248,6 +393,11 @@ mod tests {
             b
         );
         assert!(save_in_dir(&dir, json!({"id":"../escape", "schemaVersion":1}), None).is_err());
+        let mut duplicate = b.clone();
+        duplicate["id"] = json!("different-id");
+        duplicate["name"] = json!(format!("  {}  ", b["name"].as_str().unwrap().to_uppercase()));
+        assert!(save_in_dir(&dir, duplicate, None).unwrap_err().contains("name already exists"));
+        assert!(!dir.join("different-id.json").exists());
         let mut plasma_theme = b.clone();
         plasma_theme["plasma"] = json!({"enabled":true,"frost":60,"backgroundBlur":12});
         save_in_dir(&dir, plasma_theme.clone(), Some(b)).unwrap();
@@ -258,7 +408,65 @@ mod tests {
         );
         let mut invalid_plasma = plasma_theme.clone();
         invalid_plasma["plasma"]["frost"] = json!(101);
-        assert!(save_in_dir(&dir, invalid_plasma, Some(plasma_theme)).is_err());
+        assert!(save_in_dir(&dir, invalid_plasma, Some(plasma_theme.clone())).is_err());
+        let mut advanced = plasma_theme.clone();
+        advanced["schemaVersion"] = json!(2);
+        advanced["design"] = json!({"apiVersion":1,"author":"Creator","version":"1.0.0","license":"MIT","supportsPlasma":true,"css":".ProseMirror h1 { color: red; }","assets":{},"metrics":{"radius":12,"spacing":1,"lineHeight":1.6}});
+        for key in ["editorText", "selectedText", "highlightText", "highlightBackground"] {
+            advanced["light"][key] = json!("#123456");
+            advanced["dark"][key] = json!("#ffffff");
+            let mut invalid = advanced.clone();
+            invalid["light"][key] = json!("url(evil)");
+            assert!(normalize_theme(&invalid).is_err());
+            invalid["light"][key] = Value::Null;
+            assert!(normalize_theme(&invalid).is_err());
+        }
+        advanced["surfaces"] = json!({"background":"#112233","navigation":30,"editor":80,"outline":0,"titlebar":100,"image":"assets/background.webp"});
+        let mut invalid_surfaces = advanced.clone();
+        invalid_surfaces["surfaces"]["editor"] = json!(101);
+        assert!(normalize_theme(&invalid_surfaces).is_err());
+        invalid_surfaces["surfaces"]["editor"] = json!(50);
+        invalid_surfaces["surfaces"]["image"] = json!("https://example.com/image.png");
+        assert!(normalize_theme(&invalid_surfaces).is_err());
+        save_in_dir(&dir, advanced.clone(), Some(plasma_theme.clone())).unwrap();
+        assert_eq!(
+            serde_json::from_str::<Value>(&fs::read_to_string(dir.join("sample.json")).unwrap())
+                .unwrap(),
+            advanced
+        );
+        let mut bad = advanced.clone();
+        bad["design"]["apiVersion"] = json!(2);
+        assert!(save_in_dir(&dir, bad, Some(advanced.clone())).is_err());
+        let mut stale = advanced.clone();
+        stale["name"] = json!("Stale");
+        assert!(delete_in_dir(&dir, stale).is_err());
+        assert!(dir.join("sample.json").exists());
+        delete_in_dir(&dir, advanced).unwrap();
+        assert!(!dir.join("sample.json").exists());
+        assert_eq!(fs::read_dir(dir.join(".trash")).unwrap().count(), 1);
         fs::remove_dir_all(dir).unwrap();
     }
+}
+
+#[tauri::command]
+pub fn delete_theme(app: AppHandle, expected: Value) -> Result<(), String> {
+    let dir = app.path().app_data_dir().map_err(|e| e.to_string())?.join("themes");
+    delete_in_dir(&dir, expected)
+}
+
+fn delete_in_dir(dir: &Path, expected: Value) -> Result<(), String> {
+    let expected = normalize_theme(&expected)?;
+    if !dir.exists() { return Err("The theme was already removed. Reload the library.".into()); }
+    let lock = OpenOptions::new().create(true).truncate(false).read(true).write(true)
+        .open(dir.join(".lock")).map_err(|e| e.to_string())?;
+    lock.lock_exclusive().map_err(|e| e.to_string())?;
+    let id = expected["id"].as_str().ok_or("Missing theme ID")?;
+    let path = dir.join(format!("{id}.json"));
+    let contents = fs::read_to_string(&path).map_err(|_| "The theme was already removed. Reload the library.".to_string())?;
+    let current = normalize_theme(&serde_json::from_str::<Value>(&contents).map_err(|e| e.to_string())?)?;
+    if current != expected { return Err("The shared theme changed. Reload the library and try again.".into()); }
+    // Retain a local recovery file outside the active library scan.
+    let trash = dir.join(".trash");
+    fs::create_dir_all(&trash).map_err(|e| e.to_string())?;
+    fs::rename(path, trash.join(format!("{id}-{}.json", uuid::Uuid::new_v4()))).map_err(|e| e.to_string())
 }

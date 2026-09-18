@@ -103,3 +103,14 @@ export async function focusNotebookWindow(workspace: string) {
   if (!isTauri()) return false;
   return invoke<boolean>("focus_notebook_window", { workspace });
 }
+
+export async function exportThemePackageFile(name: string, contents: Uint8Array) {
+  if (isTauri()) {
+    const path = await save({ title: "Export theme", defaultPath: name, filters: [{ name: "Tigrana theme", extensions: ["tigrana-theme"] }] });
+    if (path) await invoke("write_theme_package", { path, contents: Array.from(contents) });
+    return;
+  }
+  const url = URL.createObjectURL(new Blob([new Uint8Array(contents)], { type: "application/zip" }));
+  const link = document.createElement("a"); link.href = url; link.download = name; link.click();
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
+}

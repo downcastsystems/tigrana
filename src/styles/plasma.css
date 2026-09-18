@@ -1,3 +1,5 @@
+@layer tigrana-base, tigrana-plasma, tigrana-api;
+@layer tigrana-plasma {
 /* The canvas lives behind this isolated shell, above the body background.
    Translucent CSS surfaces also work while loading or without WebGL2. */
 .app-shell[data-plasma] {
@@ -125,6 +127,11 @@ body.is-resizing-pane .app-shell[data-plasma] .pane-resizer::after {
   background: color-mix(in srgb, var(--app-bg) var(--plasma-editor-opacity, 88%), transparent);
 }
 
+/* Leave the right glass rim visible behind section selection and hover fills. */
+.app-shell[data-plasma] .section-view-folder-pane .folder-row {
+  margin-right: 6px;
+}
+
 /* The scrolling content and its sticky fade must fit inside the panel's
    18px corners, inset by its 1px border. Keep toolbar popovers unclipped. */
 .app-shell[data-plasma] .note-surface {
@@ -202,4 +209,6 @@ body.is-resizing-pane .app-shell[data-plasma] .pane-resizer::after {
   text-align: right;
   font-variant-numeric: tabular-nums;
   color: var(--text-muted);
+}
+
 }

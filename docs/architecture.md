@@ -223,8 +223,7 @@ document with a stable ID, name, complete light and dark palettes, interface and
 editor fonts and sizes, and a colored-title-bar preference. The builder previews
 changes locally; Save and use validates the document, saves it to the shared
 library, and queues the notebook metadata update through the existing revisioned
-metadata persistence. Navigation, color-scheme selection, and experimental GPU
-settings remain separate preferences. Fonts use CSS family names and fall back to
+metadata persistence. Navigation and color-scheme selection remain separate preferences. Fonts use CSS family names and fall back to
 fonts installed on the destination computer; font files are not embedded.
 
 The notebook stores the full selected document at
@@ -263,3 +262,19 @@ notebooks without saved settings. The notebook snapshot is authoritative when
 Plasma settings are present. Experimental appearance controls update the notebook
 copy; editing and saving the theme updates the shared library. Differences are
 reconciled after closing Settings or reopening the notebook.
+
+### Theme API and packages
+
+Extended themes use schema version 2 with a versioned `design` block. The
+normalized library/notebook snapshot includes author metadata, metrics, CSS and
+bounded embedded assets. A `.tigrana-theme` ZIP is an interchange format; storage
+continues using the existing atomic JSON snapshots and CAS conflict resolution.
+See [theme authoring](themes/README.md) for the public API, package contract,
+recovery shortcut and deliberate CSS restrictions.
+
+`themeCss.ts` parses all styles with CSSTree before application, rejects unsupported
+nodes/resources, and scopes selectors to title-bar/notebook-frame regions. Styles
+are layered beneath creator CSS. Settings suspends live creator styles. The
+workbench uses a separate ShadowRoot and the production stylesheets; it does not
+instantiate or mutate the user's editor. `ThemeStyles` only recompiles when the
+theme or color scheme changes. Editor transaction behavior is unchanged.

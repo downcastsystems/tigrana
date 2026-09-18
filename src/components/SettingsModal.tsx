@@ -1,7 +1,7 @@
 import { ThemePreviewHostContext } from "./ThemePreviewHost";
 import type { ReactNode } from "react";
 import { useState } from "react";
-import { Settings, X } from "lucide-react";
+import { Maximize2, Minimize2, RotateCcw, Settings, X } from "lucide-react";
 import type { NavigationStyle } from "../types";
 
 export default function SettingsModal(props: {
@@ -9,15 +9,20 @@ export default function SettingsModal(props: {
   onNavigationStyleChange: (value: NavigationStyle) => void;
   spellcheckEnabled: boolean;
   onSpellcheckEnabledChange: (value: boolean) => void;
+  wordCountVisible: boolean;
+  onWordCountVisibleChange: (value: boolean) => void;
   plasmaEnabled: boolean;
+  plasmaSupported?: boolean;
   onPlasmaEnabledChange: (value: boolean) => void;
   plasmaFrost: number;
   onPlasmaFrostChange: (value: number) => void;
   plasmaBackgroundBlur: number;
   onPlasmaBackgroundBlurChange: (value: number) => void;
   onClose: () => void;
+  onResetTheme?: () => void;
   themeContent: ReactNode;
 }) {
+  const [maximized, setMaximized] = useState(false);
   const [section, setSection] = useState("general");
   const [previewHost, setPreviewHost] = useState<HTMLDivElement | null>(null);
   return (
@@ -27,7 +32,7 @@ export default function SettingsModal(props: {
     >
       <ThemePreviewHostContext.Provider value={previewHost}>
         <div
-          className="settings-window"
+          className={`settings-window${maximized ? " is-maximized" : ""}`}
           role="dialog"
           aria-modal="true"
           aria-label="Settings"
@@ -46,7 +51,7 @@ export default function SettingsModal(props: {
                     className={`settings-nav-item ${section === id ? "is-active" : ""}`}
                     onClick={() => setSection(id)}
                   >
-                    {id === "appearance" ? "Themes" : "General"}
+                    {id === "appearance" ? "Appearance" : "General"}
                   </button>
                 ))}
               </nav>
@@ -54,13 +59,24 @@ export default function SettingsModal(props: {
             <div className="settings-content">
               <div className="settings-content-header">
                 <div>
-                  <h2>{section === "appearance" ? "Themes" : "General"}</h2>
+                  <h2>{section === "appearance" ? "Appearance" : "General"}</h2>
                   <p>
                     {section === "appearance"
-                      ? "Choose a theme or make one of your own."
-                      : "Navigation and editing preferences."}
+                      ? "Customize navigation, themes, and visual effects."
+                      : "Editing and word count preferences."}
                   </p>
                 </div>
+                <div className="settings-window-actions">
+                <button
+                  type="button"
+                  className="icon-button"
+                  aria-label={maximized ? "Restore settings size" : "Maximize settings"}
+                  title={maximized ? "Restore settings size" : "Maximize settings"}
+                  aria-pressed={maximized}
+                  onClick={() => setMaximized(value => !value)}
+                >
+                  {maximized ? <Minimize2 size={17} /> : <Maximize2 size={17} />}
+                </button>
                 <button
                   className="icon-button"
                   aria-label="Close settings"
@@ -68,10 +84,30 @@ export default function SettingsModal(props: {
                 >
                   <X size={17} />
                 </button>
+                </div>
               </div>
               <div className="settings-scroll" key={section}>
                 {section === "appearance" ? (
                   <div className="settings-appearance">
+                    <div className="setting-row settings-navigation-style">
+                      <strong>Navigation style</strong>
+                      <select
+                        className="settings-select"
+                        aria-label="Navigation style"
+                        value={props.navigationStyle}
+                        onChange={(e) =>
+                          props.onNavigationStyleChange(
+                            e.target.value as NavigationStyle,
+                          )
+                        }
+                      >
+                        <option value="dual-pane">Dual pane</option>
+                        <option value="single-pane">Single pane</option>
+                        <option value="section-view">
+                          Dual pane with sections
+                        </option>
+                      </select>
+                    </div>
                     {props.themeContent}
                     <section
                       className="settings-experimental"
@@ -79,8 +115,7 @@ export default function SettingsModal(props: {
                     >
                       <h3>Experimental appearance</h3>
                       <p>
-                        These settings travel with this notebook. Create or edit
-                        a theme to save them in the shared library.
+                        These overrides stay with this notebook until you select a theme again. Edit the theme to change its saved Plasma default.
                       </p>
                       <label className="setting-row">
                         Plasma glass panes
@@ -92,6 +127,11 @@ export default function SettingsModal(props: {
                           }
                         />
                       </label>
+                      {props.plasmaSupported === false ? (
+                        <p>
+                          This theme recommends standard rendering. You can still try Plasma here.
+                        </p>
+                      ) : null}
                       {props.plasmaEnabled ? (
                         <>
                           <label className="setting-row">
@@ -125,29 +165,20 @@ export default function SettingsModal(props: {
                         </>
                       ) : null}
                     </section>
+                    {props.onResetTheme ? (
+                      <section className="settings-reset-appearance" aria-label="Default appearance">
+                        <h3>Default appearance</h3>
+                        <p>Reset this notebook’s theme and Plasma settings to their defaults.</p>
+                        <button className="toolbar-button" onClick={props.onResetTheme}>
+                          <RotateCcw size={16} aria-hidden="true" />
+                          Restore default appearance
+                        </button>
+                      </section>
+                    ) : null}
                   </div>
                 ) : null}
                 {section === "general" ? (
                   <div>
-                    <div className="setting-row">
-                      <strong>Navigation style</strong>
-                      <select
-                        className="settings-select"
-                        aria-label="Navigation style"
-                        value={props.navigationStyle}
-                        onChange={(e) =>
-                          props.onNavigationStyleChange(
-                            e.target.value as NavigationStyle,
-                          )
-                        }
-                      >
-                        <option value="dual-pane">Dual pane</option>
-                        <option value="single-pane">Single pane</option>
-                        <option value="section-view">
-                          Dual pane with sections
-                        </option>
-                      </select>
-                    </div>
                     <label className="setting-row">
                       Check spelling while typing
                       <input
@@ -156,6 +187,14 @@ export default function SettingsModal(props: {
                         onChange={(e) =>
                           props.onSpellcheckEnabledChange(e.target.checked)
                         }
+                      />
+                    </label>
+                    <label className="setting-row">
+                      Show word count
+                      <input
+                        type="checkbox"
+                        checked={props.wordCountVisible}
+                        onChange={(e) => props.onWordCountVisibleChange(e.target.checked)}
                       />
                     </label>
                   </div>

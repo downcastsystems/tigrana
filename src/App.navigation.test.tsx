@@ -1,5 +1,7 @@
+import { defaultThemeDesign } from "./lib/themeDesign";
 // @vitest-environment jsdom
 
+import { webcrypto } from "node:crypto";
 import { act } from "react";
 import { exampleTheme } from "./lib/themes.fixture";
 import { saveTheme } from "./lib/themes";
@@ -184,7 +186,7 @@ describe("Note navigation persistence", () => {
   });
 
   it("saves a shared theme with the notebook and restores its palette, typography, and Plasma settings after reload", async () => {
-    const theme = { ...exampleTheme(), plasma: { enabled: true, frost: 60, backgroundBlur: 12 } };
+    const theme = { ...exampleTheme(), schemaVersion: 2 as const, design: { ...defaultThemeDesign, css: ".ProseMirror h1 { color: red; }" }, plasma: { enabled: true, frost: 60, backgroundBlur: 12 } };
     await saveTheme(theme, null);
     const container = document.createElement("div");
     document.body.appendChild(container);
@@ -194,13 +196,18 @@ describe("Note navigation persistence", () => {
       await act(async () => { root.render(<App />); await new Promise(resolve => window.setTimeout(resolve, 50)); });
       await act(async () => window.dispatchEvent(new KeyboardEvent("keydown", { key: ",", metaKey: true })));
       expect(container.querySelector(".settings-nav button")?.textContent).toBe("General");
-      await act(async () => { Array.from(container.querySelectorAll<HTMLButtonElement>(".settings-nav button")).find(b => b.textContent === "Themes")!.click(); });
+      await act(async () => { Array.from(container.querySelectorAll<HTMLButtonElement>(".settings-nav button")).find(b => b.textContent === "Appearance")!.click(); });
       const picker = container.querySelector<HTMLSelectElement>('select[aria-label="Theme"]');
       expect(picker).not.toBeNull();
       await act(async () => { picker!.value = `saved:${theme.id}`; picker!.dispatchEvent(new Event("change", { bubbles: true })); });
       await waitFor(() => JSON.parse(demoPersistence.get("tigrana-meta:/demo/Tigrana") ?? "{}").appearance?.customTheme?.id === theme.id);
       expect(document.documentElement.style.getPropertyValue("--app-bg")).toBe(theme.dark.background);
       expect(document.documentElement.style.getPropertyValue("--editor-font-family")).toBe(theme.editorFontFamily);
+      await act(async () => setReactInputValue(container.querySelector<HTMLInputElement>('[aria-label="Quick accent color hex"]')!, "#2255cc"));
+      await act(async () => container.querySelector<HTMLInputElement>('.settings-quick-appearance input[type="checkbox"]')!.click());
+      await waitFor(() => JSON.parse(demoPersistence.get("tigrana-meta:/demo/Tigrana") ?? "{}").appearance?.quickAppearance?.accentColor === "#2255cc");
+      expect(JSON.parse(demoPersistence.get("tigrana-meta:/demo/Tigrana")!).appearance.customTheme.dark.accent).toBe(theme.dark.accent);
+
       await act(async () => root.unmount());
       localStorage.setItem("tigrana-plasma-theme", "false");
       localStorage.setItem("tigrana-plasma-frost", "0");
@@ -208,13 +215,95 @@ describe("Note navigation persistence", () => {
       root = createRoot(container);
       await act(async () => { root.render(<App />); await new Promise(resolve => window.setTimeout(resolve, 50)); });
       expect(document.documentElement.dataset.themePreset).toBe("custom");
+      expect(document.documentElement.dataset.accentTitlebar).toBe("false");
+      expect(document.documentElement.style.getPropertyValue("--accent")).toBe("#2255cc");
+      expect(container.querySelector<HTMLElement>(".app-frame")!.style.getPropertyValue("--tigrana-accent")).toBe("#2255cc");
+
       expect(document.documentElement.style.getPropertyValue("--text")).toBe(theme.dark.text);
       expect(document.documentElement.style.getPropertyValue("--editor-font-size")).toBe(`${theme.editorFontSize}px`);
       expect(container.querySelector(".app-shell")?.getAttribute("data-plasma")).toBe("true");
       expect((container.querySelector(".app-shell") as HTMLElement).style.getPropertyValue("--plasma-panel-opacity")).toBe("54%");
       expect(localStorage.getItem("tigrana-plasma-background-blur")).toBe("12");
       expect(container.textContent).not.toContain("Theme copies differ");
+      expect(container.querySelector('[data-theme-styles="notebook"]')?.textContent).toContain("color:red");
+      await act(async () => window.dispatchEvent(new KeyboardEvent("keydown", { key: ",", metaKey: true })));
+      expect(container.querySelector(".settings-nav")).not.toBeNull();
+      await act(async () => { Array.from(container.querySelectorAll<HTMLButtonElement>(".settings-nav button")).find(b => b.textContent === "Appearance")!.click(); });
+      const plasmaToggle = [...container.querySelectorAll<HTMLInputElement>('.settings-experimental input[type="checkbox"]')][0];
+      await act(async () => plasmaToggle.click());
+      await waitFor(() => JSON.parse(demoPersistence.get("tigrana-meta:/demo/Tigrana") ?? "{}").appearance?.plasma?.enabled === false);
+      expect(JSON.parse(demoPersistence.get("tigrana-meta:/demo/Tigrana")!).appearance.customTheme.plasma.enabled).toBe(true);
+      const themePicker = container.querySelector<HTMLSelectElement>('select[aria-label="Theme"]')!;
+      await act(async () => { themePicker.value = 'builtin:default'; themePicker.dispatchEvent(new Event('change', { bubbles: true })); });
+      expect(plasmaToggle.checked).toBe(false);
+      expect(document.documentElement.style.getPropertyValue("--app-font-family")).toContain("Inter, ui-sans-serif");
+      expect(document.documentElement.style.getPropertyValue("--editor-font-family")).toContain("Inter, ui-sans-serif");
+      expect(document.documentElement.style.getPropertyValue("--app-font-size")).toBe("14px");
+      expect(document.documentElement.style.getPropertyValue("--editor-font-size")).toBe("17px");
+      await waitFor(() => JSON.parse(demoPersistence.get("tigrana-meta:/demo/Tigrana") ?? "{}").appearance?.editorFontSize === 17);
+      expect(JSON.parse(demoPersistence.get("tigrana-meta:/demo/Tigrana")!).appearance.editorFontFamily).toContain("Inter, ui-sans-serif");
+
+      expect(container.querySelector<HTMLElement>(".app-frame")!.style.getPropertyValue("--tigrana-accent")).toBe("");
+      const colorSchemePicker = container.querySelector<HTMLSelectElement>('[aria-label="Color scheme"]')!;
+      for (const [mode, color] of [["light", "#245fa5"], ["dark", "#285b99"]]) {
+        await act(async () => { colorSchemePicker.value = mode; colorSchemePicker.dispatchEvent(new Event("change", { bubbles: true })); });
+        expect(document.documentElement.style.getPropertyValue("--accent")).toBe(color);
+      }
+      expect(document.documentElement.style.getPropertyValue("--accent-contrast")).toBe("#ffffff");
+      expect(document.documentElement.dataset.accentTitlebar).toBe("false");
+      await act(async () => setReactInputValue(container.querySelector<HTMLInputElement>('[aria-label="Quick accent color hex"]')!, "#2255cc"));
+      await act(async () => container.querySelector<HTMLInputElement>('.settings-quick-appearance input[type="checkbox"]')!.click());
+      expect(document.documentElement.dataset.accentTitlebar).toBe("true");
+      expect(document.documentElement.style.getPropertyValue("--titlebar-bg")).toBe("#001428");
+      expect(container.querySelector<HTMLElement>(".app-titlebar")!.style.background).toBe("rgb(0, 20, 40)");
+      expect(document.documentElement.style.getPropertyValue("--accent")).toBe("#2255cc");
+
+      await act(async () => plasmaToggle.click());
+      expect(plasmaToggle.checked).toBe(true);
+      await act(async () => { themePicker.value = `saved:${theme.id}`; themePicker.dispatchEvent(new Event('change', { bubbles: true })); });
+      expect(plasmaToggle.checked).toBe(true);
+      await act(async () => { themePicker.value = 'builtin:default'; themePicker.dispatchEvent(new Event('change', { bubbles: true })); });
+      expect(plasmaToggle.checked).toBe(false);
+      await act(async () => { themePicker.value = `saved:${theme.id}`; themePicker.dispatchEvent(new Event('change', { bubbles: true })); });
+
+      expect(container.querySelector('[data-theme-styles="notebook"]')?.textContent).toContain("color:red");
+      await act(async () => window.dispatchEvent(new KeyboardEvent("keydown", { code: "KeyT", metaKey: true, altKey: true, shiftKey: true })));
+      expect(container.querySelector('[data-theme-styles="notebook"]')).toBeNull();
+      await waitFor(() => JSON.parse(demoPersistence.get("tigrana-meta:/demo/Tigrana") ?? "{}").appearance?.customTheme === null);
     } finally { await act(async () => root.unmount()); }
+  });
+
+  it("persists an accepted theme difference across Settings and app reloads", async () => {
+    vi.stubGlobal("crypto", webcrypto);
+    const local = exampleTheme(), shared = { ...local, name: "App-wide copy" };
+    await saveTheme(shared, null);
+    demoPersistence.set("tigrana-meta:/demo/Tigrana", JSON.stringify({ revision: 0, appearance: { customTheme: local } }));
+    const container = document.createElement("div");
+    document.body.appendChild(container);
+    containers.push(container);
+    let root = createRoot(container);
+    const metadata = () => JSON.parse(demoPersistence.get("tigrana-meta:/demo/Tigrana") ?? "{}");
+    try {
+      await act(async () => { root.render(<App />); await new Promise(resolve => window.setTimeout(resolve, 50)); });
+      await waitFor(() => !!container.querySelector('.theme-conflict'));
+      const keep = Array.from(container.querySelectorAll<HTMLButtonElement>('.theme-conflict button')).find(b => b.textContent === "Keep both versions unchanged")!;
+      await act(async () => keep.click());
+      await waitFor(() => !!metadata().appearance?.acknowledgedThemeDifference);
+      expect(metadata().appearance.customTheme).toEqual(local);
+      expect(metadata().appearance.acknowledgedThemeDifference.notebook).toMatch(/^[a-f0-9]{64}$/);
+      await act(async () => window.dispatchEvent(new KeyboardEvent("keydown", { key: ",", metaKey: true })));
+      await act(async () => container.querySelector<HTMLButtonElement>('[aria-label="Close settings"]')!.click());
+      await act(async () => { await new Promise(resolve => window.setTimeout(resolve, 50)); });
+      expect(container.querySelector('.theme-conflict')).toBeNull();
+      await act(async () => root.unmount());
+      root = createRoot(container);
+      await act(async () => { root.render(<App />); await new Promise(resolve => window.setTimeout(resolve, 80)); });
+      expect(container.querySelector('.theme-conflict')).toBeNull();
+      await saveTheme({ ...shared, editorFontSize: shared.editorFontSize + 1 }, shared);
+      await act(async () => window.dispatchEvent(new KeyboardEvent("keydown", { key: ",", metaKey: true })));
+      await act(async () => container.querySelector<HTMLButtonElement>('[aria-label="Close settings"]')!.click());
+      await waitFor(() => !!container.querySelector('.theme-conflict'));
+    } finally { await act(async () => root.unmount()); vi.unstubAllGlobals(); }
   });
 
   it("offers the section and active nested folder from the Note-list add menu", async () => {

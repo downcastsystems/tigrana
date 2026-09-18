@@ -1,0 +1,67 @@
+{
+  "schemaVersion": 2,
+  "id": "starfall-studio",
+  "name": "Starfall Studio",
+  "light": {
+    "background": "#fcf7ff",
+    "surface": "#eee5fa",
+    "surfaceSoft": "#f5edfc",
+    "surfaceStrong": "#ffffff",
+    "surfaceMuted": "#e5d9f2",
+    "border": "#b4a0cc",
+    "text": "#382747",
+    "textMuted": "#756283",
+    "accent": "#c5a5ed",
+    "titlebar": "#332354",
+    "editorText": "#352641",
+    "selectedText": "#241533",
+    "highlightText": "#291838"
+  },
+  "dark": {
+    "background": "#19182b",
+    "surface": "#211d36",
+    "surfaceSoft": "#27223e",
+    "surfaceStrong": "#332b4d",
+    "surfaceMuted": "#141321",
+    "border": "#625379",
+    "text": "#eee5ff",
+    "textMuted": "#b9a9cd",
+    "accent": "#c5a5ed",
+    "titlebar": "#271f50",
+    "editorText": "#ede6f5",
+    "selectedText": "#171226",
+    "highlightText": "#24172f"
+  },
+  "appFontFamily": "system-ui",
+  "appFontSize": 14,
+  "editorFontFamily": "system-ui",
+  "editorFontSize": 17,
+  "accentTitlebar": true,
+  "plasma": {
+    "enabled": true,
+    "frost": 88,
+    "backgroundBlur": 8
+  },
+  "design": {
+    "apiVersion": 1,
+    "author": "Tigrana example",
+    "version": "1.3.1",
+    "license": "",
+    "supportsPlasma": true,
+    "css": "",
+    "assets": {},
+    "metrics": {
+      "radius": 12,
+      "spacing": 1,
+      "lineHeight": 1.7
+    }
+  },
+  "surfaces": {
+    "background": "#19182b",
+    "navigation": 72,
+    "editor": 82,
+    "outline": 76,
+    "titlebar": 100,
+    "image": "assets/starfall-landscape.webp"
+  }
+}

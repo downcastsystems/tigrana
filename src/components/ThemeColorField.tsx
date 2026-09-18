@@ -16,7 +16,9 @@ export function ThemeColorField({
   name,
   value,
   onChange,
+  cssHint,
 }: {
+  cssHint?: string;
   label: string;
   name: string;
   value: string;
@@ -32,7 +34,7 @@ export function ThemeColorField({
   }
   return (
     <div className="theme-color-field">
-      <label htmlFor={id}>{label}</label>
+      <label htmlFor={id}>{label}{cssHint && <span className="theme-css-hint" title={cssHint} aria-label={cssHint}>Custom CSS</span>}</label>
       <div className="theme-color-inputs">
         <input
           type="color"

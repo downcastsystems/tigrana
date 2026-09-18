@@ -1,6 +1,10 @@
+import { quickAppearanceStyles } from "./lib/quickAppearance";
+import { ThemeColorField } from "./components/ThemeColorField";
+import { ThemeStyles } from "./components/ThemeStyles";
+import "./styles/theme-api.css";
 import SettingsModal from "./components/SettingsModal";
 import { ThemeBuilder, ThemeReconciliation } from "./components/ThemeBuilder";
-import { opaqueThemeColor, readTheme, themeAppearance, type ThemeDocument } from "./lib/themes";
+import { defaultPlasmaSettings, opaqueThemeColor, readTheme, themeAppearance, type ThemeDocument } from "./lib/themes";
 import PlasmaTheme from "./components/PlasmaTheme";
 import { isSortCommand, type SortCommand } from "./editor/sortLines";
 import { ReleaseNotice } from "./components/ReleaseNotice";
@@ -230,7 +234,7 @@ const sessionKeyPrefix = "tigrana-session:";
 const notePositionFreshMs = 24 * 60 * 60 * 1000;
 const autosaveDelayMs = 650;
 const autosaveRetryDelayMs = 1_500;
-const defaultLightAccent = "#666666";
+const defaultLightAccent = "#245fa5";
 const defaultAppFontFamily = 'Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif';
 const defaultEditorFontFamily = defaultAppFontFamily;
 const defaultAppFontSize = 14;
@@ -270,7 +274,7 @@ class EditorErrorBoundary extends Component<
     return this.props.children;
   }
 }
-const defaultDarkAccent = "#333333";
+const defaultDarkAccent = "#285b99";
 const lucideIconPrefix = "lucide:";
 const lucideIconMap = Object.fromEntries(
   Object.entries(LucideIcons).filter(([name, value]) => /^[A-Z]/.test(name) && !name.endsWith("Icon") && isLucideIcon(value)),
@@ -603,7 +607,7 @@ export default function App() {
   const [plasmaEnabled, setPlasmaEnabled] = useState(() => localStorage.getItem(plasmaThemeKey) === "true");
   const [themePresetId, setThemePresetId] = useState<ThemePresetId>(() => readStoredThemePreset());
   const [themeColors, setThemeColors] = useState<NotebookThemeColorSettings>(() => readStoredNotebookThemeColors());
-  const [accentTitlebar, setAccentTitlebar] = useState<boolean>(() => localStorage.getItem(accentTitlebarKey) === "true");
+  const [savedAccentTitlebar, setAccentTitlebar] = useState<boolean>(() => localStorage.getItem(accentTitlebarKey) === "true");
   const [navigationStyle, setNavigationStyle] = useState<NavigationStyle>("section-view");
   const [appFontFamily, setAppFontFamily] = useState(defaultAppFontFamily);
   const [appFontSize, setAppFontSize] = useState(defaultAppFontSize);
@@ -910,11 +914,15 @@ export default function App() {
       tokens: { light: customTheme.light, dark: customTheme.dark } };
   }, [themePresetId, customTheme]);
   const activeThemeColors = themeColors[resolvedTheme];
-  const accentColor = activeThemeColors.accentColor ?? null;
+  const quickAppearance = metadata.appearance?.quickAppearance;
+  const accentTitlebar = quickAppearance?.coloredTitlebar ?? savedAccentTitlebar;
+  const accentColor = quickAppearance?.accentColor ?? activeThemeColors.accentColor ?? null;
   const effectiveAccentColor = accentColor || themePreset.accent[resolvedTheme];
-  const titlebarUseAccent = activeThemeColors.titlebarUseAccent ?? true;
+  const titlebarUseAccent = quickAppearance?.accentColor ? true : activeThemeColors.titlebarUseAccent ?? true;
   const titlebarColor = activeThemeColors.titlebarColor ?? null;
-  const effectiveTitlebarColor = titlebarUseAccent ? effectiveAccentColor : (titlebarColor || effectiveAccentColor);
+  const defaultTitlebarColor = !customTheme && themePresetId === "default" ? "#001428" : effectiveAccentColor;
+  const effectiveTitlebarColor = titlebarUseAccent ? defaultTitlebarColor : (titlebarColor || defaultTitlebarColor);
+  const quickStyles = quickAppearanceStyles(quickAppearance, effectiveAccentColor, accentTitlebar, defaultTitlebarColor);
   const selectedFolderTitle = useMemo(() => displayFolderName(selectedFolder, folders, workspace), [folders, selectedFolder, workspace]);
   const selectedSection = useMemo(() => getTopLevelFolderPath(selectedFolder), [selectedFolder]);
   const selectedSectionTitle = useMemo(
@@ -1952,12 +1960,16 @@ export default function App() {
 
   function updatePlasma(patch: Partial<NonNullable<ThemeDocument["plasma"]>>) {
     const plasma = { enabled: plasmaEnabled, frost: plasmaFrost, backgroundBlur: plasmaBackgroundBlur, ...patch };
-    updateNotebookAppearance({ plasma, ...(customTheme ? { customTheme: { ...customTheme, plasma } } : {}) });
+    updateNotebookAppearance({ plasma });
+  }
+
+  function resetThemeAppearance() {
+    updateNotebookAppearance({ quickAppearance: null, customTheme: null, themePresetId: "default", colors: defaultNotebookThemeColors(), accentTitlebar: false, appFontFamily: defaultAppFontFamily, appFontSize: defaultAppFontSize, editorFontFamily: defaultEditorFontFamily, editorFontSize: defaultEditorFontSize, plasma: { enabled: false, frost: 80, backgroundBlur: 0 } });
   }
 
   function applyCustomTheme(theme: ThemeDocument) {
     if (workspaceRef.current !== workspace) return;
-    updateNotebookAppearance(themeAppearance(theme));
+    updateNotebookAppearance({ ...themeAppearance(theme), quickAppearance: null });
   }
 
   function themeSeed(): ThemeDocument {
@@ -1967,7 +1979,7 @@ export default function App() {
       const accent = colors.accentColor || themePreset.accent[mode];
       return { ...tokens, border: opaqueThemeColor(tokens.border, themePreset.appBackground[mode]), textMuted: opaqueThemeColor(tokens.textMuted, themePreset.appBackground[mode]),
         background: themePreset.appBackground[mode], accent,
-        titlebar: colors.titlebarUseAccent !== false ? accent : colors.titlebarColor || accent };
+        titlebar: colors.titlebarUseAccent !== false ? (!customTheme && themePresetId === "default" ? defaultTitlebarColor : accent) : colors.titlebarColor || accent };
     };
     return { schemaVersion: 1, id: "draft", name: "My theme", light: palette("light"), dark: palette("dark"),
       appFontFamily, appFontSize, editorFontFamily, editorFontSize, accentTitlebar,
@@ -4675,7 +4687,9 @@ export default function App() {
       {plasmaEnabled ? <PlasmaTheme backgroundBlur={plasmaBackgroundBlur} frost={plasmaFrost / 100} theme={resolvedTheme} accentColor={effectiveAccentColor} layoutKey={`${leftVisible}-${outlineVisible}-${navigationStyle}`} /> : null}
       {isWindowsDesktop() ? <WindowsMenuBar onError={setAppError} onMouseDown={handleChromeMouseDown} onDoubleClick={handleChromeDoubleClick} /> : null}
       <header
-        className="app-titlebar"
+        data-theme-region="notebook" data-theme-api={customTheme?.design ? "1" : undefined}
+        className={`app-titlebar theme-${resolvedTheme} ${plasmaEnabled ? "theme-plasma" : "theme-standard"}`}
+        style={{ ...quickStyles.palette, ...quickStyles.titlebar }}
         data-tauri-drag-region=""
         onMouseDown={handleChromeMouseDown}
         onDoubleClick={handleChromeDoubleClick}
@@ -4710,7 +4724,7 @@ export default function App() {
         <ReleaseNotice />
       </header>
 
-      <div className={`app-frame ${leftVisible ? "" : "is-left-hidden"} ${outlineVisible ? "" : "is-outline-hidden"} ${navigationStyle === "single-pane" ? "is-single-col" : ""}`} style={frameStyle}>
+      <div data-theme-region="notebook" data-theme-api={customTheme?.design ? "1" : undefined} className={`app-frame theme-${resolvedTheme} ${plasmaEnabled ? "theme-plasma" : "theme-standard"} ${leftVisible ? "" : "is-left-hidden"} ${outlineVisible ? "" : "is-outline-hidden"} ${navigationStyle === "single-pane" ? "is-single-col" : ""}`} style={{ ...frameStyle, ...quickStyles.palette }}>
       {leftVisible ? (
         <aside
           id="left-navigation-panes"
@@ -5487,30 +5501,48 @@ export default function App() {
         />
       ) : null}
 
+      <ThemeStyles theme={customTheme} mode={resolvedTheme} onReset={resetThemeAppearance} />
       {settingsOpen ? (
           <SettingsModal
             navigationStyle={navigationStyle}
             onNavigationStyleChange={(style) => updateNotebookAppearance({ navigationStyle: style })}
             spellcheckEnabled={spellcheckEnabled}
             onSpellcheckEnabledChange={setSpellcheckEnabled}
+            wordCountVisible={wordCountVisible}
+            onWordCountVisibleChange={setWordCountVisible}
+            plasmaSupported={customTheme?.design?.supportsPlasma}
             plasmaEnabled={plasmaEnabled}
             onPlasmaEnabledChange={(enabled) => updatePlasma({ enabled })}
             plasmaFrost={plasmaFrost}
             onPlasmaFrostChange={(frost) => updatePlasma({ frost })}
             plasmaBackgroundBlur={plasmaBackgroundBlur}
             onPlasmaBackgroundBlurChange={(backgroundBlur) => updatePlasma({ backgroundBlur })}
+            onResetTheme={resetThemeAppearance}
             onClose={() => setSettingsOpen(false)}
             themeContent={<>
               {metadata.appearance?.customTheme && !customTheme ? <p role="alert">This notebook contains an invalid or unsupported theme. Choose a theme to replace it.</p> : null}
               <ThemeBuilder key={workspace} current={customTheme} seed={themeSeed()} onApply={applyCustomTheme}
+                onSaved={() => setSettingsOpen(false)}
+                quickAppearanceControls={<section className="settings-quick-appearance" aria-label="Quick appearance">
+                  <h3>Quick appearance</h3>
+                  <p className="settings-description">These changes apply to this notebook. Choosing a theme resets them.</p>
+                  <ThemeColorField label="Accent color" name="Quick accent color" value={effectiveAccentColor}
+                    onChange={(value) => updateNotebookAppearance({ quickAppearance: { ...quickAppearance, accentColor: value } })} />
+                  <label className="setting-row">Colored title bar
+                    <input type="checkbox" checked={accentTitlebar}
+                      onChange={(event) => updateNotebookAppearance({ quickAppearance: { ...quickAppearance, coloredTitlebar: event.target.checked } })} />
+                  </label>
+                </section>}
                 builtInThemes={themePresets} builtInThemeId={themePresetId}
-                onBuiltInChange={(id) => updateNotebookAppearance({ customTheme: null, themePresetId: id, colors: defaultNotebookThemeColors() })}
+                onBuiltInChange={(id) => updateNotebookAppearance({ quickAppearance: null, accentTitlebar: false, customTheme: null, themePresetId: id, colors: defaultNotebookThemeColors(), plasma: { ...defaultPlasmaSettings }, appFontFamily: defaultAppFontFamily, appFontSize: defaultAppFontSize, editorFontFamily: defaultEditorFontFamily, editorFontSize: defaultEditorFontSize })}
                 colorScheme={colorScheme} onColorSchemeChange={(scheme) => updateNotebookAppearance({ colorScheme: scheme })} />
             </>}
           />
       ) : null}
 
-      {workspace && metadataLoaded && !settingsOpen ? <ThemeReconciliation key={workspace} current={customTheme} onApply={applyCustomTheme} /> : null}
+      {workspace && metadataLoaded && !settingsOpen ? <ThemeReconciliation key={workspace} current={customTheme} onApply={applyCustomTheme}
+        acknowledgedDifference={metadata.appearance?.acknowledgedThemeDifference}
+        onKeepBoth={(difference) => updateNotebookAppearance({ acknowledgedThemeDifference: difference })} /> : null}
 
       {notebooksManageOpen ? (
         <ManageNotebooksModal

@@ -50,7 +50,14 @@ export type NotebookThemeColors = {
   titlebarUseAccent?: boolean;
 };
 
+export type ThemeDifferenceAcknowledgement = {
+  notebook: string;
+  appWide: string | null;
+};
+
 export type NotebookAppearance = {
+  quickAppearance?: { accentColor?: string; coloredTitlebar?: boolean } | null;
+  acknowledgedThemeDifference?: ThemeDifferenceAcknowledgement;
   plasma?: import("./lib/themes").PlasmaSettings;
   customTheme?: import("./lib/themes").ThemeDocument | null;
   colorScheme?: "system" | "light" | "dark";
