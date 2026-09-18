@@ -1,3 +1,4 @@
+import { exampleTheme } from "./themes.fixture";
 import { describe, expect, it } from "vitest";
 import type { NotebookAppearance } from "../types";
 import { defaultWorkspaceMetadata } from "./notebookStorage";
@@ -19,6 +20,16 @@ const defaults = {
 };
 
 describe("Notebook appearance", () => {
+  it("uses all snapshot settings even if legacy appearance mirrors are absent or different", () => {
+    const theme = exampleTheme();
+    const appearance = { customTheme: theme, editorFontFamily: "Old font", accentTitlebar: false };
+    const resolved = resolveNotebookAppearance(appearance, defaults, ["default"]);
+    expect(resolved.editorFontFamily).toBe(theme.editorFontFamily);
+    expect(resolved.editorFontSize).toBe(theme.editorFontSize);
+    expect(resolved.accentTitlebar).toBe(true);
+    expect(resolved.colors.dark.accentColor).toBe(theme.dark.accent);
+    expect(appearance.editorFontFamily).toBe("Old font");
+  });
   it("resolves an authoritative appearance without inheriting the previous Notebook", () => {
     const appearance: NotebookAppearance = {
       colorScheme: "dark",

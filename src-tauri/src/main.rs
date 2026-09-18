@@ -6,6 +6,7 @@ mod notebook_metadata;
 mod notebook_paths;
 mod notebook_storage;
 mod notebook_write_coordinator;
+mod themes;
 mod trash;
 use assets::{
     read_asset_data_url as read_asset_data_url_for_notebook, save_asset as save_asset_for_notebook,
@@ -2303,6 +2304,8 @@ pub fn run() {
             _ => {}
         })
         .invoke_handler(tauri::generate_handler![
+            themes::list_themes,
+            themes::save_theme,
             ensure_workspace,
             watch_workspace,
             list_folders,

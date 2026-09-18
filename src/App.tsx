@@ -1,3 +1,6 @@
+import SettingsModal from "./components/SettingsModal";
+import { ThemeBuilder, ThemeReconciliation } from "./components/ThemeBuilder";
+import { opaqueThemeColor, readTheme, themeAppearance, type ThemeDocument } from "./lib/themes";
 import PlasmaTheme from "./components/PlasmaTheme";
 import { isSortCommand, type SortCommand } from "./editor/sortLines";
 import { ReleaseNotice } from "./components/ReleaseNotice";
@@ -29,7 +32,6 @@ import {
   Link2,
   Lock,
   Mic,
-  Moon,
   MoveRight,
   Palette,
   PanelLeftClose,
@@ -43,7 +45,6 @@ import {
   Search,
   Settings,
   Square,
-  Sun,
   Trash2,
   X,
 } from "lucide-react";
@@ -705,6 +706,7 @@ export default function App() {
   const metadataRef = useRef(metadata);
   const metadataSessionRef = useRef(new NotebookMetadataSession(workspace));
   const notebookAppearanceDefaultsRef = useRef({
+    plasma: { enabled: plasmaEnabled, frost: plasmaFrost, backgroundBlur: plasmaBackgroundBlur },
     colorScheme: readStoredColorScheme(),
     themePresetId: readStoredThemePreset(),
     colors: readStoredNotebookThemeColors(),
@@ -723,6 +725,11 @@ export default function App() {
         setMetadata(adopted);
       },
       appearance: (appearance) => {
+        if (appearance.plasma) {
+          setPlasmaEnabled(appearance.plasma.enabled);
+          setPlasmaFrost(appearance.plasma.frost);
+          setPlasmaBackgroundBlur(appearance.plasma.backgroundBlur);
+        }
         setColorScheme(appearance.colorScheme);
         setThemePresetId(appearance.themePresetId as ThemePresetId);
         setThemeColors(appearance.colors);
@@ -894,7 +901,14 @@ export default function App() {
   }, [draftSaveRevisions, rawMarkdownDraft]);
   backlinkPaneVisibleRef.current = outlineVisible && rightSidebarMode === "backlinks";
   const resolvedTheme = colorScheme === "system" ? (prefersDark ? "dark" : "light") : colorScheme;
-  const themePreset = getThemePreset(themePresetId);
+  const customTheme = useMemo(() => readTheme(metadata.appearance?.customTheme), [metadata.appearance?.customTheme]);
+  const themePreset = useMemo(() => {
+    const base = getThemePreset(themePresetId);
+    if (!customTheme) return base;
+    return { ...base, accent: { light: customTheme.light.accent, dark: customTheme.dark.accent },
+      appBackground: { light: customTheme.light.background, dark: customTheme.dark.background },
+      tokens: { light: customTheme.light, dark: customTheme.dark } };
+  }, [themePresetId, customTheme]);
   const activeThemeColors = themeColors[resolvedTheme];
   const accentColor = activeThemeColors.accentColor ?? null;
   const effectiveAccentColor = accentColor || themePreset.accent[resolvedTheme];
@@ -1092,7 +1106,7 @@ export default function App() {
 
   useEffect(() => {
     document.documentElement.dataset.theme = resolvedTheme;
-    document.documentElement.dataset.themePreset = themePreset.id;
+    document.documentElement.dataset.themePreset = customTheme ? "custom" : themePreset.id;
     const root = document.documentElement.style;
     root.setProperty("--app-bg", themePreset.appBackground[resolvedTheme]);
     const tokens = deriveThemeTokens(themePreset, resolvedTheme);
@@ -1106,7 +1120,7 @@ export default function App() {
     root.setProperty("--muted", tokens.textMuted);
     localStorage.setItem(themeKey, colorScheme);
     localStorage.setItem(themePresetKey, themePreset.id);
-  }, [colorScheme, resolvedTheme, themePreset]);
+  }, [colorScheme, resolvedTheme, themePreset, customTheme]);
 
   useEffect(() => {
     const root = document.documentElement.style;
@@ -1912,6 +1926,11 @@ export default function App() {
     });
     if (!next) return;
 
+    if (patch.plasma) {
+      setPlasmaEnabled(patch.plasma.enabled);
+      setPlasmaFrost(patch.plasma.frost);
+      setPlasmaBackgroundBlur(patch.plasma.backgroundBlur);
+    }
     if (patch.colorScheme !== undefined) setColorScheme(patch.colorScheme);
     if (patch.themePresetId && themePresets.some((preset) => preset.id === patch.themePresetId)) {
       setThemePresetId(patch.themePresetId as ThemePresetId);
@@ -1931,8 +1950,28 @@ export default function App() {
 
   }, [updateMetadata]);
 
-  function updateThemeColor(mode: "light" | "dark", patch: Partial<NotebookThemeColors>) {
-    updateNotebookAppearance({ colors: { [mode]: patch } });
+  function updatePlasma(patch: Partial<NonNullable<ThemeDocument["plasma"]>>) {
+    const plasma = { enabled: plasmaEnabled, frost: plasmaFrost, backgroundBlur: plasmaBackgroundBlur, ...patch };
+    updateNotebookAppearance({ plasma, ...(customTheme ? { customTheme: { ...customTheme, plasma } } : {}) });
+  }
+
+  function applyCustomTheme(theme: ThemeDocument) {
+    if (workspaceRef.current !== workspace) return;
+    updateNotebookAppearance(themeAppearance(theme));
+  }
+
+  function themeSeed(): ThemeDocument {
+    const palette = (mode: "light" | "dark") => {
+      const tokens = deriveThemeTokens(themePreset, mode);
+      const colors = themeColors[mode];
+      const accent = colors.accentColor || themePreset.accent[mode];
+      return { ...tokens, border: opaqueThemeColor(tokens.border, themePreset.appBackground[mode]), textMuted: opaqueThemeColor(tokens.textMuted, themePreset.appBackground[mode]),
+        background: themePreset.appBackground[mode], accent,
+        titlebar: colors.titlebarUseAccent !== false ? accent : colors.titlebarColor || accent };
+    };
+    return { schemaVersion: 1, id: "draft", name: "My theme", light: palette("light"), dark: palette("dark"),
+      appFontFamily, appFontSize, editorFontFamily, editorFontSize, accentTitlebar,
+      plasma: { enabled: plasmaEnabled, frost: plasmaFrost, backgroundBlur: plasmaBackgroundBlur } };
   }
 
   function requestEditorCommand(command: EditorCommand, payload: Partial<EditorCommandRequest> = {}) {
@@ -5450,43 +5489,28 @@ export default function App() {
 
       {settingsOpen ? (
           <SettingsModal
-            accentColor={accentColor}
-            accentTitlebar={accentTitlebar}
-            effectiveTitlebarColor={effectiveTitlebarColor}
-            titlebarColor={titlebarColor}
-            titlebarUseAccent={titlebarUseAccent}
-            colorScheme={colorScheme}
-            effectiveAccentColor={effectiveAccentColor}
-            appFontFamily={appFontFamily}
-            appFontSize={appFontSize}
-            editorFontFamily={editorFontFamily}
-            editorFontSize={editorFontSize}
             navigationStyle={navigationStyle}
-            resolvedTheme={resolvedTheme}
-            spellcheckEnabled={spellcheckEnabled}
-            plasmaBackgroundBlur={plasmaBackgroundBlur}
-            onPlasmaBackgroundBlurChange={setPlasmaBackgroundBlur}
-            plasmaFrost={plasmaFrost}
-            onPlasmaFrostChange={setPlasmaFrost}
-            plasmaEnabled={plasmaEnabled}
-            onPlasmaEnabledChange={setPlasmaEnabled}
-            themePresetId={themePreset.id}
-            onAccentChange={(color) => updateThemeColor(resolvedTheme, { accentColor: color })}
-            onAccentReset={() => updateThemeColor(resolvedTheme, { accentColor: null })}
-            onAccentTitlebarChange={(value) => updateNotebookAppearance({ accentTitlebar: value })}
-            onAppFontFamilyChange={(family) => updateNotebookAppearance({ appFontFamily: family })}
-            onAppFontSizeChange={(size) => updateNotebookAppearance({ appFontSize: size })}
-            onClose={() => setSettingsOpen(false)}
-            onColorSchemeChange={(scheme) => updateNotebookAppearance({ colorScheme: scheme })}
-            onEditorFontFamilyChange={(family) => updateNotebookAppearance({ editorFontFamily: family })}
-            onEditorFontSizeChange={(size) => updateNotebookAppearance({ editorFontSize: size })}
             onNavigationStyleChange={(style) => updateNotebookAppearance({ navigationStyle: style })}
+            spellcheckEnabled={spellcheckEnabled}
             onSpellcheckEnabledChange={setSpellcheckEnabled}
-            onThemePresetChange={(preset) => updateNotebookAppearance({ themePresetId: preset })}
-            onTitlebarColorChange={(color) => updateThemeColor(resolvedTheme, { titlebarColor: color })}
-            onTitlebarUseAccentChange={(value) => updateThemeColor(resolvedTheme, { titlebarUseAccent: value })}
+            plasmaEnabled={plasmaEnabled}
+            onPlasmaEnabledChange={(enabled) => updatePlasma({ enabled })}
+            plasmaFrost={plasmaFrost}
+            onPlasmaFrostChange={(frost) => updatePlasma({ frost })}
+            plasmaBackgroundBlur={plasmaBackgroundBlur}
+            onPlasmaBackgroundBlurChange={(backgroundBlur) => updatePlasma({ backgroundBlur })}
+            onClose={() => setSettingsOpen(false)}
+            themeContent={<>
+              {metadata.appearance?.customTheme && !customTheme ? <p role="alert">This notebook contains an invalid or unsupported theme. Choose a theme to replace it.</p> : null}
+              <ThemeBuilder key={workspace} current={customTheme} seed={themeSeed()} onApply={applyCustomTheme}
+                builtInThemes={themePresets} builtInThemeId={themePresetId}
+                onBuiltInChange={(id) => updateNotebookAppearance({ customTheme: null, themePresetId: id, colors: defaultNotebookThemeColors() })}
+                colorScheme={colorScheme} onColorSchemeChange={(scheme) => updateNotebookAppearance({ colorScheme: scheme })} />
+            </>}
           />
       ) : null}
+
+      {workspace && metadataLoaded && !settingsOpen ? <ThemeReconciliation key={workspace} current={customTheme} onApply={applyCustomTheme} /> : null}
 
       {notebooksManageOpen ? (
         <ManageNotebooksModal
@@ -7773,384 +7797,6 @@ function IconMark({ fallback: Fallback, size, value }: { fallback: LucideIcon; s
   return <Fallback size={size} />;
 }
 
-function SettingsModal({
-  accentColor,
-  appFontFamily,
-  appFontSize,
-  colorScheme,
-  editorFontFamily,
-  editorFontSize,
-  effectiveAccentColor,
-  effectiveTitlebarColor,
-  navigationStyle,
-  resolvedTheme,
-  spellcheckEnabled,
-  themePresetId,
-  plasmaEnabled,
-  plasmaFrost,
-  plasmaBackgroundBlur,
-  onPlasmaBackgroundBlurChange,
-  onPlasmaFrostChange,
-  onPlasmaEnabledChange,
-  accentTitlebar,
-  titlebarColor,
-  titlebarUseAccent,
-  onAccentChange,
-  onAccentReset,
-  onAccentTitlebarChange,
-  onAppFontFamilyChange,
-  onAppFontSizeChange,
-  onColorSchemeChange,
-  onClose,
-  onEditorFontFamilyChange,
-  onEditorFontSizeChange,
-  onNavigationStyleChange,
-  onSpellcheckEnabledChange,
-  onThemePresetChange,
-  onTitlebarColorChange,
-  onTitlebarUseAccentChange,
-}: {
-  accentColor: string | null;
-  accentTitlebar: boolean;
-  appFontFamily: string;
-  appFontSize: number;
-  colorScheme: ColorScheme;
-  editorFontFamily: string;
-  editorFontSize: number;
-  effectiveAccentColor: string;
-  effectiveTitlebarColor: string;
-  navigationStyle: NavigationStyle;
-  resolvedTheme: "light" | "dark";
-  spellcheckEnabled: boolean;
-  themePresetId: ThemePresetId;
-  plasmaEnabled: boolean;
-  plasmaFrost: number;
-  plasmaBackgroundBlur: number;
-  onPlasmaBackgroundBlurChange: (value: number) => void;
-  onPlasmaFrostChange: (value: number) => void;
-  onPlasmaEnabledChange: (enabled: boolean) => void;
-  titlebarColor: string | null;
-  titlebarUseAccent: boolean;
-  onAccentChange: (color: string) => void;
-  onAccentReset: () => void;
-  onAccentTitlebarChange: (value: boolean) => void;
-  onAppFontFamilyChange: (family: string) => void;
-  onAppFontSizeChange: (size: number) => void;
-  onColorSchemeChange: (scheme: ColorScheme) => void;
-  onClose: () => void;
-  onEditorFontFamilyChange: (family: string) => void;
-  onEditorFontSizeChange: (size: number) => void;
-  onNavigationStyleChange: (style: NavigationStyle) => void;
-  onSpellcheckEnabledChange: (value: boolean) => void;
-  onThemePresetChange: (theme: ThemePresetId) => void;
-  onTitlebarColorChange: (color: string) => void;
-  onTitlebarUseAccentChange: (value: boolean) => void;
-}) {
-  const [appFontSizeDraft, setAppFontSizeDraft] = useState(String(appFontSize));
-  const [editorFontSizeDraft, setEditorFontSizeDraft] = useState(String(editorFontSize));
-
-  useEffect(() => {
-    setAppFontSizeDraft(String(appFontSize));
-  }, [appFontSize]);
-
-  useEffect(() => {
-    setEditorFontSizeDraft(String(editorFontSize));
-  }, [editorFontSize]);
-
-  const commitAppFontSize = (value: string) => {
-    const next = readAppearanceFontSize(Number(value), appFontSize);
-    onAppFontSizeChange(next);
-    setAppFontSizeDraft(String(next));
-  };
-
-  const commitEditorFontSize = (value: string) => {
-    const next = readAppearanceFontSize(Number(value), editorFontSize);
-    onEditorFontSizeChange(next);
-    setEditorFontSizeDraft(String(next));
-  };
-
-  const sections = [
-    {
-      id: "appearance",
-      label: "Appearance",
-      icon: resolvedTheme === "dark" ? Moon : Sun,
-      content: (
-        <div className="settings-card">
-          <div className="setting-row">
-            <span>
-              <strong>Navigation style</strong>
-              <small>How folders and notes are displayed in the sidebar. Settings are saved per notebook.</small>
-            </span>
-            <select
-              className="settings-select"
-              value={navigationStyle}
-              aria-label="Navigation style"
-              onChange={(event) => onNavigationStyleChange(event.target.value as NavigationStyle)}
-            >
-              <option value="dual-pane">Dual Pane</option>
-              <option value="single-pane">Single Pane</option>
-              <option value="section-view">Dual Pane (Sections)</option>
-            </select>
-          </div>
-          <div className="setting-row">
-            <span>
-              <strong>Base color scheme</strong>
-              <small>Use a fixed scheme or follow this computer.</small>
-            </span>
-            <select className="settings-select" value={colorScheme} aria-label="Base color scheme" onChange={(event) => onColorSchemeChange(event.target.value as ColorScheme)}>
-              <option value="system">System</option>
-              <option value="light">Light</option>
-              <option value="dark">Dark</option>
-            </select>
-          </div>
-          <div className="setting-row">
-            <span>
-              <strong>Theme</strong>
-              <small>Choose a popular color palette for accents and surfaces.</small>
-            </span>
-            <select className="settings-select" value={themePresetId} onChange={(event) => onThemePresetChange(event.target.value as ThemePresetId)}>
-              {themePresets.map((preset) => (
-                <option key={preset.id} value={preset.id}>
-                  {preset.name}
-                </option>
-              ))}
-            </select>
-          </div>
-          <div className="setting-row">
-            <span>
-              <strong>Plasma UI · Experimental</strong>
-              <small>Glass panes with subtle lighting. Uses more graphics power. Saved on this computer.</small>
-            </span>
-            <label className="switch">
-              <input aria-label="Plasma UI" type="checkbox" checked={plasmaEnabled} onChange={(event) => onPlasmaEnabledChange(event.target.checked)} />
-              <span className="switch-track" />
-            </label>
-          </div>
-          {plasmaEnabled ? (
-            <div className="setting-row setting-row-sub">
-              <span>
-                <strong>Panel frostiness</strong>
-                <small>Lower values make panels clearer and more transparent; higher values add blur and opacity. Saved on this computer.</small>
-              </span>
-              <div className="plasma-frost-control">
-                <input
-                  aria-label="Panel frostiness"
-                  aria-valuetext={`${plasmaFrost}% frosted`}
-                  type="range"
-                  min="0"
-                  max="100"
-                  step="1"
-                  value={plasmaFrost}
-                  onChange={(event) => onPlasmaFrostChange(Number(event.target.value))}
-                />
-                <output>{plasmaFrost}%</output>
-              </div>
-            </div>
-          ) : null}
-          {plasmaEnabled ? (
-            <div className="setting-row setting-row-sub">
-              <span>
-                <strong>Background blur</strong>
-                <small>Soften the swirls while keeping panel borders and text sharp. Saved on this computer.</small>
-              </span>
-              <div className="plasma-frost-control">
-                <input
-                  aria-label="Background blur"
-                  aria-valuetext={plasmaBackgroundBlur === 0 ? "Sharp" : `${plasmaBackgroundBlur} pixels of blur`}
-                  type="range"
-                  min="0"
-                  max="40"
-                  step="1"
-                  value={plasmaBackgroundBlur}
-                  onChange={(event) => onPlasmaBackgroundBlurChange(Number(event.target.value))}
-                />
-                <output>{plasmaBackgroundBlur === 0 ? "Sharp" : `${plasmaBackgroundBlur}px`}</output>
-              </div>
-            </div>
-          ) : null}
-          <div className="setting-row">
-            <span>
-              <strong>Accent color</strong>
-              <small>Controls selected folders, notes, and active controls.</small>
-            </span>
-            <div className="accent-control">
-              <input aria-label="Accent color" type="color" value={effectiveAccentColor} onChange={(event) => onAccentChange(event.target.value)} />
-              <button className="toolbar-button" type="button" disabled={!accentColor} onClick={onAccentReset}>
-                Reset
-              </button>
-            </div>
-          </div>
-          <div className="setting-row">
-            <span>
-              <strong>Accent title bar</strong>
-              <small>Color the window title bar for this notebook.</small>
-            </span>
-            <label className="switch">
-              <input
-                type="checkbox"
-                checked={accentTitlebar}
-                onChange={(event) => onAccentTitlebarChange(event.target.checked)}
-              />
-              <span className="switch-track" />
-            </label>
-          </div>
-          {accentTitlebar ? (
-            <>
-              <div className="setting-row setting-row-sub">
-                <span>
-                  <strong>Use accent color for titlebar background</strong>
-                  <small>Keep the title bar in step with the {resolvedTheme} accent color.</small>
-                </span>
-                <label className="switch">
-                  <input
-                    type="checkbox"
-                    checked={titlebarUseAccent}
-                    onChange={(event) => onTitlebarUseAccentChange(event.target.checked)}
-                  />
-                  <span className="switch-track" />
-                </label>
-              </div>
-              {!titlebarUseAccent ? (
-                <div className="setting-row setting-row-sub">
-                  <span>
-                    <strong>Titlebar background</strong>
-                    <small>Choose a custom {resolvedTheme} mode title bar color.</small>
-                  </span>
-                  <div className="accent-control">
-                    <input
-                      aria-label="Titlebar background"
-                      type="color"
-                      value={titlebarColor || effectiveTitlebarColor}
-                      onChange={(event) => onTitlebarColorChange(event.target.value)}
-                    />
-                  </div>
-                </div>
-              ) : null}
-            </>
-          ) : null}
-          <div className="setting-row">
-            <span>
-              <strong>App font</strong>
-              <small>Controls panes, settings, buttons, and other interface text.</small>
-            </span>
-            <div className="font-controls">
-              <input
-                className="settings-text-input"
-                value={appFontFamily}
-                aria-label="App font family"
-                onChange={(event) => onAppFontFamilyChange(event.target.value)}
-              />
-              <input
-                className="settings-number-input"
-                type="number"
-                min={11}
-                max={28}
-                value={appFontSizeDraft}
-                aria-label="App font size"
-                onChange={(event) => {
-                  const value = event.target.value;
-                  setAppFontSizeDraft(value);
-                  const numericValue = Number(value);
-                  if (value !== "" && Number.isFinite(numericValue) && numericValue >= 11 && numericValue <= 28) {
-                    onAppFontSizeChange(numericValue);
-                  }
-                }}
-                onBlur={(event) => commitAppFontSize(event.target.value)}
-              />
-            </div>
-          </div>
-          <div className="setting-row">
-            <span>
-              <strong>Editor font</strong>
-              <small>Controls the note title, rich editor, and raw Markdown text.</small>
-            </span>
-            <div className="font-controls">
-              <input
-                className="settings-text-input"
-                value={editorFontFamily}
-                aria-label="Editor font family"
-                onChange={(event) => onEditorFontFamilyChange(event.target.value)}
-              />
-              <input
-                className="settings-number-input"
-                type="number"
-                min={11}
-                max={28}
-                value={editorFontSizeDraft}
-                aria-label="Editor font size"
-                onChange={(event) => {
-                  const value = event.target.value;
-                  setEditorFontSizeDraft(value);
-                  const numericValue = Number(value);
-                  if (value !== "" && Number.isFinite(numericValue) && numericValue >= 11 && numericValue <= 28) {
-                    onEditorFontSizeChange(numericValue);
-                  }
-                }}
-                onBlur={(event) => commitEditorFontSize(event.target.value)}
-              />
-            </div>
-          </div>
-          <div className="setting-row">
-            <span>
-              <strong>Check spelling while typing</strong>
-              <small>Only applies inside note body editors.</small>
-            </span>
-            <label className="switch">
-              <input
-                type="checkbox"
-                checked={spellcheckEnabled}
-                onChange={(event) => onSpellcheckEnabledChange(event.target.checked)}
-              />
-              <span className="switch-track" />
-            </label>
-          </div>
-        </div>
-      ),
-    },
-  ];
-
-  return (
-    <div className="dialog-backdrop" onMouseDown={onClose}>
-      <section className="settings-modal" onMouseDown={(event) => event.stopPropagation()}>
-        <aside className="settings-sidebar">
-          <div className="settings-title">
-            <span className="dialog-icon">
-              <Settings size={18} />
-            </span>
-            <div>
-              <h2>Settings</h2>
-              <p>App preferences</p>
-            </div>
-          </div>
-          <nav className="settings-nav" aria-label="Settings sections">
-            {sections.map((section) => {
-              const Icon = section.icon;
-              return (
-                <button className="settings-nav-item is-active" key={section.id} type="button">
-                  <Icon size={15} />
-                  <span>{section.label}</span>
-                </button>
-              );
-            })}
-          </nav>
-        </aside>
-        <div className="settings-content">
-          <div className="settings-content-header">
-            <div>
-              <h2>Appearance</h2>
-              <p>Make the editor comfortable for the way you like to work.</p>
-            </div>
-            <button className="icon-button" type="button" title="Close" onClick={onClose}>
-              <X size={17} />
-            </button>
-          </div>
-          {sections[0].content}
-        </div>
-      </section>
-    </div>
-  );
-}
-
 function ManageNotebooksModal({
   activeWorkspace,
   notebooks,
@@ -9845,10 +9491,6 @@ function readStoredEditorWidthMode(): EditorWidthMode {
 function readStoredNoteAlignment(): NoteAlignment {
   const value = localStorage.getItem(alignmentKey);
   return value === "left" || value === "center" ? value : "center";
-}
-
-function readAppearanceFontSize(value: number | undefined, fallback: number) {
-  return typeof value === "number" && Number.isFinite(value) && value >= 11 && value <= 28 ? value : fallback;
 }
 
 function readStoredLastPath(workspace: string): string | null {

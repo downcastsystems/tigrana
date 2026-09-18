@@ -4,7 +4,7 @@ import { PlasmaRenderer, type RendererSettings } from "@cruxgarden/plasma-ui";
 
 const paneSelector = ".folder-pane, .notes-pane, .unified-tree-pane, .main-pane, .right-sidebar";
 
-export default function PlasmaMaterial({ theme, accentColor, frost, backgroundBlur, layoutKey }: { theme: "light" | "dark"; frost: number; backgroundBlur: number; accentColor: string; layoutKey: string }) {
+export default function PlasmaMaterial({ theme, accentColor, frost, backgroundBlur, layoutKey, preview = false }: { theme: "light" | "dark"; frost: number; backgroundBlur: number; accentColor: string; layoutKey: string; preview?: boolean }) {
   const hostRef = useRef<HTMLDivElement>(null);
   const rendererRef = useRef<PlasmaRenderer | null>(null);
 
@@ -68,7 +68,7 @@ export default function PlasmaMaterial({ theme, accentColor, frost, backgroundBl
     // Register existing panes without wrapping or remounting ProseMirror.
     // No DOM observation or note-content work runs while the user types.
     const panes = hostRef.current?.parentElement?.querySelectorAll<HTMLElement>(
-      paneSelector,
+      preview ? ".theme-preview-body > aside, .theme-preview-body > article" : paneSelector,
     ) ?? [];
     const handles = Array.from(panes, (pane) => renderer.register(pane, {
       radius: 18,
@@ -76,7 +76,7 @@ export default function PlasmaMaterial({ theme, accentColor, frost, backgroundBl
       fuse: false,
     }));
     return () => handles.forEach((handle) => handle.remove());
-  }, [theme, layoutKey]);
+  }, [theme, layoutKey, preview]);
 
   useEffect(() => {
     const renderer = rendererRef.current;
@@ -93,7 +93,7 @@ export default function PlasmaMaterial({ theme, accentColor, frost, backgroundBl
     });
   }, [accentColor, theme, frost, backgroundBlur]);
 
-  return <div className="plasma-background" ref={hostRef} aria-hidden="true" />;
+  return <div className={preview ? "plasma-preview-background" : "plasma-background"} ref={hostRef} aria-hidden="true" />;
 }
 
 function mixAccent(accent: string, target: number, amount: number): string {

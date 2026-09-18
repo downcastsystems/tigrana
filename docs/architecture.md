@@ -214,3 +214,52 @@ to a disposable SQLite FTS5 index under `.tigrana/search.sqlite`:
 3. Query content through FTS5.
 4. Reindex filesystem changes in the background.
 5. Rebuild the database whenever its schema or contents are invalid.
+
+### Portable themes
+
+Settings separates Themes from General preferences. Themes includes theme selection
+and experimental graphics settings. A theme is a versioned JSON
+document with a stable ID, name, complete light and dark palettes, interface and
+editor fonts and sizes, and a colored-title-bar preference. The builder previews
+changes locally; Save and use validates the document, saves it to the shared
+library, and queues the notebook metadata update through the existing revisioned
+metadata persistence. Navigation, color-scheme selection, and experimental GPU
+settings remain separate preferences. Fonts use CSS family names and fall back to
+fonts installed on the destination computer; font files are not embedded.
+
+The notebook stores the full selected document at
+`appearance.customTheme` inside `.tigrana/metadata.json`. Existing appearance
+fields remain readable, and Create theme can capture their current appearance.
+The shared library stores one `<theme-id>.json` file per theme in Tauri's
+`app_data_dir()/themes`. On macOS this is normally
+`~/Library/Application Support/systems.downcast.tigrana/themes`.
+Browser demo mode uses a separate localStorage library.
+
+`src/lib/themes.ts` validates imported files and compares normalized documents.
+`src-tauri/src/themes.rs` validates native writes, constrains filenames to safe
+IDs, locks the shared library, checks the expected previous document, and
+replaces each file atomically. Invalid library entries are reported without
+hiding valid themes. Unknown schema versions are rejected.
+
+On notebook load, `ThemeReconciliation` compares the embedded snapshot with the
+shared document of the same ID. A difference offers either replacement direction
+or keeping the notebook copy for now. No timestamp wins automatically. A missing
+shared theme can be added to the library. Keeping a notebook copy defers the
+choice until the next open; it does not silently overwrite either copy. Shared
+changes do not alter other open notebooks. Concurrent edits are rejected by the
+library's compare-and-swap check.
+
+Export shares a standalone JSON document. Import opens a validated draft for
+preview before saving, retaining its ID unless a different shared theme already
+uses that ID; that collision imports as a new copy. Files placed directly in the
+library should use their document ID as the filename. Built-in themes are bundled
+and remain available without library files.
+
+Themes also carry optional `plasma` settings: `enabled`, `frost` from 0–100,
+and `backgroundBlur` from 0–40. The builder previews and saves these together.
+Older schema-version-1 files without this field retain the notebook's existing
+Plasma preferences. LocalStorage preferences provide migration defaults for
+notebooks without saved settings. The notebook snapshot is authoritative when
+Plasma settings are present. Experimental appearance controls update the notebook
+copy; editing and saving the theme updates the shared library. Differences are
+reconciled after closing Settings or reopening the notebook.

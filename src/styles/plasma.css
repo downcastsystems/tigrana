@@ -30,7 +30,8 @@
 }
 
 /* Continue the fill into the gutter without covering controls or panels. */
-.app-shell[data-plasma] .app-titlebar::after {
+.app-shell[data-plasma] .app-titlebar::after,
+.theme-preview[data-plasma-preview] .theme-preview-title::after {
   content: "";
   position: absolute;
   top: 100%;

@@ -1,6 +1,8 @@
 // @vitest-environment jsdom
 
 import { act } from "react";
+import { exampleTheme } from "./lib/themes.fixture";
+import { saveTheme } from "./lib/themes";
 import { createRoot } from "react-dom/client";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
@@ -127,6 +129,8 @@ vi.mock("./editor/NotesEditor", () => ({
   ),
 }));
 
+vi.mock("./components/PlasmaTheme", () => ({ default: () => <div data-testid="plasma" /> }));
+
 const { default: App } = await import("./App");
 
 function setReactTextareaValue(textarea: HTMLTextAreaElement, value: string) {
@@ -177,6 +181,40 @@ describe("Note navigation persistence", () => {
     Reflect.deleteProperty(document, "elementFromPoint");
     vi.restoreAllMocks();
     containers.splice(0).forEach((container) => container.remove());
+  });
+
+  it("saves a shared theme with the notebook and restores its palette, typography, and Plasma settings after reload", async () => {
+    const theme = { ...exampleTheme(), plasma: { enabled: true, frost: 60, backgroundBlur: 12 } };
+    await saveTheme(theme, null);
+    const container = document.createElement("div");
+    document.body.appendChild(container);
+    containers.push(container);
+    let root = createRoot(container);
+    try {
+      await act(async () => { root.render(<App />); await new Promise(resolve => window.setTimeout(resolve, 50)); });
+      await act(async () => window.dispatchEvent(new KeyboardEvent("keydown", { key: ",", metaKey: true })));
+      expect(container.querySelector(".settings-nav button")?.textContent).toBe("General");
+      await act(async () => { Array.from(container.querySelectorAll<HTMLButtonElement>(".settings-nav button")).find(b => b.textContent === "Themes")!.click(); });
+      const picker = container.querySelector<HTMLSelectElement>('select[aria-label="Theme"]');
+      expect(picker).not.toBeNull();
+      await act(async () => { picker!.value = `saved:${theme.id}`; picker!.dispatchEvent(new Event("change", { bubbles: true })); });
+      await waitFor(() => JSON.parse(demoPersistence.get("tigrana-meta:/demo/Tigrana") ?? "{}").appearance?.customTheme?.id === theme.id);
+      expect(document.documentElement.style.getPropertyValue("--app-bg")).toBe(theme.dark.background);
+      expect(document.documentElement.style.getPropertyValue("--editor-font-family")).toBe(theme.editorFontFamily);
+      await act(async () => root.unmount());
+      localStorage.setItem("tigrana-plasma-theme", "false");
+      localStorage.setItem("tigrana-plasma-frost", "0");
+      localStorage.setItem("tigrana-plasma-background-blur", "0");
+      root = createRoot(container);
+      await act(async () => { root.render(<App />); await new Promise(resolve => window.setTimeout(resolve, 50)); });
+      expect(document.documentElement.dataset.themePreset).toBe("custom");
+      expect(document.documentElement.style.getPropertyValue("--text")).toBe(theme.dark.text);
+      expect(document.documentElement.style.getPropertyValue("--editor-font-size")).toBe(`${theme.editorFontSize}px`);
+      expect(container.querySelector(".app-shell")?.getAttribute("data-plasma")).toBe("true");
+      expect((container.querySelector(".app-shell") as HTMLElement).style.getPropertyValue("--plasma-panel-opacity")).toBe("54%");
+      expect(localStorage.getItem("tigrana-plasma-background-blur")).toBe("12");
+      expect(container.textContent).not.toContain("Theme copies differ");
+    } finally { await act(async () => root.unmount()); }
   });
 
   it("offers the section and active nested folder from the Note-list add menu", async () => {

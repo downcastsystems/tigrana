@@ -51,6 +51,8 @@ export type NotebookThemeColors = {
 };
 
 export type NotebookAppearance = {
+  plasma?: import("./lib/themes").PlasmaSettings;
+  customTheme?: import("./lib/themes").ThemeDocument | null;
   colorScheme?: "system" | "light" | "dark";
   themePresetId?: string;
   colors?: Partial<Record<"light" | "dark", NotebookThemeColors>>;
