@@ -1,3 +1,4 @@
+import { bundledThemes } from "../lib/bundledThemes";
 // @vitest-environment jsdom
 import { webcrypto } from "node:crypto";
 import type { ThemeDifferenceAcknowledgement } from "../types";
@@ -209,7 +210,7 @@ it("uses one selector for built-in and saved themes, including overlapping IDs",
       'select[aria-label="Theme"]',
     )!;
     expect(picker.value).toBe(`saved:${theme.id}`);
-    expect(picker.options).toHaveLength(3);
+    expect(picker.options).toHaveLength(2 + bundledThemes.length);
     await act(async () => {
       picker.value = `builtin:${theme.id}`;
       picker.dispatchEvent(new Event("change", { bubbles: true }));
@@ -496,8 +497,7 @@ it("requires confirmation to delete a saved theme and switches to Default", asyn
 });
 
 it("offers bundled Starfall, keeps its assets portable, and edits a personal copy", async () => {
-  const { bundledThemes } = await import("../lib/bundledThemes");
-  const starfall = bundledThemes[0];
+  const starfall = bundledThemes.find(t => t.id === "builtin-starfall-studio")!;
   const host = document.createElement("div"), root = createRoot(host), apply = vi.fn();
   try {
     await act(async () => root.render(<ThemeBuilder current={null} seed={exampleTheme()} onApply={apply}/>));
@@ -516,7 +516,7 @@ it("offers bundled Starfall, keeps its assets portable, and edits a personal cop
     expect(host.querySelector<HTMLSelectElement>('[aria-label="Theme"]')!.value).toBe(`bundled:${starfall.id}`);
     expect([...host.querySelectorAll("button")].some(b => b.textContent === "Delete theme")).toBe(false);
     await act(async () => button(host, "Edit theme").click());
-    expect(host.querySelector<HTMLInputElement>('[aria-label="Theme name"]')!.value).toBe("Starfall Studio copy");
+    expect(host.querySelector<HTMLInputElement>('[aria-label="Theme name"]')!.value).toBe("Starfall copy");
     await act(async () => button(host, "Save and use").click());
     await act(async () => button(host, "Confirm and save").click());
     const saved = (await listThemes()).themes[0];
@@ -527,7 +527,6 @@ it("offers bundled Starfall, keeps its assets portable, and edits a personal cop
 });
 
 it("does not ask to register an unchanged built-in theme in the shared library", async () => {
-  const { bundledThemes } = await import("../lib/bundledThemes");
   const host = document.createElement("div"), root = createRoot(host);
   try {
     await act(async () => root.render(<ThemeReconciliation current={bundledThemes[0]} onApply={vi.fn()}/>));
@@ -551,5 +550,55 @@ it("keeps the theme editor open when saving fails", async () => {
     expect(apply).not.toHaveBeenCalled();
     expect(host.querySelector("dialog")?.open).toBe(true);
     expect(host.querySelector('dialog [role="alert"]')).not.toBeNull();
+  } finally { await act(async () => root.unmount()); }
+});
+
+it("recognizes an older built-in and adopts its approved update across notebooks", async () => {
+  const latest = bundledThemes.find(theme => theme.id === "builtin-old-basement-pc")!;
+  const old = { ...latest, name: "Older Basement", navigationStyle: undefined };
+  const host = document.createElement("div");
+  const root = createRoot(host);
+  const apply = vi.fn();
+  try {
+    await act(async () => root.render(<ThemeReconciliation current={old} onApply={apply} />));
+    expect(host.textContent).toContain("A newer built-in theme is available");
+    expect(host.textContent).not.toContain("Make this theme available app-wide?");
+    await act(async () => button(host, "Use the latest version everywhere").click());
+    for (let i = 0; i < 50 && !apply.mock.calls.length; i++) await act(async () => { await new Promise(resolve => setTimeout(resolve, 10)); });
+    expect(apply).toHaveBeenLastCalledWith(latest);
+    expect((await listThemes()).themes).toHaveLength(0);
+    apply.mockClear();
+    await act(async () => root.render(<ThemeReconciliation key="other-notebook" current={old} onApply={apply} />));
+    for (let i = 0; i < 50 && !apply.mock.calls.length; i++) await act(async () => { await new Promise(resolve => setTimeout(resolve, 10)); });
+    expect(apply).toHaveBeenCalledWith(latest);
+    expect(host.textContent).toBe("");
+    apply.mockClear();
+    await act(async () => root.render(<ThemeReconciliation key="unrelated" current={exampleTheme()} onApply={apply} />));
+    expect(apply).not.toHaveBeenCalled();
+  } finally { await act(async () => root.unmount()); }
+});
+
+it("keeps Default read-only and lets legacy presets revert after saving", async () => {
+  const { classicThemes } = await import("../lib/bundledThemes");
+  const nord = classicThemes.find(t => t.id === "nord")!;
+  const host = document.createElement("div"), root = createRoot(host), apply = vi.fn();
+  try {
+    await act(async () => root.render(<ThemeBuilder current={null} seed={exampleTheme()} onApply={apply} builtInThemeId="default" />));
+    expect([...host.querySelectorAll("button")].some(b => b.textContent === "Edit theme")).toBe(false);
+    await act(async () => root.render(<ThemeBuilder current={null} seed={nord} onApply={apply} builtInThemeId="nord" />));
+    await act(async () => button(host, "Edit theme").click());
+    await act(async () => button(host, "Save and use").click());
+    await act(async () => button(host, "Confirm and save").click());
+    const saved = (await listThemes()).themes[0];
+    expect(saved.baseThemeId).toBe("nord");
+    expect(saved.id).not.toBe(nord.id);
+    const changed = { ...saved, light: { ...saved.light, accent: "#ff0000" }, rightSidebarOpen: false, navigationStyle: "single-pane" as const };
+    await saveTheme(changed, saved);
+    await act(async () => root.render(<ThemeBuilder key="reopened" current={changed} seed={changed} onApply={apply} />));
+    await act(async () => button(host, "Edit theme").click());
+    await act(async () => button(host, "Revert to defaults").click());
+    await act(async () => button(host, "Save and use").click());
+    await act(async () => button(host, "Confirm and save").click());
+    expect(apply).toHaveBeenLastCalledWith({ ...nord, id: saved.id, name: saved.name, baseThemeId: "nord" });
   } finally { await act(async () => root.unmount()); }
 });

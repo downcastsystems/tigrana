@@ -111,6 +111,24 @@ fn normalize_theme(theme: &Value) -> Result<Value, String> {
                 .ok_or("Invalid title bar setting")?,
         ),
     );
+    if let Some(base) = theme.get("baseThemeId") {
+        let id = base.as_str().ok_or("Invalid base theme ID")?;
+        if id.is_empty() || id.len() > 80 || !id.bytes().all(|b| b.is_ascii_alphanumeric() || b == b'_' || b == b'-') {
+            return Err("Invalid base theme ID".into());
+        }
+        clean.insert("baseThemeId".into(), base.clone());
+    }
+    if let Some(sidebar) = theme.get("rightSidebarOpen") {
+        clean.insert("rightSidebarOpen".into(), Value::from(sidebar.as_bool().ok_or("Invalid right sidebar setting")?));
+    }
+    if let Some(navigation) = theme.get("navigationStyle") {
+        match navigation.as_str() {
+            Some("dual-pane" | "single-pane" | "section-view") => {
+                clean.insert("navigationStyle".into(), navigation.clone());
+            }
+            _ => return Err("Invalid navigation style".into()),
+        }
+    }
     if let Some(plasma) = theme.get("plasma") {
         let enabled = plasma["enabled"]
             .as_bool()
@@ -130,6 +148,11 @@ fn normalize_theme(theme: &Value) -> Result<Value, String> {
                     Value::from(n)
                 },
             );
+        }
+        if let Some(flow) = plasma.get("flow") {
+            let n = flow.as_f64().ok_or("Invalid Plasma flow")?;
+            if !(0.0..=100.0).contains(&n) { return Err("Invalid Plasma flow".into()); }
+            settings.insert("flow".into(), if n.fract() == 0.0 { Value::from(n as u64) } else { Value::from(n) });
         }
         clean.insert("plasma".into(), Value::Object(settings));
     }
@@ -370,6 +393,17 @@ mod tests {
         let a = json!({"id":"sample", "schemaVersion":1, "name":"A", "light":palette, "dark":palette, "appFontFamily":"system-ui", "editorFontFamily":"serif", "appFontSize":14, "editorFontSize":18, "accentTitlebar":true});
         let mut b = a.clone();
         b["name"] = json!("B");
+        b["baseThemeId"] = json!("nord");
+        b["navigationStyle"] = json!("single-pane");
+        b["rightSidebarOpen"] = json!(false);
+        for style in ["dual-pane", "single-pane", "section-view"] {
+            let mut variant = b.clone();
+            variant["navigationStyle"] = json!(style);
+            assert_eq!(normalize_theme(&variant).unwrap()["navigationStyle"], json!(style));
+        }
+        let mut invalid_navigation = b.clone();
+        invalid_navigation["navigationStyle"] = json!("invalid");
+        assert!(save_in_dir(&dir, invalid_navigation, None).is_err());
         save_in_dir(&dir, a.clone(), None).unwrap();
         assert!(save_in_dir(&dir, b.clone(), None).is_err());
         save_in_dir(&dir, b.clone(), Some(a.clone())).unwrap();
@@ -399,7 +433,7 @@ mod tests {
         assert!(save_in_dir(&dir, duplicate, None).unwrap_err().contains("name already exists"));
         assert!(!dir.join("different-id.json").exists());
         let mut plasma_theme = b.clone();
-        plasma_theme["plasma"] = json!({"enabled":true,"frost":60,"backgroundBlur":12});
+        plasma_theme["plasma"] = json!({"enabled":true,"frost":60,"backgroundBlur":12,"flow":65});
         save_in_dir(&dir, plasma_theme.clone(), Some(b)).unwrap();
         assert_eq!(
             serde_json::from_str::<Value>(&fs::read_to_string(dir.join("sample.json")).unwrap())

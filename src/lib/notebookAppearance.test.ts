@@ -131,3 +131,11 @@ it('keeps notebook Plasma overrides separate from the selected theme default', (
   const standard = { ...theme, plasma: { ...theme.plasma, enabled: false } };
   expect(resolveNotebookAppearance({ customTheme: standard, plasma: { ...manual, enabled: true } }, defaults, ['default']).plasma?.enabled).toBe(true);
 });
+
+
+it("preserves manual sidebar visibility over the theme default on metadata adoption", () => {
+  const theme = { ...exampleTheme(), rightSidebarOpen: false };
+  expect(resolveNotebookAppearance({ customTheme: theme }, defaults, ["default"]).rightSidebarOpen).toBe(false);
+  expect(resolveNotebookAppearance({ customTheme: theme, rightSidebarOpen: true }, defaults, ["default"]).rightSidebarOpen).toBe(true);
+  expect(resolveNotebookAppearance({ customTheme: { ...theme, rightSidebarOpen: true }, rightSidebarOpen: false }, defaults, ["default"]).rightSidebarOpen).toBe(false);
+});

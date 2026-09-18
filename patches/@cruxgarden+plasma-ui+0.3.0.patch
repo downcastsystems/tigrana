@@ -1,0 +1,61 @@
+diff --git a/node_modules/@cruxgarden/plasma-ui/dist/index.js b/node_modules/@cruxgarden/plasma-ui/dist/index.js
+index d56414d..755a55a 100644
+--- a/node_modules/@cruxgarden/plasma-ui/dist/index.js
++++ b/node_modules/@cruxgarden/plasma-ui/dist/index.js
+@@ -625,7 +625,7 @@ var _PlasmaRenderer = class _PlasmaRenderer {
+       const list = [];
+       this.recs.forEach((r) => {
+         if (!r.el.isConnected) return;
+-        if (!s.reducedMotion) {
++        if (!s.reducedMotion && s.animateSurfaces !== false) {
+           r.formV += (170 * (1 - r.form) - 26 * r.formV) * dt;
+           r.form += r.formV * dt;
+         } else r.form = 1;
+@@ -667,7 +667,7 @@ var _PlasmaRenderer = class _PlasmaRenderer {
+           r.onSides?.(sides);
+         }
+         let tx = 0, ty = 0;
+-        if (r.lean > 0 && !joined && !r.dragging && !s.reducedMotion) {
++        if (r.lean > 0 && !joined && !r.dragging && !s.reducedMotion && s.animateSurfaces !== false) {
+           const dx = m.tx - (a.l + a.w / 2), dy = m.ty - (a.t + a.h / 2);
+           const pull = Math.exp(-(dx * dx + dy * dy) / 12e4) * r.lean * m.amt;
+           const len = Math.hypot(dx, dy) || 1;
+@@ -687,7 +687,7 @@ var _PlasmaRenderer = class _PlasmaRenderer {
+           r.el.style.translate = lean;
+         }
+         const u = (this.time - r.pulseAt) / 0.36;
+-        const scale = r.pulseAt >= 0 && u >= 0 && u <= 1 && !s.reducedMotion ? String(1 + 0.04 * r.pulseS * Math.sin(Math.PI * u)) : "";
++        const scale = r.pulseAt >= 0 && u >= 0 && u <= 1 && !s.reducedMotion && s.animateSurfaces !== false ? String(1 + 0.04 * r.pulseS * Math.sin(Math.PI * u)) : "";
+         if (scale !== r.scaleCss) {
+           r.scaleCss = scale;
+           r.el.style.scale = scale;
+@@ -706,7 +706,7 @@ var _PlasmaRenderer = class _PlasmaRenderer {
+         const rr = r.el.getBoundingClientRect();
+         const tgt = [rr.left + sx, rr.top + sy, rr.right + sx, rr.bottom + sy];
+         const sp = r.sp;
+-        if (!sp.live || st < 0.01 || s.reducedMotion) {
++        if (!sp.live || st < 0.01 || s.reducedMotion || s.animateSurfaces === false) {
+           sp.e = tgt.slice();
+           sp.v = [0, 0, 0, 0];
+           sp.live = true;
+@@ -857,7 +857,7 @@ var _PlasmaRenderer = class _PlasmaRenderer {
+       id,
+       el,
+       ...o,
+-      form: this.settings.reducedMotion ? 1 : 0,
++      form: this.settings.reducedMotion || this.settings.animateSurfaces === false ? 1 : 0,
+       formV: 0,
+       removing: false,
+       lx: 0,
+diff --git a/node_modules/@cruxgarden/plasma-ui/dist/renderer.d.ts b/node_modules/@cruxgarden/plasma-ui/dist/renderer.d.ts
+index 2e9110a..2342d04 100644
+--- a/node_modules/@cruxgarden/plasma-ui/dist/renderer.d.ts
++++ b/node_modules/@cruxgarden/plasma-ui/dist/renderer.d.ts
+@@ -1,5 +1,7 @@
+ import { Box } from "./snap";
+ export interface RendererSettings {
++    /** Tigrana: false keeps panel geometry fixed to DOM bounds without slowing the background. */
++    animateSurfaces?: boolean;
+     colors: [string, string, string];
+     blend: number;
+     refraction: number;

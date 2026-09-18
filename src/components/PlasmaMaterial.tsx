@@ -4,7 +4,7 @@ import { PlasmaRenderer, type RendererSettings } from "@cruxgarden/plasma-ui";
 
 const paneSelector = ".folder-pane, .notes-pane, .unified-tree-pane, .main-pane, .right-sidebar";
 
-export default function PlasmaMaterial({ theme, accentColor, frost, backgroundBlur, layoutKey, preview = false }: { theme: "light" | "dark"; frost: number; backgroundBlur: number; accentColor: string; layoutKey: string; preview?: boolean }) {
+export default function PlasmaMaterial({ theme, accentColor, frost, backgroundBlur, flow = 0, layoutKey, preview = false }: { theme: "light" | "dark"; frost: number; flow?: number; backgroundBlur: number; accentColor: string; layoutKey: string; preview?: boolean }) {
   const hostRef = useRef<HTMLDivElement>(null);
   const rendererRef = useRef<PlasmaRenderer | null>(null);
 
@@ -24,6 +24,12 @@ export default function PlasmaMaterial({ theme, accentColor, frost, backgroundBl
       opacity: 0.65,
       frost: 0.8,
       quality: 1,
+      freezeOnScroll: false,
+      shimmer: 1,
+      glow: 1,
+      wash: 1,
+      grain: 1,
+      backgroundBlur: 0,
       maxSurfaces: 4,
       pointerDrop: false,
       ambientDrops: false,
@@ -36,7 +42,7 @@ export default function PlasmaMaterial({ theme, accentColor, frost, backgroundBl
       refraction: 0.7,
       dispersion: 0.4,
       rim: 0.65,
-      rimColor: "iridescent",
+      rimColor: "tint",
       rimWidth: 1,
       highlight: 1,
       edgeLine: 1,
@@ -50,7 +56,6 @@ export default function PlasmaMaterial({ theme, accentColor, frost, backgroundBl
     const updateMotion = () => renderer?.configure({
       ...renderer.settings,
       reducedMotion: reducedMotion.matches,
-      flow: 0,
       pointerDrop: false,
     });
     reducedMotion.addEventListener("change", updateMotion);
@@ -87,11 +92,13 @@ export default function PlasmaMaterial({ theme, accentColor, frost, backgroundBl
       ...renderer.settings,
       frost,
       backgroundBlur,
+      flow,
+      rimColor: accentColor,
       // Fade the material tint too, so clear glass is not hidden by solid color.
       opacity: frost * 0.8125,
       colors: [mixAccent(accentColor, 0, 0.65), accentColor, mixAccent(accentColor, 255, 0.25)],
     });
-  }, [accentColor, theme, frost, backgroundBlur]);
+  }, [accentColor, theme, frost, backgroundBlur, flow]);
 
   return <div className={preview ? "plasma-preview-background" : "plasma-background"} ref={hostRef} aria-hidden="true" />;
 }

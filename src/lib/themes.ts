@@ -20,6 +20,7 @@ export const paletteKeys = [
 export const optionalPaletteKeys = ["editorText", "selectedText", "highlightText", "highlightBackground"] as const;
 export type ThemePalette = Record<(typeof paletteKeys)[number], string> & Partial<Record<(typeof optionalPaletteKeys)[number], string>>;
 export type PlasmaSettings = {
+  flow?: number;
   enabled: boolean;
   frost: number;
   backgroundBlur: number;
@@ -41,16 +42,21 @@ export function parsePlasma(value: unknown): PlasmaSettings {
     typeof p.backgroundBlur !== "number" ||
     !Number.isFinite(p.backgroundBlur) ||
     p.backgroundBlur < 0 ||
-    p.backgroundBlur > 40
+    p.backgroundBlur > 40 ||
+    (p.flow !== undefined && (typeof p.flow !== "number" || !Number.isFinite(p.flow) || p.flow < 0 || p.flow > 100))
   )
     throw new Error("Invalid Plasma settings.");
   return {
     enabled: p.enabled,
     frost: p.frost,
     backgroundBlur: p.backgroundBlur,
+    ...(p.flow === undefined ? {} : { flow: p.flow }),
   };
 }
 export type ThemeDocument = {
+  baseThemeId?: string;
+  rightSidebarOpen?: boolean;
+  navigationStyle?: "dual-pane" | "single-pane" | "section-view";
   plasma?: PlasmaSettings;
   surfaces?: ThemeSurfaces;
   schemaVersion: 1 | 2;
@@ -109,7 +115,16 @@ export function parseTheme(value: unknown): ThemeDocument {
   };
   if (typeof v.accentTitlebar !== "boolean")
     throw new Error("Invalid title bar setting.");
+  if (v.baseThemeId !== undefined && (typeof v.baseThemeId !== "string" || !/^[a-zA-Z0-9_-]{1,80}$/.test(v.baseThemeId)))
+    throw new Error("Invalid base theme ID.");
+  if (v.rightSidebarOpen !== undefined && typeof v.rightSidebarOpen !== "boolean")
+    throw new Error("Invalid right sidebar setting.");
+  if (v.navigationStyle !== undefined && v.navigationStyle !== "dual-pane" && v.navigationStyle !== "single-pane" && v.navigationStyle !== "section-view")
+    throw new Error("Invalid navigation style.");
   return {
+    ...(v.baseThemeId === undefined ? {} : { baseThemeId: v.baseThemeId }),
+    ...(v.rightSidebarOpen === undefined ? {} : { rightSidebarOpen: v.rightSidebarOpen }),
+    ...(v.navigationStyle === undefined ? {} : { navigationStyle: v.navigationStyle }),
     schemaVersion: v.schemaVersion,
     ...(design ? { design } : {}),
     id: v.id,
@@ -280,6 +295,8 @@ export function opaqueThemeColor(value: string, background: string): string {
 export function themeAppearance(theme: ThemeDocument): NotebookAppearance {
   return {
     customTheme: theme,
+    ...(theme.rightSidebarOpen === undefined ? {} : { rightSidebarOpen: theme.rightSidebarOpen }),
+    ...(theme.navigationStyle === undefined ? {} : { navigationStyle: theme.navigationStyle }),
     plasma: {
       ...(theme.plasma ?? defaultPlasmaSettings),
       enabled: (theme.plasma?.enabled ?? false) && theme.design?.supportsPlasma !== false,

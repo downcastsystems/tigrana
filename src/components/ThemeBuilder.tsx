@@ -1,4 +1,4 @@
-import { bundledThemes, isBundledTheme } from "../lib/bundledThemes";
+import { allBuiltInThemes, bundledThemes, isBundledTheme } from "../lib/bundledThemes";
 import { ThemeDeleteDialog } from "./ThemeDeleteDialog";
 import { visualCssHints } from "../lib/themeVisualCss";
 import { ThemeSurfacesEditor } from "./ThemeSurfacesEditor";
@@ -81,6 +81,7 @@ export function ThemePreview({
     >
       {plasma ? (
         <PlasmaTheme
+          flow={(theme.plasma?.flow ?? 0) / 100}
           preview
           theme={mode}
           accentColor={p.accent}
@@ -211,6 +212,7 @@ export function ThemeBuilder({
   onApply,
   onSaved,
   quickAppearanceControls,
+  navigationControls,
   builtInThemes = [],
   builtInThemeId = "default",
   onBuiltInChange,
@@ -222,6 +224,7 @@ export function ThemeBuilder({
   onApply: (theme: ThemeDocument) => void;
   onSaved?: () => void;
   quickAppearanceControls?: React.ReactNode;
+  navigationControls?: React.ReactNode;
   builtInThemes?: { id: string; name: string }[];
   builtInThemeId?: string;
   onBuiltInChange?: (id: string) => void;
@@ -264,12 +267,16 @@ export function ThemeBuilder({
       setBusy(false);
     }
   }
+  const sourceTheme = current ?? allBuiltInThemes.find(theme => theme.id === builtInThemeId) ?? seed;
+  const sourceBuiltIn = allBuiltInThemes.find(theme => theme.id === sourceTheme.id);
+  const draftOriginal = allBuiltInThemes.find(theme => theme.id === (draft?.baseThemeId ?? draft?.id));
   function create() {
     setExpected(null);
     setDraft({
       ...(current ?? seed),
+      baseThemeId: sourceTheme.baseThemeId ?? sourceBuiltIn?.id,
       schemaVersion: 2,
-      design: current?.design ?? defaultThemeDesign,
+      design: current?.design ?? seed.design ?? defaultThemeDesign,
       plasma: current?.plasma ?? seed.plasma ?? defaultPlasmaSettings,
       id: crypto.randomUUID(),
       name: uniqueThemeName(`${current?.name ?? "My"} theme`, themes),
@@ -295,26 +302,6 @@ export function ThemeBuilder({
 
       {!draft ? (
         <>
-          <div className="setting-row">
-            <span>
-              <strong>Color scheme</strong>
-              <small>Use light, dark, or follow this computer.</small>
-            </span>
-            <select
-              className="settings-select"
-              aria-label="Color scheme"
-              value={colorScheme}
-              onChange={(e) =>
-                onColorSchemeChange?.(
-                  e.target.value as "system" | "light" | "dark",
-                )
-              }
-            >
-              <option value="system">System</option>
-              <option value="light">Light</option>
-              <option value="dark">Dark</option>
-            </select>
-          </div>
           <div className="setting-row">
             <span>
               <strong>Theme</strong>
@@ -371,19 +358,20 @@ export function ThemeBuilder({
             <button className="toolbar-button" onClick={create} disabled={busy}>
               Create theme
             </button>
-            {current ? (
+            {sourceTheme.id !== "default" ? (
               <button
                 className="toolbar-button"
                 disabled={busy}
                 onClick={() => {
                   setDraft({
-                    ...current,
-                    id: currentIsBundled ? crypto.randomUUID() : current.id,
-                    name: uniqueThemeName(currentIsBundled ? `${current.name} copy` : current.name, themes, currentIsBundled ? undefined : current.id),
+                    ...sourceTheme,
+                    baseThemeId: sourceTheme.baseThemeId ?? sourceBuiltIn?.id,
+                    id: sourceBuiltIn ? crypto.randomUUID() : sourceTheme.id,
+                    name: uniqueThemeName(sourceBuiltIn ? `${sourceTheme.name} copy` : sourceTheme.name, themes, sourceBuiltIn ? undefined : sourceTheme.id),
                     plasma:
-                      current.plasma ?? seed.plasma ?? defaultPlasmaSettings,
+                      sourceTheme.plasma ?? seed.plasma ?? defaultPlasmaSettings,
                   });
-                  setExpected(currentIsBundled ? null : themes.find((t) => t.id === current.id) ?? null);
+                  setExpected(sourceBuiltIn ? null : themes.find((t) => t.id === sourceTheme.id) ?? null);
                 }}
               >
                 Edit theme
@@ -468,6 +456,29 @@ export function ThemeBuilder({
               Reload library
             </button>
           </div>
+          <hr className="settings-appearance-divider" />
+          <div className="setting-row">
+            <span>
+              <strong>Color scheme</strong>
+              <small>Use light, dark, or follow this computer.</small>
+            </span>
+            <select
+              className="settings-select"
+              aria-label="Color scheme"
+              value={colorScheme}
+              onChange={(e) =>
+                onColorSchemeChange?.(
+                  e.target.value as "system" | "light" | "dark",
+                )
+              }
+            >
+              <option value="system">System</option>
+              <option value="light">Light</option>
+              <option value="dark">Dark</option>
+            </select>
+          </div>
+          {navigationControls}
+          <hr className="settings-appearance-divider" />
           {quickAppearanceControls}
         </>
       ) : null}
@@ -553,6 +564,29 @@ export function ThemeBuilder({
                     />
                   ))}
                 </div>
+                <label className="setting-row">
+                  Default navigation style
+                  <select
+                    value={draft.navigationStyle ?? ""}
+                    onChange={(event) => update({ navigationStyle: event.target.value === "dual-pane" ? "dual-pane" : event.target.value === "single-pane" ? "single-pane" : event.target.value === "section-view" ? "section-view" : undefined })}
+                  >
+                    <option value="">Keep current</option>
+                    <option value="dual-pane">Dual pane</option>
+                    <option value="section-view">Dual pane with sections</option>
+                    <option value="single-pane">Single pane</option>
+                  </select>
+                </label>
+                <p className="settings-description">Applied when you choose this theme. You can change the navigation style afterward in Appearance.</p>
+                <label className="setting-row">
+                  Default right sidebar
+                  <select value={draft.rightSidebarOpen === undefined ? "" : draft.rightSidebarOpen ? "open" : "closed"}
+                    onChange={event => update({ rightSidebarOpen: event.target.value === "" ? undefined : event.target.value === "open" })}>
+                    <option value="">Keep current</option>
+                    <option value="open">Open</option>
+                    <option value="closed">Closed</option>
+                  </select>
+                </label>
+                <p className="settings-description">Applied when you choose this theme. You can open or close the sidebar afterward.</p>
                 <ThemeSurfacesEditor theme={draft} mode={mode} change={update} />
                 <div className="theme-font-grid">
                   {(["app", "editor"] as const).map((part) => (
@@ -634,6 +668,10 @@ export function ThemeBuilder({
             >
               Make a copy
             </button>
+            {draftOriginal ? <button className="toolbar-button" disabled={busy} onClick={() => {
+              setDraft({ ...draftOriginal, id: draft.id, name: draft.name, baseThemeId: draftOriginal.id });
+              setError("");
+            }}>Revert to defaults</button> : null}
             <button
               className="toolbar-button"
               disabled={busy}
@@ -707,6 +745,9 @@ export function ThemeReconciliation({
   const [dismissed, setDismissed] = useState(false);
   const [refresh, setRefresh] = useState(0);
   const snapshotJson = JSON.stringify(current);
+  const applyRef = useRef(onApply);
+  applyRef.current = onApply;
+  const builtInUpdate = shared && bundledThemes.some(theme => theme.id === shared.id);
   useEffect(() => {
     const snapshot: ThemeDocument | null = JSON.parse(snapshotJson);
     let cancelled = false;
@@ -718,7 +759,16 @@ export function ThemeReconciliation({
       void listThemes()
         .then(async (result) => {
           if (cancelled) return;
-          const match = result.themes.find((t) => t.id === snapshot.id);
+          const builtIn = bundledThemes.find((t) => t.id === snapshot.id);
+          const match = builtIn ?? result.themes.find((t) => t.id === snapshot.id);
+          if (builtIn && localStorage.getItem(`tigrana-theme-update:${builtIn.id}`)) {
+            const release = await themeDifferenceFingerprint(builtIn, null);
+            if (cancelled) return;
+            if (localStorage.getItem(`tigrana-theme-update:${builtIn.id}`) === release.notebook) {
+              applyRef.current(builtIn);
+              return;
+            }
+          }
           if (acknowledgedNotebook) {
             const difference = await themeDifferenceFingerprint(
               snapshot,
@@ -751,14 +801,14 @@ export function ThemeReconciliation({
         aria-label="Resolve theme difference"
       >
         <h2>
-          {shared
+          {builtInUpdate ? "A newer built-in theme is available" : shared
             ? "Theme copies differ"
             : missing
               ? "Make this theme available app-wide?"
               : "App-wide themes unavailable"}
         </h2>
         <p>
-          {shared
+          {builtInUpdate ? `Use the latest “${shared!.name}” in this notebook and in other notebooks using this built-in theme when you open them. Notebooks using other themes will stay unchanged.` : shared
             ? `“${current.name}” differs from the app-wide theme available to other notebooks on this computer. This notebook is still using its saved appearance.`
             : missing
               ? `“${current.name}” is saved in this notebook but is not yet available to other notebooks on this computer.`
@@ -778,7 +828,20 @@ export function ThemeReconciliation({
         ) : null}
         {error ? <p role="alert">{error}</p> : null}
         <div className="theme-actions">
-          {shared || missing ? (
+          {builtInUpdate ? (
+            <button className="toolbar-button is-recommended" disabled={busy} onClick={() => {
+              setBusy(true);
+              void themeDifferenceFingerprint(shared!, null).then(release => {
+                localStorage.setItem(`tigrana-theme-update:${shared!.id}`, release.notebook);
+                onApply(shared!);
+                setDismissed(true);
+              }).catch(e => setError(String(e))).finally(() => setBusy(false));
+            }}>
+              <span className="theme-choice-label">Use the latest version everywhere</span>
+              <span className="theme-recommendation">(Recommended)</span>
+              <small>Update other notebooks using this theme when you open them on this computer.</small>
+            </button>
+          ) : shared || missing ? (
             <button
               className="toolbar-button is-recommended"
               disabled={busy}
@@ -818,7 +881,7 @@ export function ThemeReconciliation({
                 setDismissed(true);
               }}
             >
-              Replace this notebook's theme with the app-wide version
+              {builtInUpdate ? "Use the latest version in this notebook only" : "Replace this notebook's theme with the app-wide version"}
             </button>
           ) : null}
           {error ? (
@@ -849,7 +912,7 @@ export function ThemeReconciliation({
                 .finally(() => setBusy(false));
             }}
           >
-            {shared
+            {builtInUpdate ? "Keep this notebook’s current version" : shared
               ? "Keep both versions unchanged"
               : "Keep theme in this notebook only"}
           </button>

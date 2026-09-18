@@ -1,9 +1,12 @@
 import type { ThemeDocument } from "./themes";
 import { defaultThemeDesign } from "./themeDesign";
 import { compileThemeCss } from "./themeCss";
-export function themeVariables(theme: ThemeDocument, mode: "light" | "dark") {
+export function themeVariables(theme: ThemeDocument, mode: "light" | "dark", region?: string) {
   const p = theme[mode],
     metrics = theme.design?.metrics ?? defaultThemeDesign.metrics;
+  // Packaged fonts have region-specific names, just like the compiler's @font-face rules.
+  const fontFamily = (family: string) => region ? family.replace(/theme-font-([a-zA-Z0-9_-]+)/g, (token, name: string) =>
+    theme.design?.assets[`assets/${name}.woff2`]?.mime === "font/woff2" ? `tigrana-${region}-${name}` : token) : family;
   return {
     "--tigrana-background": p.background,
     "--tigrana-surface": p.surface,
@@ -36,27 +39,31 @@ export function themeVariables(theme: ThemeDocument, mode: "light" | "dark") {
       "color-mix(in srgb, var(--tigrana-accent) 45%, var(--tigrana-editor-text) 55%)",
     "--titlebar-bg": p.titlebar,
     "--titlebar-contrast": readableThemeText(p.titlebar),
-    "--app-font-family": theme.appFontFamily,
+    "--app-font-family": fontFamily(theme.appFontFamily),
     "--app-font-size": `${theme.appFontSize}px`,
-    "--editor-font-family": theme.editorFontFamily,
+    "--editor-font-family": fontFamily(theme.editorFontFamily),
     "--editor-font-size": `${theme.editorFontSize}px`,
   };
 }
+/** Choose the higher-contrast foreground, including pale accent colors. */
 export function readableThemeText(hex: string) {
-  const c = [1, 3, 5].map((i) => {
-    const v = parseInt(hex.slice(i, i + 2), 16) / 255;
-    return v <= 0.03928 ? v / 12.92 : ((v + 0.055) / 1.055) ** 2.4;
-  });
-  return c[0] * 0.2126 + c[1] * 0.7152 + c[2] * 0.0722 > 0.54
-    ? "#192d2b"
-    : "#ffffff";
+  const luminance = (color: string) => {
+    const c = [1, 3, 5].map(i => {
+      const v = parseInt(color.slice(i, i + 2), 16) / 255;
+      return v <= 0.04045 ? v / 12.92 : ((v + 0.055) / 1.055) ** 2.4;
+    });
+    return c[0] * 0.2126 + c[1] * 0.7152 + c[2] * 0.0722;
+  };
+  const background = luminance(hex);
+  return (background + 0.05) / (luminance("#000000") + 0.05) > 1.05 / (background + 0.05)
+    ? "#000000" : "#ffffff";
 }
 export function themeStylesheet(
   theme: ThemeDocument,
   mode: "light" | "dark",
   region: string,
 ) {
-  const variables = themeVariables(theme, mode);
+  const variables = themeVariables(theme, mode, region);
   // Values have already passed parseTheme. Never interpolate unvalidated imports.
   const tokens = `[data-theme-region="${region}"]{${Object.entries(variables)
     .map(([key, value]) => `${key}:${value}`)

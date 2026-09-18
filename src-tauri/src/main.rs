@@ -225,6 +225,7 @@ struct AppMenuState {
     #[serde(default = "default_true")]
     word_count_visible: bool,
     spellcheck_enabled: bool,
+    navigation_style: String,
     editor_width_mode: String,
     note_alignment: String,
     #[serde(default)]
@@ -244,6 +245,7 @@ impl Default for AppMenuState {
             outline_visible: true,
             word_count_visible: true,
             spellcheck_enabled: true,
+            navigation_style: "section-view".to_string(),
             editor_width_mode: "comfortable".to_string(),
             note_alignment: "left".to_string(),
             recent_notes: Vec::new(),
@@ -1516,6 +1518,36 @@ fn build_app_menu(
         true,
         Some("CmdOrCtrl+0"),
     )?;
+    let navigation_dual_pane = CheckMenuItem::with_id(
+        handle,
+        "navigation_dual_pane",
+        "Dual Pane",
+        state.has_workspace,
+        state.navigation_style == "dual-pane",
+        None::<&str>,
+    )?;
+    let navigation_section_view = CheckMenuItem::with_id(
+        handle,
+        "navigation_section_view",
+        "Dual Pane with Sections",
+        state.has_workspace,
+        state.navigation_style == "section-view",
+        None::<&str>,
+    )?;
+    let navigation_single_pane = CheckMenuItem::with_id(
+        handle,
+        "navigation_single_pane",
+        "Single Pane",
+        state.has_workspace,
+        state.navigation_style == "single-pane",
+        None::<&str>,
+    )?;
+    let navigation_menu = Submenu::with_items(
+        handle,
+        "Navigation Style",
+        state.has_workspace,
+        &[&navigation_dual_pane, &navigation_section_view, &navigation_single_pane],
+    )?;
     let width_comfortable = CheckMenuItem::with_id(
         handle,
         "width_comfortable",
@@ -1844,6 +1876,7 @@ fn build_app_menu(
             &zoom_out,
             &zoom_reset,
             &PredefinedMenuItem::separator(handle)?,
+            &navigation_menu,
             &width_menu,
             &alignment_menu,
             &PredefinedMenuItem::separator(handle)?,
@@ -2265,6 +2298,9 @@ pub fn run() {
             "zoom_in" => emit_menu_command(app, "zoom_in"),
             "zoom_out" => emit_menu_command(app, "zoom_out"),
             "zoom_reset" => emit_menu_command(app, "zoom_reset"),
+            "navigation_dual_pane" => emit_menu_command(app, "navigation_dual_pane"),
+            "navigation_section_view" => emit_menu_command(app, "navigation_section_view"),
+            "navigation_single_pane" => emit_menu_command(app, "navigation_single_pane"),
             "width_comfortable" => emit_menu_command(app, "width_comfortable"),
             "width_narrow" => emit_menu_command(app, "width_narrow"),
             "width_full" => emit_menu_command(app, "width_full"),

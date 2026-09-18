@@ -6,7 +6,7 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
-    "build": "tsc && vite build",
+    "build": "tsc && vitest run src/lib/builtInThemes.test.ts && vite build",
     "test": "vitest run",
     "test:watch": "vitest",
     "preview": "vite preview",
@@ -16,7 +16,7 @@
     "postinstall": "patch-package --error-on-fail"
   },
   "dependencies": {
-    "@cruxgarden/plasma-ui": "0.2.0",
+    "@cruxgarden/plasma-ui": "0.3.0",
     "@floating-ui/dom": "^1.8.0",
     "@fontsource-variable/inter": "^5.3.0",
     "@tauri-apps/api": "^2.0.0",

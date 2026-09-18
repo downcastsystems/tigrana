@@ -1,10 +1,12 @@
+import { readableThemeText, themeVariables } from "./lib/themeRuntime";
+import { classicThemes } from "./lib/bundledThemes";
 import { quickAppearanceStyles } from "./lib/quickAppearance";
 import { ThemeColorField } from "./components/ThemeColorField";
 import { ThemeStyles } from "./components/ThemeStyles";
 import "./styles/theme-api.css";
-import SettingsModal from "./components/SettingsModal";
+import SettingsModal, { type SettingsSection } from "./components/SettingsModal";
 import { ThemeBuilder, ThemeReconciliation } from "./components/ThemeBuilder";
-import { defaultPlasmaSettings, opaqueThemeColor, readTheme, themeAppearance, type ThemeDocument } from "./lib/themes";
+import { defaultPlasmaSettings, readTheme, themeAppearance, type ThemeDocument } from "./lib/themes";
 import PlasmaTheme from "./components/PlasmaTheme";
 import { isSortCommand, type SortCommand } from "./editor/sortLines";
 import { ReleaseNotice } from "./components/ReleaseNotice";
@@ -234,7 +236,6 @@ const sessionKeyPrefix = "tigrana-session:";
 const notePositionFreshMs = 24 * 60 * 60 * 1000;
 const autosaveDelayMs = 650;
 const autosaveRetryDelayMs = 1_500;
-const defaultLightAccent = "#245fa5";
 const defaultAppFontFamily = 'Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif';
 const defaultEditorFontFamily = defaultAppFontFamily;
 const defaultAppFontSize = 14;
@@ -274,7 +275,6 @@ class EditorErrorBoundary extends Component<
     return this.props.children;
   }
 }
-const defaultDarkAccent = "#285b99";
 const lucideIconPrefix = "lucide:";
 const lucideIconMap = Object.fromEntries(
   Object.entries(LucideIcons).filter(([name, value]) => /^[A-Z]/.test(name) && !name.endsWith("Icon") && isLucideIcon(value)),
@@ -358,15 +358,8 @@ type FolderCreationTarget = Pick<NoteCreationTarget, "parentName" | "parentPath"
 
 type ColorScheme = "system" | "light" | "dark";
 type ThemePresetId =
-  | "default"
-  | "atom"
-  | "solarized"
-  | "dracula"
-  | "nord"
-  | "gruvbox"
-  | "catppuccin-frappe"
-  | "catppuccin-macchiato"
-  | "catppuccin-mocha";
+  | "default" | "atom" | "solarized" | "dracula" | "nord" | "gruvbox"
+  | "catppuccin-frappe" | "catppuccin-macchiato" | "catppuccin-mocha";
 type RightSidebarMode = "outline" | "frontmatter" | "properties" | "backlinks";
 type EditorCommand =
   | SortCommand
@@ -446,23 +439,6 @@ type SpeechRecognitionLike = {
 
 type SpeechRecognitionConstructor = new () => SpeechRecognitionLike;
 
-type ThemeTokens = {
-  surface: string;
-  surfaceSoft: string;
-  surfaceStrong: string;
-  surfaceMuted: string;
-  border: string;
-  text: string;
-  textMuted: string;
-};
-
-type ThemePreset = {
-  id: ThemePresetId;
-  name: string;
-  accent: Record<"light" | "dark", string>;
-  appBackground: Record<"light" | "dark", string>;
-  tokens?: Partial<Record<"light" | "dark", Partial<ThemeTokens>>>;
-};
 
 type NotebookThemeColorSettings = Record<"light" | "dark", NotebookThemeColors>;
 
@@ -471,15 +447,6 @@ const defaultNotebookThemeColors = (): NotebookThemeColorSettings => ({
   dark: { accentColor: null, titlebarColor: null, titlebarUseAccent: true },
 });
 
-const catppuccinLatteTokens: ThemeTokens = {
-  surface: "#e6e9ef",
-  surfaceSoft: "#eff1f5",
-  surfaceStrong: "#ffffff",
-  surfaceMuted: "#dce0e8",
-  border: "#ccd0da",
-  text: "#4c4f69",
-  textMuted: "#6c6f85",
-};
 
 type PersistDraftSnapshot = {
   workspace: string;
@@ -494,101 +461,12 @@ type PersistDraftSnapshot = {
   saveRevision: DraftSaveRevision;
 };
 
-const themePresets: ThemePreset[] = [
-  {
-    id: "default",
-    name: "Default",
-    accent: { light: defaultLightAccent, dark: defaultDarkAccent },
-    appBackground: { light: "#ffffff", dark: "#212225" },
-    tokens: {
-      light: {
-        surface: "#f5f5f5",
-        surfaceSoft: "#f5f5f5",
-        surfaceMuted: "#ececec",
-      },
-    },
-  },
-  {
-    id: "atom",
-    name: "Atom One",
-    accent: { light: "#4078c0", dark: "#61afef" },
-    appBackground: { light: "#fafafa", dark: "#20252b" },
-    tokens: {
-      light: { surface: "#f0f0f0", surfaceSoft: "#f6f6f6", surfaceStrong: "#ffffff", surfaceMuted: "#e5e5e6", border: "#d4d4d5", text: "#383a42", textMuted: "#696c77" },
-      dark: { surface: "#21252b", surfaceSoft: "#282c34", surfaceStrong: "#2c313a", surfaceMuted: "#181a1f", border: "#3e4451", text: "#abb2bf", textMuted: "#7f848e" },
-    },
-  },
-  {
-    id: "solarized",
-    name: "Solarized",
-    accent: { light: "#268bd2", dark: "#2aa198" },
-    appBackground: { light: "#fdf6e3", dark: "#002b36" },
-    tokens: {
-      light: { surface: "#eee8d5", surfaceSoft: "#fdf6e3", surfaceStrong: "#fffdf5", surfaceMuted: "#e4ddc8", border: "#d5cfba", text: "#586e75", textMuted: "#839496" },
-      dark: { surface: "#073642", surfaceSoft: "#002b36", surfaceStrong: "#0b404d", surfaceMuted: "#00232c", border: "#24515b", text: "#eee8d5", textMuted: "#93a1a1" },
-    },
-  },
-  {
-    id: "dracula",
-    name: "Dracula",
-    accent: { light: "#bd93f9", dark: "#ff79c6" },
-    appBackground: { light: "#f7f2fb", dark: "#282a36" },
-    tokens: {
-      light: { surface: "#eee7f4", surfaceSoft: "#f7f2fb", surfaceStrong: "#ffffff", surfaceMuted: "#e5daee", border: "#d5c7e0", text: "#282a36", textMuted: "#6272a4" },
-      dark: { surface: "#21222c", surfaceSoft: "#282a36", surfaceStrong: "#343746", surfaceMuted: "#191a21", border: "#44475a", text: "#f8f8f2", textMuted: "#a8a4b8" },
-    },
-  },
-  {
-    id: "nord",
-    name: "Nord",
-    accent: { light: "#5e81ac", dark: "#88c0d0" },
-    appBackground: { light: "#eceff4", dark: "#2e3440" },
-    tokens: {
-      light: { surface: "#e5e9f0", surfaceSoft: "#eceff4", surfaceStrong: "#ffffff", surfaceMuted: "#d8dee9", border: "#c6ccd6", text: "#2e3440", textMuted: "#4c566a" },
-      dark: { surface: "#292e39", surfaceSoft: "#2e3440", surfaceStrong: "#3b4252", surfaceMuted: "#242933", border: "#4c566a", text: "#eceff4", textMuted: "#aeb8c8" },
-    },
-  },
-  {
-    id: "gruvbox",
-    name: "Gruvbox",
-    accent: { light: "#b57614", dark: "#fabd2f" },
-    appBackground: { light: "#fbf1c7", dark: "#282828" },
-    tokens: {
-      light: { surface: "#f2e5bc", surfaceSoft: "#fbf1c7", surfaceStrong: "#fff9dc", surfaceMuted: "#ebdbb2", border: "#d5c4a1", text: "#3c3836", textMuted: "#7c6f64" },
-      dark: { surface: "#1d2021", surfaceSoft: "#282828", surfaceStrong: "#3c3836", surfaceMuted: "#171819", border: "#504945", text: "#ebdbb2", textMuted: "#a89984" },
-    },
-  },
-  {
-    id: "catppuccin-frappe",
-    name: "Catppuccin Frappé",
-    accent: { light: "#8839ef", dark: "#ca9ee6" },
-    appBackground: { light: "#eff1f5", dark: "#303446" },
-    tokens: {
-      light: catppuccinLatteTokens,
-      dark: { surface: "#292c3c", surfaceSoft: "#303446", surfaceStrong: "#414559", surfaceMuted: "#232634", border: "#51576d", text: "#c6d0f5", textMuted: "#a5adce" },
-    },
-  },
-  {
-    id: "catppuccin-macchiato",
-    name: "Catppuccin Macchiato",
-    accent: { light: "#7651c9", dark: "#c6a0f6" },
-    appBackground: { light: "#f2eff8", dark: "#24273a" },
-    tokens: {
-      light: { surface: "#e5e1f0", surfaceSoft: "#eeebf6", surfaceStrong: "#fcfaff", surfaceMuted: "#dad4e8", border: "#c8c0d9", text: "#49465e", textMuted: "#706b87" },
-      dark: { surface: "#1e2030", surfaceSoft: "#24273a", surfaceStrong: "#363a4f", surfaceMuted: "#181926", border: "#494d64", text: "#cad3f5", textMuted: "#a5adcb" },
-    },
-  },
-  {
-    id: "catppuccin-mocha",
-    name: "Catppuccin Mocha",
-    accent: { light: "#95507f", dark: "#cba6f7" },
-    appBackground: { light: "#f5eef3", dark: "#1e1e2e" },
-    tokens: {
-      light: { surface: "#e9dde7", surfaceSoft: "#f1e7ef", surfaceStrong: "#fffafe", surfaceMuted: "#ddcedb", border: "#cbb9c9", text: "#4d414d", textMuted: "#776877" },
-      dark: { surface: "#181825", surfaceSoft: "#1e1e2e", surfaceStrong: "#313244", surfaceMuted: "#11111b", border: "#45475a", text: "#cdd6f4", textMuted: "#a6adc8" },
-    },
-  },
-];
+const themePresets = classicThemes.map(theme => ({
+  id: theme.id, name: theme.name,
+  accent: { light: theme.light.accent, dark: theme.dark.accent },
+  appBackground: { light: theme.light.background, dark: theme.dark.background },
+  tokens: { light: theme.light, dark: theme.dark },
+}));
 
 export default function App() {
   const initialOpenTargetRef = useRef(readInitialOpenTarget());
@@ -640,6 +518,7 @@ export default function App() {
   const [noteFindRequest, setNoteFindRequest] = useState(0);
   const [appError, setAppError] = useState<string | null>(null);
   const [settingsOpen, setSettingsOpen] = useState(false);
+  const [settingsSection, setSettingsSection] = useState<SettingsSection>("general");
   const [notebooksManageOpen, setNotebooksManageOpen] = useState(false);
   const [recentlyDeletedOpen, setRecentlyDeletedOpen] = useState(false);
   const [trashEntries, setTrashEntries] = useState<TrashEntry[]>([]);
@@ -648,6 +527,7 @@ export default function App() {
   const [recentNotebooks, setRecentNotebooks] = useState<RecentNotebook[]>(() => readRecentNotebooks());
   const [appMenuOpen, setAppMenuOpen] = useState(false);
   const [leftVisible, setLeftVisible] = useState(true);
+  const [plasmaFlow, setPlasmaFlow] = useState(0);
   const [outlineVisible, setOutlineVisible] = useState(true);
   const focusRestoreRef = useRef<PaneVisibility | null>(null);
   const [wordCountVisible, setWordCountVisible] = useState(() => readStoredWordCountVisibility());
@@ -710,12 +590,13 @@ export default function App() {
   const metadataRef = useRef(metadata);
   const metadataSessionRef = useRef(new NotebookMetadataSession(workspace));
   const notebookAppearanceDefaultsRef = useRef({
-    plasma: { enabled: plasmaEnabled, frost: plasmaFrost, backgroundBlur: plasmaBackgroundBlur },
+    plasma: { enabled: plasmaEnabled, frost: plasmaFrost, backgroundBlur: plasmaBackgroundBlur, flow: plasmaFlow },
     colorScheme: readStoredColorScheme(),
     themePresetId: readStoredThemePreset(),
     colors: readStoredNotebookThemeColors(),
     accentTitlebar: localStorage.getItem(accentTitlebarKey) === "true",
     navigationStyle: "section-view" as const,
+    rightSidebarOpen: true,
     appFontFamily: defaultAppFontFamily,
     appFontSize: defaultAppFontSize,
     editorFontFamily: defaultEditorFontFamily,
@@ -733,12 +614,14 @@ export default function App() {
           setPlasmaEnabled(appearance.plasma.enabled);
           setPlasmaFrost(appearance.plasma.frost);
           setPlasmaBackgroundBlur(appearance.plasma.backgroundBlur);
+          setPlasmaFlow(appearance.plasma.flow ?? 0);
         }
         setColorScheme(appearance.colorScheme);
         setThemePresetId(appearance.themePresetId as ThemePresetId);
         setThemeColors(appearance.colors);
         setAccentTitlebar(appearance.accentTitlebar);
         setNavigationStyle(appearance.navigationStyle);
+        if (appearance.rightSidebarOpen !== undefined) setOutlineVisible(appearance.rightSidebarOpen);
         setAppFontFamily(appearance.appFontFamily);
         setAppFontSize(appearance.appFontSize);
         setEditorFontFamily(appearance.editorFontFamily);
@@ -922,7 +805,23 @@ export default function App() {
   const titlebarColor = activeThemeColors.titlebarColor ?? null;
   const defaultTitlebarColor = !customTheme && themePresetId === "default" ? "#001428" : effectiveAccentColor;
   const effectiveTitlebarColor = titlebarUseAccent ? defaultTitlebarColor : (titlebarColor || defaultTitlebarColor);
-  const quickStyles = quickAppearanceStyles(quickAppearance, effectiveAccentColor, accentTitlebar, defaultTitlebarColor);
+  const quickStyles = quickAppearanceStyles(quickAppearance, effectiveAccentColor, accentTitlebar, defaultTitlebarColor, { themeColored: savedAccentTitlebar, plasma: plasmaEnabled });
+  // Legacy notebook preferences are overlaid without rewriting saved metadata.
+  // Both old presets and portable themes use the same renderer and preview document.
+  const renderedTheme = useMemo<ThemeDocument>(() => {
+    if (customTheme) return customTheme;
+    const base = classicThemes.find(t => t.id === themePresetId) ?? classicThemes[0];
+    const palette = (mode: "light" | "dark") => {
+      const colors = themeColors[mode];
+      const accent = quickAppearance?.accentColor || colors.accentColor || base[mode].accent;
+      return { ...base[mode], accent, selectedText: readableThemeText(accent),
+        titlebar: colors.titlebarUseAccent !== false
+          ? (base.id === "default" ? "#001428" : accent)
+          : colors.titlebarColor || base[mode].titlebar };
+    };
+    return { ...base, light: palette("light"), dark: palette("dark"),
+      appFontFamily, appFontSize, editorFontFamily, editorFontSize, accentTitlebar: savedAccentTitlebar };
+  }, [customTheme, themePresetId, themeColors, quickAppearance, appFontFamily, appFontSize, editorFontFamily, editorFontSize, savedAccentTitlebar]);
   const selectedFolderTitle = useMemo(() => displayFolderName(selectedFolder, folders, workspace), [folders, selectedFolder, workspace]);
   const selectedSection = useMemo(() => getTopLevelFolderPath(selectedFolder), [selectedFolder]);
   const selectedSectionTitle = useMemo(
@@ -1117,7 +1016,7 @@ export default function App() {
     document.documentElement.dataset.themePreset = customTheme ? "custom" : themePreset.id;
     const root = document.documentElement.style;
     root.setProperty("--app-bg", themePreset.appBackground[resolvedTheme]);
-    const tokens = deriveThemeTokens(themePreset, resolvedTheme);
+    const tokens = themePreset.tokens[resolvedTheme];
     root.setProperty("--surface", tokens.surface);
     root.setProperty("--surface-soft", tokens.surfaceSoft);
     root.setProperty("--surface-strong", tokens.surfaceStrong);
@@ -1132,11 +1031,11 @@ export default function App() {
 
   useEffect(() => {
     const root = document.documentElement.style;
-    root.setProperty("--app-font-family", appFontFamily || defaultAppFontFamily);
+    root.setProperty("--app-font-family", customTheme ? themeVariables(customTheme, "light", "notebook")["--app-font-family"] : appFontFamily || defaultAppFontFamily);
     root.setProperty("--app-font-size", `${appFontSize || defaultAppFontSize}px`);
-    root.setProperty("--editor-font-family", editorFontFamily || defaultEditorFontFamily);
+    root.setProperty("--editor-font-family", customTheme ? themeVariables(customTheme, "light", "notebook")["--editor-font-family"] : editorFontFamily || defaultEditorFontFamily);
     root.setProperty("--editor-font-size", `${editorFontSize || defaultEditorFontSize}px`);
-  }, [appFontFamily, appFontSize, editorFontFamily, editorFontSize]);
+  }, [appFontFamily, appFontSize, editorFontFamily, editorFontSize, customTheme]);
 
   useEffect(() => {
     document.documentElement.dataset.accentTitlebar = accentTitlebar ? "true" : "false";
@@ -1307,6 +1206,7 @@ export default function App() {
       outlineVisible,
       wordCountVisible,
       spellcheckEnabled,
+      navigationStyle,
       editorWidthMode,
       noteAlignment,
       recentNotes: recentNotes.map(({ path, title }) => ({ path, title })),
@@ -1320,6 +1220,7 @@ export default function App() {
   }, [
     activeNoteEditable,
     hasEditorSelection,
+    navigationStyle,
     editorWidthMode,
     frontmatterError,
     hasOpenNote,
@@ -1938,6 +1839,7 @@ export default function App() {
       setPlasmaEnabled(patch.plasma.enabled);
       setPlasmaFrost(patch.plasma.frost);
       setPlasmaBackgroundBlur(patch.plasma.backgroundBlur);
+      setPlasmaFlow(patch.plasma.flow ?? 0);
     }
     if (patch.colorScheme !== undefined) setColorScheme(patch.colorScheme);
     if (patch.themePresetId && themePresets.some((preset) => preset.id === patch.themePresetId)) {
@@ -1950,6 +1852,7 @@ export default function App() {
       }));
     }
     if (patch.accentTitlebar !== undefined) setAccentTitlebar(patch.accentTitlebar);
+    if (patch.rightSidebarOpen !== undefined) setOutlineVisible(patch.rightSidebarOpen);
     if (patch.navigationStyle !== undefined) setNavigationStyle(patch.navigationStyle);
     if (patch.appFontFamily !== undefined) setAppFontFamily(patch.appFontFamily);
     if (patch.appFontSize !== undefined) setAppFontSize(patch.appFontSize);
@@ -1959,7 +1862,7 @@ export default function App() {
   }, [updateMetadata]);
 
   function updatePlasma(patch: Partial<NonNullable<ThemeDocument["plasma"]>>) {
-    const plasma = { enabled: plasmaEnabled, frost: plasmaFrost, backgroundBlur: plasmaBackgroundBlur, ...patch };
+    const plasma = { enabled: plasmaEnabled, frost: plasmaFrost, backgroundBlur: plasmaBackgroundBlur, flow: plasmaFlow, ...patch };
     updateNotebookAppearance({ plasma });
   }
 
@@ -1973,17 +1876,8 @@ export default function App() {
   }
 
   function themeSeed(): ThemeDocument {
-    const palette = (mode: "light" | "dark") => {
-      const tokens = deriveThemeTokens(themePreset, mode);
-      const colors = themeColors[mode];
-      const accent = colors.accentColor || themePreset.accent[mode];
-      return { ...tokens, border: opaqueThemeColor(tokens.border, themePreset.appBackground[mode]), textMuted: opaqueThemeColor(tokens.textMuted, themePreset.appBackground[mode]),
-        background: themePreset.appBackground[mode], accent,
-        titlebar: colors.titlebarUseAccent !== false ? (!customTheme && themePresetId === "default" ? defaultTitlebarColor : accent) : colors.titlebarColor || accent };
-    };
-    return { schemaVersion: 1, id: "draft", name: "My theme", light: palette("light"), dark: palette("dark"),
-      appFontFamily, appFontSize, editorFontFamily, editorFontSize, accentTitlebar,
-      plasma: { enabled: plasmaEnabled, frost: plasmaFrost, backgroundBlur: plasmaBackgroundBlur } };
+    return { ...renderedTheme, id: "draft", name: "My theme",
+      accentTitlebar, plasma: { enabled: plasmaEnabled, frost: plasmaFrost, backgroundBlur: plasmaBackgroundBlur, flow: plasmaFlow } };
   }
 
   function requestEditorCommand(command: EditorCommand, payload: Partial<EditorCommandRequest> = {}) {
@@ -2144,7 +2038,7 @@ export default function App() {
         setLeftVisible((value) => !value);
         break;
       case "toggle_outline":
-        setOutlineVisible((value) => !value);
+        updateNotebookAppearance({ rightSidebarOpen: !outlineVisible });
         break;
       case "toggle_focus":
         toggleEditorFocusMode();
@@ -2163,6 +2057,15 @@ export default function App() {
         break;
       case "zoom_reset":
         applyAppZoomCommand("reset");
+        break;
+      case "navigation_dual_pane":
+        updateNotebookAppearance({ navigationStyle: "dual-pane" });
+        break;
+      case "navigation_section_view":
+        updateNotebookAppearance({ navigationStyle: "section-view" });
+        break;
+      case "navigation_single_pane":
+        updateNotebookAppearance({ navigationStyle: "single-pane" });
         break;
       case "width_comfortable":
         setEditorWidthMode("comfortable");
@@ -2307,7 +2210,7 @@ export default function App() {
     );
     focusRestoreRef.current = transition.restore;
     setLeftVisible(transition.panes.leftVisible);
-    setOutlineVisible(transition.panes.outlineVisible);
+    updateNotebookAppearance({ rightSidebarOpen: transition.panes.outlineVisible });
   }
 
   function getRestorableNotePosition(current: WorkspaceMetadata, path: string, markdown: string) {
@@ -4684,10 +4587,10 @@ export default function App() {
       "--plasma-panel-opacity": `${plasmaFrost * 0.9}%`,
       "--plasma-editor-opacity": `${Math.min(95, plasmaFrost * 1.1)}%`,
     } as CSSProperties : undefined}>
-      {plasmaEnabled ? <PlasmaTheme backgroundBlur={plasmaBackgroundBlur} frost={plasmaFrost / 100} theme={resolvedTheme} accentColor={effectiveAccentColor} layoutKey={`${leftVisible}-${outlineVisible}-${navigationStyle}`} /> : null}
+      {plasmaEnabled ? <PlasmaTheme flow={plasmaFlow / 100} backgroundBlur={plasmaBackgroundBlur} frost={plasmaFrost / 100} theme={resolvedTheme} accentColor={effectiveAccentColor} layoutKey={`${leftVisible}-${outlineVisible}-${navigationStyle}`} /> : null}
       {isWindowsDesktop() ? <WindowsMenuBar onError={setAppError} onMouseDown={handleChromeMouseDown} onDoubleClick={handleChromeDoubleClick} /> : null}
       <header
-        data-theme-region="notebook" data-theme-api={customTheme?.design ? "1" : undefined}
+        data-theme-region="notebook" data-theme-api={renderedTheme.design ? "1" : undefined}
         className={`app-titlebar theme-${resolvedTheme} ${plasmaEnabled ? "theme-plasma" : "theme-standard"}`}
         style={{ ...quickStyles.palette, ...quickStyles.titlebar }}
         data-tauri-drag-region=""
@@ -4724,7 +4627,7 @@ export default function App() {
         <ReleaseNotice />
       </header>
 
-      <div data-theme-region="notebook" data-theme-api={customTheme?.design ? "1" : undefined} className={`app-frame theme-${resolvedTheme} ${plasmaEnabled ? "theme-plasma" : "theme-standard"} ${leftVisible ? "" : "is-left-hidden"} ${outlineVisible ? "" : "is-outline-hidden"} ${navigationStyle === "single-pane" ? "is-single-col" : ""}`} style={{ ...frameStyle, ...quickStyles.palette }}>
+      <div data-theme-region="notebook" data-theme-api={renderedTheme.design ? "1" : undefined} className={`app-frame theme-${resolvedTheme} ${plasmaEnabled ? "theme-plasma" : "theme-standard"} ${leftVisible ? "" : "is-left-hidden"} ${outlineVisible ? "" : "is-outline-hidden"} ${navigationStyle === "single-pane" ? "is-single-col" : ""}`} style={{ ...frameStyle, ...quickStyles.palette }}>
       {leftVisible ? (
         <aside
           id="left-navigation-panes"
@@ -4917,7 +4820,7 @@ export default function App() {
           titleVisible={dockedTitleState.visible}
           onTitleClick={() => noteSurfaceRef.current?.scrollTo({ top: 0, behavior: "smooth" })}
           onToggleLeft={() => setLeftVisible((value) => !value)}
-          onToggleOutline={() => setOutlineVisible((value) => !value)}
+          onToggleOutline={() => updateNotebookAppearance({ rightSidebarOpen: !outlineVisible })}
         >
           {noteOpen ? (
             <>
@@ -5501,9 +5404,11 @@ export default function App() {
         />
       ) : null}
 
-      <ThemeStyles theme={customTheme} mode={resolvedTheme} onReset={resetThemeAppearance} />
+      <ThemeStyles theme={renderedTheme} mode={resolvedTheme} onReset={resetThemeAppearance} />
       {settingsOpen ? (
           <SettingsModal
+            initialSection={settingsSection}
+            onSectionChange={setSettingsSection}
             navigationStyle={navigationStyle}
             onNavigationStyleChange={(style) => updateNotebookAppearance({ navigationStyle: style })}
             spellcheckEnabled={spellcheckEnabled}
@@ -5515,13 +5420,15 @@ export default function App() {
             onPlasmaEnabledChange={(enabled) => updatePlasma({ enabled })}
             plasmaFrost={plasmaFrost}
             onPlasmaFrostChange={(frost) => updatePlasma({ frost })}
+            plasmaFlow={plasmaFlow}
+            onPlasmaFlowChange={(flow) => updatePlasma({ flow })}
             plasmaBackgroundBlur={plasmaBackgroundBlur}
             onPlasmaBackgroundBlurChange={(backgroundBlur) => updatePlasma({ backgroundBlur })}
             onResetTheme={resetThemeAppearance}
             onClose={() => setSettingsOpen(false)}
-            themeContent={<>
+            themeContent={(navigationControls) => <>
               {metadata.appearance?.customTheme && !customTheme ? <p role="alert">This notebook contains an invalid or unsupported theme. Choose a theme to replace it.</p> : null}
-              <ThemeBuilder key={workspace} current={customTheme} seed={themeSeed()} onApply={applyCustomTheme}
+              <ThemeBuilder navigationControls={navigationControls} key={workspace} current={customTheme} seed={themeSeed()} onApply={applyCustomTheme}
                 onSaved={() => setSettingsOpen(false)}
                 quickAppearanceControls={<section className="settings-quick-appearance" aria-label="Quick appearance">
                   <h3>Quick appearance</h3>
@@ -5534,7 +5441,7 @@ export default function App() {
                   </label>
                 </section>}
                 builtInThemes={themePresets} builtInThemeId={themePresetId}
-                onBuiltInChange={(id) => updateNotebookAppearance({ quickAppearance: null, accentTitlebar: false, customTheme: null, themePresetId: id, colors: defaultNotebookThemeColors(), plasma: { ...defaultPlasmaSettings }, appFontFamily: defaultAppFontFamily, appFontSize: defaultAppFontSize, editorFontFamily: defaultEditorFontFamily, editorFontSize: defaultEditorFontSize })}
+                onBuiltInChange={(id) => updateNotebookAppearance({ ...(classicThemes.find(theme => theme.id === id)?.rightSidebarOpen === undefined ? {} : { rightSidebarOpen: classicThemes.find(theme => theme.id === id)!.rightSidebarOpen }), navigationStyle: classicThemes.find(theme => theme.id === id)?.navigationStyle, quickAppearance: null, accentTitlebar: false, customTheme: null, themePresetId: id, colors: defaultNotebookThemeColors(), plasma: { ...defaultPlasmaSettings }, appFontFamily: defaultAppFontFamily, appFontSize: defaultAppFontSize, editorFontFamily: defaultEditorFontFamily, editorFontSize: defaultEditorFontSize })}
                 colorScheme={colorScheme} onColorSchemeChange={(scheme) => updateNotebookAppearance({ colorScheme: scheme })} />
             </>}
           />
@@ -9826,78 +9733,6 @@ function hexToRgb(value: string) {
   };
 }
 
-function rgbToHsl(r: number, g: number, b: number) {
-  const rN = r / 255;
-  const gN = g / 255;
-  const bN = b / 255;
-  const max = Math.max(rN, gN, bN);
-  const min = Math.min(rN, gN, bN);
-  const l = (max + min) / 2;
-  if (max === min) return { h: 0, s: 0, l: l * 100 };
-  const d = max - min;
-  const s = l > 0.5 ? d / (2 - max - min) : d / (max + min);
-  let h = 0;
-  switch (max) {
-    case rN: h = (gN - bN) / d + (gN < bN ? 6 : 0); break;
-    case gN: h = (bN - rN) / d + 2; break;
-    case bN: h = (rN - gN) / d + 4; break;
-  }
-  return { h: h * 60, s: s * 100, l: l * 100 };
-}
-
-function hslToHex({ h, s, l }: { h: number; s: number; l: number }) {
-  const sN = s / 100;
-  const lN = l / 100;
-  const c = (1 - Math.abs(2 * lN - 1)) * sN;
-  const x = c * (1 - Math.abs(((h / 60) % 2) - 1));
-  const m = lN - c / 2;
-  let r = 0, g = 0, b = 0;
-  if (h < 60) [r, g, b] = [c, x, 0];
-  else if (h < 120) [r, g, b] = [x, c, 0];
-  else if (h < 180) [r, g, b] = [0, c, x];
-  else if (h < 240) [r, g, b] = [0, x, c];
-  else if (h < 300) [r, g, b] = [x, 0, c];
-  else [r, g, b] = [c, 0, x];
-  const to = (v: number) => Math.round((v + m) * 255).toString(16).padStart(2, "0");
-  return `#${to(r)}${to(g)}${to(b)}`;
-}
-
-function shiftLightness(hex: string, deltaL: number) {
-  const rgb = hexToRgb(hex);
-  if (!rgb) return hex;
-  const hsl = rgbToHsl(rgb.r, rgb.g, rgb.b);
-  return hslToHex({ ...hsl, l: clamp(hsl.l + deltaL, 0, 100) });
-}
-
-function deriveThemeTokens(preset: ThemePreset, mode: "light" | "dark"): ThemeTokens {
-  const bg = preset.appBackground[mode];
-  const overrides = preset.tokens?.[mode] ?? {};
-  if (mode === "dark") {
-    const sidebar = shiftLightness(bg, -3);
-    return {
-      surface: sidebar,
-      surfaceSoft: sidebar,
-      surfaceStrong: shiftLightness(bg, 4),
-      surfaceMuted: shiftLightness(sidebar, -1),
-      border: "rgba(238, 232, 223, 0.1)",
-      text: "#eee8df",
-      textMuted: "rgba(238, 232, 223, 0.62)",
-      ...overrides,
-    };
-  }
-  const sidebar = shiftLightness(bg, -4);
-  return {
-    surface: sidebar,
-    surfaceSoft: sidebar,
-    surfaceStrong: shiftLightness(bg, 4),
-    surfaceMuted: shiftLightness(sidebar, -2),
-    border: "rgba(52, 48, 43, 0.1)",
-    text: "#22211f",
-    textMuted: "rgba(34, 33, 31, 0.62)",
-    ...overrides,
-  };
-}
-
 function normalizeColorForInput(value: string) {
   if (/^#[0-9a-f]{6}$/i.test(value)) return value;
   const rgb = value.match(/rgba?\((\d+),\s*(\d+),\s*(\d+)/i);
@@ -9908,12 +9743,5 @@ function normalizeColorForInput(value: string) {
 }
 
 function readableTextColor(background: string) {
-  const rgb = hexToRgb(background);
-  if (!rgb) return "#ffffff";
-  const channels = [rgb.r, rgb.g, rgb.b].map((channel) => {
-    const value = channel / 255;
-    return value <= 0.03928 ? value / 12.92 : ((value + 0.055) / 1.055) ** 2.4;
-  });
-  const luminance = channels[0] * 0.2126 + channels[1] * 0.7152 + channels[2] * 0.0722;
-  return luminance > 0.54 ? "#192d2b" : "#ffffff";
+  return readableThemeText(background);
 }

@@ -81,6 +81,12 @@ export function ThemeSurfacesEditor({ theme, mode, change }: {
       {theme.plasma?.enabled ? (
         <>
           <label className="setting-row">
+            Flow
+            <input type="range" min={0} max={100} value={theme.plasma.flow ?? 0}
+              onChange={event => change({ plasma: { ...theme.plasma!, flow: Number(event.target.value) } })} />
+          </label>
+          <p className="settings-description">Adds a gentle ripple to pane edges. Set to zero for still edges.</p>
+          <label className="setting-row">
             Panel frostiness
             <input
               type="range"

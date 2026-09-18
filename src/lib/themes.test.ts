@@ -136,3 +136,39 @@ it('resets Plasma to the selected theme default, including legacy themes', () =>
   expect(themeAppearance({ ...exampleTheme(), plasma }).plasma).toEqual(plasma);
   expect(themeAppearance({ ...exampleTheme(), plasma: { ...plasma, enabled: false } }).plasma?.enabled).toBe(false);
 });
+
+
+it("round-trips theme navigation preferences and preserves manual layouts without a preference", async () => {
+  for (const navigationStyle of ["dual-pane", "single-pane", "section-view"] as const) {
+    localStorage.clear();
+    const theme = parseTheme({ ...exampleTheme(), navigationStyle });
+    await saveTheme(theme, null);
+    expect((await listThemes()).themes[0].navigationStyle).toBe(navigationStyle);
+    expect(themeAppearance(theme).navigationStyle).toBe(navigationStyle);
+  }
+  expect(themeAppearance(exampleTheme())).not.toHaveProperty("navigationStyle");
+  expect(parseTheme({ ...exampleTheme(), navigationStyle: undefined })).not.toHaveProperty("navigationStyle");
+  expect(() => parseTheme({ ...exampleTheme(), navigationStyle: "invalid" })).toThrow("Invalid navigation style");
+});
+
+
+it("validates and applies optional right sidebar defaults including closed", () => {
+  for (const rightSidebarOpen of [true, false]) {
+    const theme = parseTheme({ ...exampleTheme(), rightSidebarOpen });
+    expect(themeAppearance(theme).rightSidebarOpen).toBe(rightSidebarOpen);
+  }
+  expect(themeAppearance(exampleTheme())).not.toHaveProperty("rightSidebarOpen");
+  expect(() => parseTheme({ ...exampleTheme(), rightSidebarOpen: "closed" })).toThrow("Invalid right sidebar setting");
+});
+
+
+it("round-trips Plasma Flow and rejects values outside the slider range", async () => {
+  const plasma = { enabled: true, frost: 80, backgroundBlur: 0, flow: 65 };
+  const theme = parseTheme({ ...exampleTheme(), plasma });
+  await saveTheme(theme, null);
+  expect((await listThemes()).themes[0].plasma?.flow).toBe(65);
+  expect(themeAppearance(theme).plasma?.flow).toBe(65);
+  for (const flow of [-1, 101, NaN, "50"]) {
+    expect(() => parseTheme({ ...theme, plasma: { ...plasma, flow } })).toThrow("Invalid Plasma settings");
+  }
+});

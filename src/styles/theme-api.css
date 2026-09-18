@@ -18,6 +18,22 @@
 [data-theme-region][data-theme-api="1"] .ProseMirror :is(pre, blockquote, table) { border-radius: var(--tigrana-radius); }
 [data-theme-region][data-theme-api="1"] .note-surface { background-color: var(--tigrana-background, var(--app-bg)); }
 [data-theme-region][data-theme-api="1"] :is(.folder-pane, .notes-pane, .unified-tree-pane, .right-sidebar) { background-color: var(--tigrana-surface, var(--surface)); }
+/* Window-like panels are independent of the optional Plasma renderer. The
+   splitter columns remain in the layout so custom gaps stay draggable. */
+[data-theme-region].app-frame.theme-standard {
+  background: var(--tigrana-workspace-background, var(--app-bg));
+}
+[data-theme-region] .left-panes { background: transparent; backdrop-filter: none; }
+[data-theme-region].theme-standard :is(.folder-pane, .notes-pane, .unified-tree-pane, .main-pane, .right-sidebar) {
+  border-radius: var(--tigrana-panel-radius, 0px);
+  box-shadow: var(--tigrana-panel-shadow, none);
+}
+[data-theme-region].theme-standard .note-surface {
+  border-radius: 0 0 var(--tigrana-panel-radius, 0px) var(--tigrana-panel-radius, 0px);
+}
+[data-theme-region].theme-standard :is(.pane-header, .topbar) {
+  border-radius: var(--tigrana-panel-radius, 0px) var(--tigrana-panel-radius, 0px) 0 0;
+}
 /* Text colors also apply to legacy palettes and note titles, which had fixed colors. */
 [data-theme-region] :is(.ProseMirror, .note-title-input, .raw-markdown-input) { color: var(--tigrana-editor-text, var(--text)); }
 [data-theme-region] .ProseMirror blockquote { color: var(--tigrana-editor-text, var(--text)); }

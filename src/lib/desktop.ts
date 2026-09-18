@@ -1,3 +1,4 @@
+import type { NavigationStyle } from "../types";
 import { invoke } from "@tauri-apps/api/core";
 import { getCurrentWebview } from "@tauri-apps/api/webview";
 import { save } from "@tauri-apps/plugin-dialog";
@@ -18,6 +19,7 @@ export type AppMenuState = {
   outlineVisible: boolean;
   wordCountVisible: boolean;
   spellcheckEnabled: boolean;
+  navigationStyle: NavigationStyle;
   editorWidthMode: "comfortable" | "narrow" | "full";
   noteAlignment: "left" | "center";
   recentNotes: Array<{ path: string; title: string }>;

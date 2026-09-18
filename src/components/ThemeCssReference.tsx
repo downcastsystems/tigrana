@@ -1,4 +1,9 @@
 const variables = [
+  ["--tigrana-panel-gap", "Space between panels, including draggable dividers, e.g. 18px"],
+  ["--tigrana-workspace-inset", "Space around the workspace, e.g. 18px"],
+  ["--tigrana-panel-radius", "Panel corners in standard UI, e.g. 16px"],
+  ["--tigrana-panel-shadow", "Panel shadows in standard UI, e.g. 0 8px 24px #00000030"],
+  ["--tigrana-workspace-background", "Color or gradient behind panels in standard UI"],
   ["--tigrana-background", "Note background"],
   ["--tigrana-surface", "Navigation pane background"],
   ["--tigrana-text", "Interface text"],
@@ -105,6 +110,20 @@ export function ThemeCssReference() {
         schemes, and <code>.theme-standard</code> or <code>.theme-plasma</code>{" "}
         for rendering modes. Check each supported combination in the preview.
       </p>
+      <h2>Window panels without Plasma</h2>
+      <p>Separate panels can use ordinary CSS. These layout variables preserve resizing and hidden-sidebar behavior. Plasma adds glass rendering; it is not required for panel layouts.</p>
+      <pre><code>{`:scope {
+  --tigrana-panel-gap: 18px;
+  --tigrana-workspace-inset: 18px;
+  --tigrana-panel-radius: 16px;
+  --tigrana-panel-shadow: 0 8px 24px #00000030;
+  --tigrana-workspace-background: var(--surface-muted);
+}
+.main-pane, .folder-pane, .notes-pane, .right-sidebar {
+  border: 1px solid var(--tigrana-border);
+}
+.pane-resizer { background: transparent; }`}</code></pre>
+      <p>Use Advanced surfaces for panel transparency. Set different colors and gradients with <code>:scope.theme-light</code> and <code>:scope.theme-dark</code>.</p>
       <h2>Local images and fonts</h2>
       <p>
         Use Add asset in the Advanced CSS tab to include a PNG, JPEG, WebP image or WOFF2 font

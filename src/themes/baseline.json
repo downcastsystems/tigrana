@@ -1,0 +1,63 @@
+{
+  "schemaVersion": 2,
+  "id": "builtin-baseline",
+  "name": "Baseline",
+  "navigationStyle": "single-pane",
+  "appFontFamily": "Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, \"Segoe UI\", sans-serif",
+  "editorFontFamily": "Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, \"Segoe UI\", sans-serif",
+  "appFontSize": 14,
+  "editorFontSize": 17,
+  "accentTitlebar": false,
+  "plasma": {
+    "enabled": false,
+    "frost": 80,
+    "backgroundBlur": 0
+  },
+  "design": {
+    "apiVersion": 1,
+    "author": "Tigrana adaptation; Alexis C",
+    "version": "1.1.0",
+    "license": "Adapted for Tigrana from https://github.com/aaaaalexis/obsidian-baseline\n\nMIT License\n\nCopyright (c) 2025 aaaaalexis\n\nPermission is hereby granted, free of charge, to any person obtaining a copy\nof this software and associated documentation files (the \"Software\"), to deal\nin the Software without restriction, including without limitation the rights\nto use, copy, modify, merge, publish, distribute, sublicense, and/or sell\ncopies of the Software, and to permit persons to whom the Software is\nfurnished to do so, subject to the following conditions:\n\nThe above copyright notice and this permission notice shall be included in all\ncopies or substantial portions of the Software.\n\nTHE SOFTWARE IS PROVIDED \"AS IS\", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR\nIMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,\nFITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE\nAUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER\nLIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,\nOUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE\nSOFTWARE.\n",
+    "supportsPlasma": true,
+    "css": "/* A framed workspace with compact labels and a clear writing panel. */\n:scope {\n  --tigrana-panel-gap: 12px;\n  --tigrana-workspace-inset: 12px;\n  --tigrana-panel-radius: 8px;\n  --tigrana-panel-shadow: 0 2px 8px #00000012;\n  --tigrana-workspace-background: var(--surface-muted);\n}\n.app-titlebar { background: var(--surface-muted); border-bottom: 0; }\n.note-tab { border-radius: 8px; }\n.folder-pane, .notes-pane, .unified-tree-pane, .main-pane, .right-sidebar { border: 1px solid var(--tigrana-border); }\n.pane-header { color: var(--tigrana-muted); text-transform: uppercase; font-size: 11px; letter-spacing: 0.08em; padding: 14px; border-bottom: 1px solid var(--tigrana-border); }\n.topbar { border-bottom: 1px solid var(--tigrana-border); }\n.section-view-folder-pane .folder-row { border-radius: 0; margin-right: 6px; }\n.note-title-input { font-weight: 700; letter-spacing: -0.04em; }\n.ProseMirror h1, .ProseMirror h2, .ProseMirror h3 { font-weight: 650; letter-spacing: -0.015em; }\n.ProseMirror blockquote { border-left: 3px solid var(--tigrana-accent); padding: 10px 16px; background: var(--surface-soft); }\n.ProseMirror pre, .ProseMirror table { border: 1px solid var(--tigrana-border); }\n\n.pane-resizer { background: transparent; }\n.pane-resizer::after { opacity: 0; }\n.pane-resizer:hover::after, .pane-resizer:focus-visible::after { opacity: 1; }\n",
+    "assets": {},
+    "metrics": {
+      "radius": 6,
+      "spacing": 1,
+      "lineHeight": 1.65
+    }
+  },
+  "light": {
+    "background": "#ffffff",
+    "surface": "#f6f6f6",
+    "surfaceSoft": "#fafafa",
+    "surfaceStrong": "#ffffff",
+    "surfaceMuted": "#eeeeee",
+    "border": "#dedede",
+    "text": "#292929",
+    "textMuted": "#707070",
+    "accent": "#7055b8",
+    "selectedText": "#ffffff",
+    "titlebar": "#f6f6f6",
+    "editorText": "#292929",
+    "highlightText": "#282015",
+    "highlightBackground": "#ffe89a"
+  },
+  "dark": {
+    "background": "#1e1e1e",
+    "surface": "#242424",
+    "surfaceSoft": "#282828",
+    "surfaceStrong": "#303030",
+    "surfaceMuted": "#191919",
+    "border": "#3f3f3f",
+    "text": "#dedede",
+    "textMuted": "#a6a6a6",
+    "accent": "#b7a0f0",
+    "selectedText": "#211831",
+    "titlebar": "#242424",
+    "editorText": "#dedede",
+    "highlightText": "#282015",
+    "highlightBackground": "#ffe89a"
+  },
+  "rightSidebarOpen": false
+}

@@ -12,6 +12,7 @@ import type {
 } from "../types";
 
 export type ResolvedNotebookAppearance = {
+  rightSidebarOpen?: boolean;
   plasma?: PlasmaSettings;
   colorScheme: "system" | "light" | "dark";
   themePresetId: string;
@@ -54,8 +55,8 @@ export function resolveNotebookAppearance(
   const theme = readTheme(appearance.customTheme);
   if (theme) {
     const selected = themeAppearance(theme);
-    // The notebook's manual toggle survives reloads without changing the theme default.
-    appearance = { ...appearance, ...selected, plasma: appearance.plasma ?? selected.plasma };
+    // Manual notebook choices survive reloads without changing the theme defaults.
+    appearance = { ...appearance, ...selected, plasma: appearance.plasma ?? selected.plasma, navigationStyle: appearance.navigationStyle ?? selected.navigationStyle, rightSidebarOpen: appearance.rightSidebarOpen ?? selected.rightSidebarOpen };
   }
 
   const navigationStyle = resolveNavigationStyle(
@@ -64,6 +65,7 @@ export function resolveNotebookAppearance(
   );
 
   return {
+    rightSidebarOpen: appearance.rightSidebarOpen ?? defaults.rightSidebarOpen,
     plasma: resolvePlasma(appearance.plasma, defaults.plasma),
     colorScheme: appearance.colorScheme ?? defaults.colorScheme,
     themePresetId:

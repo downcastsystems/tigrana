@@ -56,6 +56,7 @@ export type ThemeDifferenceAcknowledgement = {
 };
 
 export type NotebookAppearance = {
+  rightSidebarOpen?: boolean;
   quickAppearance?: { accentColor?: string; coloredTitlebar?: boolean } | null;
   acknowledgedThemeDifference?: ThemeDifferenceAcknowledgement;
   plasma?: import("./lib/themes").PlasmaSettings;

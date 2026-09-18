@@ -1,6 +1,6 @@
 # Creating Tigrana themes
 
-For a complete illustrated example, see [Starfall Studio](starfall-studio/README.md),
+For a complete illustrated example, see [Starfall](starfall-studio/README.md),
 including an importable package, original character art, and commented CSS for
 light, dark, and Plasma appearances.
 
@@ -181,7 +181,7 @@ Optional `surfaces` stores `background` as #RRGGBB, optional `image` as a packag
 asset path, and `navigation`, `editor`, `outline`, and `titlebar` as 0–100 values.
 These settings are shared across light and dark palettes. When configured,
 `--tigrana-editor-opacity` exposes the editor percentage for custom background
-tints, as demonstrated by Starfall Studio. Settings and dialogs
+tints, as demonstrated by Starfall. Settings and dialogs
 are outside these surface rules.
 
 ## Visual settings and custom CSS

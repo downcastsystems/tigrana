@@ -1,7 +1,8 @@
 {
   "schemaVersion": 2,
   "id": "starfall-studio",
-  "name": "Starfall Studio",
+  "name": "Starfall",
+  "navigationStyle": "section-view",
   "light": {
     "background": "#fcf7ff",
     "surface": "#eee5fa",
@@ -63,5 +64,6 @@
     "outline": 76,
     "titlebar": 100,
     "image": "assets/starfall-landscape.webp"
-  }
+  },
+  "rightSidebarOpen": true
 }

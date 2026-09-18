@@ -49,21 +49,21 @@ html[data-accent-titlebar="true"] .app-shell[data-plasma] .app-titlebar {
 }
 
 .app-shell[data-plasma] .app-frame {
-  padding: 18px 16px 16px;
+  padding: var(--tigrana-workspace-inset, 18px 16px 16px);
   gap: 0;
 }
 
 /* Keep the standard layout definitions untouched. */
 .app-shell[data-plasma] .app-frame {
-  grid-template-columns: calc(var(--folder-pane-width, 292px) + 20px + var(--notes-pane-width, 268px)) 20px minmax(0, 1fr) 20px var(--right-pane-width, 300px);
+  grid-template-columns: calc(var(--folder-pane-width, 292px) + var(--tigrana-panel-gap, 20px) + var(--notes-pane-width, 268px)) var(--tigrana-panel-gap, 20px) minmax(0, 1fr) var(--tigrana-panel-gap, 20px) var(--right-pane-width, 300px);
 }
 
 .app-shell[data-plasma] .app-frame.is-left-hidden {
-  grid-template-columns: minmax(0, 1fr) 20px var(--right-pane-width, 300px);
+  grid-template-columns: minmax(0, 1fr) var(--tigrana-panel-gap, 20px) var(--right-pane-width, 300px);
 }
 
 .app-shell[data-plasma] .app-frame.is-outline-hidden {
-  grid-template-columns: calc(var(--folder-pane-width, 292px) + 20px + var(--notes-pane-width, 268px)) 20px minmax(0, 1fr);
+  grid-template-columns: calc(var(--folder-pane-width, 292px) + var(--tigrana-panel-gap, 20px) + var(--notes-pane-width, 268px)) var(--tigrana-panel-gap, 20px) minmax(0, 1fr);
 }
 
 .app-shell[data-plasma] .app-frame.is-left-hidden.is-outline-hidden {
@@ -71,15 +71,15 @@ html[data-accent-titlebar="true"] .app-shell[data-plasma] .app-titlebar {
 }
 
 .app-shell[data-plasma] .app-frame.is-single-col {
-  grid-template-columns: var(--notes-pane-width, 268px) 20px minmax(0, 1fr) 20px var(--right-pane-width, 300px);
+  grid-template-columns: var(--notes-pane-width, 268px) var(--tigrana-panel-gap, 20px) minmax(0, 1fr) var(--tigrana-panel-gap, 20px) var(--right-pane-width, 300px);
 }
 
 .app-shell[data-plasma] .app-frame.is-single-col.is-left-hidden {
-  grid-template-columns: minmax(0, 1fr) 20px var(--right-pane-width, 300px);
+  grid-template-columns: minmax(0, 1fr) var(--tigrana-panel-gap, 20px) var(--right-pane-width, 300px);
 }
 
 .app-shell[data-plasma] .app-frame.is-single-col.is-outline-hidden {
-  grid-template-columns: var(--notes-pane-width, 268px) 20px minmax(0, 1fr);
+  grid-template-columns: var(--notes-pane-width, 268px) var(--tigrana-panel-gap, 20px) minmax(0, 1fr);
 }
 
 .app-shell[data-plasma] .app-frame.is-single-col.is-left-hidden.is-outline-hidden {
@@ -87,7 +87,7 @@ html[data-accent-titlebar="true"] .app-shell[data-plasma] .app-titlebar {
 }
 
 .app-shell[data-plasma] .left-panes {
-  grid-template-columns: var(--folder-pane-width, 292px) 20px var(--notes-pane-width, 268px);
+  grid-template-columns: var(--folder-pane-width, 292px) var(--tigrana-panel-gap, 20px) var(--notes-pane-width, 268px);
 }
 
 .app-shell[data-plasma] .left-panes.is-single-col {

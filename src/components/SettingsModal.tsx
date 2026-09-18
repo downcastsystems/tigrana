@@ -4,7 +4,11 @@ import { useState } from "react";
 import { Maximize2, Minimize2, RotateCcw, Settings, X } from "lucide-react";
 import type { NavigationStyle } from "../types";
 
+export type SettingsSection = "general" | "appearance";
+
 export default function SettingsModal(props: {
+  initialSection?: SettingsSection;
+  onSectionChange?: (section: SettingsSection) => void;
   navigationStyle: NavigationStyle;
   onNavigationStyleChange: (value: NavigationStyle) => void;
   spellcheckEnabled: boolean;
@@ -16,15 +20,29 @@ export default function SettingsModal(props: {
   onPlasmaEnabledChange: (value: boolean) => void;
   plasmaFrost: number;
   onPlasmaFrostChange: (value: number) => void;
+  plasmaFlow?: number;
+  onPlasmaFlowChange?: (value: number) => void;
   plasmaBackgroundBlur: number;
   onPlasmaBackgroundBlurChange: (value: number) => void;
   onClose: () => void;
   onResetTheme?: () => void;
-  themeContent: ReactNode;
+  themeContent: ReactNode | ((navigationControls: ReactNode) => ReactNode);
 }) {
   const [maximized, setMaximized] = useState(false);
-  const [section, setSection] = useState("general");
+  const [section, setSection] = useState<SettingsSection>(props.initialSection ?? "general");
   const [previewHost, setPreviewHost] = useState<HTMLDivElement | null>(null);
+  const navigationControls = (
+    <div className="setting-row settings-navigation-style">
+      <strong>Navigation style</strong>
+      <select className="settings-select" aria-label="Navigation style"
+        value={props.navigationStyle}
+        onChange={event => props.onNavigationStyleChange(event.target.value as NavigationStyle)}>
+        <option value="dual-pane">Dual pane</option>
+        <option value="section-view">Dual pane with sections</option>
+        <option value="single-pane">Single pane</option>
+      </select>
+    </div>
+  );
   return (
     <div
       className="dialog-backdrop settings-backdrop"
@@ -45,11 +63,11 @@ export default function SettingsModal(props: {
                 <h2>Settings</h2>
               </div>
               <nav className="settings-nav" aria-label="Settings sections">
-                {["general", "appearance"].map((id) => (
+                {(["general", "appearance"] as const).map((id) => (
                   <button
                     key={id}
                     className={`settings-nav-item ${section === id ? "is-active" : ""}`}
-                    onClick={() => setSection(id)}
+                    onClick={() => { setSection(id); props.onSectionChange?.(id); }}
                   >
                     {id === "appearance" ? "Appearance" : "General"}
                   </button>
@@ -89,34 +107,13 @@ export default function SettingsModal(props: {
               <div className="settings-scroll" key={section}>
                 {section === "appearance" ? (
                   <div className="settings-appearance">
-                    <div className="setting-row settings-navigation-style">
-                      <strong>Navigation style</strong>
-                      <select
-                        className="settings-select"
-                        aria-label="Navigation style"
-                        value={props.navigationStyle}
-                        onChange={(e) =>
-                          props.onNavigationStyleChange(
-                            e.target.value as NavigationStyle,
-                          )
-                        }
-                      >
-                        <option value="dual-pane">Dual pane</option>
-                        <option value="single-pane">Single pane</option>
-                        <option value="section-view">
-                          Dual pane with sections
-                        </option>
-                      </select>
-                    </div>
-                    {props.themeContent}
+                    {typeof props.themeContent === "function"
+                      ? props.themeContent(navigationControls)
+                      : <>{props.themeContent}{navigationControls}</>}
                     <section
-                      className="settings-experimental"
-                      aria-label="Experimental appearance"
+                      className="settings-plasma"
+                      aria-label="Plasma appearance"
                     >
-                      <h3>Experimental appearance</h3>
-                      <p>
-                        These overrides stay with this notebook until you select a theme again. Edit the theme to change its saved Plasma default.
-                      </p>
                       <label className="setting-row">
                         Plasma glass panes
                         <input
@@ -134,6 +131,12 @@ export default function SettingsModal(props: {
                       ) : null}
                       {props.plasmaEnabled ? (
                         <>
+                          <label className="setting-row">
+                            Flow
+                            <input type="range" min={0} max={100} value={props.plasmaFlow ?? 0}
+                              onChange={event => props.onPlasmaFlowChange?.(Number(event.target.value))} />
+                          </label>
+                          <p className="settings-description">Adds a gentle ripple to pane edges. Set to zero for still edges.</p>
                           <label className="setting-row">
                             Panel frostiness
                             <input

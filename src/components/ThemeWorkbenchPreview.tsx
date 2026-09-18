@@ -1,3 +1,4 @@
+import { compileThemeCss } from "../lib/themeCss";
 import { useCallback, useMemo, useState } from "react";
 import { createPortal } from "react-dom";
 import { FileText, Plus, X, Folder, PanelLeftClose, PanelRightClose, Ellipsis } from "lucide-react";
@@ -16,9 +17,9 @@ const previewCss = (appCss + plasmaCss)
   .replace(/(?<![-\w.])body\b/g, ".preview-body");
 const fixtureCss = `:host{display:block;isolation:isolate;clip-path:inset(0 round 8px);position:relative;contain:style;}
 .preview-body{min-width:0;min-height:0;background:var(--app-bg);font-family:var(--app-font-family);font-size:var(--app-font-size);color:var(--text)}
-.app-shell{height:auto;min-height:520px}.app-titlebar{z-index:1}.app-frame{display:grid;grid-template-columns:136px minmax(0,1fr);min-height:460px;padding:0;gap:0}
+.app-shell{height:auto;min-height:520px}.app-titlebar{z-index:1}.app-frame{display:grid;grid-template-columns:136px minmax(0,1fr);min-height:460px;padding:var(--tigrana-workspace-inset,0px);gap:var(--tigrana-panel-gap,0px)}
 .app-frame>.folder-pane{width:auto;min-width:0;display:block}.app-frame>.main-pane{min-width:0;display:block;overflow:hidden}.note-title-input{height:1.3em;flex-shrink:0}.note-surface{padding:14px;overflow:auto;max-height:650px}.ProseMirror{flex-shrink:0;min-height:0;padding:0;font-size:var(--editor-font-size);font-family:var(--editor-font-family)}
-.app-shell[data-plasma] .app-frame{padding:18px 16px 16px;gap:20px}.app-shell[data-plasma] .note-surface{padding:12px}.note-tab{width:160px;text-align:left}.note-tab-add{flex-shrink:0}.folder-row{margin-left:0;margin-right:6px;width:calc(100% - 6px)}.folder-select{min-width:0}.folder-select span{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.title-shell,.editor-shell{width:100%;margin:0}.editor-shell{padding:28px 0 40px}.preview-controls{display:flex;gap:6px;flex-wrap:wrap;margin-top:14px}.preview-controls input{width:100%;min-width:0}
+.app-shell[data-plasma] .app-frame{padding:var(--tigrana-workspace-inset,18px 16px 16px);gap:var(--tigrana-panel-gap,20px)}.app-shell[data-plasma] .note-surface{padding:12px}.note-tab{width:160px;text-align:left}.note-tab-add{flex-shrink:0}.folder-row{margin-left:0;margin-right:6px;width:calc(100% - 6px)}.folder-select{min-width:0}.folder-select span{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.title-shell,.editor-shell{width:100%;margin:0}.editor-shell{padding:28px 0 40px}.preview-controls{display:flex;gap:6px;flex-wrap:wrap;margin-top:14px}.preview-controls input{width:100%;min-width:0}
 .plasma-background{position:fixed!important;inset:0;z-index:-1}.plasma-background canvas{position:fixed!important;width:100vw!important;height:100vh!important;inset:0}
 `;
 
@@ -44,10 +45,14 @@ export function ThemeWorkbenchPreview({
       };
     }
   }, [theme, mode]);
+  // WebKit does not register @font-face inside a shadow tree. Register the
+  // same region-scoped families in the document for portable font previews.
+  const fontCss = useMemo(() => theme.design ? compileThemeCss({ ...theme.design, css: "" }, "preview") : "", [theme.design]);
   const plasma =
     theme.plasma?.enabled && theme.design?.supportsPlasma !== false;
   return (
     <>
+      {fontCss ? <style>{fontCss}</style> : null}
       {compiled.error ? (
         <p role="alert">Preview uses visual settings until the CSS is valid.</p>
       ) : null}
@@ -58,7 +63,7 @@ export function ThemeWorkbenchPreview({
         data-theme-preset="custom"
         data-accent-titlebar={theme.accentTitlebar ? "true" : "false"}
         aria-label={`${mode} full theme preview`}
-        style={themeVariables(theme, mode) as React.CSSProperties}
+        style={themeVariables(theme, mode, "preview") as React.CSSProperties}
       />
       {root &&
         createPortal(
@@ -78,6 +83,7 @@ export function ThemeWorkbenchPreview({
               >
                 {plasma ? (
                   <PlasmaTheme
+                    flow={(theme.plasma?.flow ?? 0) / 100}
                     theme={mode}
                     accentColor={theme[mode].accent}
                     frost={(theme.plasma?.frost ?? 80) / 100}
