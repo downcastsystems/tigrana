@@ -45,7 +45,7 @@ Themes may include `navigationStyle` with `dual-pane`, `single-pane`, or `sectio
 
 Themes may also set `rightSidebarOpen` to `true` or `false`. Omit it for Keep current. The theme editor's Default right sidebar control sets this preference. Manual sidebar changes are saved with the notebook and remain until another theme supplies a sidebar default.
 
-Minimal and Baseline default to a closed right sidebar. All other built-in themes, including Default, open it by default. Baseline uses rounded tabs and separate framed panels without an accent border across the title bar or editor.
+Minimal, Baseline, and Typewriter default to a closed right sidebar. All other built-in themes, including Default, open it by default. Baseline uses rounded tabs and separate framed panels without an accent border across the title bar or editor.
 
 Default is a read-only starting point. Other built-ins expose Edit theme, which saves a customized copy with a portable `baseThemeId` pointing to the original built-in. Revert to defaults restores that built-in's settings in the draft while retaining the copy's identity and name; Save and use commits the reset. Existing custom themes without a recorded built-in origin are not guessed from their names.
 
@@ -54,3 +54,11 @@ Plasma rims use the effective accent color, including notebook quick-accent over
 ## Adventure Quest
 
 Retro adventure menus: pixel lettering, green and gold panel frames, an original generated woodland map, near-black dark mode, and parchment light mode. It bundles VT323 and its font license, plus the background image. Defaults to Dual pane with sections, right sidebar open, Plasma off. Editable source and assets live in `docs/themes/8-bit-adventure/`.
+
+## Typewriter
+
+Warm ivory paper and brown ink in light mode; charcoal paper, cream text, and a muted tan accent in dark mode. Thin panel borders, small corner radii, and regular-weight serif titles keep the writing area quiet. Defaults to Dual pane with sections, right sidebar closed, and Plasma off. Manual navigation and sidebar changes remain available.
+
+Both the interface and editor use [Solway](https://github.com/mashavp/Solway), a proportional slab serif with a typewriter feel. The unmodified Latin regular WOFF2 from `@fontsource/solway` 5.3.0 is bundled for offline use, with Georgia/serif fallbacks for other glyphs. The full SIL Open Font License 1.1 and attribution travel with the theme. No American Typewriter font files are distributed.
+
+Editable source and the font live in `docs/themes/typewriter/`. Run `node docs/themes/build-example.mjs typewriter` to regenerate both the app document and `docs/themes/typewriter.tigrana-theme`. Validate with `npm run theme:check -- docs/themes/typewriter`.

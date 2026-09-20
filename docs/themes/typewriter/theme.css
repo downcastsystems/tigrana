@@ -1,0 +1,27 @@
+/* Paper, ink, and a readable proportional typewriter face. */
+:scope {
+  --tigrana-panel-gap: 8px;
+  --tigrana-workspace-inset: 12px;
+  --tigrana-panel-radius: 4px;
+  --tigrana-panel-shadow: 0 2px 6px #00000014;
+  --tigrana-workspace-background: var(--surface-muted);
+}
+.note-tab { border-radius: 4px; }
+.section-view-folder-pane .folder-row { border-radius: 0; margin-right: 6px; }
+.folder-pane, .notes-pane, .unified-tree-pane, .main-pane, .right-sidebar {
+  border: 1px solid var(--tigrana-border);
+}
+.pane-header { font-weight: 400; border-bottom: 1px solid var(--tigrana-border); }
+.topbar { border-bottom: 1px solid var(--tigrana-border); }
+.note-title-input { font-weight: 400; letter-spacing: -0.025em; }
+.topbar-note-title { font-family: var(--editor-font-family); font-weight: 400; }
+.ProseMirror h1, .ProseMirror h2, .ProseMirror h3 { color: var(--tigrana-editor-text); }
+.ProseMirror blockquote {
+  border-left: 2px solid var(--tigrana-accent);
+  padding: 4px 18px;
+  color: var(--tigrana-editor-text);
+}
+.ProseMirror pre { background: var(--surface-soft); border: 1px solid var(--tigrana-border); }
+.pane-resizer { background: transparent; }
+.pane-resizer::after { opacity: 0; }
+.pane-resizer:hover::after, .pane-resizer:focus-visible::after { opacity: 1; }

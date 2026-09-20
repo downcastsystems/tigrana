@@ -5,12 +5,13 @@ import classic from "../themes/classic.json";
 import minimal from "../themes/minimal.json";
 import cupertino from "../themes/cupertino.json";
 import baseline from "../themes/baseline.json";
+import typewriter from "../themes/typewriter.json";
 import { themesMatch, type ThemeDocument } from "./themes";
 
 import { loadThemeCatalog, recoveryTheme } from "./themeCatalog";
-export const builtInThemeDocuments = [...classic, minimal, cupertino, baseline, starfall, oldBasementPC, adventure];
+export const builtInThemeDocuments = [...classic, minimal, cupertino, baseline, starfall, oldBasementPC, adventure, typewriter];
 const legacy = loadThemeCatalog(classic);
-const bundled = loadThemeCatalog([minimal, cupertino, baseline, starfall, oldBasementPC, adventure]);
+const bundled = loadThemeCatalog([minimal, cupertino, baseline, starfall, oldBasementPC, adventure, typewriter]);
 export const themeCatalogWarnings = [...legacy.warnings, ...bundled.warnings];
 export const classicThemes: ThemeDocument[] = legacy.themes.some(t => t.id === 'default') ? legacy.themes : [recoveryTheme, ...legacy.themes];
 export const bundledThemes = bundled.themes;

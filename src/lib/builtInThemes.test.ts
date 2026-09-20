@@ -23,13 +23,13 @@ describe('built-in theme catalog', () => {
     expect(classicThemes.map(t => t.id)).toEqual(['default', 'atom', 'solarized', 'dracula', 'nord', 'gruvbox', 'catppuccin-frappe', 'catppuccin-macchiato', 'catppuccin-mocha']);
     expect(new Set(allBuiltInThemes.map(t => t.id)).size).toBe(allBuiltInThemes.length);
     expect(new Set(allBuiltInThemes.map(t => t.name)).size).toBe(allBuiltInThemes.length);
-    expect(bundledThemes.map(t => t.name)).toEqual(['Minimal', 'Cupertino', 'Baseline', 'Starfall', 'Old Basement PC', 'Adventure Quest']);
+    expect(bundledThemes.map(t => t.name)).toEqual(['Minimal', 'Cupertino', 'Baseline', 'Starfall', 'Old Basement PC', 'Adventure Quest', 'Typewriter']);
   });
   for (const theme of allBuiltInThemes) {
     it(`${theme.name} validates, exports, and renders in both modes`, () => {
       expect(parseTheme(theme)).toEqual(theme);
       expect(theme.schemaVersion).toBe(2);
-      expect(themeAppearance(theme).rightSidebarOpen).toBe(!["builtin-minimal", "builtin-baseline"].includes(theme.id));
+      expect(themeAppearance(theme).rightSidebarOpen).toBe(!["builtin-minimal", "builtin-baseline", "builtin-typewriter"].includes(theme.id));
       expect(themeAppearance(theme).navigationStyle).toBe(["builtin-minimal", "builtin-baseline", "builtin-old-basement-pc"].includes(theme.id) ? "single-pane" : "section-view");
       expect(decodeThemePackage(encodeThemePackage(theme))).toEqual(theme);
       expect(themeAppearance(theme).plasma?.enabled).toBe(theme.plasma?.enabled);
@@ -49,12 +49,15 @@ describe('built-in theme catalog', () => {
       }
     });
   }
-  it('resolves packaged fonts in both preview and notebook without external requests', () => {
-    const theme = bundledThemes.find(t => t.id === 'builtin-old-basement-pc')!;
+  it.each([
+    ['builtin-old-basement-pc', 'vt323', 'monospace'],
+    ['builtin-typewriter', 'solway', 'Georgia, serif'],
+  ])('%s resolves packaged fonts in both preview and notebook without external requests', (id, font, fallback) => {
+    const theme = bundledThemes.find(t => t.id === id)!;
     for (const region of ['preview', 'notebook']) {
       const css = themeStylesheet(theme, 'dark', region);
-      expect(css).toContain(`--editor-font-family:tigrana-${region}-vt323, monospace`);
-      expect(css).toContain(`font-family:"tigrana-${region}-vt323"`);
+      expect(css).toContain(`--editor-font-family:tigrana-${region}-${font}, ${fallback}`);
+      expect(css).toContain(`font-family:"tigrana-${region}-${font}"`);
       expect(css).toContain('data:font/woff2;base64,');
     }
   });
