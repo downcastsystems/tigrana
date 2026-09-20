@@ -1,3 +1,7 @@
+import { originalSnapshot, updateDerivedTheme } from "../lib/themeDerivation";
+import { ThemeTypographyEditor } from "./ThemeTypographyEditor";
+import { ThemeControlsEditor } from "./ThemeControlsEditor";
+import { ThemeHealthCheck } from "./ThemeHealthCheck";
 import { allBuiltInThemes, bundledThemes, isBundledTheme } from "../lib/bundledThemes";
 import { ThemeDeleteDialog } from "./ThemeDeleteDialog";
 import { visualCssHints } from "../lib/themeVisualCss";
@@ -30,6 +34,7 @@ import {
 } from "../lib/themes";
 
 const labels = {
+  menuSelectedBackground: "Selected menu background", menuSelectedText: "Selected menu text", hoverBackground: "Hovered item background", hoverText: "Hovered item text",
   background: "Editor background",
   surface: "Sidebar",
   surfaceSoft: "Soft surface",
@@ -269,12 +274,15 @@ export function ThemeBuilder({
   }
   const sourceTheme = current ?? allBuiltInThemes.find(theme => theme.id === builtInThemeId) ?? seed;
   const sourceBuiltIn = allBuiltInThemes.find(theme => theme.id === sourceTheme.id);
-  const draftOriginal = allBuiltInThemes.find(theme => theme.id === (draft?.baseThemeId ?? draft?.id));
+  const draftOriginal = draft?.baseThemeSnapshot ?? allBuiltInThemes.find(theme => theme.id === (draft?.baseThemeId ?? draft?.id));
+  const latestOriginal = [...allBuiltInThemes, ...themes].find(theme => theme.id === draft?.baseThemeId && theme.id !== draft?.id);
+  const originalChanged = !!(draft?.baseThemeSnapshot && latestOriginal && !themesMatch(draft.baseThemeSnapshot, originalSnapshot(latestOriginal)));
   function create() {
     setExpected(null);
     setDraft({
       ...(current ?? seed),
-      baseThemeId: sourceTheme.baseThemeId ?? sourceBuiltIn?.id,
+      baseThemeId: sourceTheme.baseThemeId ?? sourceTheme.id,
+      baseThemeSnapshot: sourceTheme.baseThemeSnapshot ?? originalSnapshot(sourceTheme),
       schemaVersion: 2,
       design: current?.design ?? seed.design ?? defaultThemeDesign,
       plasma: current?.plasma ?? seed.plasma ?? defaultPlasmaSettings,
@@ -365,7 +373,8 @@ export function ThemeBuilder({
                 onClick={() => {
                   setDraft({
                     ...sourceTheme,
-                    baseThemeId: sourceTheme.baseThemeId ?? sourceBuiltIn?.id,
+                    baseThemeId: sourceTheme.baseThemeId ?? sourceBuiltIn?.id ?? sourceTheme.id,
+                    baseThemeSnapshot: sourceTheme.baseThemeSnapshot ?? originalSnapshot(sourceTheme),
                     id: sourceBuiltIn ? crypto.randomUUID() : sourceTheme.id,
                     name: uniqueThemeName(sourceBuiltIn ? `${sourceTheme.name} copy` : sourceTheme.name, themes, sourceBuiltIn ? undefined : sourceTheme.id),
                     plasma:
@@ -550,6 +559,11 @@ export function ThemeBuilder({
               aria-labelledby={`${editorId}-${cssMode ? "css" : "visual"}`}
             >
               <div hidden={cssMode}>
+                {originalChanged && <div className="theme-update-original"><p>A newer original theme is available. Apply its changes while keeping your customizations. Conflicting custom values take precedence.</p>
+                  <button className="toolbar-button" type="button" onClick={() => {
+                    try { setDraft(updateDerivedTheme(draft, latestOriginal!)); setError(''); } catch (e) { setError(`The update could not be applied. Your theme is unchanged. ${String(e)}`); }
+                  }}>Update original, keep my changes</button></div>}
+
                 <div className="theme-color-grid">
                   {[...paletteKeys, ...optionalPaletteKeys].map((key) => (
                     <ThemeColorField
@@ -557,7 +571,7 @@ export function ThemeBuilder({
                       label={labels[key]}
                       name={`${mode} ${labels[key]}`}
                       cssHint={cssHints[key]}
-                      value={draft[mode][key] ?? (key === "selectedText" ? contrast(draft[mode].accent) : key === "highlightText" ? "#000000" : key === "highlightBackground" ? "#ffff00" : draft[mode].text)}
+                      value={draft[mode][key] ?? (key === "menuSelectedBackground" || key === "hoverBackground" ? draft[mode].accent : key === "menuSelectedText" || key === "hoverText" ? (draft[mode].selectedText ?? contrast(draft[mode].accent)) : key === "selectedText" ? contrast(draft[mode].accent) : key === "highlightText" ? "#000000" : key === "highlightBackground" ? "#ffff00" : draft[mode].text)}
                       onChange={(color) =>
                         update({ [mode]: { ...draft[mode], [key]: color } })
                       }
@@ -616,6 +630,8 @@ export function ThemeBuilder({
                     </label>
                   ))}
                 </div>
+                <ThemeTypographyEditor theme={draft} change={update} />
+                <ThemeControlsEditor theme={draft} change={update} />
                 <label>
                   <input
                     type="checkbox"
@@ -633,6 +649,7 @@ export function ThemeBuilder({
                 cssMode={cssMode}
               />
             </div>
+            <ThemeHealthCheck theme={draft} />
             <p>
               Save updates the shared library and this notebook. Other notebooks
               choose whether to adopt the changes when opened.
@@ -669,7 +686,7 @@ export function ThemeBuilder({
               Make a copy
             </button>
             {draftOriginal ? <button className="toolbar-button" disabled={busy} onClick={() => {
-              setDraft({ ...draftOriginal, id: draft.id, name: draft.name, baseThemeId: draftOriginal.id });
+              setDraft({ ...draftOriginal, id: draft.id, name: draft.name, baseThemeId: draftOriginal.id, baseThemeSnapshot: originalSnapshot(draftOriginal) });
               setError("");
             }}>Revert to defaults</button> : null}
             <button

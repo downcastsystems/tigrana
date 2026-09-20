@@ -1,3 +1,4 @@
+import { recoveryTheme } from "./themeCatalog";
 import {
   readTheme,
   themeAppearance,
@@ -53,6 +54,10 @@ export function resolveNotebookAppearance(
 ): ResolvedNotebookAppearance {
   if (!appearance) return cloneResolvedAppearance(defaults);
   const theme = readTheme(appearance.customTheme);
+  if (appearance.customTheme && !theme) {
+    // Recovery is in-memory only: never overwrite a damaged portable snapshot.
+    return resolveNotebookAppearance({ ...themeAppearance(recoveryTheme), colorScheme: appearance.colorScheme }, defaults, validThemePresetIds);
+  }
   if (theme) {
     const selected = themeAppearance(theme);
     // Manual notebook choices survive reloads without changing the theme defaults.

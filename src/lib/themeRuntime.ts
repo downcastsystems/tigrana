@@ -1,3 +1,4 @@
+import { resolveTypography } from "./themeOptions";
 import type { ThemeDocument } from "./themes";
 import { defaultThemeDesign } from "./themeDesign";
 import { compileThemeCss } from "./themeCss";
@@ -8,6 +9,12 @@ export function themeVariables(theme: ThemeDocument, mode: "light" | "dark", reg
   const fontFamily = (family: string) => region ? family.replace(/theme-font-([a-zA-Z0-9_-]+)/g, (token, name: string) =>
     theme.design?.assets[`assets/${name}.woff2`]?.mime === "font/woff2" ? `tigrana-${region}-${name}` : token) : family;
   return {
+    ...Object.fromEntries(Object.entries(resolveTypography(theme)).map(([key, size]) => [`--tigrana-font-${key.replace(/[A-Z]/g, c => '-' + c.toLowerCase())}`, `${size}px`])),
+    ...Object.fromEntries((theme.controls ?? []).map(c => [`--tigrana-control-${c.id}`, String(typeof c.value === 'boolean' ? Number(c.value) : c.value)])),
+    "--tigrana-menu-selected-background": p.menuSelectedBackground ?? "var(--tigrana-accent)",
+    "--tigrana-menu-selected-text": p.menuSelectedText ?? (p.menuSelectedBackground ? readableThemeText(p.menuSelectedBackground) : "var(--tigrana-selected-text)"),
+    "--tigrana-hover-background": p.hoverBackground ?? "var(--tigrana-accent)",
+    "--tigrana-hover-text": p.hoverText ?? (p.hoverBackground ? readableThemeText(p.hoverBackground) : "var(--tigrana-selected-text)"),
     "--tigrana-background": p.background,
     "--tigrana-surface": p.surface,
     "--tigrana-text": p.text,

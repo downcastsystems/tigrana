@@ -5,12 +5,15 @@ import classic from "../themes/classic.json";
 import minimal from "../themes/minimal.json";
 import cupertino from "../themes/cupertino.json";
 import baseline from "../themes/baseline.json";
-import { parseTheme, themesMatch, type ThemeDocument } from "./themes";
+import { themesMatch, type ThemeDocument } from "./themes";
 
-// Older notebook preset IDs remain valid; their definitions now use Theme API 1.
-export const classicThemes: ThemeDocument[] = classic.map(parseTheme);
-// Full documents keep bundled artwork and CSS portable with each notebook.
-export const bundledThemes: ThemeDocument[] = [minimal, cupertino, baseline, starfall, oldBasementPC, adventure].map(parseTheme);
+import { loadThemeCatalog, recoveryTheme } from "./themeCatalog";
+export const builtInThemeDocuments = [...classic, minimal, cupertino, baseline, starfall, oldBasementPC, adventure];
+const legacy = loadThemeCatalog(classic);
+const bundled = loadThemeCatalog([minimal, cupertino, baseline, starfall, oldBasementPC, adventure]);
+export const themeCatalogWarnings = [...legacy.warnings, ...bundled.warnings];
+export const classicThemes: ThemeDocument[] = legacy.themes.some(t => t.id === 'default') ? legacy.themes : [recoveryTheme, ...legacy.themes];
+export const bundledThemes = bundled.themes;
 export const allBuiltInThemes = [...classicThemes, ...bundledThemes];
 
 export function isBundledTheme(theme: ThemeDocument | null): boolean {

@@ -65,5 +65,13 @@
     "titlebar": 100,
     "image": "assets/starfall-landscape.webp"
   },
-  "rightSidebarOpen": true
+  "rightSidebarOpen": true,
+  "controls": [
+    {
+      "id": "character",
+      "label": "Show character artwork",
+      "type": "toggle",
+      "value": true
+    }
+  ]
 }

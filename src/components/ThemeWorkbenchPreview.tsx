@@ -5,6 +5,7 @@ import { FileText, Plus, X, Folder, PanelLeftClose, PanelRightClose, Ellipsis } 
 import appCss from "../styles/app.css?inline";
 import plasmaCss from "../styles/plasma.css?inline";
 import apiCss from "../styles/theme-api.css?inline";
+import type { NavigationStyle } from "../types";
 import type { ThemeDocument } from "../lib/themes";
 import { themeStylesheet, themeVariables } from "../lib/themeRuntime";
 import PlasmaTheme from "./PlasmaTheme";
@@ -17,8 +18,8 @@ const previewCss = (appCss + plasmaCss)
   .replace(/(?<![-\w.])body\b/g, ".preview-body");
 const fixtureCss = `:host{display:block;isolation:isolate;clip-path:inset(0 round 8px);position:relative;contain:style;}
 .preview-body{min-width:0;min-height:0;background:var(--app-bg);font-family:var(--app-font-family);font-size:var(--app-font-size);color:var(--text)}
-.app-shell{height:auto;min-height:520px}.app-titlebar{z-index:1}.app-frame{display:grid;grid-template-columns:136px minmax(0,1fr);min-height:460px;padding:var(--tigrana-workspace-inset,0px);gap:var(--tigrana-panel-gap,0px)}
-.app-frame>.folder-pane{width:auto;min-width:0;display:block}.app-frame>.main-pane{min-width:0;display:block;overflow:hidden}.note-title-input{height:1.3em;flex-shrink:0}.note-surface{padding:14px;overflow:auto;max-height:650px}.ProseMirror{flex-shrink:0;min-height:0;padding:0;font-size:var(--editor-font-size);font-family:var(--editor-font-family)}
+.preview-body{overflow:auto}.app-shell{height:auto;min-height:520px;min-width:760px}.app-titlebar{z-index:1}.app-frame{display:grid;grid-template-columns:136px minmax(0,1fr);min-height:460px;padding:var(--tigrana-workspace-inset,0px);gap:var(--tigrana-panel-gap,0px)}
+.app-frame .left-panes>aside{width:auto;min-width:0;overflow:hidden}.app-frame>.folder-pane{width:auto;min-width:0;display:block}.app-frame>.main-pane{min-width:0;display:block;overflow:visible;position:relative}.note-title-input{height:1.3em;flex-shrink:0}.note-surface{padding:14px;overflow:auto;max-height:650px;padding-bottom:54px}.ProseMirror{flex-shrink:0;min-height:0;padding:0;font-size:var(--editor-font-size);font-family:var(--editor-font-family)}
 .app-shell[data-plasma] .app-frame{padding:var(--tigrana-workspace-inset,18px 16px 16px);gap:var(--tigrana-panel-gap,20px)}.app-shell[data-plasma] .note-surface{padding:12px}.note-tab{width:160px;text-align:left}.note-tab-add{flex-shrink:0}.folder-row{margin-left:0;margin-right:6px;width:calc(100% - 6px)}.folder-select{min-width:0}.folder-select span{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.title-shell,.editor-shell{width:100%;margin:0}.editor-shell{padding:28px 0 40px}.preview-controls{display:flex;gap:6px;flex-wrap:wrap;margin-top:14px}.preview-controls input{width:100%;min-width:0}
 .plasma-background{position:fixed!important;inset:0;z-index:-1}.plasma-background canvas{position:fixed!important;width:100vw!important;height:100vh!important;inset:0}
 `;
@@ -31,6 +32,12 @@ export function ThemeWorkbenchPreview({
   theme: ThemeDocument;
   mode: "light" | "dark";
 }) {
+  const [navigationOverride, setNavigation] = useState<NavigationStyle | null>(null);
+  const [outlineOverride, setOutline] = useState<boolean | null>(null);
+  const [menuOpen, setMenuOpen] = useState(false);
+  const [compactTitle, setCompactTitle] = useState(false);
+  const navigation = navigationOverride ?? theme.navigationStyle ?? 'section-view';
+  const outline = outlineOverride ?? theme.rightSidebarOpen ?? true;
   const [root, setRoot] = useState<ShadowRoot | null>(null);
   const attach = useCallback((host: HTMLDivElement | null) => {
     if (host) setRoot(host.shadowRoot ?? host.attachShadow({ mode: "open" }));
@@ -47,11 +54,21 @@ export function ThemeWorkbenchPreview({
   }, [theme, mode]);
   // WebKit does not register @font-face inside a shadow tree. Register the
   // same region-scoped families in the document for portable font previews.
-  const fontCss = useMemo(() => theme.design ? compileThemeCss({ ...theme.design, css: "" }, "preview") : "", [theme.design]);
+  const fontCss = useMemo(() => { try { return theme.design ? compileThemeCss({ ...theme.design, css: "" }, "preview") : ""; } catch { return ''; } }, [theme.design]);
   const plasma =
     theme.plasma?.enabled && theme.design?.supportsPlasma !== false;
   return (
     <>
+      <div className="theme-preview-options" aria-label="Preview controls">
+        <label>Navigation <select aria-label="Preview navigation" value={navigation} onChange={e => setNavigation(e.target.value as NavigationStyle)}>
+          <option value="single-pane">Single pane</option><option value="dual-pane">Dual pane</option><option value="section-view">Dual pane with sections</option>
+        </select></label>
+        <label><input type="checkbox" checked={outline} onChange={e => setOutline(e.target.checked)} />Outline</label>
+        <label><input type="checkbox" checked={menuOpen} onChange={e => setMenuOpen(e.target.checked)} />Menu states</label>
+        <label><input type="checkbox" checked={compactTitle} onChange={e => setCompactTitle(e.target.checked)} />Compact title</label>
+        <button type="button" className="toolbar-button" onClick={() => { setNavigation(null); setOutline(null); }}>Theme defaults</button>
+      </div>
+      <p className="settings-description">Preview at actual text size. Scroll horizontally to inspect every panel; hover items and use Tab to check focus.</p>
       {fontCss ? <style>{fontCss}</style> : null}
       {compiled.error ? (
         <p role="alert">Preview uses visual settings until the CSS is valid.</p>
@@ -114,28 +131,45 @@ export function ThemeWorkbenchPreview({
                   </button>
                 </header>
                 <div
-                  className={`app-frame theme-${mode} ${plasma ? "theme-plasma" : "theme-standard"}`}
+                  className={`app-frame theme-${mode} ${plasma ? "theme-plasma" : "theme-standard"} ${outline ? '' : 'is-outline-hidden'}`}
+                  style={{ gridTemplateColumns: `${navigation === 'single-pane' ? '180px' : '330px'} minmax(360px,1fr)${outline ? ' 160px' : ''}` }}
                   data-theme-region="preview"
                   data-theme-api={theme.design ? "1" : undefined}
                 >
-                  <aside className="folder-pane section-view-folder-pane">
-                    <div className="pane-header"><strong>Sections</strong><button className="icon-button" aria-label="Preview add section"><Plus size={16} /></button></div>
-                    {["Notes", "Ideas", "Projects"].map((name, index) => (
-                      <div key={name} className={`folder-row${index === 0 ? " is-active" : ""}`}>
-                        <button className="folder-select"><span><Folder size={15} /></span><span>{name}</span></button>
-                      </div>
-                    ))}
-                  </aside>
+                  <div className="left-panes" style={{ display: 'grid', gridTemplateColumns: navigation === 'single-pane' ? '1fr' : '140px minmax(0,1fr)', minWidth: 0 }}>
+                    <aside className={navigation === 'single-pane' ? 'unified-tree-pane' : `folder-pane ${navigation === 'section-view' ? 'section-view-folder-pane' : ''}`}>
+                      <div className="pane-header"><strong>{navigation === 'single-pane' ? 'Notebook' : navigation === 'section-view' ? 'Sections' : 'Folders'}</strong></div>
+                      {["Notes", "Ideas", "Projects"].map((name, index) => navigation === 'single-pane' ? (
+                        <div key={name} className={`unified-tree-row unified-note-row${index === 0 ? ' is-active' : ''}`}><FileText size={15} /><span>{name}</span></div>
+                      ) : (
+                        <div key={name} className={`folder-row${index === 0 ? " is-active" : ""}`}>
+                          <button className="folder-select"><Folder size={15} /><span>{name}</span></button>
+                        </div>
+                      ))}
+                    </aside>
+                    {navigation !== 'single-pane' && <aside className="notes-pane"><div className="pane-header"><strong>Notes</strong></div>
+                      <div className="note-card is-active"><FileText size={15} /><strong>Notes</strong></div>
+                      <div className="note-card"><FileText size={15} /><strong>Another idea</strong></div>
+                    </aside>}
+                  </div>
                   <main className="main-pane">
                     <header className="topbar">
                       <button className="icon-button sidebar-toggle" aria-label="Preview hide sidebar"><PanelLeftClose size={17} /></button>
+                      {compactTitle && <button className="topbar-note-title is-visible"><span>Notes</span></button>}
                       <div className="topbar-actions">
-                        <button className="icon-button" aria-label="Preview editor options"><Ellipsis size={17} /></button>
+                        <div className="note-view-control"><button className="icon-button" aria-label="Preview editor options" onClick={() => setMenuOpen(value => !value)}><Ellipsis size={17} /></button>
+                        {menuOpen && <div className="note-view-dropdown" role="menu" aria-label="Sample editor options">
+                          <button role="menuitem"><span><strong>Enter focus mode</strong><small>Hide navigation and outline</small></span></button>
+                          <div className="note-view-menu-divider" /><div className="note-view-menu-label">Editor width</div>
+                          <button className="is-active" role="menuitemradio" aria-checked="true"><span><strong>Comfortable width</strong><small>Default</small></span><span>✓</span></button>
+                          <button role="menuitemradio" aria-checked="false"><span><strong>Narrow width</strong><small>Hover to check this state</small></span></button>
+                        </div>}
+                        </div>
                         <button className="icon-button outline-toggle" aria-label="Preview show outline"><PanelRightClose size={17} /></button>
                       </div>
                     </header>
                     <div className="note-surface">
-                      <div className="title-shell"><textarea
+                      <div className="title-shell" hidden={compactTitle}><textarea
                         className="note-title-input"
                         aria-label="Preview note title"
                         value="Notes"
@@ -248,7 +282,9 @@ export function ThemeWorkbenchPreview({
                         </select>
                       </div>
                     </div>
+                    <div className="note-status-bar"><span>125 words</span><span>720 characters</span></div>
                   </main>
+                  {outline && <aside className="right-sidebar"><div className="pane-header"><strong>Outline</strong></div><button className="outline-item">A fresh page</button></aside>}
                 </div>
               </div>
             </div>

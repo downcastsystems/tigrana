@@ -1,3 +1,5 @@
+import { recoveryTheme } from "./lib/themeCatalog";
+import { themeCatalogWarnings } from "./lib/bundledThemes";
 import { readableThemeText, themeVariables } from "./lib/themeRuntime";
 import { classicThemes } from "./lib/bundledThemes";
 import { quickAppearanceStyles } from "./lib/quickAppearance";
@@ -789,13 +791,14 @@ export default function App() {
   backlinkPaneVisibleRef.current = outlineVisible && rightSidebarMode === "backlinks";
   const resolvedTheme = colorScheme === "system" ? (prefersDark ? "dark" : "light") : colorScheme;
   const customTheme = useMemo(() => readTheme(metadata.appearance?.customTheme), [metadata.appearance?.customTheme]);
+  const invalidNotebookTheme = !!metadata.appearance?.customTheme && !customTheme;
   const themePreset = useMemo(() => {
-    const base = getThemePreset(themePresetId);
+    const base = getThemePreset(invalidNotebookTheme ? "default" : themePresetId);
     if (!customTheme) return base;
     return { ...base, accent: { light: customTheme.light.accent, dark: customTheme.dark.accent },
       appBackground: { light: customTheme.light.background, dark: customTheme.dark.background },
       tokens: { light: customTheme.light, dark: customTheme.dark } };
-  }, [themePresetId, customTheme]);
+  }, [themePresetId, customTheme, invalidNotebookTheme]);
   const activeThemeColors = themeColors[resolvedTheme];
   const quickAppearance = metadata.appearance?.quickAppearance;
   const accentTitlebar = quickAppearance?.coloredTitlebar ?? savedAccentTitlebar;
@@ -809,6 +812,7 @@ export default function App() {
   // Legacy notebook preferences are overlaid without rewriting saved metadata.
   // Both old presets and portable themes use the same renderer and preview document.
   const renderedTheme = useMemo<ThemeDocument>(() => {
+    if (invalidNotebookTheme) return recoveryTheme;
     if (customTheme) return customTheme;
     const base = classicThemes.find(t => t.id === themePresetId) ?? classicThemes[0];
     const palette = (mode: "light" | "dark") => {
@@ -821,7 +825,18 @@ export default function App() {
     };
     return { ...base, light: palette("light"), dark: palette("dark"),
       appFontFamily, appFontSize, editorFontFamily, editorFontSize, accentTitlebar: savedAccentTitlebar };
-  }, [customTheme, themePresetId, themeColors, quickAppearance, appFontFamily, appFontSize, editorFontFamily, editorFontSize, savedAccentTitlebar]);
+  }, [customTheme, invalidNotebookTheme, themePresetId, themeColors, quickAppearance, appFontFamily, appFontSize, editorFontFamily, editorFontSize, savedAccentTitlebar]);
+  useEffect(() => {
+    const variables = themeVariables(renderedTheme, resolvedTheme, 'notebook');
+    const root = document.documentElement.style;
+    const roles = Object.entries(variables).filter(([key]) => key.startsWith('--tigrana-'));
+    for (const [key, value] of roles) root.setProperty(key, value);
+    if (quickAppearance?.accentColor) {
+      root.setProperty('--tigrana-accent', quickAppearance.accentColor);
+      root.setProperty('--tigrana-selected-text', readableThemeText(quickAppearance.accentColor));
+    }
+    return () => { for (const [key] of roles) root.removeProperty(key); };
+  }, [renderedTheme, resolvedTheme, quickAppearance?.accentColor]);
   const selectedFolderTitle = useMemo(() => displayFolderName(selectedFolder, folders, workspace), [folders, selectedFolder, workspace]);
   const selectedSection = useMemo(() => getTopLevelFolderPath(selectedFolder), [selectedFolder]);
   const selectedSectionTitle = useMemo(
@@ -5404,6 +5419,11 @@ export default function App() {
         />
       ) : null}
 
+      {invalidNotebookTheme ? <div className="theme-recovery-notice" role="alert"><strong>This notebook’s theme could not be loaded. Showing Default.</strong><p>Your saved theme has been kept. Open Settings to choose another theme or import a corrected version.</p><button className="toolbar-button" onClick={() => { setSettingsSection('appearance'); setSettingsOpen(true); }}>Open Appearance</button></div> : null}
+      {themeCatalogWarnings.length > 0 ? <div className="theme-recovery-notice" role="alert">
+        <strong>Some themes could not be loaded. Default is available.</strong>
+        {themeCatalogWarnings.map(message => <p key={message}>{message}</p>)}
+      </div> : null}
       <ThemeStyles theme={renderedTheme} mode={resolvedTheme} onReset={resetThemeAppearance} />
       {settingsOpen ? (
           <SettingsModal

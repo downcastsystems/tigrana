@@ -52,4 +52,27 @@ html[data-theme-preset="default"][data-theme="dark"] [data-theme-region] :is(.Pr
 .app-shell[data-plasma] [data-theme-region][data-theme-api="1"] .note-surface { background-color: transparent; }
 .app-shell[data-plasma] [data-theme-region][data-theme-api="1"] :is(.folder-pane, .notes-pane, .unified-tree-pane, .right-sidebar) { background-color: color-mix(in srgb, var(--tigrana-surface, var(--surface)) var(--plasma-panel-opacity, 72%), transparent); }
 
+
+/* Shared roles keep all interaction states and small text consistent. */
+[data-theme-region] .note-view-dropdown button.is-active { background: var(--tigrana-menu-selected-background); color: var(--tigrana-menu-selected-text); }
+[data-theme-region] .note-view-dropdown button:hover { background: var(--tigrana-hover-background); color: var(--tigrana-hover-text); }
+[data-theme-region] .note-view-dropdown button:is(.is-active, :hover) :is(strong, small) { color: inherit; }
+[data-theme-region] :is(.folder-row,.note-row,.note-card,.unified-note-row,.unified-folder-row):hover { background: var(--tigrana-hover-background); color: var(--tigrana-hover-text); }
+[data-theme-region] :is(.folder-row,.note-row,.note-card,.unified-note-row,.unified-folder-row).is-active { background: var(--tigrana-accent); color: var(--tigrana-selected-text); }
+[data-theme-region] .note-title-input { font-size: var(--tigrana-font-title); }
+[data-theme-region] .topbar-note-title { font-size: var(--tigrana-font-compact-title); }
+[data-theme-region] :is(.folder-row,.note-row,.note-card,.unified-tree-row,.pane-header,.folder-select) { font-size: var(--tigrana-font-navigation); }
+[data-theme-region] .note-tab { font-size: var(--tigrana-font-tab); }
+[data-theme-region] .note-view-dropdown strong { font-size: var(--tigrana-font-menu); }
+[data-theme-region] :is(.note-view-dropdown small,.note-view-menu-label) { font-size: var(--tigrana-font-secondary); }
+[data-theme-region] .note-status-bar { font-size: var(--tigrana-font-status); }
+}
+@layer tigrana-api {
+/* Portaled menus and Settings consume safe role values, never custom theme CSS. */
+.settings-nav-item.is-active, .context-menu button:hover, .app-menu button:hover {
+  background: var(--tigrana-menu-selected-background, var(--accent));
+  color: var(--tigrana-menu-selected-text, var(--accent-contrast));
+}
+.context-menu button, .app-menu button { font-size: var(--tigrana-font-menu, 14px); }
+.context-menu button:hover small, .app-menu button:hover small { color: inherit; }
 }

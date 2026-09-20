@@ -599,6 +599,6 @@ it("keeps Default read-only and lets legacy presets revert after saving", async 
     await act(async () => button(host, "Revert to defaults").click());
     await act(async () => button(host, "Save and use").click());
     await act(async () => button(host, "Confirm and save").click());
-    expect(apply).toHaveBeenLastCalledWith({ ...nord, id: saved.id, name: saved.name, baseThemeId: "nord" });
+    expect(apply).toHaveBeenLastCalledWith({ ...nord, id: saved.id, name: saved.name, baseThemeId: "nord", baseThemeSnapshot: nord });
   } finally { await act(async () => root.unmount()); }
 });

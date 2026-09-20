@@ -54,8 +54,66 @@ pub fn save_theme(app: AppHandle, theme: Value, expected: Option<Value>) -> Resu
     save_in_dir(&dir, theme, expected)
 }
 
+fn number_value(n: f64) -> Value {
+    if n.fract() == 0.0 { Value::from(n as i64) } else { Value::from(n) }
+}
 fn normalize_theme(theme: &Value) -> Result<Value, String> {
+    normalize_theme_inner(theme, true)
+}
+fn normalize_theme_inner(theme: &Value, allow_base: bool) -> Result<Value, String> {
     let mut clean = serde_json::Map::new();
+    if let Some(base) = theme.get("baseThemeSnapshot") {
+        if !allow_base { return Err("Nested original theme snapshots are not supported".into()); }
+        let base = normalize_theme_inner(base, false)?;
+        if base["id"] != theme["baseThemeId"] { return Err("Original theme ID does not match the snapshot".into()); }
+        clean.insert("baseThemeSnapshot".into(), base);
+    }
+    if let Some(typography) = theme.get("typography") {
+        let values = typography.as_object().ok_or("Invalid typography settings")?;
+        let mut sizes = serde_json::Map::new();
+        for (key, value) in values {
+            if !["title", "compactTitle", "navigation", "tab", "menu", "secondary", "status"].contains(&key.as_str()) { return Err("Unknown typography role".into()); }
+            let n = value.as_f64().ok_or("Invalid typography size")?;
+            if !(11.0..=if key == "title" {96.0} else {32.0}).contains(&n) { return Err("Invalid typography size".into()); }
+            sizes.insert(key.clone(), number_value(n));
+        }
+        clean.insert("typography".into(), Value::Object(sizes));
+    }
+    if let Some(controls) = theme.get("controls") {
+        let controls = controls.as_array().ok_or("Invalid theme controls")?;
+        if controls.len() > 24 { return Err("Use at most 24 theme controls".into()); }
+        let mut ids = std::collections::HashSet::new();
+        let mut result = Vec::new();
+        for control in controls {
+            let id = control["id"].as_str().ok_or("Invalid control ID")?;
+            if id.is_empty() || id.len() > 48 || !id.as_bytes()[0].is_ascii_lowercase() || !id.bytes().all(|b| b.is_ascii_lowercase() || b.is_ascii_digit() || b == b'-') || !ids.insert(id) { return Err("Theme controls need unique lowercase IDs".into()); }
+            let label = control["label"].as_str().ok_or("Invalid control label")?;
+            if label.trim().is_empty() || label.encode_utf16().count() > 80 { return Err("Invalid control label".into()); }
+            let mut c = serde_json::Map::new();
+            c.insert("id".into(), Value::from(id)); c.insert("label".into(), Value::from(label.trim()));
+            let kind = control["type"].as_str().ok_or("Invalid control type")?;
+            c.insert("type".into(), Value::from(kind));
+            match kind {
+                "toggle" => { c.insert("value".into(), Value::from(control["value"].as_bool().ok_or("Invalid toggle")?)); }
+                "color" => {
+                    let color = control["value"].as_str().ok_or("Invalid control color")?;
+                    if color.len() != 7 || !color.starts_with('#') || !color.as_bytes()[1..].iter().all(u8::is_ascii_hexdigit) { return Err("Invalid control color".into()); }
+                    c.insert("value".into(), Value::from(color.to_ascii_lowercase()));
+                }
+                "range" => {
+                    let min = control["min"].as_f64().ok_or("Invalid range")?;
+                    let max = control["max"].as_f64().ok_or("Invalid range")?;
+                    let step = control["step"].as_f64().ok_or("Invalid range")?;
+                    let value = control["value"].as_f64().ok_or("Invalid range")?;
+                    if min < -1000.0 || max > 1000.0 || max <= min || step <= 0.0 || step > max - min || !(min..=max).contains(&value) { return Err("Invalid range".into()); }
+                    for (key, n) in [("min",min),("max",max),("step",step),("value",value)] { c.insert(key.into(), number_value(n)); }
+                }
+                _ => return Err("Invalid control type".into()),
+            }
+            result.push(Value::Object(c));
+        }
+        clean.insert("controls".into(), Value::Array(result));
+    }
     if !matches!(theme["schemaVersion"].as_u64(), Some(1 | 2)) {
         return Err("Unsupported theme version".into());
     }
@@ -205,7 +263,7 @@ fn normalize_theme(theme: &Value) -> Result<Value, String> {
             colors.insert(key.into(), Value::from(color.to_ascii_lowercase()));
         }
         // Optional text colors preserve legacy snapshots and their conflict fingerprints.
-        for key in ["editorText", "selectedText", "highlightText", "highlightBackground"] {
+        for key in ["editorText", "selectedText", "highlightText", "highlightBackground", "menuSelectedBackground", "menuSelectedText", "hoverBackground", "hoverText"] {
             if let Some(value) = theme[mode].get(key) {
                 let color = value.as_str().ok_or_else(|| format!("Invalid {mode} {key} color"))?;
                 if color.len() != 7 || !color.starts_with('#')
@@ -372,6 +430,24 @@ fn save_in_dir(dir: &Path, theme: Value, expected: Option<Value>) -> Result<(), 
 mod tests {
     use super::*;
     use serde_json::json;
+    #[test]
+    fn preserves_authoring_options_and_rejects_invalid_originals() {
+        let palette = json!({"background":"#112233","surface":"#112233","surfaceSoft":"#112233","surfaceStrong":"#112233","surfaceMuted":"#112233","border":"#112233","text":"#ffffff","textMuted":"#aaaaaa","accent":"#225588","titlebar":"#112233","menuSelectedText":"#ABCDEF"});
+        let base = json!({"schemaVersion":1,"id":"base","name":"Base","light":palette,"dark":palette,"appFontFamily":"system-ui","editorFontFamily":"serif","appFontSize":14,"editorFontSize":17,"accentTitlebar":false});
+        let mut copy = base.clone();
+        copy["id"] = json!("copy"); copy["baseThemeId"] = json!("base"); copy["baseThemeSnapshot"] = base.clone();
+        copy["typography"] = json!({"menu":20,"status":18});
+        copy["controls"] = json!([{"id":"border","label":"Border","type":"range","min":0,"max":8,"step":1,"value":3},{"id":"art","label":"Art","type":"toggle","value":true},{"id":"ink","label":"Ink","type":"color","value":"#ABCDEF"}]);
+        let clean = normalize_theme(&copy).unwrap();
+        assert_eq!(clean["typography"]["menu"], json!(20));
+        assert_eq!(clean["controls"][2]["value"], json!("#abcdef"));
+        assert_eq!(clean["baseThemeSnapshot"]["id"], json!("base"));
+        assert_eq!(clean["dark"]["menuSelectedText"], json!("#abcdef"));
+        let mut invalid = copy.clone(); invalid["controls"][0]["value"] = json!(20); assert!(normalize_theme(&invalid).is_err());
+        invalid = copy.clone(); invalid["typography"]["status"] = json!(5); assert!(normalize_theme(&invalid).is_err());
+        invalid = copy.clone(); invalid["baseThemeSnapshot"]["baseThemeSnapshot"] = base; assert!(normalize_theme(&invalid).is_err());
+    }
+
     #[test]
     fn saves_atomically_and_rejects_stale_updates_and_paths() {
         let dir = std::env::temp_dir().join(format!("tigrana-themes-{}", uuid::Uuid::new_v4()));

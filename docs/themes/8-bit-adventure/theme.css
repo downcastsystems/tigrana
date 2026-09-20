@@ -9,6 +9,7 @@
 .note-tab { border-radius: 0; font-weight: 400; }
 .note-tab.is-active { background: var(--tigrana-accent); color: var(--tigrana-selected-text); box-shadow: inset 0 0 0 1px var(--tigrana-text); }
 .folder-pane, .notes-pane, .unified-tree-pane, .main-pane, .right-sidebar { border: 3px solid var(--tigrana-accent); }
+.folder-pane, .notes-pane, .unified-tree-pane, .main-pane, .right-sidebar { border-width: calc(var(--tigrana-control-border-width, 3) * 1px); }
 .right-sidebar { border-color: var(--tigrana-highlight-background); }
 .pane-header { padding: 12px; font-size: 20px; text-transform: uppercase; font-weight: 400; letter-spacing: 0.04em; background: transparent; border-bottom: 1px solid var(--tigrana-border); }
 .topbar { border-bottom: 1px solid var(--tigrana-border); }
@@ -28,13 +29,10 @@
 .pane-resizer { background: transparent; }
 .pane-resizer::after { opacity: 0; }
 .pane-resizer:hover::after, .pane-resizer:focus-visible::after { opacity: 1; }
-.topbar-note-title { font-size: 20px; font-weight: 400; }
+.topbar-note-title { font-weight: 400; }
 
 /* Keep the pixel font readable in the editor options menu. */
-.note-view-dropdown strong { font-size: 20px; font-weight: 400; }
-.note-view-dropdown small { font-size: 17px; white-space: normal; }
-.note-view-menu-label { font-size: 16px; font-weight: 400; }
+.note-view-dropdown strong { font-weight: 400; }
+.note-view-dropdown small { white-space: normal; }
+.note-view-menu-label { font-weight: 400; }
 
-.note-view-dropdown button.is-active, .note-view-dropdown button:hover { background: var(--tigrana-accent); color: var(--tigrana-selected-text); }
-.note-view-dropdown button.is-active strong, .note-view-dropdown button.is-active small, .note-view-dropdown button:hover strong, .note-view-dropdown button:hover small { color: inherit; }
-.note-status-bar { font-size: 18px; }

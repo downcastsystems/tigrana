@@ -68,7 +68,7 @@
   background-position: right 12px bottom 12px;
   background-size: min(42%, 340px) auto;
   background-repeat: no-repeat;
-  opacity: calc(100% - var(--tigrana-editor-opacity, 82%));
+  opacity: calc((100% - var(--tigrana-editor-opacity, 82%)) * var(--tigrana-control-character, 1));
   pointer-events: none;
 }
 .ProseMirror h1, .ProseMirror h2 {

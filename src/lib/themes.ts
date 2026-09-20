@@ -1,3 +1,4 @@
+import { parseTypography, parseControls, type ThemeTypography, type ThemeControl } from "./themeOptions";
 import { parseThemeSurfaces, type ThemeSurfaces } from "./themeSurfaces";
 import { parseThemeDesign, type ThemeDesign } from "./themeDesign";
 import { compileThemeCss } from "./themeCss";
@@ -17,7 +18,7 @@ export const paletteKeys = [
   "accent",
   "titlebar",
 ] as const;
-export const optionalPaletteKeys = ["editorText", "selectedText", "highlightText", "highlightBackground"] as const;
+export const optionalPaletteKeys = ["editorText", "selectedText", "highlightText", "highlightBackground", "menuSelectedBackground", "menuSelectedText", "hoverBackground", "hoverText"] as const;
 export type ThemePalette = Record<(typeof paletteKeys)[number], string> & Partial<Record<(typeof optionalPaletteKeys)[number], string>>;
 export type PlasmaSettings = {
   flow?: number;
@@ -54,6 +55,9 @@ export function parsePlasma(value: unknown): PlasmaSettings {
   };
 }
 export type ThemeDocument = {
+  typography?: ThemeTypography;
+  controls?: ThemeControl[];
+  baseThemeSnapshot?: ThemeDocument;
   baseThemeId?: string;
   rightSidebarOpen?: boolean;
   navigationStyle?: "dual-pane" | "single-pane" | "section-view";
@@ -73,12 +77,15 @@ export type ThemeDocument = {
 };
 
 /** Rebuild in canonical order, validating every field before using imported CSS values. */
-export function parseTheme(value: unknown): ThemeDocument {
+export function parseTheme(value: unknown, allowBase = true): ThemeDocument {
   if (!value || typeof value !== "object")
     throw new Error("Theme must be a JSON object.");
   const v = value as Record<string, unknown>;
   if (v.schemaVersion !== 1 && v.schemaVersion !== 2)
     throw new Error("Unsupported theme version.");
+  if (v.baseThemeSnapshot !== undefined && !allowBase) throw new Error("Nested original theme snapshots are not supported.");
+  const base = v.baseThemeSnapshot === undefined ? undefined : parseTheme(v.baseThemeSnapshot, false);
+  if (base && base.id !== v.baseThemeId) throw new Error("Original theme ID does not match the snapshot.");
   const design = v.schemaVersion === 2 ? parseThemeDesign(v.design) : undefined;
   if (design) compileThemeCss(design, "validation");
   if (typeof v.id !== "string" || !/^[a-zA-Z0-9_-]{1,80}$/.test(v.id))
@@ -122,6 +129,9 @@ export function parseTheme(value: unknown): ThemeDocument {
   if (v.navigationStyle !== undefined && v.navigationStyle !== "dual-pane" && v.navigationStyle !== "single-pane" && v.navigationStyle !== "section-view")
     throw new Error("Invalid navigation style.");
   return {
+    ...(v.typography === undefined ? {} : { typography: parseTypography(v.typography) }),
+    ...(v.controls === undefined ? {} : { controls: parseControls(v.controls) }),
+    ...(base ? { baseThemeSnapshot: base } : {}),
     ...(v.baseThemeId === undefined ? {} : { baseThemeId: v.baseThemeId }),
     ...(v.rightSidebarOpen === undefined ? {} : { rightSidebarOpen: v.rightSidebarOpen }),
     ...(v.navigationStyle === undefined ? {} : { navigationStyle: v.navigationStyle }),

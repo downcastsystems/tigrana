@@ -6354,3 +6354,15 @@ html[data-theme] .theme-conflict .theme-actions .toolbar-button.is-recommended:h
 .settings-appearance-divider { width: 100%; border: 0; border-top: 1px solid var(--border); margin: 24px 0; }
 .settings-quick-appearance { margin-top: 0; padding-top: 0; }
 .settings-quick-appearance .theme-color-field { margin: 16px 0; }
+
+.theme-recovery-notice { position: fixed; z-index: 20000; top: 60px; left: 20px; right: 20px; max-height: 35vh; overflow: auto; padding: 16px; color: #fff; background: #40252a; border: 1px solid #e49caa; border-radius: 8px; font: 14px/1.5 system-ui; }
+.theme-role-settings { margin: 20px 0; padding: 12px; border: 1px solid var(--border); border-radius: 8px; min-width: 0; }
+.theme-role-settings legend { font-weight: 650; }
+.theme-role-settings input[type="number"] { width: 120px; }
+.theme-role-settings textarea { width: 100%; min-height: 160px; }
+.theme-control-value { display: flex; align-items: center; gap: 8px; }
+.theme-control-value output { min-width: 3ch; }
+.theme-preview-options { display: flex; flex-wrap: wrap; gap: 12px; margin: 8px 0; align-items: center; }
+.theme-preview-options label { display: flex; gap: 6px; align-items: center; }
+.theme-health { margin: 18px 0; padding: 12px; border: 1px solid var(--border); border-radius: 8px; }
+.theme-health li { margin: 8px 0; }

@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { describe, expect, it } from 'vitest';
-import { allBuiltInThemes, bundledThemes, classicThemes } from './bundledThemes';
+import { allBuiltInThemes, bundledThemes, classicThemes, builtInThemeDocuments, themeCatalogWarnings } from './bundledThemes';
 import { parseTheme, themeAppearance } from './themes';
 import { themeStylesheet, readableThemeText } from './themeRuntime';
 import { encodeThemePackage, decodeThemePackage } from './themePackage';
@@ -15,6 +15,10 @@ function contrast(a: string, b: string) {
   return (values[0] + .05) / (values[1] + .05);
 }
 describe('built-in theme catalog', () => {
+  it('strictly validates every source package even when runtime recovery skips one', () => {
+    expect(themeCatalogWarnings).toEqual([]);
+    for (const document of builtInThemeDocuments) expect(() => parseTheme(document)).not.toThrow();
+  });
   it('retains legacy IDs and has unique names and IDs', () => {
     expect(classicThemes.map(t => t.id)).toEqual(['default', 'atom', 'solarized', 'dracula', 'nord', 'gruvbox', 'catppuccin-frappe', 'catppuccin-macchiato', 'catppuccin-mocha']);
     expect(new Set(allBuiltInThemes.map(t => t.id)).size).toBe(allBuiltInThemes.length);

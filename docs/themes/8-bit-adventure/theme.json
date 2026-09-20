@@ -68,5 +68,22 @@
     "editor": 85,
     "outline": 85,
     "titlebar": 85
-  }
+  },
+  "typography": {
+    "compactTitle": 20,
+    "menu": 20,
+    "secondary": 17,
+    "status": 18
+  },
+  "controls": [
+    {
+      "id": "border-width",
+      "label": "Panel border width",
+      "type": "range",
+      "min": 1,
+      "max": 6,
+      "step": 1,
+      "value": 3
+    }
+  ]
 }
