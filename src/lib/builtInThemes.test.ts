@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import { describe, expect, it } from 'vitest';
 import { allBuiltInThemes, bundledThemes, classicThemes, builtInThemeDocuments, themeCatalogWarnings } from './bundledThemes';
-import { parseTheme, themeAppearance } from './themes';
+import { parseTheme, themeAppearance, themesMatch } from './themes';
 import { themeStylesheet, readableThemeText } from './themeRuntime';
 import { encodeThemePackage, decodeThemePackage } from './themePackage';
 
@@ -28,6 +28,11 @@ describe('built-in theme catalog', () => {
   for (const theme of allBuiltInThemes) {
     it(`${theme.name} validates, exports, and renders in both modes`, () => {
       expect(parseTheme(theme)).toEqual(theme);
+      const nativeSnapshot = JSON.parse(JSON.stringify(theme, (_key, value) =>
+        value && typeof value === 'object' && !Array.isArray(value)
+          ? Object.fromEntries(Object.entries(value).sort(([a], [b]) => a.localeCompare(b))) : value));
+      expect(themesMatch(theme, nativeSnapshot)).toBe(true);
+      expect(themesMatch(theme, { ...nativeSnapshot, editorFontSize: theme.editorFontSize + 1 })).toBe(false);
       expect(theme.schemaVersion).toBe(2);
       expect(themeAppearance(theme).rightSidebarOpen).toBe(!["builtin-minimal", "builtin-baseline", "builtin-typewriter"].includes(theme.id));
       expect(themeAppearance(theme).navigationStyle).toBe(["builtin-minimal", "builtin-baseline", "builtin-old-basement-pc"].includes(theme.id) ? "single-pane" : "section-view");

@@ -287,7 +287,9 @@ export function ThemeBuilder({
       name: uniqueThemeName(`${sourceTheme.name} copy`, themes),
     });
   }
-  const currentIsBundled = useMemo(() => isBundledTheme(current), [current]);
+  // A notebook can retain an older built-in snapshot. Its origin does not
+  // change just because a newer release has different contents.
+  const currentIsBundled = !!current && bundledThemes.some(theme => theme.id === current.id);
   const update = (patch: Partial<ThemeDocument>) =>
     setDraft(draft ? { ...draft, ...patch } : null);
   return (

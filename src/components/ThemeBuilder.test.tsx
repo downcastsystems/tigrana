@@ -539,6 +539,37 @@ it("offers bundled Starfall, keeps its assets portable, and edits a personal cop
   } finally { await act(async () => root.unmount()); }
 });
 
+it("keeps an older built-in under Built-in without saving it to the library", async () => {
+  const latest = bundledThemes.find(theme => theme.id === "builtin-typewriter")!;
+  const old = { ...latest, design: { ...latest.design!, version: "0.9.0", css: ".topbar { border-bottom: 1px solid red; }" } };
+  const host = document.createElement("div"), root = createRoot(host), apply = vi.fn();
+  try {
+    await act(async () => root.render(<ThemeBuilder current={old} seed={old} onApply={apply} />));
+    const picker = host.querySelector<HTMLSelectElement>('[aria-label="Theme"]')!;
+    expect(picker.value).toBe(`bundled:${latest.id}`);
+    expect(picker.selectedOptions[0].parentElement?.getAttribute("label")).toBe("Built-in");
+    expect(host.querySelector('optgroup[label="Saved"]')).toBeNull();
+    expect((await listThemes()).themes).toHaveLength(0);
+    await act(async () => button(host, "Edit theme").click());
+    expect(host.querySelector<HTMLInputElement>('[aria-label="Theme name"]')!.value).toBe("Typewriter copy");
+  } finally { await act(async () => root.unmount()); }
+});
+
+it("recognizes Typewriter after native storage reorders its JSON fields", async () => {
+  const latest = bundledThemes.find(theme => theme.id === "builtin-typewriter")!;
+  const stored = JSON.parse(JSON.stringify(latest, (_key, value) =>
+    value && typeof value === "object" && !Array.isArray(value)
+      ? Object.fromEntries(Object.entries(value).sort(([a], [b]) => a.localeCompare(b))) : value));
+  const host = document.createElement("div"), root = createRoot(host);
+  try {
+    await act(async () => root.render(<ThemeReconciliation current={stored} onApply={vi.fn()} />));
+    expect(host.textContent).toBe("");
+    const hashes = await themeDifferenceFingerprint(latest, stored);
+    expect(hashes.notebook).toBe(hashes.appWide);
+    expect((await listThemes()).themes).toHaveLength(0);
+  } finally { await act(async () => root.unmount()); }
+});
+
 it("does not ask to register an unchanged built-in theme in the shared library", async () => {
   const host = document.createElement("div"), root = createRoot(host);
   try {

@@ -160,8 +160,16 @@ export function readTheme(value: unknown): ThemeDocument | null {
     return null;
   }
 }
+function canonicalThemeJson(theme: ThemeDocument) {
+  // Native JSON storage sorts object keys. Typography, assets, and original
+  // snapshots must compare by value, while ordered control arrays stay ordered.
+  return JSON.stringify(parseTheme(theme), (_key, value) =>
+    value && typeof value === "object" && !Array.isArray(value)
+      ? Object.fromEntries(Object.keys(value).sort().map(key => [key, value[key]]))
+      : value);
+}
 export function themesMatch(a: ThemeDocument, b: ThemeDocument) {
-  return JSON.stringify(parseTheme(a)) === JSON.stringify(parseTheme(b));
+  return canonicalThemeJson(a) === canonicalThemeJson(b);
 }
 /** Hash normalized content, including CSS/assets, rather than the creator's version label. */
 export async function themeDifferenceFingerprint(
@@ -169,7 +177,7 @@ export async function themeDifferenceFingerprint(
   appWide: ThemeDocument | null,
 ) {
   const fingerprint = async (theme: ThemeDocument) => {
-    const bytes = new TextEncoder().encode(JSON.stringify(parseTheme(theme)));
+    const bytes = new TextEncoder().encode(canonicalThemeJson(theme));
     const digest = await crypto.subtle.digest("SHA-256", bytes);
     return Array.from(new Uint8Array(digest), (byte) =>
       byte.toString(16).padStart(2, "0"),
