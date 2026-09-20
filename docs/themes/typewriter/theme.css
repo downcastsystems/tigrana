@@ -12,7 +12,7 @@
   border: 1px solid var(--tigrana-border);
 }
 .pane-header { font-weight: 400; border-bottom: 1px solid var(--tigrana-border); }
-.topbar { border-bottom: 1px solid var(--tigrana-border); }
+.topbar { border-bottom: 0; }
 .note-title-input { font-weight: 400; letter-spacing: -0.025em; }
 .topbar-note-title { font-family: var(--editor-font-family); font-weight: 400; }
 .ProseMirror h1, .ProseMirror h2, .ProseMirror h3 { color: var(--tigrana-editor-text); }
