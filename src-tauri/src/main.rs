@@ -1,6 +1,7 @@
 use fs2::FileExt;
 mod assets;
 mod link_index;
+mod menu_selection;
 mod note_history;
 mod notebook_metadata;
 mod notebook_paths;
@@ -2158,8 +2159,46 @@ fn manage_notebooks_from_menu(app: &AppHandle) {
     }
 }
 
+fn collect_menu_checks(
+    items: Vec<tauri::menu::MenuItemKind<Wry>>,
+    checks: &mut HashMap<String, CheckMenuItem<Wry>>,
+) -> tauri::Result<()> {
+    for item in items {
+        if let Some(check) = item.as_check_menuitem() {
+            checks.insert(check.id().as_ref().to_string(), check.clone());
+        } else if let Some(submenu) = item.as_submenu() {
+            collect_menu_checks(submenu.items()?, checks)?;
+        }
+    }
+    Ok(())
+}
+
+fn sync_navigation_menu_selection(menu: &Menu<Wry>, command: &str) -> tauri::Result<()> {
+    let mut checks = HashMap::new();
+    collect_menu_checks(menu.items()?, &mut checks)?;
+    menu_selection::select_navigation_item(command, |id, checked| {
+        if let Some(item) = checks.get(id) {
+            item.set_checked(checked)?;
+        }
+        Ok(())
+    })
+}
+
 fn emit_menu_command(app: &AppHandle, command: &str) {
     if let Some(window) = active_menu_window(app) {
+        if menu_selection::NAVIGATION_ITEMS.contains(&command) {
+            // macOS uses the current app-wide menu, not a window's cached menu.
+            let menu = if cfg!(target_os = "macos") {
+                app.menu()
+            } else {
+                window.menu().or_else(|| app.menu())
+            };
+            if let Some(menu) = menu {
+                if let Err(error) = sync_navigation_menu_selection(&menu, command) {
+                    eprintln!("Could not synchronize navigation menu: {error}");
+                }
+            }
+        }
         dispatch_frontend_menu_action(
             &window,
             "tigrana-menu-command",
