@@ -419,6 +419,7 @@ fn save_in_dir(dir: &Path, theme: Value, expected: Option<Value>) -> Result<(), 
     }
     let temp = dir.join(format!(".{}.tmp", uuid::Uuid::new_v4()));
     let contents = serde_json::to_string_pretty(&theme).map_err(|e| e.to_string())?;
+    if contents.len() + 1 > 8 * 1024 * 1024 { return Err("Theme including its original snapshot must be smaller than 8 MB".into()); }
     fs::write(&temp, format!("{contents}\n")).map_err(|e| e.to_string())?;
     fs::rename(&temp, &path).map_err(|e| {
         let _ = fs::remove_file(&temp);

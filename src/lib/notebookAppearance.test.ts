@@ -20,6 +20,15 @@ const defaults = {
 };
 
 describe("Notebook appearance", () => {
+  it("recovers a broken notebook snapshot without changing its saved data", () => {
+    const appearance = { customTheme: { ...exampleTheme(), schemaVersion: 99 }, appFontSize: 30, navigationStyle: "single-pane" as const, colorScheme: "dark" as const };
+    const before = JSON.stringify(appearance);
+    const resolved = resolveNotebookAppearance(appearance as unknown as NotebookAppearance, defaults, ["default"]);
+    expect(resolved.appFontSize).toBe(14);
+    expect(resolved.navigationStyle).toBe("section-view");
+    expect(resolved.colorScheme).toBe("dark");
+    expect(JSON.stringify(appearance)).toBe(before);
+  });
   it("uses all snapshot settings even if legacy appearance mirrors are absent or different", () => {
     const theme = exampleTheme();
     const appearance = { customTheme: theme, editorFontFamily: "Old font", accentTitlebar: false };

@@ -233,6 +233,7 @@ describe("Note navigation persistence", () => {
         await act(async () => { picker.value = `bundled:${theme.id}`; picker.dispatchEvent(new Event("change", { bubbles: true })); });
         await waitFor(() => JSON.parse(demoPersistence.get("tigrana-meta:/demo/Tigrana") ?? "{}").appearance?.customTheme?.id === theme.id);
         expect(document.documentElement.style.getPropertyValue("--editor-font-family")).toBe(theme.editorFontFamily.replace("theme-font-vt323", "tigrana-notebook-vt323"));
+        expect(container.querySelector<HTMLElement>(".app-frame")!.style.getPropertyValue("--editor-font-family")).toBe(theme.editorFontFamily.replace("theme-font-vt323", "tigrana-notebook-vt323"));
         expect(container.querySelector('[data-theme-styles="notebook"]')?.textContent).toContain(`--tigrana-accent:${theme.dark.accent}`);
         expect(container.querySelector(".app-frame")?.getAttribute("data-theme-api")).toBe("1");
         expect(container.querySelector(".app-shell")?.hasAttribute("data-plasma")).toBe(false);

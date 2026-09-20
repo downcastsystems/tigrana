@@ -4,7 +4,7 @@ import { bundledThemes } from './bundledThemes';
 import { exampleTheme } from './themes.fixture';
 import { parseTheme } from './themes';
 import { loadThemeCatalog, recoveryTheme } from './themeCatalog';
-import { originalSnapshot, updateDerivedTheme } from './themeDerivation';
+import { authoringOriginal, originalSnapshot, updateDerivedTheme } from './themeDerivation';
 import { themeVariables, themeStylesheet } from './themeRuntime';
 import { parseControls } from './themeOptions';
 import { checkTheme } from './themeHealth';
@@ -49,6 +49,14 @@ describe('theme authoring and recovery', () => {
       expect(decodeThemePackage(encodeThemePackage(copy))).toEqual(copy);
     }
   });
+  it('supports larger snapshot manifests and rejects unreadably large saved themes', () => {
+    const asset = { mime: 'image/png', data: btoa('\x89PNG\r\n\x1a\n' + '\0'.repeat(1_600_000)) };
+    const base = parseTheme({ ...original(), design: { ...defaultThemeDesign, assets: { 'assets/art.png': asset } } });
+    const copy = parseTheme({ ...base, id: 'copy', baseThemeId: base.id, baseThemeSnapshot: base });
+    expect(decodeThemePackage(encodeThemePackage(copy))).toEqual(copy);
+    const large = parseTheme({ ...base, design: { ...base.design, assets: { 'assets/art.png': asset, 'assets/second.png': asset } } });
+    expect(() => parseTheme({ ...large, id: 'large-copy', baseThemeId: large.id, baseThemeSnapshot: large })).toThrow('smaller than 8 MB');
+  });
   it('keeps edited fields and adopts upstream fixes, including CSS and colors', () => {
     const base = original();
     const custom = parseTheme({ ...base, id: 'custom', name: 'My theme', baseThemeId: base.id, baseThemeSnapshot: base, editorFontSize: 20, dark: { ...base.dark, accent: '#123456' } });
@@ -72,6 +80,25 @@ describe('theme authoring and recovery', () => {
     const latest = parseTheme({ ...base, controls: [{ ...base.controls![0], max: 10 }] });
     expect(() => updateDerivedTheme(custom, latest)).toThrow('Invalid size control');
     expect(custom.controls![0].value).toBe(15);
+  });
+  it('preserves removed controls and local edits when upstream removes a control', () => {
+    const base = parseTheme({ ...original(), controls: [
+      { id: 'art', label: 'Art', type: 'toggle', value: true },
+      { id: 'frame', label: 'Frame', type: 'toggle', value: true },
+    ] });
+    const custom = parseTheme({ ...base, id: 'copy', baseThemeId: base.id, baseThemeSnapshot: base, controls: [{ ...base.controls![1], value: false }] });
+    expect(updateDerivedTheme(custom, base).controls?.map(c => c.id)).toEqual(['frame']);
+    expect(updateDerivedTheme(custom, { ...base, controls: [] }).controls).toEqual(custom.controls);
+    expect(updateDerivedTheme({ ...custom, controls: [] }, base).controls).toEqual([]);
+  });
+  it('establishes matching originals for legacy derived themes, even if the source is missing', () => {
+    const base = original();
+    const legacy = parseTheme({ ...base, id: 'legacy-copy', baseThemeId: base.id });
+    for (const available of [[base], []]) {
+      const snapshot = authoringOriginal(legacy, available);
+      expect(() => parseTheme({ ...legacy, baseThemeId: snapshot.id, baseThemeSnapshot: snapshot })).not.toThrow();
+      expect(snapshot.id).toBe(available.length ? base.id : legacy.id);
+    }
   });
   it('validates role ranges and prevents recursive or mismatched originals', () => {
     const base = original();

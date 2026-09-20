@@ -879,13 +879,14 @@ export default function App() {
     activeTabHistory && activeTabHistory.historyIndex < activeTabHistory.history.length - 1,
   );
   const focusModeActive = !leftVisible && !outlineVisible;
+  const renderedVariables = themeVariables(renderedTheme, resolvedTheme, "notebook");
   const frameStyle = {
     "--folder-pane-width": `${folderPaneWidth}px`,
     "--notes-pane-width": `${notesPaneWidth}px`,
     "--right-pane-width": `${rightPaneWidth}px`,
-    "--app-font-family": appFontFamily,
+    "--app-font-family": renderedVariables["--app-font-family"],
     "--app-font-size": `${appFontSize}px`,
-    "--editor-font-family": editorFontFamily,
+    "--editor-font-family": renderedVariables["--editor-font-family"],
     "--editor-font-size": `${editorFontSize}px`,
   } as CSSProperties;
 

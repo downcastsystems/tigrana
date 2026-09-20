@@ -17,8 +17,10 @@ export function ThemeColorField({
   value,
   onChange,
   cssHint,
+  onReset,
 }: {
   cssHint?: string;
+  onReset?: () => void;
   label: string;
   name: string;
   value: string;
@@ -30,11 +32,12 @@ export function ThemeColorField({
   function commit() {
     const color = normalizeHex(text);
     setText(color ?? value);
-    if (color) onChange(color);
+    if (color && color !== value) onChange(color);
   }
   return (
     <div className="theme-color-field">
       <label htmlFor={id}>{label}{cssHint && <span className="theme-css-hint" title={cssHint} aria-label={cssHint}>Custom CSS</span>}</label>
+      {onReset && <button type="button" className="theme-color-reset" aria-label={`Use automatic ${name}`} onClick={onReset}>Automatic</button>}
       <div className="theme-color-inputs">
         <input
           type="color"

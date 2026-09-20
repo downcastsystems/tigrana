@@ -13,7 +13,8 @@
     "tauri": "tauri",
     "install:app": "npm run tauri -- build --bundles app && rm -rf \"/Applications/Tigrana.app\" && ditto \"src-tauri/target/release/bundle/macos/Tigrana.app\" \"/Applications/Tigrana.app\" && echo \"✓ Installed to /Applications\"",
     "lint": "eslint . --ext ts,tsx --report-unused-disable-directives --max-warnings 0",
-    "postinstall": "patch-package --error-on-fail"
+    "postinstall": "patch-package --error-on-fail",
+    "theme:check": "node scripts/check-theme.mjs"
   },
   "dependencies": {
     "@cruxgarden/plasma-ui": "0.3.0",

@@ -7,6 +7,11 @@ export function originalSnapshot(theme: ThemeDocument): ThemeDocument {
   delete copy.baseThemeId;
   return parseTheme(copy);
 }
+/** Legacy copies may name an original without carrying its historical snapshot. */
+export function authoringOriginal(theme: ThemeDocument, available: ThemeDocument[]): ThemeDocument {
+  return theme.baseThemeSnapshot ?? originalSnapshot(available.find(candidate => candidate.id === theme.baseThemeId) ?? theme);
+}
+
 function record(value: unknown): value is Record<string, unknown> {
   return !!value && typeof value === 'object' && !Array.isArray(value);
 }
@@ -32,13 +37,14 @@ export function updateDerivedTheme(theme: ThemeDocument, latest: ThemeDocument):
   const baseline = originalSnapshot(latest);
   const merged = rebase(theme.baseThemeSnapshot, originalSnapshot(theme), baseline) as ThemeDocument;
   // Merge controls by stable ID, so changing a slider does not freeze all definitions.
-  if (theme.controls && baseline.controls) {
-    merged.controls = baseline.controls.map(control => {
-      const old = theme.baseThemeSnapshot?.controls?.find(c => c.id === control.id);
-      const edited = theme.controls?.find(c => c.id === control.id);
-      return old && edited ? rebase(old, edited, control) as typeof control : control;
+  if (theme.controls !== undefined) {
+    const oldControls = theme.baseThemeSnapshot.controls ?? [];
+    const latestControls = baseline.controls ?? [];
+    const ids = new Set([...latestControls, ...theme.controls].map(c => c.id));
+    merged.controls = [...ids].flatMap(id => {
+      const control = rebase(oldControls.find(c => c.id === id), theme.controls?.find(c => c.id === id), latestControls.find(c => c.id === id));
+      return control === undefined ? [] : [control as NonNullable<ThemeDocument['controls']>[number]];
     });
-    merged.controls.push(...theme.controls.filter(c => !baseline.controls!.some(n => n.id === c.id) && !theme.baseThemeSnapshot?.controls?.some(n => n.id === c.id)));
   }
   return parseTheme({ ...merged, id: theme.id, name: theme.name, baseThemeId: baseline.id, baseThemeSnapshot: baseline });
 }

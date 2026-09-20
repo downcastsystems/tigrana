@@ -2,7 +2,7 @@ import { resolveTypography } from "./themeOptions";
 import type { ThemeDocument } from "./themes";
 import { defaultThemeDesign } from "./themeDesign";
 import { compileThemeCss } from "./themeCss";
-export function themeVariables(theme: ThemeDocument, mode: "light" | "dark", region?: string) {
+export function themeVariables(theme: ThemeDocument, mode: "light" | "dark", region?: string): Record<string, string> {
   const p = theme[mode],
     metrics = theme.design?.metrics ?? defaultThemeDesign.metrics;
   // Packaged fonts have region-specific names, just like the compiler's @font-face rules.

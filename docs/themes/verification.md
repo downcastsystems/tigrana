@@ -44,3 +44,11 @@ target platforms. Asset transport/validation is covered by unit tests. Browser
 checks are recorded above; no pixel-baseline regression suite was introduced.
 
 Gallery hosting and personal CSS snippets remain outside this foundation phase.
+
+## Authoring hardening — September 20, 2026
+
+- 403 frontend tests across 49 files pass, plus lint, TypeScript/production build, native theme tests (2), and the macOS app bundle.
+- New regressions cover original snapshots, three-way updates, removed controls, invalid updates, legacy copies, export limits, typography/interaction roles, startup fallback, preview layouts, and automatic color inheritance.
+- Browser inspection covered Adventure Quest light/dark and menu/compact-title states, actual Old Basement PC menus/status, Starfall Plasma/artwork control, and Default-derived preview. The live editor now resolves packaged fonts exactly as the preview does.
+- `npm run theme:check` validated the source starter, starter export, Starfall and Adventure Quest packages; an invalid schema exited with failure. The starter's secondary text was adjusted to clear the contrast check.
+- Windows native execution was not tested. Palette checks do not measure contrast after custom CSS, image compositing or Plasma effects. The usual Vite large-chunk warning and non-failing Tiptap task-list diagnostic remain.

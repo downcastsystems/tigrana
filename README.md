@@ -150,3 +150,7 @@ Please keep one principle in mind: features should preserve clean, readable Mark
 ## License
 
 Tigrana is free and open-source software released under the [MIT License](LICENSE).
+
+## Theme creation
+
+Build a theme visually, add optional CSS and custom controls, and export a portable package. Start with the [Theme creator guide](docs/themes/creator-guide.md); the [API reference](docs/themes/README.md) covers supported selectors and limits.

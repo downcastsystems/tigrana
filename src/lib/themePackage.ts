@@ -24,7 +24,10 @@ export function encodeThemePackage(theme: ThemeDocument): Uint8Array {
     for (const [path, asset] of Object.entries(design.assets))
       files[path] = Uint8Array.from(atob(asset.data), (c) => c.charCodeAt(0));
   }
-  return zipSync(files);
+  // Never export an archive that our importer would reject (including snapshots).
+  const bytes = zipSync(files);
+  decodeThemePackage(bytes);
+  return bytes;
 }
 export function decodeThemePackage(bytes: Uint8Array): ThemeDocument {
   if (bytes.length > themePackageLimit)
@@ -46,7 +49,7 @@ export function decodeThemePackage(bytes: Uint8Array): ThemeDocument {
       )
         throw new Error(`Unexpected package file: ${file.name}`);
       total += file.originalSize;
-      if (file.originalSize > 2_100_000 || total > themePackageLimit)
+      if (file.originalSize > (/(^|\/)theme\.json$/.test(file.name) ? themePackageLimit : 2_100_000) || total > themePackageLimit)
         throw new Error("Expanded theme package exceeds the size limit.");
       if (file.name.endsWith("/")) {
         if (file.originalSize !== 0)

@@ -55,7 +55,7 @@ html[data-theme-preset="default"][data-theme="dark"] [data-theme-region] :is(.Pr
 
 /* Shared roles keep all interaction states and small text consistent. */
 [data-theme-region] .note-view-dropdown button.is-active { background: var(--tigrana-menu-selected-background); color: var(--tigrana-menu-selected-text); }
-[data-theme-region] .note-view-dropdown button:hover { background: var(--tigrana-hover-background); color: var(--tigrana-hover-text); }
+[data-theme-region] .note-view-dropdown button:not(:disabled):hover { background: var(--tigrana-hover-background); color: var(--tigrana-hover-text); }
 [data-theme-region] .note-view-dropdown button:is(.is-active, :hover) :is(strong, small) { color: inherit; }
 [data-theme-region] :is(.folder-row,.note-row,.note-card,.unified-note-row,.unified-folder-row):hover { background: var(--tigrana-hover-background); color: var(--tigrana-hover-text); }
 [data-theme-region] :is(.folder-row,.note-row,.note-card,.unified-note-row,.unified-folder-row).is-active { background: var(--tigrana-accent); color: var(--tigrana-selected-text); }
@@ -69,10 +69,14 @@ html[data-theme-preset="default"][data-theme="dark"] [data-theme-region] :is(.Pr
 }
 @layer tigrana-api {
 /* Portaled menus and Settings consume safe role values, never custom theme CSS. */
-.settings-nav-item.is-active, .context-menu button:hover, .app-menu button:hover {
+.settings-nav-item.is-active {
   background: var(--tigrana-menu-selected-background, var(--accent));
   color: var(--tigrana-menu-selected-text, var(--accent-contrast));
 }
+.context-menu button:not(:disabled):hover, .app-menu button:not(:disabled):hover {
+  background: var(--tigrana-hover-background, var(--accent));
+  color: var(--tigrana-hover-text, var(--accent-contrast));
+}
 .context-menu button, .app-menu button { font-size: var(--tigrana-font-menu, 14px); }
-.context-menu button:hover small, .app-menu button:hover small { color: inherit; }
+.context-menu button:not(:disabled):hover small, .app-menu button:not(:disabled):hover small { color: inherit; }
 }

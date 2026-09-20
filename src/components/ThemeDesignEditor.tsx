@@ -248,11 +248,6 @@ export function ThemeDesignEditor({
         </label>
         <label>
           License
-          <h3>Generated from Visual settings</h3>
-          <p>Read-only. Updates automatically when you change Visual settings. Your custom rules below are kept separate and are never rewritten.</p>
-          <textarea className="theme-code theme-generated-css" aria-label="Generated visual CSS" readOnly spellCheck={false} value={generatedCss} />
-          <h3>Custom CSS</h3>
-          <p>Use variables such as <code>var(--tigrana-accent)</code> to follow Visual settings. Fixed colors override them for the matching elements.</p>
           <textarea
             className="theme-code"
             style={{ minHeight: 80 }}

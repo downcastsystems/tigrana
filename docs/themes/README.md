@@ -1,4 +1,6 @@
-# Creating Tigrana themes
+# Tigrana theme API reference
+
+**New here? Start with the [Theme creator guide](creator-guide.md)** for the visual workflow, theme controls, original snapshots, validation, and sharing.
 
 For a complete illustrated example, see [Starfall](starfall-studio/README.md),
 including an importable package, original character art, and commented CSS for
@@ -211,8 +213,16 @@ requests are rejected if another window changed the saved copy.
 
 The theme editor's Plasma UI by default checkbox determines what happens when
 the theme is selected. Selecting a saved theme reapplies its Plasma settings;
-built-in and legacy themes default to standard rendering. The Plasma toggle in
+each built-in has its own rendering default; legacy themes without a Plasma setting use standard rendering. The Plasma toggle in
 Appearance is a notebook override, persisted independently of the theme snapshot.
 It survives notebook reloads, does not change the shared theme or cause a theme
 conflict, and is reset the next time a theme is selected. Save in the theme editor
 to change a theme's default.
+
+## Authoring extensions
+
+Optional palette roles: `menuSelectedBackground`, `menuSelectedText`, `hoverBackground`, `hoverText`. Backgrounds follow the accent by default; foregrounds follow selected text, or automatic contrast when an explicit background is supplied. Their CSS variables are `--tigrana-menu-selected-background`, `--tigrana-menu-selected-text`, `--tigrana-hover-background`, and `--tigrana-hover-text`.
+
+Optional `typography` maps `title`, `compactTitle`, `navigation`, `tab`, `menu`, `secondary`, and `status` to pixel sizes. Runtime variables use `--tigrana-font-` with kebab-case role names. Missing roles follow interface/editor sizes.
+
+Optional `controls` exposes bounded range, color and toggle definitions as `--tigrana-control-ID` variables. Optional `baseThemeSnapshot` retains one validated original matching `baseThemeId`. See the [creator guide](creator-guide.md) for definitions and update rules. Entire saved documents including originals must fit within 8 MB; package manifests may use that same limit while individual asset files retain their existing limits.

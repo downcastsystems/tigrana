@@ -6366,3 +6366,9 @@ html[data-theme] .theme-conflict .theme-actions .toolbar-button.is-recommended:h
 .theme-preview-options label { display: flex; gap: 6px; align-items: center; }
 .theme-health { margin: 18px 0; padding: 12px; border: 1px solid var(--border); border-radius: 8px; }
 .theme-health li { margin: 8px 0; }
+
+.theme-editor-preview.is-expanded, .settings-preview-host .theme-editor-preview.is-expanded { position: fixed; inset: 24px; z-index: 3; padding: 20px; overflow: auto; border: 1px solid var(--border); border-radius: 8px; background: var(--surface-strong); box-shadow: var(--shadow-modal-strong); }
+
+.theme-color-field { position: relative; }
+.theme-color-field:has(.theme-color-reset) { padding-bottom: 18px; }
+.theme-color-reset { position: absolute; bottom: 0; left: 0; padding: 0; border: 0; background: transparent; color: var(--text-muted); font: inherit; font-size: 12px; text-decoration: underline; cursor: pointer; }

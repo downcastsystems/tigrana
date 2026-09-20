@@ -1,4 +1,10 @@
 const variables = [
+  ["--tigrana-menu-selected-background / --tigrana-menu-selected-text", "Selected menu colors; follow selected note colors by default"],
+  ["--tigrana-hover-background / --tigrana-hover-text", "Hovered menu and navigation colors"],
+  ["--tigrana-font-title / --tigrana-font-compact-title", "Full and compact note title sizes"],
+  ["--tigrana-font-navigation / --tigrana-font-tab / --tigrana-font-menu", "Navigation, tab and menu label sizes"],
+  ["--tigrana-font-secondary / --tigrana-font-status", "Menu descriptions, captions and word count sizes"],
+  ["--tigrana-control-ID", "Value of a theme-specific range, color or toggle; add units with calc(value * 1px)"],
   ["--tigrana-panel-gap", "Space between panels, including draggable dividers, e.g. 18px"],
   ["--tigrana-workspace-inset", "Space around the workspace, e.g. 18px"],
   ["--tigrana-panel-radius", "Panel corners in standard UI, e.g. 16px"],

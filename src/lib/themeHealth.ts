@@ -22,7 +22,7 @@ export function checkTheme(theme: ThemeDocument): { errors: string[]; warnings: 
     ];
     for (const [name, foreground, background] of pairs) {
       const ratio = contrastRatio(foreground, background);
-      if (ratio < 4.5) warnings.push(`${mode}: ${name} contrast is ${ratio.toFixed(2)}:1; aim for at least 4.5:1 for normal text.`);
+      if (ratio < 4.5) warnings.push(`${mode}: ${name} contrast is ${ratio.toFixed(3)}:1; aim for at least 4.5:1 for normal text.`);
     }
   }
   for (const [role, size] of Object.entries(resolveTypography(theme))) if (size < 12) warnings.push(`${role} text is ${size}px. Check its readability at normal zoom.`);

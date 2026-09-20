@@ -1,4 +1,5 @@
-import { originalSnapshot, updateDerivedTheme } from "../lib/themeDerivation";
+import { readableThemeText } from "../lib/themeRuntime";
+import { authoringOriginal, originalSnapshot, updateDerivedTheme } from "../lib/themeDerivation";
 import { ThemeTypographyEditor } from "./ThemeTypographyEditor";
 import { ThemeControlsEditor } from "./ThemeControlsEditor";
 import { ThemeHealthCheck } from "./ThemeHealthCheck";
@@ -103,7 +104,7 @@ export function ThemePreview({
             : theme.accentTitlebar
               ? p.titlebar
               : p.surface,
-          color: theme.accentTitlebar ? contrast(p.titlebar) : p.text,
+          color: theme.accentTitlebar ? readableThemeText(p.titlebar) : p.text,
           borderColor: theme.accentTitlebar
             ? `color-mix(in srgb, ${p.titlebar} 70%, black)`
             : p.border,
@@ -117,7 +118,7 @@ export function ThemePreview({
         <div className="theme-preview-tabs" aria-label="Note tabs preview">
           <span
             className="theme-preview-tab is-active"
-            style={{ background: p.accent, color: p.selectedText ?? contrast(p.accent) }}
+            style={{ background: p.accent, color: p.selectedText ?? readableThemeText(p.accent) }}
           >
             <FileText size={16} aria-hidden="true" />
             <span>Notes</span>
@@ -126,7 +127,7 @@ export function ThemePreview({
           <span
             className="theme-preview-tab"
             style={{
-              color: theme.accentTitlebar ? contrast(p.titlebar) : p.textMuted,
+              color: theme.accentTitlebar ? readableThemeText(p.titlebar) : p.textMuted,
             }}
           >
             <FileText size={16} aria-hidden="true" />
@@ -151,7 +152,7 @@ export function ThemePreview({
           <div
             style={{
               background: p.accent,
-              color: p.selectedText ?? contrast(p.accent),
+              color: p.selectedText ?? readableThemeText(p.accent),
               padding: 8,
               borderRadius: 5,
             }}
@@ -201,15 +202,7 @@ export function ThemePreview({
     </div>
   );
 }
-function contrast(hex: string) {
-  const channels = [1, 3, 5].map((i) => {
-    const value = parseInt(hex.slice(i, i + 2), 16) / 255;
-    return value <= 0.03928 ? value / 12.92 : ((value + 0.055) / 1.055) ** 2.4;
-  });
-  const luminance =
-    channels[0] * 0.2126 + channels[1] * 0.7152 + channels[2] * 0.0722;
-  return luminance > 0.54 ? "#192d2b" : "#ffffff";
-}
+
 
 export function ThemeBuilder({
   current,
@@ -242,6 +235,7 @@ export function ThemeBuilder({
   const displayNames = themeDisplayNames([...themes.filter(t => t.id !== current?.id), ...(current ? [current] : [])]);
   const [expected, setExpected] = useState<ThemeDocument | null>(null);
   const [cssMode, setCssMode] = useState(false);
+  const [previewExpanded, setPreviewExpanded] = useState(false);
   const editorId = useId();
   const [mode, setMode] = useState<"light" | "dark">("dark");
   const cssHints = useMemo(() => visualCssHints(draft?.design?.css ?? "", mode), [draft?.design?.css, mode]);
@@ -273,6 +267,7 @@ export function ThemeBuilder({
     }
   }
   const sourceTheme = current ?? allBuiltInThemes.find(theme => theme.id === builtInThemeId) ?? seed;
+  const sourceOriginal = useMemo(() => authoringOriginal(sourceTheme, [...allBuiltInThemes, ...themes]), [sourceTheme, themes]);
   const sourceBuiltIn = allBuiltInThemes.find(theme => theme.id === sourceTheme.id);
   const draftOriginal = draft?.baseThemeSnapshot ?? allBuiltInThemes.find(theme => theme.id === (draft?.baseThemeId ?? draft?.id));
   const latestOriginal = [...allBuiltInThemes, ...themes].find(theme => theme.id === draft?.baseThemeId && theme.id !== draft?.id);
@@ -281,8 +276,8 @@ export function ThemeBuilder({
     setExpected(null);
     setDraft({
       ...(current ?? seed),
-      baseThemeId: sourceTheme.baseThemeId ?? sourceTheme.id,
-      baseThemeSnapshot: sourceTheme.baseThemeSnapshot ?? originalSnapshot(sourceTheme),
+      baseThemeId: sourceOriginal.id,
+      baseThemeSnapshot: sourceOriginal,
       schemaVersion: 2,
       design: current?.design ?? seed.design ?? defaultThemeDesign,
       plasma: current?.plasma ?? seed.plasma ?? defaultPlasmaSettings,
@@ -373,8 +368,8 @@ export function ThemeBuilder({
                 onClick={() => {
                   setDraft({
                     ...sourceTheme,
-                    baseThemeId: sourceTheme.baseThemeId ?? sourceBuiltIn?.id ?? sourceTheme.id,
-                    baseThemeSnapshot: sourceTheme.baseThemeSnapshot ?? originalSnapshot(sourceTheme),
+                    baseThemeId: sourceOriginal.id,
+                    baseThemeSnapshot: sourceOriginal,
                     id: sourceBuiltIn ? crypto.randomUUID() : sourceTheme.id,
                     name: uniqueThemeName(sourceBuiltIn ? `${sourceTheme.name} copy` : sourceTheme.name, themes, sourceBuiltIn ? undefined : sourceTheme.id),
                     plasma:
@@ -571,7 +566,10 @@ export function ThemeBuilder({
                       label={labels[key]}
                       name={`${mode} ${labels[key]}`}
                       cssHint={cssHints[key]}
-                      value={draft[mode][key] ?? (key === "menuSelectedBackground" || key === "hoverBackground" ? draft[mode].accent : key === "menuSelectedText" || key === "hoverText" ? (draft[mode].selectedText ?? contrast(draft[mode].accent)) : key === "selectedText" ? contrast(draft[mode].accent) : key === "highlightText" ? "#000000" : key === "highlightBackground" ? "#ffff00" : draft[mode].text)}
+                      onReset={optionalPaletteKeys.includes(key as typeof optionalPaletteKeys[number]) && draft[mode][key] !== undefined ? () => {
+                        const palette = { ...draft[mode] }; delete (palette as Partial<typeof palette>)[key]; update({ [mode]: palette });
+                      } : undefined}
+                      value={draft[mode][key] ?? (key === "menuSelectedBackground" || key === "hoverBackground" ? draft[mode].accent : key === "menuSelectedText" ? (draft[mode].menuSelectedBackground ? readableThemeText(draft[mode].menuSelectedBackground!) : draft[mode].selectedText ?? readableThemeText(draft[mode].accent)) : key === "hoverText" ? (draft[mode].hoverBackground ? readableThemeText(draft[mode].hoverBackground!) : draft[mode].selectedText ?? readableThemeText(draft[mode].accent)) : key === "selectedText" ? readableThemeText(draft[mode].accent) : key === "highlightText" ? "#000000" : key === "highlightBackground" ? "#ffff00" : draft[mode].text)}
                       onChange={(color) =>
                         update({ [mode]: { ...draft[mode], [key]: color } })
                       }
@@ -712,9 +710,10 @@ export function ThemeBuilder({
             />
           ) : null}
           <ThemePreviewPanel>
-            <div className="theme-editor-preview">
+            <div className={`theme-editor-preview${previewExpanded ? " is-expanded" : ""}`}>
               <div className="theme-preview-heading">
                 <h3>Preview</h3>
+                <button type="button" className="toolbar-button" aria-expanded={previewExpanded} onClick={() => setPreviewExpanded(value => !value)}>{previewExpanded ? "Collapse preview" : "Expand preview"}</button>
                 <select
                   className="settings-select"
                   aria-label="Preview color scheme"

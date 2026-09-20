@@ -128,7 +128,7 @@ export function parseTheme(value: unknown, allowBase = true): ThemeDocument {
     throw new Error("Invalid right sidebar setting.");
   if (v.navigationStyle !== undefined && v.navigationStyle !== "dual-pane" && v.navigationStyle !== "single-pane" && v.navigationStyle !== "section-view")
     throw new Error("Invalid navigation style.");
-  return {
+  const clean: ThemeDocument = {
     ...(v.typography === undefined ? {} : { typography: parseTypography(v.typography) }),
     ...(v.controls === undefined ? {} : { controls: parseControls(v.controls) }),
     ...(base ? { baseThemeSnapshot: base } : {}),
@@ -149,6 +149,9 @@ export function parseTheme(value: unknown, allowBase = true): ThemeDocument {
     ...(v.plasma === undefined ? {} : { plasma: parsePlasma(v.plasma) }),
     ...(v.surfaces === undefined ? {} : { surfaces: parseThemeSurfaces(v.surfaces) }),
   };
+  if (allowBase && new Blob([JSON.stringify(clean, null, 2) + "\n"]).size > 8 * 1024 * 1024)
+    throw new Error("Theme including its original snapshot must be smaller than 8 MB.");
+  return clean;
 }
 export function readTheme(value: unknown): ThemeDocument | null {
   try {
