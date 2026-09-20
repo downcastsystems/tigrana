@@ -615,3 +615,34 @@ it("keeps Default read-only and lets legacy presets revert after saving", async 
     expect(apply).toHaveBeenLastCalledWith({ ...nord, id: saved.id, name: saved.name, baseThemeId: "nord", baseThemeSnapshot: nord });
   } finally { await act(async () => root.unmount()); }
 });
+
+it("offers to save modified notebook settings in a separate theme and retains the original", async () => {
+  const { captureCurrentThemeSettings } = await import('../lib/currentThemeSettings');
+  const original = bundledThemes.find(t => t.id === 'builtin-starfall-studio')!;
+  const before = JSON.stringify(original);
+  const seed = captureCurrentThemeSettings(original, { quickAppearance: { accentColor: '#336699' },
+    navigationStyle: 'dual-pane', rightSidebarOpen: false, accentTitlebar: false,
+    plasma: { enabled: false, frost: 25, flow: 12, backgroundBlur: 5 } });
+  const host = document.createElement('div'), root = createRoot(host), apply = vi.fn();
+  try {
+    await act(async () => root.render(<ThemeBuilder current={original} seed={original} onApply={apply} />));
+    expect(button(host, 'Save current settings as new theme')).toBeUndefined();
+    await act(async () => root.render(<ThemeBuilder current={original} seed={seed} onApply={apply} />));
+    await act(async () => button(host, 'Save current settings as new theme').click());
+    expect(apply).not.toHaveBeenCalled();
+    expect(host.querySelector<HTMLInputElement>('[aria-label="dark Accent hex"]')!.value).toBe('#336699');
+    await act(async () => button(host, 'Save and use').click());
+    await act(async () => button(host, 'Confirm and save').click());
+    const saved = (await listThemes()).themes[0];
+    expect(saved.id).not.toBe(original.id);
+    expect(saved.name).toBe('Starfall copy');
+    expect(saved.light.accent).toBe('#336699');
+    expect(saved.dark.accent).toBe('#336699');
+    expect(saved.navigationStyle).toBe('dual-pane');
+    expect(saved.rightSidebarOpen).toBe(false);
+    expect(saved.plasma).toEqual(seed.plasma);
+    expect(saved.baseThemeSnapshot).toEqual(original);
+    expect(apply).toHaveBeenCalledWith(saved);
+    expect(JSON.stringify(original)).toBe(before);
+  } finally { await act(async () => root.unmount()); }
+});

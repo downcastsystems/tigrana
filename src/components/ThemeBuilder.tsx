@@ -1,3 +1,4 @@
+import { hasCurrentThemeChanges } from "../lib/currentThemeSettings";
 import { readableThemeText } from "../lib/themeRuntime";
 import { authoringOriginal, originalSnapshot, updateDerivedTheme } from "../lib/themeDerivation";
 import { ThemeTypographyEditor } from "./ThemeTypographyEditor";
@@ -267,6 +268,7 @@ export function ThemeBuilder({
     }
   }
   const sourceTheme = current ?? allBuiltInThemes.find(theme => theme.id === builtInThemeId) ?? seed;
+  const settingsModified = hasCurrentThemeChanges(sourceTheme, seed);
   const sourceOriginal = useMemo(() => authoringOriginal(sourceTheme, [...allBuiltInThemes, ...themes]), [sourceTheme, themes]);
   const sourceBuiltIn = allBuiltInThemes.find(theme => theme.id === sourceTheme.id);
   const draftOriginal = draft?.baseThemeSnapshot ?? allBuiltInThemes.find(theme => theme.id === (draft?.baseThemeId ?? draft?.id));
@@ -275,14 +277,14 @@ export function ThemeBuilder({
   function create() {
     setExpected(null);
     setDraft({
-      ...(current ?? seed),
+      ...seed,
       baseThemeId: sourceOriginal.id,
       baseThemeSnapshot: sourceOriginal,
       schemaVersion: 2,
-      design: current?.design ?? seed.design ?? defaultThemeDesign,
-      plasma: current?.plasma ?? seed.plasma ?? defaultPlasmaSettings,
+      design: seed.design ?? defaultThemeDesign,
+      plasma: seed.plasma ?? defaultPlasmaSettings,
       id: crypto.randomUUID(),
-      name: uniqueThemeName(`${current?.name ?? "My"} theme`, themes),
+      name: uniqueThemeName(`${sourceTheme.name} copy`, themes),
     });
   }
   const currentIsBundled = useMemo(() => isBundledTheme(current), [current]);
@@ -357,6 +359,10 @@ export function ThemeBuilder({
             </select>
           </div>
           {themes.some(t => displayNames[t.id] !== t.name) && <p className="settings-description">Some older themes share a name. Numbered labels distinguish them here; editing and saving one gives it a unique name.</p>}
+          {settingsModified && <div className="theme-current-settings">
+            <p className="settings-description" role="status">Current settings differ from {sourceTheme.name}.</p>
+            <button type="button" className="toolbar-button" disabled={busy} onClick={create}>Save current settings as new theme</button>
+          </div>}
           <div className="theme-actions">
             <button className="toolbar-button" onClick={create} disabled={busy}>
               Create theme

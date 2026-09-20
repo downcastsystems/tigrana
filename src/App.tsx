@@ -1,3 +1,4 @@
+import { captureCurrentThemeSettings } from "./lib/currentThemeSettings";
 import { recoveryTheme } from "./lib/themeCatalog";
 import { themeCatalogWarnings } from "./lib/bundledThemes";
 import { readableThemeText, themeVariables } from "./lib/themeRuntime";
@@ -1892,8 +1893,10 @@ export default function App() {
   }
 
   function themeSeed(): ThemeDocument {
-    return { ...renderedTheme, id: "draft", name: "My theme",
-      accentTitlebar, plasma: { enabled: plasmaEnabled, frost: plasmaFrost, backgroundBlur: plasmaBackgroundBlur, flow: plasmaFlow } };
+    return captureCurrentThemeSettings(renderedTheme, {
+      quickAppearance, navigationStyle, rightSidebarOpen: outlineVisible,
+      accentTitlebar, plasma: { enabled: plasmaEnabled, frost: plasmaFrost, backgroundBlur: plasmaBackgroundBlur, flow: plasmaFlow },
+    });
   }
 
   function requestEditorCommand(command: EditorCommand, payload: Partial<EditorCommandRequest> = {}) {

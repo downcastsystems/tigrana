@@ -6372,3 +6372,6 @@ html[data-theme] .theme-conflict .theme-actions .toolbar-button.is-recommended:h
 .theme-color-field { position: relative; }
 .theme-color-field:has(.theme-color-reset) { padding-bottom: 18px; }
 .theme-color-reset { position: absolute; bottom: 0; left: 0; padding: 0; border: 0; background: transparent; color: var(--text-muted); font: inherit; font-size: 12px; text-decoration: underline; cursor: pointer; }
+
+.theme-current-settings { margin: 12px 0 16px; }
+.theme-current-settings .settings-description { margin-bottom: 8px; }

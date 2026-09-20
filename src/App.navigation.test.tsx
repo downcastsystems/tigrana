@@ -227,6 +227,7 @@ describe("Note navigation persistence", () => {
       await act(async () => window.dispatchEvent(new KeyboardEvent("keydown", { key: ",", metaKey: true })));
       await act(async () => { Array.from(container.querySelectorAll<HTMLButtonElement>(".settings-nav button")).find(b => b.textContent === "Appearance")!.click(); });
       const picker = container.querySelector<HTMLSelectElement>('select[aria-label="Theme"]')!;
+      expect(container.textContent).not.toContain("Save current settings as new theme");
       const modePicker = container.querySelector<HTMLSelectElement>('select[aria-label="Color scheme"]')!;
       await act(async () => { modePicker.value = "dark"; modePicker.dispatchEvent(new Event("change", { bubbles: true })); });
       for (const theme of bundledThemes.filter(t => t.id !== "builtin-starfall-studio")) {
@@ -237,6 +238,7 @@ describe("Note navigation persistence", () => {
         expect(container.querySelector('[data-theme-styles="notebook"]')?.textContent).toContain(`--tigrana-accent:${theme.dark.accent}`);
         expect(container.querySelector(".app-frame")?.getAttribute("data-theme-api")).toBe("1");
         expect(container.querySelector(".app-shell")?.hasAttribute("data-plasma")).toBe(false);
+        expect(container.textContent).not.toContain("Save current settings as new theme");
       }
       const navigation = container.querySelector<HTMLSelectElement>('select[aria-label="Navigation style"]')!;
       expect(navigation.value).toBe("section-view");
@@ -277,6 +279,7 @@ describe("Note navigation persistence", () => {
       await act(async () => container.querySelector<HTMLInputElement>('.settings-quick-appearance input[type="checkbox"]')!.click());
       await waitFor(() => JSON.parse(demoPersistence.get("tigrana-meta:/demo/Tigrana") ?? "{}").appearance?.quickAppearance?.accentColor === "#2255cc");
       expect(JSON.parse(demoPersistence.get("tigrana-meta:/demo/Tigrana")!).appearance.customTheme.dark.accent).toBe(theme.dark.accent);
+      expect(container.textContent).toContain("Save current settings as new theme");
 
       await act(async () => root.unmount());
       localStorage.setItem("tigrana-plasma-theme", "false");

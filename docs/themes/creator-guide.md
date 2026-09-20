@@ -14,6 +14,8 @@ This guide describes the theme system on this branch. Older Tigrana releases may
 6. Open **Theme check** and review its findings. Choose **Save and use**, complete any save/conflict choice, and check the result in a real notebook.
 7. Use **Export theme** to share a `.tigrana-theme` file. Recipients use **Import theme** in Appearance.
 
+If you adjust Appearance after choosing a theme, **Save current settings as new theme** appears beside the theme actions. It opens a new draft with the current accent, colored title bar, navigation, right sidebar and Plasma settings. Name it and save to reuse those choices. The original theme stays intact. Returning your choices to the theme defaults removes the reminder. Light/dark mode is a notebook preference; both palettes are kept in the new theme.
+
 The preview is a styled sample using the application's stylesheets, fonts, and theme compiler. It does not run notebook operations or simulate every window size. Check your theme in the application before publishing it.
 
 ## Colors that stay consistent
