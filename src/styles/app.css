@@ -6196,7 +6196,20 @@ html[data-theme] .settings-modal .theme-actions .toolbar-button:hover:not(:disab
 }
 
 /* The preview extends the compact settings window only while editing a theme. */
-.settings-window { display: flex; align-items: stretch; gap: 12px; max-width: 100%; }
+.settings-window {
+  display: flex;
+  align-items: stretch;
+  gap: 12px;
+  max-width: 100%;
+  /* Native select menus may substitute a system font but retain the inherited
+     size. Keep Settings readable without a theme's display-font compensation.
+     Preview regions supply their own font variables and remain fully themed. */
+  --app-font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  --app-font-size: 14px;
+  font-family: var(--app-font-family);
+  font-size: var(--app-font-size);
+  line-height: 1.5;
+}
 .settings-preview-host:empty { display: none; }
 .settings-preview-host:not(:empty) {
   width: clamp(340px, calc(100vw - 880px), 560px);

@@ -68,7 +68,7 @@ Start with semantic variables, so the palette and controls remain useful:
 
 Window-like panels do not require Plasma. The built-in panel gap, inset, radius and shadow variables work in standard mode. Plasma owns its GPU effects; custom CSS still controls supported pane and content styles.
 
-Use the editor's **CSS reference and examples** for selectors and variables, or read the [Theme API reference](README.md#theme-api-1). Settings, recovery controls, native menus and dialogs are outside the custom CSS boundary. They follow safe palette/font settings, but arbitrary CSS cannot hide them.
+Use the editor's **CSS reference and examples** for selectors and variables, or read the [Theme API reference](README.md#theme-api-1). Settings, recovery controls, native menus and dialogs are outside the custom CSS boundary, so arbitrary CSS cannot hide them. Settings keeps the theme's palette but uses consistent Inter typography with a 14px base size for controls and dropdowns. This prevents oversized native menus when a theme compensates for a small pixel font. App zoom still scales Settings. The notebook and live preview retain the theme's fonts and sizes.
 
 Use local PNG, JPEG or WebP artwork and WOFF2 fonts. Reference a packaged image with `url("assets/paper.webp")`. Remote URLs, imports, arbitrary data URLs, scripts, SVG, CSS nesting, `!important`, animations, filters and functional selector pseudo-classes such as `:is(...)` are rejected. Write separate complete selectors instead. Invalid CSS is shown as an error and prevents saving; the preview temporarily uses the visual settings.
 
