@@ -14,6 +14,14 @@ import {
 import { exampleTheme } from "./themes.fixture";
 beforeEach(() => localStorage.clear());
 describe("portable themes", () => {
+  it("validates and preserves optional writing layout defaults", () => {
+    const theme = { ...exampleTheme(), editorWidthMode: "narrow" as const, noteAlignment: "center" as const };
+    expect(parseTheme(theme)).toEqual(theme);
+    expect(themeAppearance(theme)).toMatchObject({ editorWidthMode: "narrow", noteAlignment: "center" });
+    expect(() => parseTheme({ ...theme, editorWidthMode: "invalid" })).toThrow("Invalid editor width");
+    expect(() => parseTheme({ ...theme, noteAlignment: "right" })).toThrow("Invalid note alignment");
+    expect(themeAppearance(exampleTheme())).not.toHaveProperty("editorWidthMode");
+  });
   it("preserves the appearance of translucent legacy colors when creating a theme", () => {
     expect(opaqueThemeColor("rgba(255, 255, 255, 0.1)", "#000000")).toBe(
       "#1a1a1a",

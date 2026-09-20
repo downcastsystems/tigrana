@@ -221,6 +221,8 @@ to change a theme's default.
 
 ## Authoring extensions
 
+Optional `editorWidthMode` accepts `comfortable`, `narrow`, or `full`. Optional `noteAlignment` accepts `left` or `center` and positions the note column. Selecting the theme applies these defaults; omit either to keep the current setting. Later manual choices persist in notebook appearance metadata. Both defaults are editable in Visual and reflected in the live preview.
+
 Optional palette roles: `menuSelectedBackground`, `menuSelectedText`, `hoverBackground`, `hoverText`. Backgrounds follow the accent by default; foregrounds follow selected text, or automatic contrast when an explicit background is supplied. Their CSS variables are `--tigrana-menu-selected-background`, `--tigrana-menu-selected-text`, `--tigrana-hover-background`, and `--tigrana-hover-text`.
 
 Optional `typography` maps `title`, `compactTitle`, `navigation`, `tab`, `menu`, `secondary`, and `status` to pixel sizes. Runtime variables use `--tigrana-font-` with kebab-case role names. Missing roles follow interface/editor sizes.

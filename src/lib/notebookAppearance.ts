@@ -13,6 +13,8 @@ import type {
 } from "../types";
 
 export type ResolvedNotebookAppearance = {
+  editorWidthMode?: NotebookAppearance["editorWidthMode"];
+  noteAlignment?: NotebookAppearance["noteAlignment"];
   rightSidebarOpen?: boolean;
   plasma?: PlasmaSettings;
   colorScheme: "system" | "light" | "dark";
@@ -61,7 +63,9 @@ export function resolveNotebookAppearance(
   if (theme) {
     const selected = themeAppearance(theme);
     // Manual notebook choices survive reloads without changing the theme defaults.
-    appearance = { ...appearance, ...selected, plasma: appearance.plasma ?? selected.plasma, navigationStyle: appearance.navigationStyle ?? selected.navigationStyle, rightSidebarOpen: appearance.rightSidebarOpen ?? selected.rightSidebarOpen };
+    appearance = { ...appearance, ...selected, plasma: appearance.plasma ?? selected.plasma, navigationStyle: appearance.navigationStyle ?? selected.navigationStyle, rightSidebarOpen: appearance.rightSidebarOpen ?? selected.rightSidebarOpen,
+      editorWidthMode: appearance.editorWidthMode ?? selected.editorWidthMode,
+      noteAlignment: appearance.noteAlignment ?? selected.noteAlignment };
   }
 
   const navigationStyle = resolveNavigationStyle(
@@ -70,6 +74,8 @@ export function resolveNotebookAppearance(
   );
 
   return {
+    editorWidthMode: appearance.editorWidthMode === "comfortable" || appearance.editorWidthMode === "narrow" || appearance.editorWidthMode === "full" ? appearance.editorWidthMode : defaults.editorWidthMode,
+    noteAlignment: appearance.noteAlignment === "left" || appearance.noteAlignment === "center" ? appearance.noteAlignment : defaults.noteAlignment,
     rightSidebarOpen: appearance.rightSidebarOpen ?? defaults.rightSidebarOpen,
     plasma: resolvePlasma(appearance.plasma, defaults.plasma),
     colorScheme: appearance.colorScheme ?? defaults.colorScheme,

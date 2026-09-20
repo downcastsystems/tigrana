@@ -28,6 +28,8 @@ When an optional foreground is automatic, Tigrana chooses a readable foreground 
 
 ## Fonts without tiny labels
 
+In Visual, **Default editor width** and **Default note alignment** apply when someone selects the theme. Typewriter uses Narrow Width and Align center. Alignment positions the note column, not the text inside paragraphs. **Keep current** leaves that choice alone. Manual changes in View or editor options are saved with the notebook; selecting a theme with explicit defaults reapplies them.
+
 Set the overall interface and editor fonts first. The **Text sizes** group lets you tune:
 
 | Role | Used for |

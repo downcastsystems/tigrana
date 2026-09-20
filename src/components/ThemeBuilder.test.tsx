@@ -555,6 +555,24 @@ it("keeps an older built-in under Built-in without saving it to the library", as
   } finally { await act(async () => root.unmount()); }
 });
 
+it("edits Typewriter writing defaults and reflects them in the preview", async () => {
+  const theme = bundledThemes.find(theme => theme.id === "builtin-typewriter")!;
+  const host = document.createElement("div"), root = createRoot(host);
+  try {
+    await act(async () => root.render(<ThemeBuilder current={theme} seed={theme} onApply={vi.fn()} />));
+    await act(async () => button(host, "Edit theme").click());
+    const width = [...host.querySelectorAll('label')].find(label => label.textContent?.includes('Default editor width'))!.querySelector('select')!;
+    const alignment = [...host.querySelectorAll('label')].find(label => label.textContent?.includes('Default note alignment'))!.querySelector('select')!;
+    expect(width.value).toBe('narrow');
+    expect(alignment.value).toBe('center');
+    const preview = host.querySelector('[aria-label="dark full theme preview"]')!.shadowRoot!;
+    expect(preview.querySelector('.note-surface.is-narrow-width.is-center-aligned')).not.toBeNull();
+    await act(async () => { width.value = 'full'; width.dispatchEvent(new Event('change', { bubbles: true })); });
+    await act(async () => { alignment.value = 'left'; alignment.dispatchEvent(new Event('change', { bubbles: true })); });
+    expect(preview.querySelector('.note-surface.is-full-width.is-left-aligned')).not.toBeNull();
+  } finally { await act(async () => root.unmount()); }
+});
+
 it("recognizes Typewriter after native storage reorders its JSON fields", async () => {
   const latest = bundledThemes.find(theme => theme.id === "builtin-typewriter")!;
   const stored = JSON.parse(JSON.stringify(latest, (_key, value) =>

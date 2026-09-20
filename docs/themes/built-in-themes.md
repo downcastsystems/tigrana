@@ -57,7 +57,7 @@ Retro adventure menus: pixel lettering, green and gold panel frames, an original
 
 ## Typewriter
 
-Warm ivory paper and brown ink in light mode; charcoal paper, cream text, and a muted tan accent in dark mode. Thin panel borders, small corner radii, and regular-weight serif titles keep the writing area quiet. Defaults to Dual pane with sections, right sidebar closed, and Plasma off. Manual navigation and sidebar changes remain available.
+Warm ivory paper and brown ink in light mode; charcoal paper, cream text, and a muted tan accent in dark mode. Thin panel borders, small corner radii, and regular-weight serif titles keep the writing area quiet. Defaults to Dual pane with sections, right sidebar closed, Narrow Width, Align center, and Plasma off. Manual layout changes remain available and persist with the notebook.
 
 Both the interface and editor use [Solway](https://github.com/mashavp/Solway), a proportional slab serif with a typewriter feel. The unmodified Latin regular WOFF2 from `@fontsource/solway` 5.3.0 is bundled for offline use, with Georgia/serif fallbacks for other glyphs. The full SIL Open Font License 1.1 and attribution travel with the theme. No American Typewriter font files are distributed.
 

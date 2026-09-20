@@ -216,6 +216,47 @@ describe("Note navigation persistence", () => {
     }
   });
 
+  it("applies Typewriter's writing layout, preserves manual changes on reload, and resets on reselection", async () => {
+    const container = document.createElement("div");
+    document.body.appendChild(container);
+    containers.push(container);
+    const root = createRoot(container);
+    const openAppearance = async () => {
+      await act(async () => window.dispatchEvent(new KeyboardEvent("keydown", { key: ",", metaKey: true })));
+      await act(async () => { Array.from(container.querySelectorAll<HTMLButtonElement>(".settings-nav button")).find(b => b.textContent === "Appearance")!.click(); });
+    };
+    const chooseTheme = async (value: string) => {
+      const picker = container.querySelector<HTMLSelectElement>('select[aria-label="Theme"]')!;
+      await act(async () => { picker.value = value; picker.dispatchEvent(new Event("change", { bubbles: true })); });
+    };
+    const surface = () => container.querySelector(".note-surface")!;
+    try {
+      await act(async () => { root.render(<App />); await new Promise(resolve => window.setTimeout(resolve, 50)); });
+      await openAppearance();
+      await chooseTheme("bundled:builtin-typewriter");
+      expect(surface().classList.contains("is-narrow-width")).toBe(true);
+      expect(surface().classList.contains("is-center-aligned")).toBe(true);
+      await act(async () => container.querySelector<HTMLButtonElement>('[aria-label="Close settings"]')!.click());
+      await act(async () => container.querySelector<HTMLButtonElement>('[aria-label="Editor options"]')!.click());
+      for (const text of ["Full Width", "Align left"]) {
+        await act(async () => { Array.from(container.querySelectorAll<HTMLButtonElement>('[role="menuitemradio"]')).find(b => b.textContent?.includes(text))!.click(); });
+      }
+      await waitFor(() => {
+        const appearance = JSON.parse(demoPersistence.get("tigrana-meta:/demo/Tigrana") ?? "{}").appearance;
+        return appearance?.editorWidthMode === "full" && appearance?.noteAlignment === "left";
+      });
+      await act(async () => { root.render(<App key="reload" />); await new Promise(resolve => window.setTimeout(resolve, 50)); });
+      expect(surface().classList.contains("is-full-width")).toBe(true);
+      expect(surface().classList.contains("is-left-aligned")).toBe(true);
+      await openAppearance();
+      await chooseTheme("builtin:default");
+      await chooseTheme("bundled:builtin-typewriter");
+      expect(surface().classList.contains("is-narrow-width")).toBe(true);
+      expect(surface().classList.contains("is-center-aligned")).toBe(true);
+      expect(container.textContent).not.toContain("Save current settings as new theme");
+    } finally { await act(async () => root.unmount()); }
+  });
+
   it("switches new built-ins through the portable engine and returns to a legacy preset", async () => {
     const { bundledThemes } = await import("./lib/bundledThemes");
     const container = document.createElement("div");

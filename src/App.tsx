@@ -600,6 +600,8 @@ export default function App() {
     accentTitlebar: localStorage.getItem(accentTitlebarKey) === "true",
     navigationStyle: "section-view" as const,
     rightSidebarOpen: true,
+    editorWidthMode: readStoredEditorWidthMode(),
+    noteAlignment: readStoredNoteAlignment(),
     appFontFamily: defaultAppFontFamily,
     appFontSize: defaultAppFontSize,
     editorFontFamily: defaultEditorFontFamily,
@@ -624,6 +626,8 @@ export default function App() {
         setThemeColors(appearance.colors);
         setAccentTitlebar(appearance.accentTitlebar);
         setNavigationStyle(appearance.navigationStyle);
+        if (appearance.editorWidthMode !== undefined) setEditorWidthMode(appearance.editorWidthMode);
+        if (appearance.noteAlignment !== undefined) setNoteAlignment(appearance.noteAlignment);
         if (appearance.rightSidebarOpen !== undefined) setOutlineVisible(appearance.rightSidebarOpen);
         setAppFontFamily(appearance.appFontFamily);
         setAppFontSize(appearance.appFontSize);
@@ -1871,6 +1875,8 @@ export default function App() {
     if (patch.accentTitlebar !== undefined) setAccentTitlebar(patch.accentTitlebar);
     if (patch.rightSidebarOpen !== undefined) setOutlineVisible(patch.rightSidebarOpen);
     if (patch.navigationStyle !== undefined) setNavigationStyle(patch.navigationStyle);
+    if (patch.editorWidthMode !== undefined) setEditorWidthMode(patch.editorWidthMode);
+    if (patch.noteAlignment !== undefined) setNoteAlignment(patch.noteAlignment);
     if (patch.appFontFamily !== undefined) setAppFontFamily(patch.appFontFamily);
     if (patch.appFontSize !== undefined) setAppFontSize(patch.appFontSize);
     if (patch.editorFontFamily !== undefined) setEditorFontFamily(patch.editorFontFamily);
@@ -1895,6 +1901,7 @@ export default function App() {
   function themeSeed(): ThemeDocument {
     return captureCurrentThemeSettings(renderedTheme, {
       quickAppearance, navigationStyle, rightSidebarOpen: outlineVisible,
+      editorWidthMode, noteAlignment,
       accentTitlebar, plasma: { enabled: plasmaEnabled, frost: plasmaFrost, backgroundBlur: plasmaBackgroundBlur, flow: plasmaFlow },
     });
   }
@@ -2087,19 +2094,19 @@ export default function App() {
         updateNotebookAppearance({ navigationStyle: "single-pane" });
         break;
       case "width_comfortable":
-        setEditorWidthMode("comfortable");
+        updateNotebookAppearance({ editorWidthMode: "comfortable" });
         break;
       case "width_narrow":
-        setEditorWidthMode("narrow");
+        updateNotebookAppearance({ editorWidthMode: "narrow" });
         break;
       case "width_full":
-        setEditorWidthMode("full");
+        updateNotebookAppearance({ editorWidthMode: "full" });
         break;
       case "align_left":
-        setNoteAlignment("left");
+        updateNotebookAppearance({ noteAlignment: "left" });
         break;
       case "align_center":
-        setNoteAlignment("center");
+        updateNotebookAppearance({ noteAlignment: "center" });
         break;
       case "format_image":
         void requestImage().then((pick) => {
@@ -4940,7 +4947,7 @@ export default function App() {
                         role="menuitemradio"
                         aria-checked={option.value === editorWidthMode}
                         onClick={() => {
-                          setEditorWidthMode(option.value);
+                          updateNotebookAppearance({ editorWidthMode: option.value });
                         }}
                       >
                         <span>
@@ -4959,7 +4966,7 @@ export default function App() {
                         className={alignment === noteAlignment ? "is-active" : ""}
                         role="menuitemradio"
                         aria-checked={alignment === noteAlignment}
-                        onClick={() => setNoteAlignment(alignment)}
+                        onClick={() => updateNotebookAppearance({ noteAlignment: alignment })}
                       >
                         <span>
                           <strong>{alignment === "left" ? "Align left" : "Align center"}</strong>

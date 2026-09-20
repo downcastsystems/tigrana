@@ -22,6 +22,12 @@ const fixtureCss = `:host{display:block;isolation:isolate;clip-path:inset(0 roun
 .app-frame .left-panes>aside{width:auto;min-width:0;overflow:hidden}.app-frame>.folder-pane{width:auto;min-width:0;display:block}.app-frame>.main-pane{min-width:0;display:block;overflow:visible;position:relative}.note-title-input{height:1.3em;flex-shrink:0}.note-surface{padding:14px;overflow:auto;max-height:650px;padding-bottom:54px}.ProseMirror{flex-shrink:0;min-height:0;padding:0;font-size:var(--editor-font-size);font-family:var(--editor-font-family)}
 .app-shell[data-plasma] .app-frame{padding:var(--tigrana-workspace-inset,18px 16px 16px);gap:var(--tigrana-panel-gap,20px)}.app-shell[data-plasma] .note-surface{padding:12px}.note-tab{width:160px;text-align:left}.note-tab-add{flex-shrink:0}.folder-row{margin-left:0;margin-right:6px;width:calc(100% - 6px)}.folder-select{min-width:0}.folder-select span{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.title-shell,.editor-shell{width:100%;margin:0}.editor-shell{padding:28px 0 40px}.preview-controls{display:flex;gap:6px;flex-wrap:wrap;margin-top:14px}.preview-controls input{width:100%;min-width:0}
 .plasma-background{position:fixed!important;inset:0;z-index:-1}.plasma-background canvas{position:fixed!important;width:100vw!important;height:100vh!important;inset:0}
+.note-surface.is-comfortable-width :is(.title-shell,.editor-shell){width:min(880px,calc(100% - 72px))}
+.note-surface.is-narrow-width :is(.title-shell,.editor-shell){width:min(640px,calc(100% - 72px))}
+.note-surface.is-full-width :is(.title-shell,.editor-shell){width:calc(100% - 48px)}
+.note-surface.is-center-aligned :is(.title-shell,.editor-shell){margin-left:auto;margin-right:auto}
+.note-surface.is-left-aligned :is(.title-shell,.editor-shell){margin-left:36px;margin-right:auto}
+.note-surface.is-left-aligned.is-full-width :is(.title-shell,.editor-shell){margin-left:24px}
 `;
 
 /** Uses the production styles and editor DOM contract, isolated from the authoring form. */
@@ -168,7 +174,7 @@ export function ThemeWorkbenchPreview({
                         <button className="icon-button outline-toggle" aria-label="Preview show outline"><PanelRightClose size={17} /></button>
                       </div>
                     </header>
-                    <div className="note-surface">
+                    <div className={`note-surface${theme.editorWidthMode ? ` is-${theme.editorWidthMode}-width` : ''}${theme.noteAlignment ? ` is-${theme.noteAlignment}-aligned` : ''}`}>
                       <div className="title-shell" hidden={compactTitle}><textarea
                         className="note-title-input"
                         aria-label="Preview note title"

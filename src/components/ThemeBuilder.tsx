@@ -607,6 +607,26 @@ export function ThemeBuilder({
                   </select>
                 </label>
                 <p className="settings-description">Applied when you choose this theme. You can open or close the sidebar afterward.</p>
+                <label className="setting-row">
+                  Default editor width
+                  <select className="settings-select" value={draft.editorWidthMode ?? ""}
+                    onChange={event => update({ editorWidthMode: (event.target.value || undefined) as ThemeDocument["editorWidthMode"] })}>
+                    <option value="">Keep current</option>
+                    <option value="comfortable">Comfortable Width</option>
+                    <option value="narrow">Narrow Width</option>
+                    <option value="full">Full Width</option>
+                  </select>
+                </label>
+                <label className="setting-row">
+                  Default note alignment
+                  <select className="settings-select" value={draft.noteAlignment ?? ""}
+                    onChange={event => update({ noteAlignment: (event.target.value || undefined) as ThemeDocument["noteAlignment"] })}>
+                    <option value="">Keep current</option>
+                    <option value="left">Align left</option>
+                    <option value="center">Align center</option>
+                  </select>
+                </label>
+                <p className="settings-description">Applied when you choose this theme. Adjust them afterward in View or the editor options menu.</p>
                 <ThemeSurfacesEditor theme={draft} mode={mode} change={update} />
                 <div className="theme-font-grid">
                   {(["app", "editor"] as const).map((part) => (

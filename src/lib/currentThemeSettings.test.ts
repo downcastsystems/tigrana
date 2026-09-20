@@ -27,6 +27,13 @@ describe('saving current appearance as a theme', () => {
     expect(JSON.stringify(source)).toBe(before);
     expect(() => parseTheme(copy)).not.toThrow();
   });
+  it('captures manual writing layout changes and detects departures from theme defaults', () => {
+    const source = allBuiltInThemes.find(t => t.id === 'builtin-typewriter')!;
+    const copy = captureCurrentThemeSettings(source, { ...settings, navigationStyle: source.navigationStyle!, rightSidebarOpen: false, editorWidthMode: 'full', noteAlignment: 'left' });
+    expect(copy.editorWidthMode).toBe('full');
+    expect(copy.noteAlignment).toBe('left');
+    expect(hasCurrentThemeChanges(source, copy)).toBe(true);
+  });
   it('bakes a quick title bar override above custom CSS while keeping the Default dark-blue titlebar', () => {
     const copy = captureCurrentThemeSettings(defaultTheme, { ...settings, accentTitlebar: true, quickAppearance: { coloredTitlebar: true, accentColor: '#4477cc' } });
     expect(copy.accentTitlebar).toBe(true);

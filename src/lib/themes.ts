@@ -60,6 +60,8 @@ export type ThemeDocument = {
   baseThemeSnapshot?: ThemeDocument;
   baseThemeId?: string;
   rightSidebarOpen?: boolean;
+  editorWidthMode?: "comfortable" | "narrow" | "full";
+  noteAlignment?: "left" | "center";
   navigationStyle?: "dual-pane" | "single-pane" | "section-view";
   plasma?: PlasmaSettings;
   surfaces?: ThemeSurfaces;
@@ -126,6 +128,10 @@ export function parseTheme(value: unknown, allowBase = true): ThemeDocument {
     throw new Error("Invalid base theme ID.");
   if (v.rightSidebarOpen !== undefined && typeof v.rightSidebarOpen !== "boolean")
     throw new Error("Invalid right sidebar setting.");
+  if (v.editorWidthMode !== undefined && !["comfortable", "narrow", "full"].includes(v.editorWidthMode as string))
+    throw new Error("Invalid editor width setting.");
+  if (v.noteAlignment !== undefined && !["left", "center"].includes(v.noteAlignment as string))
+    throw new Error("Invalid note alignment setting.");
   if (v.navigationStyle !== undefined && v.navigationStyle !== "dual-pane" && v.navigationStyle !== "single-pane" && v.navigationStyle !== "section-view")
     throw new Error("Invalid navigation style.");
   const clean: ThemeDocument = {
@@ -134,6 +140,8 @@ export function parseTheme(value: unknown, allowBase = true): ThemeDocument {
     ...(base ? { baseThemeSnapshot: base } : {}),
     ...(v.baseThemeId === undefined ? {} : { baseThemeId: v.baseThemeId }),
     ...(v.rightSidebarOpen === undefined ? {} : { rightSidebarOpen: v.rightSidebarOpen }),
+    ...(v.editorWidthMode === undefined ? {} : { editorWidthMode: v.editorWidthMode as ThemeDocument["editorWidthMode"] }),
+    ...(v.noteAlignment === undefined ? {} : { noteAlignment: v.noteAlignment as ThemeDocument["noteAlignment"] }),
     ...(v.navigationStyle === undefined ? {} : { navigationStyle: v.navigationStyle }),
     schemaVersion: v.schemaVersion,
     ...(design ? { design } : {}),
@@ -316,6 +324,8 @@ export function opaqueThemeColor(value: string, background: string): string {
 export function themeAppearance(theme: ThemeDocument): NotebookAppearance {
   return {
     customTheme: theme,
+    ...(theme.editorWidthMode === undefined ? {} : { editorWidthMode: theme.editorWidthMode }),
+    ...(theme.noteAlignment === undefined ? {} : { noteAlignment: theme.noteAlignment }),
     ...(theme.rightSidebarOpen === undefined ? {} : { rightSidebarOpen: theme.rightSidebarOpen }),
     ...(theme.navigationStyle === undefined ? {} : { navigationStyle: theme.navigationStyle }),
     plasma: {

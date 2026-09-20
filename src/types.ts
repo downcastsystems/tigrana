@@ -56,6 +56,8 @@ export type ThemeDifferenceAcknowledgement = {
 };
 
 export type NotebookAppearance = {
+  editorWidthMode?: "comfortable" | "narrow" | "full";
+  noteAlignment?: "left" | "center";
   rightSidebarOpen?: boolean;
   quickAppearance?: { accentColor?: string; coloredTitlebar?: boolean } | null;
   acknowledgedThemeDifference?: ThemeDifferenceAcknowledgement;
