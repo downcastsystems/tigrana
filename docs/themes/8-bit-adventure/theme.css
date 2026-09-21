@@ -37,3 +37,6 @@
 .note-view-dropdown strong { font-weight: 400; }
 .note-view-dropdown small { white-space: normal; }
 .note-view-menu-label { font-weight: 400; }
+
+/* Keep nested outline headings readable with the pixel font. */
+.outline-item.level-3, .outline-item.level-4, .outline-item.level-5, .outline-item.level-6 { font-size: max(18px, calc(var(--tigrana-font-navigation) * 0.9)); }
