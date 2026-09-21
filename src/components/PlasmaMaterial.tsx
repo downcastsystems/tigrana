@@ -4,7 +4,7 @@ import { PlasmaRenderer, type RendererSettings } from "@cruxgarden/plasma-ui";
 
 const paneSelector = ".folder-pane, .notes-pane, .unified-tree-pane, .main-pane, .right-sidebar";
 
-export default function PlasmaMaterial({ theme, accentColor, frost, backgroundBlur, flow = 0, layoutKey, preview = false }: { theme: "light" | "dark"; frost: number; flow?: number; backgroundBlur: number; accentColor: string; layoutKey: string; preview?: boolean }) {
+export default function PlasmaMaterial({ theme, accentColor, frost, backgroundBlur, backgroundImage, flow = 0, layoutKey, preview = false }: { theme: "light" | "dark"; frost: number; flow?: number; backgroundBlur: number; backgroundImage?: string; accentColor: string; layoutKey: string; preview?: boolean }) {
   const hostRef = useRef<HTMLDivElement>(null);
   const rendererRef = useRef<PlasmaRenderer | null>(null);
 
@@ -82,6 +82,32 @@ export default function PlasmaMaterial({ theme, accentColor, frost, backgroundBl
     }));
     return () => handles.forEach((handle) => handle.remove());
   }, [theme, layoutKey, preview]);
+
+  useEffect(() => {
+    const renderer = rendererRef.current;
+    const host = hostRef.current;
+    if (!renderer || !host) return;
+    delete host.dataset.plasmaImageReady;
+    if (!backgroundImage) {
+      renderer.configure({ ...renderer.settings, background: null });
+      return;
+    }
+    // Keep the CSS landscape visible until the renderer can sample the image.
+    // Passing a loaded element avoids a second asynchronous load inside Plasma.
+    const image = new Image();
+    let cancelled = false;
+    image.onload = () => {
+      if (cancelled) return;
+      renderer.configure({ ...renderer.settings, background: image });
+      host.dataset.plasmaImageReady = "true";
+    };
+    image.src = backgroundImage;
+    return () => {
+      cancelled = true;
+      image.onload = null;
+      delete host.dataset.plasmaImageReady;
+    };
+  }, [theme, backgroundImage]);
 
   useEffect(() => {
     const renderer = rendererRef.current;

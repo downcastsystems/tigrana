@@ -7,7 +7,7 @@ import plasmaCss from "../styles/plasma.css?inline";
 import apiCss from "../styles/theme-api.css?inline";
 import type { NavigationStyle } from "../types";
 import type { ThemeDocument } from "../lib/themes";
-import { themeStylesheet, themeVariables } from "../lib/themeRuntime";
+import { themeStylesheet, themeVariables, themeBackgroundImage } from "../lib/themeRuntime";
 import PlasmaTheme from "./PlasmaTheme";
 
 const previewCss = (appCss + plasmaCss)
@@ -38,6 +38,7 @@ export function ThemeWorkbenchPreview({
   theme: ThemeDocument;
   mode: "light" | "dark";
 }) {
+  const backgroundImage = useMemo(() => themeBackgroundImage(theme), [theme]);
   const [navigationOverride, setNavigation] = useState<NavigationStyle | null>(null);
   const [outlineOverride, setOutline] = useState<boolean | null>(null);
   const [menuOpen, setMenuOpen] = useState(false);
@@ -106,12 +107,13 @@ export function ThemeWorkbenchPreview({
               >
                 {plasma ? (
                   <PlasmaTheme
+                    backgroundImage={backgroundImage}
                     flow={(theme.plasma?.flow ?? 0) / 100}
                     theme={mode}
                     accentColor={theme[mode].accent}
                     frost={(theme.plasma?.frost ?? 80) / 100}
                     backgroundBlur={theme.plasma?.backgroundBlur ?? 0}
-                    layoutKey="workbench"
+                    layoutKey={`workbench-${navigation}-${outline}`}
                   />
                 ) : null}
                 <header

@@ -68,7 +68,7 @@ Start with semantic variables, so the palette and controls remain useful:
 }
 ```
 
-Window-like panels do not require Plasma. The built-in panel gap, inset, radius and shadow variables work in standard mode. Plasma owns its GPU effects; custom CSS still controls supported pane and content styles.
+Window-like panels do not require Plasma. The built-in panel gap, inset, radius and shadow variables work in standard mode. Plasma owns its GPU effects; custom CSS still controls supported pane and content styles. Choose landscape images in Advanced surfaces so Plasma can render its rims, refraction, frostiness, and background blur over them. An opaque background image applied directly to the workspace with custom CSS can cover those effects. The ordinary CSS landscape remains available when Plasma is off or unavailable.
 
 Use the editor's **CSS reference and examples** for selectors and variables, or read the [Theme API reference](README.md#theme-api-1). Settings, recovery controls, native menus and dialogs are outside the custom CSS boundary, so arbitrary CSS cannot hide them. Settings keeps the theme's palette but uses consistent Inter typography with a 14px base size for controls and dropdowns. This prevents oversized native menus when a theme compensates for a small pixel font. App zoom still scales Settings. The notebook and live preview retain the theme's fonts and sizes.
 

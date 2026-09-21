@@ -78,6 +78,12 @@ export function themeStylesheet(
   return tokens + surfaceStyles(theme, region) + (theme.design ? compileThemeCss(theme.design, region) : "");
 }
 
+/** Share the packaged landscape with the GPU without external image requests. */
+export function themeBackgroundImage(theme: ThemeDocument): string | undefined {
+  const asset = theme.surfaces?.image ? theme.design?.assets[theme.surfaces.image] : undefined;
+  return asset?.mime.startsWith("image/") ? `data:${asset.mime};base64,${asset.data}` : undefined;
+}
+
 /** Surface overrides are confined to notebook regions, never Settings/dialogs. */
 export function surfaceStyles(theme: ThemeDocument, region: string, embedAssets = true) {
   const s = theme.surfaces;
@@ -89,6 +95,7 @@ export function surfaceStyles(theme: ThemeDocument, region: string, embedAssets 
 ${root} { --tigrana-editor-opacity: ${s.editor}%; }
 ${root}.app-frame.theme-standard { background-color: ${s.background}; }
 ${root}.app-frame { background-image: ${image}; background-size: cover; background-position: center; }
+${image !== 'none' ? `.app-shell[data-plasma]:has(> .plasma-background[data-plasma-image-ready]) ${root}.app-frame { background-image: none; }` : ''}
 ${root} .left-panes, ${root} .note-surface { background: transparent; backdrop-filter: none; }
 ${root} :is(.folder-pane,.notes-pane,.unified-tree-pane) { background-color: color-mix(in srgb,var(--surface) ${s.navigation}%,transparent); }
 ${root} .main-pane { background-color: color-mix(in srgb,var(--app-bg) ${s.editor}%,transparent); }

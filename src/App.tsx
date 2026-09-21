@@ -1,7 +1,7 @@
 import { captureCurrentThemeSettings } from "./lib/currentThemeSettings";
 import { recoveryTheme } from "./lib/themeCatalog";
 import { themeCatalogWarnings } from "./lib/bundledThemes";
-import { readableThemeText, themeVariables } from "./lib/themeRuntime";
+import { readableThemeText, themeVariables, themeBackgroundImage } from "./lib/themeRuntime";
 import { classicThemes } from "./lib/bundledThemes";
 import { quickAppearanceStyles } from "./lib/quickAppearance";
 import { ThemeColorField } from "./components/ThemeColorField";
@@ -833,6 +833,7 @@ export default function App() {
     return { ...base, light: palette("light"), dark: palette("dark"),
       appFontFamily, appFontSize, editorFontFamily, editorFontSize, accentTitlebar: savedAccentTitlebar };
   }, [customTheme, invalidNotebookTheme, themePresetId, themeColors, quickAppearance, appFontFamily, appFontSize, editorFontFamily, editorFontSize, savedAccentTitlebar]);
+  const plasmaBackgroundImage = useMemo(() => themeBackgroundImage(renderedTheme), [renderedTheme]);
   useEffect(() => {
     const variables = themeVariables(renderedTheme, resolvedTheme, 'notebook');
     const root = document.documentElement.style;
@@ -4616,7 +4617,7 @@ export default function App() {
       "--plasma-panel-opacity": `${plasmaFrost * 0.9}%`,
       "--plasma-editor-opacity": `${Math.min(95, plasmaFrost * 1.1)}%`,
     } as CSSProperties : undefined}>
-      {plasmaEnabled ? <PlasmaTheme flow={plasmaFlow / 100} backgroundBlur={plasmaBackgroundBlur} frost={plasmaFrost / 100} theme={resolvedTheme} accentColor={effectiveAccentColor} layoutKey={`${leftVisible}-${outlineVisible}-${navigationStyle}`} /> : null}
+      {plasmaEnabled ? <PlasmaTheme backgroundImage={plasmaBackgroundImage} flow={plasmaFlow / 100} backgroundBlur={plasmaBackgroundBlur} frost={plasmaFrost / 100} theme={resolvedTheme} accentColor={effectiveAccentColor} layoutKey={`${leftVisible}-${outlineVisible}-${navigationStyle}`} /> : null}
       {isWindowsDesktop() ? <WindowsMenuBar onError={setAppError} onMouseDown={handleChromeMouseDown} onDoubleClick={handleChromeDoubleClick} /> : null}
       <header
         data-theme-region="notebook" data-theme-api={renderedTheme.design ? "1" : undefined}
