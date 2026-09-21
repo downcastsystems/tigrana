@@ -13,8 +13,10 @@
 [data-theme-region][data-theme-api="1"] :is(.folder-row, .note-card, .unified-note-row, .unified-folder-row, .toolbar-button, .icon-button, .note-tab) { border-radius: var(--tigrana-radius); }
 [data-theme-region][data-theme-api="1"] :is(.folder-row, .note-card, .unified-note-row, .unified-folder-row) { min-height: calc(32px * var(--tigrana-spacing)); }
 [data-theme-region][data-theme-api="1"] .ProseMirror :is(p, blockquote, ul, ol) { margin-block: calc(0.75em * var(--tigrana-spacing)); }
-/* Task labels align with the first line, not the generic paragraph spacing. */
-[data-theme-region][data-theme-api="1"] .ProseMirror ul[data-type="taskList"] > li > div > p { margin-block: 0; }
+/* List rows use line height for spacing. Paragraph margins belong between
+   standalone blocks, not between bullets or around nested lists. */
+[data-theme-region][data-theme-api="1"] .ProseMirror li > :is(p, ul, ol),
+[data-theme-region][data-theme-api="1"] .ProseMirror ul[data-type="taskList"] > li > div > :is(p, ul, ol) { margin-block: 0; }
 [data-theme-region][data-theme-api="1"] .ProseMirror :is(pre, blockquote, table) { border-radius: var(--tigrana-radius); }
 [data-theme-region][data-theme-api="1"] .note-surface { background-color: var(--tigrana-background, var(--app-bg)); }
 [data-theme-region][data-theme-api="1"] :is(.folder-pane, .notes-pane, .unified-tree-pane, .right-sidebar) { background-color: var(--tigrana-surface, var(--surface)); }
