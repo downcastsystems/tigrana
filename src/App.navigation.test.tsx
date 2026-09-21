@@ -1188,6 +1188,46 @@ describe("Note navigation persistence", () => {
     await act(async () => root.unmount());
   });
 
+  it.each(["builtin:default", "bundled:builtin-typewriter"])("selects a new note title from the context menu in %s", async (themeId) => {
+    demoPersistence.set("tigrana-demo-v5", JSON.stringify({ folders: ["Projects"], notes: {} }));
+    demoPersistence.set("tigrana-meta:/demo/Tigrana", JSON.stringify({ revision: 0, welcomeNoteAdded: true }));
+    const container = document.createElement("div");
+    document.body.appendChild(container);
+    containers.push(container);
+    const root = createRoot(container);
+    try {
+      await act(async () => root.render(<App />));
+      await waitFor(() => Boolean(container.querySelector('[data-folder-path="Projects"]')));
+      await act(async () => window.dispatchEvent(new KeyboardEvent("keydown", { key: ",", metaKey: true })));
+      await act(async () => {
+        Array.from(container.querySelectorAll<HTMLButtonElement>(".settings-nav button"))
+          .find(button => button.textContent === "Appearance")!.click();
+      });
+      await act(async () => {
+        const picker = container.querySelector<HTMLSelectElement>('select[aria-label="Theme"]')!;
+        picker.value = themeId;
+        picker.dispatchEvent(new Event("change", { bubbles: true }));
+      });
+      await act(async () => container.querySelector<HTMLButtonElement>('[aria-label="Close settings"]')!.click());
+      await act(async () => {
+        container.querySelector('[data-folder-path="Projects"]')!.dispatchEvent(
+          new MouseEvent("contextmenu", { bubbles: true, button: 2 }),
+        );
+      });
+      await act(async () => {
+        Array.from(container.querySelectorAll<HTMLButtonElement>(".context-menu button"))
+          .find(button => button.textContent === "New Note in Projects")!.click();
+      });
+      await waitFor(() => container.querySelector<HTMLTextAreaElement>('[aria-label="Note title"]')?.value === "Untitled");
+      await act(async () => { await new Promise(resolve => window.setTimeout(resolve, 100)); });
+      const title = container.querySelector<HTMLTextAreaElement>('[aria-label="Note title"]')!;
+      expect(document.activeElement).toBe(title);
+      expect([title.selectionStart, title.selectionEnd]).toEqual([0, "Untitled".length]);
+    } finally {
+      await act(async () => root.unmount());
+    }
+  });
+
   it("persists a blank new note as an Untitled placeholder", async () => {
     const container = document.createElement("div");
     document.body.appendChild(container);

@@ -2858,15 +2858,15 @@ export function NotesEditor({ content, commandRequest, focusRequest, focusAtEndR
       typeof selectionTo === "number" &&
       selectionFrom >= 0 &&
       selectionTo >= selectionFrom;
-    // If the editor isn't focused, blur first so the browser removes any cached
-    // cursor before new content is painted, preventing a ghost caret from the
-    // previous note appearing briefly. If it IS focused (e.g. user just pressed
-    // Enter on a new note's title and we just routed focus to the editor),
-    // skip the blur — Tiptap's blur defers via rAF and would land AFTER any
-    // refocus we attempt, dropping focus back to BODY.
+    // Clear only a stale editor caret, synchronously, when no control has focus.
+    // Tiptap's blur schedules a page-wide removeAllRanges in the next frame;
+    // that can erase the new title's selection after App has focused it.
     const wasFocused = editor.isFocused || editor.view.dom === document.activeElement;
-    if (!wasFocused) {
-      editor.commands.blur();
+    if (!wasFocused && document.activeElement === document.body) {
+      const selection = window.getSelection();
+      if (selection?.anchorNode && editor.view.dom.contains(selection.anchorNode)) {
+        selection.removeAllRanges();
+      }
     }
     setFindOpen(false);
     try {
