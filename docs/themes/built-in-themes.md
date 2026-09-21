@@ -1,6 +1,6 @@
 # Built-in themes
 
-All built-ins are validated schema 2 documents using Theme API 1. `src/themes/classic.json` holds the original palette themes, and individual JSON files hold Minimal, Cupertino, Baseline, and Starfall. `src/lib/bundledThemes.ts` is the catalog.
+All built-ins are validated schema 2 documents using Theme API 1. `src/themes/classic.json` holds the original palette themes, and individual JSON files hold Minimal, Cupertino, Based, and Starfall. `src/lib/bundledThemes.ts` is the catalog.
 
 Old notebook preset IDs remain supported. The app overlays their existing font and color preferences on the corresponding document at render time; opening a notebook does not rewrite its appearance metadata. Saved schema 1 themes remain supported and are upgraded to schema 2 when edited and saved. Imported CSS still goes through the same scoped CSS compiler. No Obsidian CSS is injected into the app.
 
@@ -12,11 +12,21 @@ These are Tigrana adaptations, not official ports or Obsidian plugin integration
 | --- | --- | --- |
 | Minimal | [kepano/obsidian-minimal](https://github.com/kepano/obsidian-minimal), 9.1.0 | Neutral white/charcoal surfaces, muted blue-gray accent, system font stack, tighter corners and spacing, restrained heading weight. Accent is adjusted for readable selections. |
 | Cupertino | [aaaaalexis/obsidian-cupertino](https://github.com/aaaaalexis/obsidian-cupertino), 3.2.12 | macOS-inspired gray surfaces, blue accent, system typography, softer controls and heavier headings. Uses installed system fonts, with Inter fallback; no proprietary font files are distributed. |
-| Baseline | [aaaaalexis/obsidian-baseline](https://github.com/aaaaalexis/obsidian-baseline), 3.2.12 | Bundled Inter, neutral surfaces, purple accent, modest corner radius, structured code/table borders, comfortable line spacing. |
 
-The three new themes default to standard UI and support Plasma when enabled. Starfall defaults to Plasma. Selecting another theme restores that theme's defaults and clears quick appearance overrides. Note rows retain rounded corners; section rows stay rectangular.
+Minimal, Cupertino, and Based default to standard UI and support Plasma when enabled. Starfall defaults to Plasma. Selecting another theme restores that theme's defaults and clears quick appearance overrides. Note rows retain rounded corners; section rows stay rectangular.
 
 Typography, colors, and design metrics use the engine's editable values. Custom CSS refers to theme variables instead of repeating fixed colors. Obsidian-specific layouts, helper classes, alternate task syntax, plugins, and animation systems are not included.
+
+## Based
+
+A Tigrana theme with framed panels, uppercase navigation labels, bundled Inter,
+neutral surfaces and a purple accent. The editor toolbar has no divider below it.
+Defaults to Single pane, right sidebar closed, Comfortable Width, Align center,
+and Plasma off. Manual width and alignment changes remain available.
+
+Its internal ID remains `builtin-baseline` so existing saved copies can still
+update or revert to this original. The original MIT copyright notice remains in
+the exported license text.
 
 ## Verification
 
@@ -36,16 +46,16 @@ The theme embeds the Latin WOFF2 of [VT323 by Peter Hull](https://github.com/pho
 
 Theme API 1 exposes `--tigrana-panel-gap` and `--tigrana-workspace-inset` in both standard and Plasma layouts. Standard mode also supports `--tigrana-panel-radius`, `--tigrana-panel-shadow`, and `--tigrana-workspace-background`. Values can be set in Advanced CSS on `:scope`; the in-app CSS reference includes a complete example. The app still owns the grid variants and resize handles, so creators do not need to reproduce every sidebar visibility combination. Use gaps of at least 6px to retain a usable drag target. Advanced surfaces continues to control opacity independently.
 
-Cupertino 1.1.0 uses an inset gradient workspace, floating rounded panels, native-style raised tabs, distinct toolbars, and softened note blocks. Baseline 1.1.0 uses framed panels, uppercase navigation labels, and an accent rule above the editor. Minimal 1.1.0 stays flat, with quieter labels, underline tabs, and lighter title typography. These remain adaptations, not pixel-for-pixel Obsidian ports. Existing notebook snapshots are preserved; reselect the built-in to adopt the revised design.
+Cupertino 1.1.0 uses an inset gradient workspace, floating rounded panels, native-style raised tabs, distinct toolbars, and softened note blocks. Minimal 1.1.0 stays flat, with quieter labels, underline tabs, and lighter title typography. Minimal and Cupertino remain adaptations, not pixel-for-pixel Obsidian ports. Existing notebook snapshots are preserved; reselect the built-in to adopt the revised design.
 
 Browser layout verification covered all 16 combinations of single/dual navigation, left sidebar visibility, outline visibility, and standard/Plasma mode at 1200px workspace width. All retained the requested 18px inset and splitter width without horizontal overflow.
 
 
-Themes may include `navigationStyle` with `dual-pane`, `single-pane`, or `section-view`. Omit it to keep the notebook's current layout. Selecting a theme applies its preference; subsequent manual changes persist until another theme with a navigation preference is chosen. Minimal, Baseline, and Old Basement PC default to Single pane. All other built-in themes default to Dual pane with sections. The theme editor exposes this as **Default navigation style**.
+Themes may include `navigationStyle` with `dual-pane`, `single-pane`, or `section-view`. Omit it to keep the notebook's current layout. Selecting a theme applies its preference; subsequent manual changes persist until another theme with a navigation preference is chosen. Minimal, Based, and Old Basement PC default to Single pane. All other built-in themes default to Dual pane with sections. The theme editor exposes this as **Default navigation style**.
 
 Themes may also set `rightSidebarOpen` to `true` or `false`. Omit it for Keep current. The theme editor's Default right sidebar control sets this preference. Manual sidebar changes are saved with the notebook and remain until another theme supplies a sidebar default.
 
-Minimal, Baseline, and Typewriter default to a closed right sidebar. All other built-in themes, including Default, open it by default. Baseline uses rounded tabs and separate framed panels without an accent border across the title bar or editor.
+Minimal, Based, and Typewriter default to a closed right sidebar. All other built-in themes, including Default, open it by default. Based uses rounded tabs and separate framed panels without an accent border across the title bar or editor.
 
 Default is a read-only starting point. Other built-ins expose Edit theme, which saves a customized copy with a portable `baseThemeId` pointing to the original built-in. Revert to defaults restores that built-in's settings in the draft while retaining the copy's identity and name; Save and use commits the reset. Existing custom themes without a recorded built-in origin are not guessed from their names.
 

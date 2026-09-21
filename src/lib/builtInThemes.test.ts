@@ -23,7 +23,7 @@ describe('built-in theme catalog', () => {
     expect(classicThemes.map(t => t.id)).toEqual(['default', 'atom', 'solarized', 'dracula', 'nord', 'gruvbox', 'catppuccin-frappe', 'catppuccin-macchiato', 'catppuccin-mocha']);
     expect(new Set(allBuiltInThemes.map(t => t.id)).size).toBe(allBuiltInThemes.length);
     expect(new Set(allBuiltInThemes.map(t => t.name)).size).toBe(allBuiltInThemes.length);
-    expect(bundledThemes.map(t => t.name)).toEqual(['Minimal', 'Cupertino', 'Baseline', 'Starfall', 'Old Basement PC', 'Adventure Quest', 'Typewriter']);
+    expect(bundledThemes.map(t => t.name)).toEqual(['Minimal', 'Cupertino', 'Based', 'Starfall', 'Old Basement PC', 'Adventure Quest', 'Typewriter']);
   });
   for (const theme of allBuiltInThemes) {
     it(`${theme.name} validates, exports, and renders in both modes`, () => {
