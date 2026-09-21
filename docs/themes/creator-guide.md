@@ -8,7 +8,7 @@ This guide describes the theme system on this branch. Older Tigrana releases may
 
 1. Pick the theme closest to your idea. **Create theme** makes a new theme from the current appearance. Default is a starting point and cannot be edited in place. **Edit theme** on another built-in creates an editable copy; editing a saved theme updates that saved theme.
 2. Give it a distinct name. In **Visual**, choose the accent, background, text, and fonts. The preview's **Dark / Light** selector also chooses which palette you are editing; fill out both.
-3. Choose default navigation and right-sidebar behavior. All three navigation styles are supported. **Keep current** leaves the notebook's current choice alone.
+3. Choose the author's default navigation and right-sidebar behavior. All three navigation styles are supported. Readers apply these with **Use theme's layout**; switching themes preserves their existing choices. **Keep current** leaves that choice alone even when applying the layout.
 4. Under **Advanced surfaces**, choose a background and set panel opacity. Lower opacity reveals the background without fading the text. This works with ordinary panels as well as Plasma. If you enable **Plasma UI by default**, adjust Flow, frostiness, and background blur too. Explicit surface opacity takes precedence over the opacity derived from frostiness.
 5. Use **Expand preview** to see more of the workspace. Try each navigation layout, turn Outline on and off, and enable Menu states and Compact title. Check the word count, selected rows, highlights, links, tables, and disabled controls. The desktop layout scales down to fit the preview window. Scroll inside the note to inspect the rest of the sample.
 6. Open **Theme check** and review its findings. Choose **Save and use**, complete any save/conflict choice, and check the result in a real notebook.
@@ -24,7 +24,7 @@ The accent supplies the selected background for notes, sections, and tabs. **Sel
 
 When an optional foreground is automatic, Tigrana chooses a readable foreground for the corresponding background. An explicit color stays exactly as you chose it. Use **Automatic** beside an overridden optional color to return to its fallback. Highlight colors control marked text in a note; selecting text with the mouse is a separate state.
 
-**Quick appearance** in Appearance is for notebook-only accent and colored-title-bar changes. Those choices, manual navigation/sidebar changes, and the Plasma override do not edit the shared theme. Choosing a theme again applies its defaults and clears the quick appearance overrides.
+**Quick appearance** in Appearance is for notebook-only accent and colored-title-bar changes. Those choices, manual navigation/sidebar changes, and the Plasma override do not edit the shared theme. Choosing a theme again applies its visual defaults and clears the quick appearance overrides. Navigation style and sidebar visibility stay as you set them. When they differ from the theme's defaults, **Use theme's layout** in Appearance applies the author's navigation and right sidebar choices. The preview always starts with the author's intended layout.
 
 ## Fonts without tiny labels
 

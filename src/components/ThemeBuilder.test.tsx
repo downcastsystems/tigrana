@@ -700,3 +700,20 @@ it("offers to save modified notebook settings in a separate theme and retains th
     expect(JSON.stringify(original)).toBe(before);
   } finally { await act(async () => root.unmount()); }
 });
+
+it("offers the author's layout separately and only when explicit defaults differ", async () => {
+  const host = document.createElement('div'), root = createRoot(host);
+  const theme = { ...exampleTheme(), navigationStyle: 'single-pane' as const, rightSidebarOpen: false };
+  const seed = { ...theme, navigationStyle: 'dual-pane' as const, rightSidebarOpen: true };
+  const apply = vi.fn(), useLayout = vi.fn();
+  try {
+    await act(async () => root.render(<ThemeBuilder current={theme} seed={seed} onApply={apply} onUseThemeLayout={useLayout} />));
+    await act(async () => button(host, "Use theme's layout").click());
+    expect(useLayout).toHaveBeenCalledWith(theme);
+    expect(apply).not.toHaveBeenCalled();
+    await act(async () => root.render(<ThemeBuilder current={theme} seed={theme} onApply={apply} onUseThemeLayout={useLayout} />));
+    expect(button(host, "Use theme's layout")).toBeUndefined();
+    await act(async () => root.render(<ThemeBuilder current={{ ...theme, navigationStyle: undefined, rightSidebarOpen: undefined }} seed={seed} onApply={apply} onUseThemeLayout={useLayout} />));
+    expect(button(host, "Use theme's layout")).toBeUndefined();
+  } finally { await act(async () => root.unmount()); }
+});

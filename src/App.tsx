@@ -1899,7 +1899,16 @@ export default function App() {
 
   function applyCustomTheme(theme: ThemeDocument) {
     if (workspaceRef.current !== workspace) return;
-    updateNotebookAppearance({ ...themeAppearance(theme), quickAppearance: null });
+    // Retain notebook layout; the snapshot keeps the author defaults for the opt-in action.
+    updateNotebookAppearance({ ...themeAppearance(theme), quickAppearance: null, navigationStyle, rightSidebarOpen: outlineVisible });
+  }
+
+  function applyThemeLayout(theme: ThemeDocument) {
+    if (workspaceRef.current !== workspace) return;
+    updateNotebookAppearance({
+      ...(theme.navigationStyle === undefined ? {} : { navigationStyle: theme.navigationStyle }),
+      ...(theme.rightSidebarOpen === undefined ? {} : { rightSidebarOpen: theme.rightSidebarOpen }),
+    });
   }
 
   function themeSeed(): ThemeDocument {
@@ -5463,7 +5472,7 @@ export default function App() {
             onClose={() => setSettingsOpen(false)}
             themeContent={(navigationControls) => <>
               {metadata.appearance?.customTheme && !customTheme ? <p role="alert">This notebook contains an invalid or unsupported theme. Choose a theme to replace it.</p> : null}
-              <ThemeBuilder navigationControls={navigationControls} key={workspace} current={customTheme} seed={themeSeed()} onApply={applyCustomTheme}
+              <ThemeBuilder navigationControls={navigationControls} key={workspace} current={customTheme} seed={themeSeed()} onApply={applyCustomTheme} onUseThemeLayout={applyThemeLayout}
                 onSaved={() => setSettingsOpen(false)}
                 quickAppearanceControls={<section className="settings-quick-appearance" aria-label="Quick appearance">
                   <h3>Quick appearance</h3>
@@ -5476,7 +5485,7 @@ export default function App() {
                   </label>
                 </section>}
                 builtInThemes={themePresets} builtInThemeId={themePresetId}
-                onBuiltInChange={(id) => updateNotebookAppearance({ ...(classicThemes.find(theme => theme.id === id)?.rightSidebarOpen === undefined ? {} : { rightSidebarOpen: classicThemes.find(theme => theme.id === id)!.rightSidebarOpen }), navigationStyle: classicThemes.find(theme => theme.id === id)?.navigationStyle, quickAppearance: null, accentTitlebar: false, customTheme: null, themePresetId: id, colors: defaultNotebookThemeColors(), plasma: { ...defaultPlasmaSettings }, appFontFamily: defaultAppFontFamily, appFontSize: defaultAppFontSize, editorFontFamily: defaultEditorFontFamily, editorFontSize: defaultEditorFontSize })}
+                onBuiltInChange={(id) => updateNotebookAppearance({ navigationStyle, rightSidebarOpen: outlineVisible, quickAppearance: null, accentTitlebar: false, customTheme: null, themePresetId: id, colors: defaultNotebookThemeColors(), plasma: { ...defaultPlasmaSettings }, appFontFamily: defaultAppFontFamily, appFontSize: defaultAppFontSize, editorFontFamily: defaultEditorFontFamily, editorFontSize: defaultEditorFontSize })}
                 colorScheme={colorScheme} onColorSchemeChange={(scheme) => updateNotebookAppearance({ colorScheme: scheme })} />
             </>}
           />

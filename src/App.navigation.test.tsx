@@ -236,6 +236,8 @@ describe("Note navigation persistence", () => {
       expect(container.querySelector(".note-status-bar")).toBeNull();
       await openAppearance();
       await chooseTheme("bundled:builtin-typewriter");
+      const useLayout = Array.from(container.querySelectorAll<HTMLButtonElement>(".theme-builder button")).find(b => b.textContent === "Use theme's layout");
+      if (useLayout) await act(async () => useLayout.click());
       expect(surface().classList.contains("is-narrow-width")).toBe(true);
       expect(surface().classList.contains("is-center-aligned")).toBe(true);
       expect(container.querySelector(".note-status-bar")).not.toBeNull();
@@ -279,13 +281,23 @@ describe("Note navigation persistence", () => {
       expect(container.textContent).not.toContain("Save current settings as new theme");
       const modePicker = container.querySelector<HTMLSelectElement>('select[aria-label="Color scheme"]')!;
       await act(async () => { modePicker.value = "dark"; modePicker.dispatchEvent(new Event("change", { bubbles: true })); });
+      const findThemeLayoutAction = () => Array.from(container.querySelectorAll<HTMLButtonElement>(".theme-builder button")).find(b => b.textContent === "Use theme's layout");
+      let previousNavigation = "section-view", previousOutlineHidden = false;
       for (const theme of bundledThemes.filter(t => t.id !== "builtin-starfall-studio")) {
         await act(async () => { picker.value = `bundled:${theme.id}`; picker.dispatchEvent(new Event("change", { bubbles: true })); });
         await waitFor(() => JSON.parse(demoPersistence.get("tigrana-meta:/demo/Tigrana") ?? "{}").appearance?.customTheme?.id === theme.id);
         const runtimeFont = theme.editorFontFamily.replace(/theme-font-/g, "tigrana-notebook-");
         expect(document.documentElement.style.getPropertyValue("--editor-font-family")).toBe(runtimeFont);
         expect(container.querySelector<HTMLElement>(".app-frame")!.style.getPropertyValue("--editor-font-family")).toBe(runtimeFont);
-        expect(container.querySelector(".app-frame")?.classList.contains("is-outline-hidden")).toBe(theme.rightSidebarOpen === false);
+        expect(container.querySelector(".app-frame")?.classList.contains("is-outline-hidden")).toBe(previousOutlineHidden);
+        expect(container.querySelector<HTMLSelectElement>('select[aria-label="Navigation style"]')!.value).toBe(previousNavigation);
+        const useLayout = findThemeLayoutAction();
+        if (useLayout) await act(async () => useLayout.click());
+        expect(findThemeLayoutAction()).toBeUndefined();
+        previousNavigation = theme.navigationStyle!;
+        previousOutlineHidden = theme.rightSidebarOpen === false;
+        expect(container.querySelector<HTMLSelectElement>('select[aria-label="Navigation style"]')!.value).toBe(previousNavigation);
+        expect(container.querySelector(".app-frame")?.classList.contains("is-outline-hidden")).toBe(previousOutlineHidden);
         expect(container.querySelector('[data-theme-styles="notebook"]')?.textContent).toContain(`--tigrana-accent:${theme.dark.accent}`);
         expect(container.querySelector(".app-frame")?.getAttribute("data-theme-api")).toBe("1");
         expect(container.querySelector(".app-shell")?.hasAttribute("data-plasma")).toBe(false);
@@ -296,13 +308,22 @@ describe("Note navigation persistence", () => {
       await act(async () => { navigation.value = "single-pane"; navigation.dispatchEvent(new Event("change", { bubbles: true })); });
       expect(container.querySelector(".app-frame")?.classList.contains("is-single-col")).toBe(true);
       await act(async () => { picker.value = "bundled:builtin-cupertino"; picker.dispatchEvent(new Event("change", { bubbles: true })); });
+      expect(navigation.value).toBe("single-pane");
+      expect(findThemeLayoutAction()).toBeDefined();
+      await act(async () => findThemeLayoutAction()!.click());
       expect(navigation.value).toBe("section-view");
       await act(async () => { picker.value = "bundled:builtin-minimal"; picker.dispatchEvent(new Event("change", { bubbles: true })); });
+      expect(navigation.value).toBe("section-view");
+      await act(async () => findThemeLayoutAction()!.click());
       expect(navigation.value).toBe("single-pane");
       expect(container.querySelector(".app-frame")?.classList.contains("is-single-col")).toBe(true);
       await act(async () => { picker.value = "builtin:nord"; picker.dispatchEvent(new Event("change", { bubbles: true })); });
       expect(container.querySelector('[data-theme-styles="notebook"]')?.textContent).toContain("--tigrana-accent:#88c0d0");
+      expect(navigation.value).toBe("single-pane");
+      expect(container.querySelector(".app-frame")?.classList.contains("is-outline-hidden")).toBe(true);
+      await act(async () => findThemeLayoutAction()!.click());
       expect(navigation.value).toBe("section-view");
+      expect(container.querySelector(".app-frame")?.classList.contains("is-outline-hidden")).toBe(false);
       expect(document.documentElement.style.getPropertyValue("--editor-font-family")).toContain("Inter");
       expect(container.querySelector(".app-frame")?.getAttribute("data-theme-api")).toBe("1");
     } finally { await act(async () => root.unmount()); }
@@ -350,6 +371,16 @@ describe("Note navigation persistence", () => {
       expect(localStorage.getItem("tigrana-plasma-background-blur")).toBe("12");
       expect(container.textContent).not.toContain("Theme copies differ");
       expect(container.querySelector('[data-theme-styles="notebook"]')?.textContent).toContain("color:red");
+      expect(container.querySelector(".app-frame")?.classList.contains("is-outline-hidden")).toBe(false);
+      // The preserved sidebar survives reload; the author's default is opt-in even later.
+      await act(async () => window.dispatchEvent(new KeyboardEvent("keydown", { key: ",", metaKey: true })));
+      await act(async () => { Array.from(container.querySelectorAll<HTMLButtonElement>(".settings-nav button")).find(b => b.textContent === "Appearance")!.click(); });
+      const useLayout = Array.from(container.querySelectorAll<HTMLButtonElement>(".theme-builder button")).find(b => b.textContent === "Use theme's layout")!;
+      expect(useLayout).toBeDefined();
+      await act(async () => useLayout.click());
+      await waitFor(() => JSON.parse(demoPersistence.get("tigrana-meta:/demo/Tigrana") ?? "{}").appearance?.rightSidebarOpen === false);
+      expect(document.documentElement.style.getPropertyValue("--accent")).toBe("#2255cc");
+      await act(async () => container.querySelector<HTMLButtonElement>('[aria-label="Close settings"]')!.click());
       expect(container.querySelector(".app-frame")?.classList.contains("is-outline-hidden")).toBe(true);
       const showSidebar = container.querySelector<HTMLButtonElement>('button[aria-label="Show right sidebar"]')!;
       await act(async () => showSidebar.click());

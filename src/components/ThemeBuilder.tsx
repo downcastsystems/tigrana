@@ -210,6 +210,7 @@ export function ThemeBuilder({
   seed,
   onApply,
   onSaved,
+  onUseThemeLayout,
   quickAppearanceControls,
   navigationControls,
   builtInThemes = [],
@@ -222,6 +223,7 @@ export function ThemeBuilder({
   seed: ThemeDocument;
   onApply: (theme: ThemeDocument) => void;
   onSaved?: () => void;
+  onUseThemeLayout?: (theme: ThemeDocument) => void;
   quickAppearanceControls?: React.ReactNode;
   navigationControls?: React.ReactNode;
   builtInThemes?: { id: string; name: string }[];
@@ -242,6 +244,7 @@ export function ThemeBuilder({
   const cssHints = useMemo(() => visualCssHints(draft?.design?.css ?? "", mode), [draft?.design?.css, mode]);
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
+  const [lastPickedThemeId, setLastPickedThemeId] = useState<string | null>(null);
   const [deleting, setDeleting] = useState<ThemeDocument | null>(null);
   const [verifying, setVerifying] = useState(false);
   async function reload() {
@@ -269,6 +272,8 @@ export function ThemeBuilder({
   }
   const sourceTheme = current ?? allBuiltInThemes.find(theme => theme.id === builtInThemeId) ?? seed;
   const settingsModified = hasCurrentThemeChanges(sourceTheme, seed);
+  const layoutDiffers = (sourceTheme.navigationStyle !== undefined && sourceTheme.navigationStyle !== seed.navigationStyle)
+    || (sourceTheme.rightSidebarOpen !== undefined && sourceTheme.rightSidebarOpen !== seed.rightSidebarOpen);
   const sourceOriginal = useMemo(() => authoringOriginal(sourceTheme, [...allBuiltInThemes, ...themes]), [sourceTheme, themes]);
   const sourceBuiltIn = allBuiltInThemes.find(theme => theme.id === sourceTheme.id);
   const draftOriginal = draft?.baseThemeSnapshot ?? allBuiltInThemes.find(theme => theme.id === (draft?.baseThemeId ?? draft?.id));
@@ -324,6 +329,7 @@ export function ThemeBuilder({
                 }
                 onChange={(e) => {
                   const value = e.target.value;
+                  setLastPickedThemeId(value.slice(value.indexOf(":") + 1));
                   if (value.startsWith("builtin:"))
                     onBuiltInChange?.(value.slice(8));
                   else if (value.startsWith("bundled:")) {
@@ -373,9 +379,16 @@ export function ThemeBuilder({
             </div>
           </div>
           {themes.some(t => displayNames[t.id] !== t.name) && <p className="settings-description">Some older themes share a name. Numbered labels distinguish them here; editing and saving one gives it a unique name.</p>}
-          {settingsModified && <div className="theme-current-settings">
-            <p className="settings-description" role="status">Current settings differ from {sourceTheme.name}.</p>
-            <button type="button" className="toolbar-button" disabled={busy} onClick={create}>Save current settings as new theme</button>
+          {(settingsModified || (onUseThemeLayout && layoutDiffers)) && <div className="theme-current-settings">
+            <p className="settings-description" role="status">{onUseThemeLayout && layoutDiffers
+              ? lastPickedThemeId === sourceTheme.id
+                ? `${sourceTheme.name} applied. Your navigation and panels were kept.`
+                : "Your navigation and panels differ from this theme's defaults."
+              : `Current settings differ from ${sourceTheme.name}.`}</p>
+            <div className="theme-actions">
+              {onUseThemeLayout && layoutDiffers && <button type="button" className="toolbar-button" disabled={busy} onClick={() => { onUseThemeLayout(sourceTheme); setLastPickedThemeId(null); }}>Use theme's layout</button>}
+              {settingsModified && <button type="button" className="toolbar-button" disabled={busy} onClick={create}>Save current settings as new theme</button>}
+            </div>
           </div>}
           <div className="theme-actions">
             <button className="toolbar-button" onClick={create} disabled={busy}>
@@ -597,7 +610,7 @@ export function ThemeBuilder({
                     <option value="single-pane">Single pane</option>
                   </select>
                 </label>
-                <p className="settings-description">Applied when you choose this theme. You can change the navigation style afterward in Appearance.</p>
+                <p className="settings-description">Applied only when you choose Use theme's layout. Switching themes keeps your current navigation.</p>
                 <label className="setting-row">
                   Default right sidebar
                   <select value={draft.rightSidebarOpen === undefined ? "" : draft.rightSidebarOpen ? "open" : "closed"}
@@ -607,7 +620,7 @@ export function ThemeBuilder({
                     <option value="closed">Closed</option>
                   </select>
                 </label>
-                <p className="settings-description">Applied when you choose this theme. You can open or close the sidebar afterward.</p>
+                <p className="settings-description">Applied only when you choose Use theme's layout. Switching themes keeps your current sidebar visibility.</p>
                 <label className="setting-row">
                   Default editor width
                   <select className="settings-select" value={draft.editorWidthMode ?? ""}
