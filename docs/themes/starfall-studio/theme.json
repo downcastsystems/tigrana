@@ -46,7 +46,7 @@
   "design": {
     "apiVersion": 1,
     "author": "Tigrana example",
-    "version": "1.4.0",
+    "version": "1.4.1",
     "license": "",
     "supportsPlasma": true,
     "css": "",
@@ -73,5 +73,7 @@
       "type": "toggle",
       "value": true
     }
-  ]
+  ],
+  "editorWidthMode": "comfortable",
+  "noteAlignment": "center"
 }

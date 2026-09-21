@@ -31,7 +31,7 @@ original MIT copyright notice remains in the exported license text.
 
 A Tigrana theme with framed panels, uppercase navigation labels, bundled Inter,
 neutral surfaces and a purple accent. The editor toolbar has no divider below it.
-Defaults to Single pane, right sidebar closed, Comfortable Width, Align center,
+Defaults to Dual pane with sections, right sidebar closed, Comfortable Width, Align center,
 and Plasma off. Manual width and alignment changes remain available.
 
 Its internal ID remains `builtin-baseline` so existing saved copies can still
@@ -61,7 +61,9 @@ Minimal 1.1.0 stays flat, with quieter labels, underline tabs, and lighter title
 Browser layout verification covered all 16 combinations of single/dual navigation, left sidebar visibility, outline visibility, and standard/Plasma mode at 1200px workspace width. All retained the requested 18px inset and splitter width without horizontal overflow.
 
 
-Themes may include `navigationStyle` with `dual-pane`, `single-pane`, or `section-view`. Omit it to keep the notebook's current layout. Selecting a theme applies its preference; subsequent manual changes persist until another theme with a navigation preference is chosen. Minimal, Based, and Old Basement PC default to Single pane. All other built-in themes default to Dual pane with sections. The theme editor exposes this as **Default navigation style**.
+All built-in themes default to **Comfortable Width**, **Dual pane with sections**, and **Align center**. Selecting a theme applies its writing width and alignment. Navigation and sidebar visibility remain as you set them unless you choose **Use theme's layout**. Sidebar defaults still vary by theme.
+
+Custom themes may include `navigationStyle` with `dual-pane`, `single-pane`, or `section-view`, or omit it to keep the current layout. The theme editor exposes this as **Default navigation style**.
 
 Themes may also set `rightSidebarOpen` to `true` or `false`. Omit it for Keep current. The theme editor's Default right sidebar control sets this preference. Manual sidebar changes are saved with the notebook and remain until another theme supplies a sidebar default.
 
@@ -79,7 +81,7 @@ Retro adventure menus: pixel lettering, green and gold panel frames, an original
 
 Word count starts on when Typewriter is selected. It can be turned off afterward in View or General settings.
 
-Warm ivory paper and brown ink in light mode; charcoal paper, cream text, and a muted tan accent in dark mode. Thin panel borders, small corner radii, and regular-weight serif titles keep the writing area quiet. Defaults to Dual pane with sections, right sidebar closed, Narrow Width, Align center, and Plasma off. Manual layout changes remain available and persist with the notebook.
+Warm ivory paper and brown ink in light mode; charcoal paper, cream text, and a muted tan accent in dark mode. Thin panel borders, small corner radii, and regular-weight serif titles keep the writing area quiet. Defaults to Dual pane with sections, right sidebar closed, Comfortable Width, Align center, and Plasma off. Manual layout changes remain available and persist with the notebook.
 
 Both the interface and editor use [Solway](https://github.com/mashavp/Solway), a proportional slab serif with a typewriter feel. The unmodified Latin regular WOFF2 from `@fontsource/solway` 5.3.0 is bundled for offline use, with Georgia/serif fallbacks for other glyphs. The full SIL Open Font License 1.1 and attribution travel with the theme. No American Typewriter font files are distributed.
 

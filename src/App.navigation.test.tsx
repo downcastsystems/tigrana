@@ -238,7 +238,7 @@ describe("Note navigation persistence", () => {
       await chooseTheme("bundled:builtin-typewriter");
       const useLayout = Array.from(container.querySelectorAll<HTMLButtonElement>(".theme-builder button")).find(b => b.textContent === "Use theme's layout");
       if (useLayout) await act(async () => useLayout.click());
-      expect(surface().classList.contains("is-narrow-width")).toBe(true);
+      expect(surface().classList.contains("is-comfortable-width")).toBe(true);
       expect(surface().classList.contains("is-center-aligned")).toBe(true);
       expect(container.querySelector(".note-status-bar")).not.toBeNull();
       await act(async () => { Array.from(container.querySelectorAll<HTMLButtonElement>(".settings-nav button")).find(b => b.textContent === "General")!.click(); });
@@ -260,7 +260,7 @@ describe("Note navigation persistence", () => {
       await openAppearance();
       await chooseTheme("builtin:default");
       await chooseTheme("bundled:builtin-typewriter");
-      expect(surface().classList.contains("is-narrow-width")).toBe(true);
+      expect(surface().classList.contains("is-comfortable-width")).toBe(true);
       expect(surface().classList.contains("is-center-aligned")).toBe(true);
       expect(container.querySelector(".note-status-bar")).not.toBeNull();
       expect(container.textContent).not.toContain("Save current settings as new theme");
@@ -315,11 +315,11 @@ describe("Note navigation persistence", () => {
       await act(async () => { picker.value = "bundled:builtin-minimal"; picker.dispatchEvent(new Event("change", { bubbles: true })); });
       expect(navigation.value).toBe("section-view");
       await act(async () => findThemeLayoutAction()!.click());
-      expect(navigation.value).toBe("single-pane");
-      expect(container.querySelector(".app-frame")?.classList.contains("is-single-col")).toBe(true);
+      expect(navigation.value).toBe("section-view");
+      expect(container.querySelector(".app-frame")?.classList.contains("is-single-col")).toBe(false);
       await act(async () => { picker.value = "builtin:nord"; picker.dispatchEvent(new Event("change", { bubbles: true })); });
       expect(container.querySelector('[data-theme-styles="notebook"]')?.textContent).toContain("--tigrana-accent:#88c0d0");
-      expect(navigation.value).toBe("single-pane");
+      expect(navigation.value).toBe("section-view");
       expect(container.querySelector(".app-frame")?.classList.contains("is-outline-hidden")).toBe(true);
       await act(async () => findThemeLayoutAction()!.click());
       expect(navigation.value).toBe("section-view");

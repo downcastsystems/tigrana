@@ -57,7 +57,9 @@ describe('built-in theme catalog', () => {
       expect(themesMatch(theme, { ...nativeSnapshot, editorFontSize: theme.editorFontSize + 1 })).toBe(false);
       expect(theme.schemaVersion).toBe(2);
       expect(themeAppearance(theme).rightSidebarOpen).toBe(!["builtin-minimal", "builtin-baseline", "builtin-typewriter"].includes(theme.id));
-      expect(themeAppearance(theme).navigationStyle).toBe(["builtin-minimal", "builtin-baseline", "builtin-old-basement-pc"].includes(theme.id) ? "single-pane" : "section-view");
+      expect(themeAppearance(theme).navigationStyle).toBe("section-view");
+      expect(themeAppearance(theme).editorWidthMode).toBe("comfortable");
+      expect(themeAppearance(theme).noteAlignment).toBe("center");
       expect(decodeThemePackage(encodeThemePackage(theme))).toEqual(theme);
       expect(themeAppearance(theme).plasma?.enabled).toBe(theme.plasma?.enabled);
       for (const mode of ['light', 'dark'] as const) {

@@ -563,10 +563,10 @@ it("edits Typewriter writing defaults and reflects them in the preview", async (
     await act(async () => button(host, "Edit theme").click());
     const width = [...host.querySelectorAll('label')].find(label => label.textContent?.includes('Default editor width'))!.querySelector('select')!;
     const alignment = [...host.querySelectorAll('label')].find(label => label.textContent?.includes('Default note alignment'))!.querySelector('select')!;
-    expect(width.value).toBe('narrow');
+    expect(width.value).toBe('comfortable');
     expect(alignment.value).toBe('center');
     const preview = host.querySelector('[aria-label="dark full theme preview"]')!.shadowRoot!;
-    expect(preview.querySelector('.note-surface.is-narrow-width.is-center-aligned')).not.toBeNull();
+    expect(preview.querySelector('.note-surface.is-comfortable-width.is-center-aligned')).not.toBeNull();
     await act(async () => { width.value = 'full'; width.dispatchEvent(new Event('change', { bubbles: true })); });
     await act(async () => { alignment.value = 'left'; alignment.dispatchEvent(new Event('change', { bubbles: true })); });
     expect(preview.querySelector('.note-surface.is-full-width.is-left-aligned')).not.toBeNull();
