@@ -22,6 +22,7 @@ rules that must remain consistent across UI flows.
 | `notebookStorage.ts` | `NotebookStorage` | Selects one Native or demo adapter and exposes explicit capability differences |
 | `notebookSnapshot.ts` | Latest-request Notebook refresh | Rejects stale and inactive refresh results before React state is replaced |
 | `notebookMetadataSession.ts` | Workspace-scoped metadata ownership | Prevents delayed work or pre-load settings changes from reading or writing another Notebook's metadata |
+| `responsivePanes.ts` / `useResponsivePanes.ts` | Editor-first pane visibility | Reserves 520 CSS pixels for the editor, hides the right then left panes, and restores chosen visibility without changing Notebook metadata; narrow-window toggles open temporary overlays |
 | `notebookAppearance.ts` | Authoritative appearance adoption | Resolves legacy/partial values and updates metadata plus every mirrored appearance value through one seam |
 | `activeNoteLifecycle.ts` | `ActiveNoteLifecycle` | Load/navigation generations, serialized edit-lock transitions, accepted-disk baselines, save queues, latest-request persistence, and serialized path changes |
 | `notebookPathMutations.ts` | Completed Note/Folder move and rename operations | Repairs ephemeral tabs, selection, active lock paths, and React metadata after Native storage commits |

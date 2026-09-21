@@ -1291,6 +1291,60 @@ describe("Note navigation persistence", () => {
     await act(async () => root.unmount());
   });
 
+  it("protects the editor on resize without saving automatic pane visibility", async () => {
+    const container = document.createElement("div");
+    document.body.appendChild(container);
+    containers.push(container);
+    const root = createRoot(container);
+    try {
+      await act(async () => root.render(<App />));
+      await waitFor(() => Boolean(container.querySelector(".note-title-input")));
+      const frame = container.querySelector<HTMLElement>(".app-frame")!;
+      const title = container.querySelector(".note-title-input");
+      const resize = async (width: number) => act(async () => triggerElementResize(frame, width));
+      await resize(1600);
+      expect(container.querySelector(".left-panes")).not.toBeNull();
+      expect(container.querySelector(".right-sidebar")).not.toBeNull();
+      await resize(1200);
+      expect(container.querySelector(".left-panes")).not.toBeNull();
+      expect(container.querySelector(".right-sidebar")).toBeNull();
+      await resize(900);
+      expect(container.querySelector(".left-panes")).toBeNull();
+      expect(container.querySelector(".right-sidebar")).toBeNull();
+      expect(container.querySelector(".note-title-input")).toBe(title);
+      expect(container.querySelector('[aria-label="Exit focus mode"]')).not.toBeNull();
+      expect(container.querySelectorAll(".pane-resizer")).toHaveLength(0);
+
+      await act(async () => container.querySelector<HTMLButtonElement>('[aria-label="Show left sidebar"]')!.click());
+      expect(frame.classList.contains("has-left-overlay")).toBe(true);
+      expect(frame.classList.contains("is-left-hidden")).toBe(true);
+      expect(container.querySelector(".left-panes")).not.toBeNull();
+      await act(async () => window.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape" })));
+      expect(container.querySelector(".left-panes")).toBeNull();
+      await act(async () => container.querySelector<HTMLButtonElement>('[aria-label="Show right sidebar"]')!.click());
+      expect(frame.classList.contains("has-right-overlay")).toBe(true);
+      expect(container.querySelector(".right-sidebar")).not.toBeNull();
+      await resize(1600);
+      expect(frame.classList.contains("has-right-overlay")).toBe(false);
+      expect(container.querySelector(".left-panes")).not.toBeNull();
+      expect(container.querySelector(".right-sidebar")).not.toBeNull();
+
+      await act(async () => container.querySelector<HTMLButtonElement>('[aria-label="Hide right sidebar"]')!.click());
+      await resize(900);
+      await resize(1600);
+      expect(container.querySelector(".left-panes")).not.toBeNull();
+      expect(container.querySelector(".right-sidebar")).toBeNull();
+      expect(JSON.parse(demoPersistence.get("tigrana-meta:/demo/Tigrana")!).appearance.rightSidebarOpen).toBe(false);
+
+      await act(async () => container.querySelector<HTMLButtonElement>('[aria-label="Enter focus mode"]')!.click());
+      await resize(900);
+      await act(async () => container.querySelector<HTMLButtonElement>('[aria-label="Exit focus mode"]')!.click());
+      expect(frame.classList.contains("has-left-overlay")).toBe(true);
+    } finally {
+      await act(async () => root.unmount());
+    }
+  });
+
   it("offers focus mode in the toolbar and editor options, then restores the prior pane layout", async () => {
     demoPersistence.set("tigrana-demo-v5", JSON.stringify({
       folders: [],

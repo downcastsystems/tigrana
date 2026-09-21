@@ -1,3 +1,5 @@
+import { useResponsivePanes } from "./lib/useResponsivePanes";
+import "./styles/responsive-panes.css";
 import { captureCurrentThemeSettings } from "./lib/currentThemeSettings";
 import { recoveryTheme } from "./lib/themeCatalog";
 import { themeCatalogWarnings } from "./lib/bundledThemes";
@@ -476,6 +478,7 @@ export default function App() {
   const [workspace, setWorkspace] = useState(() => readInitialWorkspace());
   const [colorScheme, setColorScheme] = useState<ColorScheme>(() => readStoredColorScheme());
   const [prefersDark, setPrefersDark] = useState(() => window.matchMedia?.("(prefers-color-scheme: dark)").matches ?? false);
+  const resolvedTheme = colorScheme === "system" ? (prefersDark ? "dark" : "light") : colorScheme;
   const [plasmaBackgroundBlur, setPlasmaBackgroundBlur] = useState(() => {
     const stored = Number(localStorage.getItem(plasmaBackgroundBlurKey) ?? 0);
     return Number.isFinite(stored) ? Math.min(40, Math.max(0, stored)) : 0;
@@ -529,9 +532,9 @@ export default function App() {
   const [versionHistory, setVersionHistory] = useState<VersionHistoryState | null>(null);
   const [recentNotebooks, setRecentNotebooks] = useState<RecentNotebook[]>(() => readRecentNotebooks());
   const [appMenuOpen, setAppMenuOpen] = useState(false);
-  const [leftVisible, setLeftVisible] = useState(true);
+  const [preferredLeftVisible, setLeftVisible] = useState(true);
   const [plasmaFlow, setPlasmaFlow] = useState(0);
-  const [outlineVisible, setOutlineVisible] = useState(true);
+  const [preferredOutlineVisible, setOutlineVisible] = useState(true);
   const focusRestoreRef = useRef<PaneVisibility | null>(null);
   const [wordCountVisible, setWordCountVisible] = useState(() => readStoredWordCountVisibility());
   const [noteScrollFades, setNoteScrollFades] = useState<ScrollFadeVisibility>({ top: false, bottom: false });
@@ -547,6 +550,13 @@ export default function App() {
   const [folderPaneWidth, setFolderPaneWidth] = useState(() => readStoredNumber(folderPaneWidthKey, 292));
   const [notesPaneWidth, setNotesPaneWidth] = useState(() => readStoredNumber(notesPaneWidthKey, 268));
   const [rightPaneWidth, setRightPaneWidth] = useState(() => readStoredNumber(rightPaneWidthKey, 300));
+  const responsivePanes = useResponsivePanes({
+    leftVisible: preferredLeftVisible, outlineVisible: preferredOutlineVisible,
+    navigationStyle, folderWidth: folderPaneWidth, notesWidth: notesPaneWidth, rightWidth: rightPaneWidth,
+    theme: metadata.appearance?.customTheme, mode: resolvedTheme, notebook: workspace, plasma: plasmaEnabled,
+  });
+  const { leftVisible, outlineVisible, setOverlay: setPaneOverlay } = responsivePanes;
+
   const [contextMenu, setContextMenu] = useState<ContextMenuState | null>(null);
   const [tabContextMenu, setTabContextMenu] = useState<TabContextMenuState | null>(null);
   const [folderDialogParent, setFolderDialogParent] = useState<string | null>(null);
@@ -706,6 +716,7 @@ export default function App() {
     persistDraft: () => void;
     requestCreateNoteInContext: () => void;
     toggleRawMarkdown: () => void;
+    toggleSidebar: () => void;
   }>({
     addEmptyTab: () => {},
     chooseWorkspace: () => {},
@@ -713,6 +724,7 @@ export default function App() {
     persistDraft: () => {},
     requestCreateNoteInContext: () => {},
     toggleRawMarkdown: () => {},
+    toggleSidebar: () => {},
   });
 
   const activeNote = notes.find((note) => note.path === activePath) ?? null;
@@ -796,7 +808,6 @@ export default function App() {
     draftSaveRevisions.observe(rawMarkdownDraft);
   }, [draftSaveRevisions, rawMarkdownDraft]);
   backlinkPaneVisibleRef.current = outlineVisible && rightSidebarMode === "backlinks";
-  const resolvedTheme = colorScheme === "system" ? (prefersDark ? "dark" : "light") : colorScheme;
   const customTheme = useMemo(() => readTheme(metadata.appearance?.customTheme), [metadata.appearance?.customTheme]);
   const invalidNotebookTheme = !!metadata.appearance?.customTheme && !customTheme;
   const themePreset = useMemo(() => {
@@ -1901,7 +1912,7 @@ export default function App() {
   function applyCustomTheme(theme: ThemeDocument) {
     if (workspaceRef.current !== workspace) return;
     // Retain notebook layout; the snapshot keeps the author defaults for the opt-in action.
-    updateNotebookAppearance({ ...themeAppearance(theme), quickAppearance: null, navigationStyle, rightSidebarOpen: outlineVisible });
+    updateNotebookAppearance({ ...themeAppearance(theme), quickAppearance: null, navigationStyle, rightSidebarOpen: preferredOutlineVisible });
   }
 
   function applyThemeLayout(theme: ThemeDocument) {
@@ -1914,7 +1925,7 @@ export default function App() {
 
   function themeSeed(): ThemeDocument {
     return captureCurrentThemeSettings(renderedTheme, {
-      quickAppearance, navigationStyle, rightSidebarOpen: outlineVisible,
+      quickAppearance, navigationStyle, rightSidebarOpen: preferredOutlineVisible,
       editorWidthMode, noteAlignment, wordCountVisible,
       accentTitlebar, plasma: { enabled: plasmaEnabled, frost: plasmaFrost, backgroundBlur: plasmaBackgroundBlur, flow: plasmaFlow },
     });
@@ -2075,10 +2086,10 @@ export default function App() {
         setSpellcheckEnabled((value) => !value);
         break;
       case "toggle_sidebar":
-        setLeftVisible((value) => !value);
+        toggleLeftSidebar();
         break;
       case "toggle_outline":
-        updateNotebookAppearance({ rightSidebarOpen: !outlineVisible });
+        toggleRightSidebar();
         break;
       case "toggle_focus":
         toggleEditorFocusMode();
@@ -2243,14 +2254,39 @@ export default function App() {
     setRawMarkdownVisible((value) => !value);
   }
 
+  function toggleLeftSidebar() {
+    if (!responsivePanes.canDockLeft) {
+      setPaneOverlay(current => current === "left" ? null : "left");
+      return;
+    }
+    setPaneOverlay(null);
+    setLeftVisible(value => !value);
+  }
+
+  function toggleRightSidebar() {
+    if (!responsivePanes.canDockRight) {
+      setPaneOverlay(current => current === "right" ? null : "right");
+      return;
+    }
+    setPaneOverlay(null);
+    updateNotebookAppearance({ rightSidebarOpen: !preferredOutlineVisible });
+  }
+
   function toggleEditorFocusMode() {
+    // Automatic focus mode must still offer a way to reach navigation.
+    if (!leftVisible && !outlineVisible && (preferredLeftVisible || preferredOutlineVisible)) {
+      toggleLeftSidebar();
+      return;
+    }
+    setPaneOverlay(null);
     const transition = toggleFocusMode(
-      { leftVisible, outlineVisible },
+      { leftVisible: preferredLeftVisible, outlineVisible: preferredOutlineVisible },
       focusRestoreRef.current,
     );
     focusRestoreRef.current = transition.restore;
     setLeftVisible(transition.panes.leftVisible);
     updateNotebookAppearance({ rightSidebarOpen: transition.panes.outlineVisible });
+    if (transition.panes.leftVisible && !responsivePanes.canDockLeft) setPaneOverlay("left");
   }
 
   function getRestorableNotePosition(current: WorkspaceMetadata, path: string, markdown: string) {
@@ -2498,6 +2534,7 @@ export default function App() {
     });
     if (!isWorkspaceActive(operationWorkspace) || !isCurrentNoteNavigation(navigationToken)) return;
     setSearchQuery("");
+    setPaneOverlay(null);
   }
 
   function findLastOpenedNoteInSection(sectionPath: string) {
@@ -2968,6 +3005,7 @@ export default function App() {
     persistDraft: persistDraftInBackground,
     requestCreateNoteInContext: () => void requestCreateNoteInCurrentContext(),
     toggleRawMarkdown: toggleRawMarkdownMode,
+    toggleSidebar: toggleLeftSidebar,
   };
 
   useEffect(() => {
@@ -2977,6 +3015,7 @@ export default function App() {
       const command = event.metaKey || event.ctrlKey;
       const key = event.key.toLowerCase();
       if (event.key === "Escape") {
+        setPaneOverlay(null);
         setSearchOpen(false);
         setSearchQuery("");
         setSettingsOpen(false);
@@ -3027,7 +3066,7 @@ export default function App() {
       }
       if (command && key === "\\") {
         event.preventDefault();
-        setLeftVisible((value) => !value);
+        actions.toggleSidebar();
         return;
       }
       if (command && event.altKey && key === "r") {
@@ -3047,7 +3086,7 @@ export default function App() {
     };
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
-  }, []);
+  }, [setPaneOverlay]);
 
   useEffect(() => {
     if (activeNoteLifecycle.isLoading) return;
@@ -3162,6 +3201,7 @@ export default function App() {
       setSelectedFolder(navigationStyle === "section-view" ? getTopLevelFolderPath(createdNote.parent_path) : createdNote.parent_path);
       placePathInActiveTab(createdNote.path);
       updateMetadata((current) => placeCreatedNote(current, createdNote));
+      setPaneOverlay(null);
       setTitleFocusRequest((value) => value + 1);
       activeNoteLifecycle.settleNavigation(navigationToken);
       await refreshWorkspace(operationWorkspace);
@@ -4560,6 +4600,7 @@ export default function App() {
   }
 
   function handleOutlineSelect(id: string) {
+    setPaneOverlay(null);
     const index = Number(id.replace("heading-", ""));
     if (index === 0) {
       noteSurfaceRef.current?.scrollTo({ top: 0, behavior: "smooth" });
@@ -4667,7 +4708,9 @@ export default function App() {
         <ReleaseNotice />
       </header>
 
-      <div data-theme-region="notebook" data-theme-api={renderedTheme.design ? "1" : undefined} className={`app-frame theme-${resolvedTheme} ${plasmaEnabled ? "theme-plasma" : "theme-standard"} ${leftVisible ? "" : "is-left-hidden"} ${outlineVisible ? "" : "is-outline-hidden"} ${navigationStyle === "single-pane" ? "is-single-col" : ""}`} style={{ ...frameStyle, ...quickStyles.palette }}>
+      <div ref={responsivePanes.frameRef} onPointerDownCapture={(event) => {
+        if (responsivePanes.overlay && event.target instanceof Element && event.target.closest(".main-pane") && !event.target.closest(".sidebar-toggle, .outline-toggle")) setPaneOverlay(null);
+      }} data-theme-region="notebook" data-theme-api={renderedTheme.design ? "1" : undefined} className={`app-frame${responsivePanes.overlay ? ` has-${responsivePanes.overlay}-overlay` : ""} theme-${resolvedTheme} ${plasmaEnabled ? "theme-plasma" : "theme-standard"} ${responsivePanes.docked.leftVisible ? "" : "is-left-hidden"} ${responsivePanes.docked.outlineVisible ? "" : "is-outline-hidden"} ${navigationStyle === "single-pane" ? "is-single-col" : ""}`} style={{ ...frameStyle, ...quickStyles.palette }}>
       {leftVisible ? (
         <aside
           id="left-navigation-panes"
@@ -4849,7 +4892,7 @@ export default function App() {
           )}
         </aside>
       ) : null}
-      {leftVisible ? <PaneResizer label="Resize notes pane" variant="left-of-main" onPointerDown={startNotesPaneResize} /> : null}
+      {responsivePanes.docked.leftVisible ? <PaneResizer label="Resize notes pane" variant="left-of-main" onPointerDown={startNotesPaneResize} /> : null}
 
       <main className="main-pane">
         <EditorTopbar
@@ -4859,8 +4902,8 @@ export default function App() {
           title={titleDraft}
           titleVisible={dockedTitleState.visible}
           onTitleClick={() => noteSurfaceRef.current?.scrollTo({ top: 0, behavior: "smooth" })}
-          onToggleLeft={() => setLeftVisible((value) => !value)}
-          onToggleOutline={() => updateNotebookAppearance({ rightSidebarOpen: !outlineVisible })}
+          onToggleLeft={toggleLeftSidebar}
+          onToggleOutline={toggleRightSidebar}
         >
           {noteOpen ? (
             <>
@@ -5196,7 +5239,7 @@ export default function App() {
         ) : null}
       </main>
 
-      {outlineVisible ? <PaneResizer label="Resize right sidebar" variant="right-of-main" onPointerDown={startRightPaneResize} /> : null}
+      {responsivePanes.docked.outlineVisible ? <PaneResizer label="Resize right sidebar" variant="right-of-main" onPointerDown={startRightPaneResize} /> : null}
       {outlineVisible ? (
         <RightSidebar
           id="right-note-sidebar"
@@ -5482,7 +5525,7 @@ export default function App() {
                     onChange={(value) => updateNotebookAppearance({ quickAppearance: { ...quickAppearance, accentColor: value } })} />
                 </section>}
                 builtInThemes={themePresets} builtInThemeId={themePresetId}
-                onBuiltInChange={(id) => updateNotebookAppearance({ navigationStyle, rightSidebarOpen: outlineVisible, quickAppearance: null, accentTitlebar: false, customTheme: null, themePresetId: id, colors: defaultNotebookThemeColors(), plasma: { ...defaultPlasmaSettings }, appFontFamily: defaultAppFontFamily, appFontSize: defaultAppFontSize, editorFontFamily: defaultEditorFontFamily, editorFontSize: defaultEditorFontSize })}
+                onBuiltInChange={(id) => updateNotebookAppearance({ navigationStyle, rightSidebarOpen: preferredOutlineVisible, quickAppearance: null, accentTitlebar: false, customTheme: null, themePresetId: id, colors: defaultNotebookThemeColors(), plasma: { ...defaultPlasmaSettings }, appFontFamily: defaultAppFontFamily, appFontSize: defaultAppFontSize, editorFontFamily: defaultEditorFontFamily, editorFontSize: defaultEditorFontSize })}
                 colorScheme={colorScheme} onColorSchemeChange={(scheme) => updateNotebookAppearance({ colorScheme: scheme })} />
             </>}
           />
