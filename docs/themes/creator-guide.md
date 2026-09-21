@@ -30,7 +30,9 @@ When an optional foreground is automatic, Tigrana chooses a readable foreground 
 
 In Visual, **Default editor width** and **Default note alignment** apply when someone selects the theme. Typewriter uses Narrow Width and Align center. **Default word count** can show or hide the word count when the theme is selected; Typewriter starts with it shown. Alignment positions the note column, not the text inside paragraphs. **Keep current** leaves that choice alone. Manual changes in View or editor options are saved with the notebook; selecting a theme with explicit defaults reapplies them.
 
-Set the overall interface and editor fonts first. The **Text sizes** group lets you tune:
+Set the overall interface and editor fonts first. Note content uses available bold and italic faces, or browser-generated weight and slant when a font only includes regular text. Avoid disabling `font-synthesis` on note content; that can make formatting invisible in single-face fonts. Check bold, italic, and combined emphasis in both color modes before sharing a theme.
+
+The **Text sizes** group lets you tune:
 
 | Role | Used for |
 | --- | --- |

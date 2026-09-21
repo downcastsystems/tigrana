@@ -45,6 +45,13 @@ checks are recorded above; no pixel-baseline regression suite was introduced.
 
 Gallery hosting and personal CSS snippets remain outside this foundation phase.
 
+## Font emphasis — September 20, 2026
+
+- Reproduced Typewriter's invisible bold and italic in the browser demo. Cmd+B and Cmd+I created the correct marks, but inherited `font-synthesis: none` prevented its regular-only font from displaying them.
+- Enabled weight/style synthesis for note content. Verified visible bold, italic, combined emphasis, strike, code and highlighting with production CSS and packaged fonts across all 16 built-in themes in both modes.
+- Checked Typewriter's keyboard commands, saved Markdown and theme editor preview. UI font synthesis remains unchanged.
+- Markdown/editor tests: 71 passed. Built-in theme tests: 21 passed. Lint and production build passed, with the existing bundle-size warning. This rendering check used the browser; native Windows rendering was not tested.
+
 ## Authoring hardening — September 20, 2026
 
 - 403 frontend tests across 49 files pass, plus lint, TypeScript/production build, native theme tests (2), and the macOS app bundle.

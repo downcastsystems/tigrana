@@ -3429,6 +3429,8 @@ html[data-theme="dark"] .tab-list-separator {
 
 .ProseMirror {
   outline: none;
+  /* Keep emphasis visible when a theme bundles only a regular font face. */
+  font-synthesis: weight style;
   color: #22211f;
   font-family: var(--editor-font-family);
   font-size: var(--editor-font-size);
