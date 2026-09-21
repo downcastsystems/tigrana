@@ -1,5 +1,6 @@
 import type { CSSProperties } from "react";
 import type { NotebookAppearance } from "../types";
+import type { ThemeDocument } from "./themes";
 import { readableThemeText } from "./themeRuntime";
 
 export function quickAppearanceStyles(quick: NotebookAppearance["quickAppearance"], colored: boolean, titlebarColor: string) {
@@ -17,4 +18,22 @@ export function quickAppearanceStyles(quick: NotebookAppearance["quickAppearance
     ? { background: titlebarColor, color: readableThemeText(titlebarColor) }
     : {};
   return { palette: palette as CSSProperties, titlebar };
+}
+
+// These are bundled Inter or system fallbacks, never remote font downloads.
+export const quickEditorFonts = [
+  { label: "Sans serif (Inter)", value: "Inter, sans-serif" },
+  { label: "Serif", value: "Georgia, serif" },
+  { label: "Monospace", value: "ui-monospace, monospace" },
+];
+
+/** Validate notebook overrides before placing them in generated theme CSS. */
+export function applyQuickAppearanceFonts(theme: ThemeDocument, quick: NotebookAppearance["quickAppearance"]): ThemeDocument {
+  const family = quickEditorFonts.find(font => font.value === quick?.editorFontFamily)?.value;
+  const size = quick?.editorFontSize;
+  return { ...theme,
+    ...(family ? { editorFontFamily: family } : {}),
+    ...(typeof size === "number" && Number.isFinite(size) && size >= 11 && size <= 28
+      ? { editorFontSize: size } : {}),
+  };
 }

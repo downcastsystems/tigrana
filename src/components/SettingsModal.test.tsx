@@ -52,12 +52,6 @@ it.each(["Create theme", "Edit theme"])(
             onWordCountVisibleChange={changeWordCount}
             spellcheckEnabled
             onSpellcheckEnabledChange={vi.fn()}
-            plasmaEnabled={false}
-            onPlasmaEnabledChange={vi.fn()}
-            plasmaFrost={50}
-            onPlasmaFrostChange={vi.fn()}
-            plasmaBackgroundBlur={10}
-            onPlasmaBackgroundBlurChange={vi.fn()}
             onClose={vi.fn()}
             onResetTheme={resetAppearance}
             themeContent={
@@ -81,7 +75,9 @@ it.each(["Create theme", "Edit theme"])(
       expect(host.textContent).not.toContain("Show word count");
       await click("Restore default appearance");
       expect(resetAppearance).toHaveBeenCalledOnce();
+      expect(host.textContent).not.toContain("Plasma glass panes");
       await click(action);
+      expect(host.textContent).toContain("Plasma UI by default");
       expect(host.querySelector('[aria-label="Theme name"]')).not.toBeNull();
       expect(
         host.querySelector(".settings-preview-host .theme-workbench-preview"),

@@ -211,13 +211,20 @@ requests are rejected if another window changed the saved copy.
 
 ## Plasma defaults and notebook overrides
 
-The theme editor's Plasma UI by default checkbox determines what happens when
-the theme is selected. Selecting a saved theme reapplies its Plasma settings;
-each built-in has its own rendering default; legacy themes without a Plasma setting use standard rendering. The Plasma toggle in
-Appearance is a notebook override, persisted independently of the theme snapshot.
-It survives notebook reloads, does not change the shared theme or cause a theme
-conflict, and is reset the next time a theme is selected. Save in the theme editor
-to change a theme's default.
+The theme editor's **Advanced surfaces → Plasma UI by default** checkbox and
+Flow, frostiness, and background blur sliders determine the theme's glass effects.
+Selecting a theme reapplies these settings. Themes without Plasma settings use
+standard rendering. Unsupported themes disable the checkbox; authors can enable
+**Supports Plasma** in Sharing details to experiment. Appearance no longer offers
+a separate Plasma override. Existing notebook Plasma preferences remain readable
+until a theme is selected again.
+
+Quick Appearance offers notebook-only accent color, editor font family, and editor
+font size overrides. They persist with the notebook, do not modify the shared
+theme, and reset when a theme is selected. **Save current settings as new theme**
+bakes the overrides into a portable copy. Font family choices are bundled Inter
+and system serif/monospace fallbacks. **Use theme fonts** clears just the font
+overrides, preserving the accent.
 
 ## Authoring extensions
 

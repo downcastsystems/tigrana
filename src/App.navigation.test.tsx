@@ -386,6 +386,13 @@ describe("Note navigation persistence", () => {
       await waitFor(() => JSON.parse(demoPersistence.get("tigrana-meta:/demo/Tigrana") ?? "{}").appearance?.quickAppearance?.accentColor === "#2255cc");
       expect(JSON.parse(demoPersistence.get("tigrana-meta:/demo/Tigrana")!).appearance.customTheme.dark.accent).toBe(theme.dark.accent);
       expect(container.textContent).toContain("Save current settings as new theme");
+      const fontPicker = container.querySelector<HTMLSelectElement>('[aria-label="Quick editor font"]')!;
+      await act(async () => { fontPicker.value = "Georgia, serif"; fontPicker.dispatchEvent(new Event("change", { bubbles: true })); });
+      await act(async () => setReactInputValue(container.querySelector<HTMLInputElement>('[aria-label="Quick editor font size"]')!, "21"));
+      await waitFor(() => JSON.parse(demoPersistence.get("tigrana-meta:/demo/Tigrana") ?? "{}").appearance?.quickAppearance?.editorFontSize === 21);
+      expect(document.documentElement.style.getPropertyValue("--editor-font-family")).toBe("Georgia, serif");
+      expect(container.querySelector<HTMLElement>(".app-frame")!.style.getPropertyValue("--editor-font-size")).toBe("21px");
+      expect(JSON.parse(demoPersistence.get("tigrana-meta:/demo/Tigrana")!).appearance.customTheme.editorFontSize).toBe(theme.editorFontSize);
 
       await act(async () => root.unmount());
       localStorage.setItem("tigrana-plasma-theme", "false");
@@ -399,7 +406,8 @@ describe("Note navigation persistence", () => {
       expect(container.querySelector<HTMLElement>(".app-frame")!.style.getPropertyValue("--tigrana-accent")).toBe("#2255cc");
 
       expect(document.documentElement.style.getPropertyValue("--text")).toBe(theme.dark.text);
-      expect(document.documentElement.style.getPropertyValue("--editor-font-size")).toBe(`${theme.editorFontSize}px`);
+      expect(document.documentElement.style.getPropertyValue("--editor-font-size")).toBe("21px");
+      expect(document.documentElement.style.getPropertyValue("--editor-font-family")).toBe("Georgia, serif");
       expect(container.querySelector(".app-shell")?.getAttribute("data-plasma")).toBe("true");
       expect((container.querySelector(".app-shell") as HTMLElement).style.getPropertyValue("--plasma-panel-opacity")).toBe("54%");
       expect(localStorage.getItem("tigrana-plasma-background-blur")).toBe("12");
@@ -424,17 +432,16 @@ describe("Note navigation persistence", () => {
       await act(async () => window.dispatchEvent(new KeyboardEvent("keydown", { key: ",", metaKey: true })));
       expect(container.querySelector(".settings-nav")).not.toBeNull();
       await act(async () => { Array.from(container.querySelectorAll<HTMLButtonElement>(".settings-nav button")).find(b => b.textContent === "Appearance")!.click(); });
-      const plasmaToggle = [...container.querySelectorAll<HTMLInputElement>('.settings-plasma input[type="checkbox"]')][0];
-      await act(async () => plasmaToggle.click());
-      await waitFor(() => JSON.parse(demoPersistence.get("tigrana-meta:/demo/Tigrana") ?? "{}").appearance?.plasma?.enabled === false);
-      expect(JSON.parse(demoPersistence.get("tigrana-meta:/demo/Tigrana")!).appearance.customTheme.plasma.enabled).toBe(true);
+      expect(container.querySelector('.settings-plasma')).toBeNull();
       const themePicker = container.querySelector<HTMLSelectElement>('select[aria-label="Theme"]')!;
       await act(async () => { themePicker.value = 'builtin:default'; themePicker.dispatchEvent(new Event('change', { bubbles: true })); });
-      expect(plasmaToggle.checked).toBe(false);
+      expect(container.querySelector(".app-shell")?.getAttribute("data-plasma")).not.toBe("true");
       expect(document.documentElement.style.getPropertyValue("--app-font-family")).toContain("Inter, ui-sans-serif");
       expect(document.documentElement.style.getPropertyValue("--editor-font-family")).toContain("Inter, ui-sans-serif");
       expect(document.documentElement.style.getPropertyValue("--app-font-size")).toBe("14px");
       expect(document.documentElement.style.getPropertyValue("--editor-font-size")).toBe("17px");
+      expect(container.querySelector<HTMLSelectElement>('[aria-label="Quick editor font"]')!.value).toBe("");
+      expect(container.querySelector<HTMLInputElement>('[aria-label="Quick editor font size"]')!.value).toBe("17");
       await waitFor(() => JSON.parse(demoPersistence.get("tigrana-meta:/demo/Tigrana") ?? "{}").appearance?.editorFontSize === 17);
       expect(JSON.parse(demoPersistence.get("tigrana-meta:/demo/Tigrana")!).appearance.editorFontFamily).toContain("Inter, ui-sans-serif");
 
@@ -451,12 +458,10 @@ describe("Note navigation persistence", () => {
       expect(container.querySelector<HTMLElement>(".app-titlebar")!.style.background).toBe("");
       expect(document.documentElement.style.getPropertyValue("--accent")).toBe("#2255cc");
 
-      await act(async () => plasmaToggle.click());
-      expect(plasmaToggle.checked).toBe(true);
       await act(async () => { themePicker.value = `saved:${theme.id}`; themePicker.dispatchEvent(new Event('change', { bubbles: true })); });
-      expect(plasmaToggle.checked).toBe(true);
+      expect(container.querySelector(".app-shell")?.getAttribute("data-plasma")).toBe("true");
       await act(async () => { themePicker.value = 'builtin:default'; themePicker.dispatchEvent(new Event('change', { bubbles: true })); });
-      expect(plasmaToggle.checked).toBe(false);
+      expect(container.querySelector(".app-shell")?.getAttribute("data-plasma")).not.toBe("true");
       await act(async () => { themePicker.value = `saved:${theme.id}`; themePicker.dispatchEvent(new Event('change', { bubbles: true })); });
 
       expect(container.querySelector('[data-theme-styles="notebook"]')?.textContent).toContain("color:red");

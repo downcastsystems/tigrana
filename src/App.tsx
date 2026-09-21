@@ -5,7 +5,7 @@ import { recoveryTheme } from "./lib/themeCatalog";
 import { themeCatalogWarnings } from "./lib/bundledThemes";
 import { readableThemeText, themeVariables, themeBackgroundImage } from "./lib/themeRuntime";
 import { classicThemes } from "./lib/bundledThemes";
-import { quickAppearanceStyles } from "./lib/quickAppearance";
+import { applyQuickAppearanceFonts, quickAppearanceStyles, quickEditorFonts } from "./lib/quickAppearance";
 import { ThemeColorField } from "./components/ThemeColorField";
 import { ThemeStyles } from "./components/ThemeStyles";
 import "./styles/theme-api.css";
@@ -832,7 +832,7 @@ export default function App() {
   // Both old presets and portable themes use the same renderer and preview document.
   const renderedTheme = useMemo<ThemeDocument>(() => {
     if (invalidNotebookTheme) return recoveryTheme;
-    if (customTheme) return customTheme;
+    if (customTheme) return applyQuickAppearanceFonts(customTheme, quickAppearance);
     const base = classicThemes.find(t => t.id === themePresetId) ?? classicThemes[0];
     const palette = (mode: "light" | "dark") => {
       const colors = themeColors[mode];
@@ -842,8 +842,8 @@ export default function App() {
           ? (base.id === "default" ? "#001428" : accent)
           : colors.titlebarColor || base[mode].titlebar };
     };
-    return { ...base, light: palette("light"), dark: palette("dark"),
-      appFontFamily, appFontSize, editorFontFamily, editorFontSize, accentTitlebar: savedAccentTitlebar };
+    return applyQuickAppearanceFonts({ ...base, light: palette("light"), dark: palette("dark"),
+      appFontFamily, appFontSize, editorFontFamily, editorFontSize, accentTitlebar: savedAccentTitlebar }, quickAppearance);
   }, [customTheme, invalidNotebookTheme, themePresetId, themeColors, quickAppearance, appFontFamily, appFontSize, editorFontFamily, editorFontSize, savedAccentTitlebar]);
   const plasmaBackgroundImage = useMemo(() => themeBackgroundImage(renderedTheme), [renderedTheme]);
   useEffect(() => {
@@ -907,7 +907,7 @@ export default function App() {
     "--app-font-family": renderedVariables["--app-font-family"],
     "--app-font-size": `${appFontSize}px`,
     "--editor-font-family": renderedVariables["--editor-font-family"],
-    "--editor-font-size": `${editorFontSize}px`,
+    "--editor-font-size": renderedVariables["--editor-font-size"],
   } as CSSProperties;
 
   useEffect(() => {
@@ -1067,11 +1067,11 @@ export default function App() {
 
   useEffect(() => {
     const root = document.documentElement.style;
-    root.setProperty("--app-font-family", customTheme ? themeVariables(customTheme, "light", "notebook")["--app-font-family"] : appFontFamily || defaultAppFontFamily);
-    root.setProperty("--app-font-size", `${appFontSize || defaultAppFontSize}px`);
-    root.setProperty("--editor-font-family", customTheme ? themeVariables(customTheme, "light", "notebook")["--editor-font-family"] : editorFontFamily || defaultEditorFontFamily);
-    root.setProperty("--editor-font-size", `${editorFontSize || defaultEditorFontSize}px`);
-  }, [appFontFamily, appFontSize, editorFontFamily, editorFontSize, customTheme]);
+    const variables = themeVariables(renderedTheme, resolvedTheme, "notebook");
+    for (const name of ["--app-font-family", "--app-font-size", "--editor-font-family", "--editor-font-size"]) {
+      root.setProperty(name, variables[name]);
+    }
+  }, [renderedTheme, resolvedTheme]);
 
   useEffect(() => {
     document.documentElement.dataset.accentTitlebar = accentTitlebar ? "true" : "false";
@@ -1899,11 +1899,6 @@ export default function App() {
     if (patch.editorFontSize !== undefined) setEditorFontSize(patch.editorFontSize);
 
   }, [updateMetadata]);
-
-  function updatePlasma(patch: Partial<NonNullable<ThemeDocument["plasma"]>>) {
-    const plasma = { enabled: plasmaEnabled, frost: plasmaFrost, backgroundBlur: plasmaBackgroundBlur, flow: plasmaFlow, ...patch };
-    updateNotebookAppearance({ plasma });
-  }
 
   function resetThemeAppearance() {
     updateNotebookAppearance({ quickAppearance: null, customTheme: null, themePresetId: "default", colors: defaultNotebookThemeColors(), accentTitlebar: false, appFontFamily: defaultAppFontFamily, appFontSize: defaultAppFontSize, editorFontFamily: defaultEditorFontFamily, editorFontSize: defaultEditorFontSize, plasma: { enabled: false, frost: 80, backgroundBlur: 0 } });
@@ -5503,15 +5498,6 @@ export default function App() {
             onSpellcheckEnabledChange={setSpellcheckEnabled}
             wordCountVisible={wordCountVisible}
             onWordCountVisibleChange={(wordCountVisible) => updateNotebookAppearance({ wordCountVisible })}
-            plasmaSupported={customTheme?.design?.supportsPlasma}
-            plasmaEnabled={plasmaEnabled}
-            onPlasmaEnabledChange={(enabled) => updatePlasma({ enabled })}
-            plasmaFrost={plasmaFrost}
-            onPlasmaFrostChange={(frost) => updatePlasma({ frost })}
-            plasmaFlow={plasmaFlow}
-            onPlasmaFlowChange={(flow) => updatePlasma({ flow })}
-            plasmaBackgroundBlur={plasmaBackgroundBlur}
-            onPlasmaBackgroundBlurChange={(backgroundBlur) => updatePlasma({ backgroundBlur })}
             onResetTheme={resetThemeAppearance}
             onClose={() => setSettingsOpen(false)}
             themeContent={(navigationControls) => <>
@@ -5523,6 +5509,25 @@ export default function App() {
                   <p className="settings-description">These changes apply to this notebook. Choosing a theme resets them.</p>
                   <ThemeColorField label="Accent color" name="Quick accent color" value={effectiveAccentColor}
                     onChange={(value) => updateNotebookAppearance({ quickAppearance: { ...quickAppearance, accentColor: value } })} />
+                  <label className="setting-row">
+                    Editor font
+                    <select className="settings-select" aria-label="Quick editor font" value={quickEditorFonts.some(font => font.value === quickAppearance?.editorFontFamily) ? quickAppearance!.editorFontFamily : ""}
+                      onChange={event => updateNotebookAppearance({ quickAppearance: { ...quickAppearance, editorFontFamily: event.target.value || undefined } })}>
+                      <option value="">Theme font</option>
+                      {quickEditorFonts.map(font => <option key={font.value} value={font.value}>{font.label}</option>)}
+                    </select>
+                  </label>
+                  <label className="setting-row">
+                    Editor font size
+                    <span className="quick-font-size-control">
+                      <input aria-label="Quick editor font size" type="range" min={11} max={28} step={1} value={renderedTheme.editorFontSize}
+                        onChange={event => updateNotebookAppearance({ quickAppearance: { ...quickAppearance, editorFontSize: Number(event.target.value) } })} />
+                      <output>{renderedTheme.editorFontSize}px</output>
+                    </span>
+                  </label>
+                  {(quickAppearance?.editorFontFamily || quickAppearance?.editorFontSize !== undefined) && <button className="toolbar-button quick-font-reset"
+                    onClick={() => updateNotebookAppearance({ quickAppearance: { ...quickAppearance, editorFontFamily: undefined, editorFontSize: undefined } })}>Use theme fonts</button>}
+                  <p className="settings-description">Plasma glass effects are part of each theme. Adjust them in the Theme Editor under Advanced surfaces.</p>
                 </section>}
                 builtInThemes={themePresets} builtInThemeId={themePresetId}
                 onBuiltInChange={(id) => updateNotebookAppearance({ navigationStyle, rightSidebarOpen: preferredOutlineVisible, quickAppearance: null, accentTitlebar: false, customTheme: null, themePresetId: id, colors: defaultNotebookThemeColors(), plasma: { ...defaultPlasmaSettings }, appFontFamily: defaultAppFontFamily, appFontSize: defaultAppFontSize, editorFontFamily: defaultEditorFontFamily, editorFontSize: defaultEditorFontSize })}

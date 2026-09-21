@@ -6090,7 +6090,6 @@ html[data-theme] .settings-backdrop .settings-sidebar {
 }
 .theme-preview-link { color: var(--link-color); text-decoration: underline; text-underline-offset: 2px; }
 .theme-editor { border-top: 0; margin-top: 0; padding-top: 0; }
-.settings-plasma { margin-top: 24px; }
 
 .theme-color-inputs { display: flex; align-items: center; gap: 8px; flex-shrink: 0; }
 .theme-color-grid .theme-hex-input {
@@ -6120,7 +6119,7 @@ html[data-theme] .settings-modal .theme-editor :is(.settings-text-input, .theme-
   outline: 2px solid color-mix(in srgb, var(--accent) 50%, var(--text) 50%);
   outline-offset: -2px;
 }
-.settings-appearance:has(.theme-editor) > :is(.settings-plasma, .settings-navigation-style, .settings-reset-appearance) { display: none; }
+.settings-appearance:has(.theme-editor) > :is(.settings-navigation-style, .settings-reset-appearance) { display: none; }
 
 /* Settings actions share one border treatment regardless of their layout container. */
 html[data-theme] .settings-modal .toolbar-button {
@@ -6358,7 +6357,12 @@ html[data-theme] .theme-conflict .theme-actions .toolbar-button.is-recommended:h
 
 .settings-appearance-divider { width: 100%; border: 0; border-top: 1px solid var(--border); margin: 24px 0; }
 .settings-quick-appearance { margin-top: 0; padding-top: 0; }
-.settings-quick-appearance .theme-color-field { margin: 16px 0; }
+.settings-quick-appearance .theme-color-field { margin: 16px 0 0; }
+.settings-quick-appearance .setting-row { padding: 12px 0; }
+.quick-font-size-control { display: flex; align-items: center; gap: 12px; }
+.quick-font-size-control input { width: 140px; min-width: 0; }
+.quick-font-size-control output { min-width: 4ch; text-align: right; font-variant-numeric: tabular-nums; }
+.quick-font-reset { margin: 8px 0; }
 
 .theme-recovery-notice { position: fixed; z-index: 20000; top: 60px; left: 20px; right: 20px; max-height: 35vh; overflow: auto; padding: 16px; color: #fff; background: #40252a; border: 1px solid #e49caa; border-radius: 8px; font: 14px/1.5 system-ui; }
 .theme-role-settings { margin: 20px 0; padding: 12px; border: 1px solid var(--border); border-radius: 8px; min-width: 0; }

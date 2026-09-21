@@ -27,6 +27,14 @@ describe('saving current appearance as a theme', () => {
     expect(JSON.stringify(source)).toBe(before);
     expect(() => parseTheme(copy)).not.toThrow();
   });
+  it('captures quick fonts in a portable copy while preserving the original', () => {
+    const copy = captureCurrentThemeSettings(defaultTheme, { ...settings, quickAppearance: { editorFontFamily: 'Georgia, serif', editorFontSize: 23 } });
+    expect(copy.editorFontFamily).toBe('Georgia, serif');
+    expect(copy.editorFontSize).toBe(23);
+    expect(hasCurrentThemeChanges(defaultTheme, copy)).toBe(true);
+    expect(() => parseTheme(copy)).not.toThrow();
+    expect(hasCurrentThemeChanges(defaultTheme, captureCurrentThemeSettings(defaultTheme, settings))).toBe(false);
+  });
   it('captures manual writing layout changes and detects departures from theme defaults', () => {
     const source = allBuiltInThemes.find(t => t.id === 'builtin-typewriter')!;
     const copy = captureCurrentThemeSettings(source, { ...settings, navigationStyle: source.navigationStyle!, rightSidebarOpen: false, editorWidthMode: 'full', noteAlignment: 'left', wordCountVisible: false });

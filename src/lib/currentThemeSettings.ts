@@ -1,6 +1,6 @@
 import type { NavigationStyle, NotebookAppearance } from '../types';
 import { defaultThemeDesign } from './themeDesign';
-import { quickAppearanceStyles } from './quickAppearance';
+import { applyQuickAppearanceFonts, quickAppearanceStyles } from './quickAppearance';
 import { readableThemeText, themeVariables } from './themeRuntime';
 import { defaultPlasmaSettings, type PlasmaSettings, type ThemeDocument } from './themes';
 
@@ -17,7 +17,7 @@ type CurrentSettings = {
 
 /** Bake notebook overrides into a portable theme without changing the selected original. */
 export function captureCurrentThemeSettings(theme: ThemeDocument, settings: CurrentSettings): ThemeDocument {
-  const result = { ...theme, navigationStyle: settings.navigationStyle, rightSidebarOpen: settings.rightSidebarOpen,
+  const result = { ...applyQuickAppearanceFonts(theme, settings.quickAppearance), navigationStyle: settings.navigationStyle, rightSidebarOpen: settings.rightSidebarOpen,
     ...(settings.wordCountVisible === undefined ? {} : { wordCountVisible: settings.wordCountVisible }),
     ...(settings.editorWidthMode === undefined ? {} : { editorWidthMode: settings.editorWidthMode }),
     ...(settings.noteAlignment === undefined ? {} : { noteAlignment: settings.noteAlignment }),

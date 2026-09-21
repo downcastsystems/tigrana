@@ -15,15 +15,6 @@ export default function SettingsModal(props: {
   onSpellcheckEnabledChange: (value: boolean) => void;
   wordCountVisible: boolean;
   onWordCountVisibleChange: (value: boolean) => void;
-  plasmaEnabled: boolean;
-  plasmaSupported?: boolean;
-  onPlasmaEnabledChange: (value: boolean) => void;
-  plasmaFrost: number;
-  onPlasmaFrostChange: (value: number) => void;
-  plasmaFlow?: number;
-  onPlasmaFlowChange?: (value: number) => void;
-  plasmaBackgroundBlur: number;
-  onPlasmaBackgroundBlurChange: (value: number) => void;
   onClose: () => void;
   onResetTheme?: () => void;
   themeContent: ReactNode | ((navigationControls: ReactNode) => ReactNode);
@@ -110,68 +101,10 @@ export default function SettingsModal(props: {
                     {typeof props.themeContent === "function"
                       ? props.themeContent(navigationControls)
                       : <>{props.themeContent}{navigationControls}</>}
-                    <section
-                      className="settings-plasma"
-                      aria-label="Plasma appearance"
-                    >
-                      <label className="setting-row">
-                        Plasma glass panes
-                        <input
-                          type="checkbox"
-                          checked={props.plasmaEnabled}
-                          onChange={(e) =>
-                            props.onPlasmaEnabledChange(e.target.checked)
-                          }
-                        />
-                      </label>
-                      {props.plasmaSupported === false ? (
-                        <p>
-                          This theme recommends standard rendering. You can still try Plasma here.
-                        </p>
-                      ) : null}
-                      {props.plasmaEnabled ? (
-                        <>
-                          <label className="setting-row">
-                            Flow
-                            <input type="range" min={0} max={100} value={props.plasmaFlow ?? 0}
-                              onChange={event => props.onPlasmaFlowChange?.(Number(event.target.value))} />
-                          </label>
-                          <p className="settings-description">Ripples the glass edges. Higher values make the waves more visible; zero keeps them still. Paused when Reduce Motion is enabled.</p>
-                          <label className="setting-row">
-                            Panel frostiness
-                            <input
-                              type="range"
-                              min={0}
-                              max={100}
-                              value={props.plasmaFrost}
-                              onChange={(e) =>
-                                props.onPlasmaFrostChange(
-                                  Number(e.target.value),
-                                )
-                              }
-                            />
-                          </label>
-                          <label className="setting-row">
-                            Background blur
-                            <input
-                              type="range"
-                              min={0}
-                              max={40}
-                              value={props.plasmaBackgroundBlur}
-                              onChange={(e) =>
-                                props.onPlasmaBackgroundBlurChange(
-                                  Number(e.target.value),
-                                )
-                              }
-                            />
-                          </label>
-                        </>
-                      ) : null}
-                    </section>
                     {props.onResetTheme ? (
                       <section className="settings-reset-appearance" aria-label="Default appearance">
                         <h3>Default appearance</h3>
-                        <p>Reset this notebook’s theme and Plasma settings to their defaults.</p>
+                        <p>Reset this notebook’s theme and quick appearance settings to their defaults.</p>
                         <button className="toolbar-button" onClick={props.onResetTheme}>
                           <RotateCcw size={16} aria-hidden="true" />
                           Restore default appearance

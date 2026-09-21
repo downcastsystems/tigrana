@@ -76,8 +76,9 @@ export function ThemeSurfacesEditor({ theme, mode, change }: {
         Plasma UI by default
       </label>
       <p className="settings-description">
-        This default applies whenever you select the theme. You can toggle Plasma afterward without changing the saved default.
+        These settings belong to this theme and apply when you select it. Preview both light and dark modes before saving.
       </p>
+      {theme.design?.supportsPlasma === false && <p className="settings-description">This theme does not support Plasma. Enable Supports Plasma in Sharing details to try it.</p>}
       {theme.plasma?.enabled ? (
         <>
           <label className="setting-row">
