@@ -155,6 +155,12 @@ only after `markdown.ts` can round-trip it without making the Note unreadable
 outside Tigrana. Clipboard fragment serialization uses the same conversion
 policy as whole-Note persistence.
 
+Underline uses inline HTML, `<u>text</u>`, because Markdown has no standard
+underline delimiter. The formatting bar orders Bold, Italic, Underline, then
+Strikethrough. Cmd+U on macOS or Ctrl+U on Windows toggles underline. Bare `<u>`
+pairs round-trip in paragraphs, headings, lists and tables; code examples remain
+literal. Markdown readers that disable HTML may not display underlining.
+
 Derived Note values are lazy. Sidebar previews are memoized by Note content,
 whole-Note text statistics run off the main thread, and outline extraction is
 deferred until typing is idle. Markdown serialization is also deferred, but

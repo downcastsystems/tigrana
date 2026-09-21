@@ -42,6 +42,7 @@ import {
   Search,
   Scissors,
   Strikethrough,
+  Underline,
   Trash2,
   X,
 } from "lucide-react";
@@ -2524,7 +2525,6 @@ export function NotesEditor({ content, commandRequest, focusRequest, focusAtEndR
     () => [
       StarterKit.configure({
         codeBlock: false,
-        underline: false,
         heading: {
           levels: [1, 2, 3, 4, 5, 6],
         },
@@ -3574,7 +3574,8 @@ export function FormattingBubbleMenu({
   const buttons = [
     { label: "Bold", icon: Bold, active: editor.isActive("bold"), run: () => editor.chain().focus().toggleBold().run() },
     { label: "Italic", icon: Italic, active: editor.isActive("italic"), run: () => editor.chain().focus().toggleItalic().run() },
-    { label: "Strike", icon: Strikethrough, active: editor.isActive("strike"), run: () => editor.chain().focus().toggleStrike().run() },
+    { label: "Underline", icon: Underline, active: editor.isActive("underline"), run: () => editor.chain().focus().toggleUnderline().run() },
+    { label: "Strikethrough", icon: Strikethrough, active: editor.isActive("strike"), run: () => editor.chain().focus().toggleStrike().run() },
     { label: "Code", icon: Code, active: editor.isActive("code"), run: () => editor.chain().focus().toggleCode().run() },
     { label: "Highlight", icon: Highlighter, active: editor.isActive("highlight"), run: () => editor.chain().focus().toggleHighlight().run() },
     { label: "Link", icon: LinkIcon, active: editor.isActive("link"), run: setLink },

@@ -15,6 +15,7 @@ export type NoteTextStatsResponse = {
 
 export function measureNoteText(text: string): NoteTextStats {
   const plain = text
+    .replace(/<\/?u>/gi, "")
     .replace(/!\[[^\]]*]\([^)]*\)/g, "")
     .replace(/\[([^\]]+)]\([^)]*\)/g, "$1")
     .replace(/[`*_>#-]/g, " ")

@@ -217,6 +217,7 @@ function readFrontmatterFields(frontmatter: string): FrontmatterField[] {
 
 function previewBody(body: string) {
   return body
+    .replace(/<\/?u>/gi, "")
     .replace(/\r\n/g, "\n")
     .split("\n")
     .filter((line) => !/^#\s+/.test(line.trim()))
@@ -254,6 +255,7 @@ export function extractNoteOutline(title: string, body: string): NoteOutlineEntr
 
 function inlineMarkdownToPlainText(value: string) {
   return replaceEmojiShortcodes(value)
+    .replace(/<\/?u>/gi, "")
     .replace(/!\[([^\]]*)]\([^)]*\)/g, "$1")
     .replace(/\[([^\]]+)]\([^)]*\)/g, "$1")
     .replace(/`([^`]+)`/g, "$1")

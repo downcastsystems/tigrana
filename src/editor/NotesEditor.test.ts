@@ -618,6 +618,8 @@ describe("formatting bubble position", () => {
       const bubble = document.body.querySelector<HTMLElement>(".format-bubble");
       expect(bubble?.parentElement).toBe(document.body);
       expect(container.querySelector(".format-bubble")).toBeNull();
+      expect(Array.from(bubble!.querySelectorAll("button")).slice(0, 4).map(button => button.title))
+        .toEqual(["Bold", "Italic", "Underline", "Strikethrough"]);
       expect(bubble?.style.top).toBe("72px");
       expect(bubble?.style.left).toBe("40px");
 
