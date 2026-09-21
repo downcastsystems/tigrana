@@ -329,6 +329,41 @@ describe("Note navigation persistence", () => {
     } finally { await act(async () => root.unmount()); }
   });
 
+  it.each([false, true])("uses the theme's title-bar setting (%s) instead of a retired quick override", async (accentTitlebar) => {
+    vi.stubGlobal("matchMedia", vi.fn(() => ({ matches: false, addEventListener: vi.fn(), removeEventListener: vi.fn() })));
+    const theme = { ...exampleTheme(), accentTitlebar };
+    demoPersistence.set("tigrana-meta:/demo/Tigrana", JSON.stringify({ revision: 0,
+      appearance: { customTheme: theme, quickAppearance: { coloredTitlebar: !accentTitlebar, accentColor: "#2255cc" } },
+    }));
+    const container = document.createElement("div");
+    document.body.appendChild(container);
+    containers.push(container);
+    const root = createRoot(container);
+    try {
+      await act(async () => root.render(<App />));
+      await waitFor(() => document.documentElement.dataset.themePreset === "custom");
+      expect(document.documentElement.dataset.accentTitlebar).toBe(String(accentTitlebar));
+      expect(document.documentElement.style.getPropertyValue("--accent")).toBe("#2255cc");
+      expect(container.querySelector<HTMLElement>(".app-titlebar")!.style.background)
+        .toBe(accentTitlebar ? "rgb(34, 85, 204)" : "");
+      await act(async () => window.dispatchEvent(new KeyboardEvent("keydown", { key: ",", metaKey: true })));
+      await act(async () => {
+        Array.from(container.querySelectorAll<HTMLButtonElement>(".settings-nav button"))
+          .find(button => button.textContent === "Appearance")!.click();
+      });
+      expect(container.querySelector(".settings-dialog")?.textContent ?? container.textContent).not.toContain("Colored title bar");
+      expect(container.querySelector('[aria-label="Quick accent color"]')).not.toBeNull();
+      await act(async () => {
+        Array.from(container.querySelectorAll<HTMLButtonElement>(".theme-builder button"))
+          .find(button => button.textContent === "Edit theme")!.click();
+      });
+      expect(container.textContent).toContain("Colored title bar");
+    } finally {
+      await act(async () => root.unmount());
+      vi.unstubAllGlobals();
+    }
+  });
+
   it("saves a shared theme with the notebook and restores its palette, typography, and Plasma settings after reload", async () => {
     const theme = { ...exampleTheme(), rightSidebarOpen: false, schemaVersion: 2 as const, design: { ...defaultThemeDesign, css: ".ProseMirror h1 { color: red; }" }, plasma: { enabled: true, frost: 60, backgroundBlur: 12 } };
     await saveTheme(theme, null);
@@ -348,7 +383,6 @@ describe("Note navigation persistence", () => {
       expect(document.documentElement.style.getPropertyValue("--app-bg")).toBe(theme.dark.background);
       expect(document.documentElement.style.getPropertyValue("--editor-font-family")).toBe(theme.editorFontFamily.replace("theme-font-vt323", "tigrana-notebook-vt323"));
       await act(async () => setReactInputValue(container.querySelector<HTMLInputElement>('[aria-label="Quick accent color hex"]')!, "#2255cc"));
-      await act(async () => container.querySelector<HTMLInputElement>('.settings-quick-appearance input[type="checkbox"]')!.click());
       await waitFor(() => JSON.parse(demoPersistence.get("tigrana-meta:/demo/Tigrana") ?? "{}").appearance?.quickAppearance?.accentColor === "#2255cc");
       expect(JSON.parse(demoPersistence.get("tigrana-meta:/demo/Tigrana")!).appearance.customTheme.dark.accent).toBe(theme.dark.accent);
       expect(container.textContent).toContain("Save current settings as new theme");
@@ -360,7 +394,7 @@ describe("Note navigation persistence", () => {
       root = createRoot(container);
       await act(async () => { root.render(<App />); await new Promise(resolve => window.setTimeout(resolve, 50)); });
       expect(document.documentElement.dataset.themePreset).toBe("custom");
-      expect(document.documentElement.dataset.accentTitlebar).toBe("false");
+      expect(document.documentElement.dataset.accentTitlebar).toBe("true");
       expect(document.documentElement.style.getPropertyValue("--accent")).toBe("#2255cc");
       expect(container.querySelector<HTMLElement>(".app-frame")!.style.getPropertyValue("--tigrana-accent")).toBe("#2255cc");
 
@@ -413,10 +447,8 @@ describe("Note navigation persistence", () => {
       expect(document.documentElement.style.getPropertyValue("--accent-contrast")).toBe("#ffffff");
       expect(document.documentElement.dataset.accentTitlebar).toBe("false");
       await act(async () => setReactInputValue(container.querySelector<HTMLInputElement>('[aria-label="Quick accent color hex"]')!, "#2255cc"));
-      await act(async () => container.querySelector<HTMLInputElement>('.settings-quick-appearance input[type="checkbox"]')!.click());
-      expect(document.documentElement.dataset.accentTitlebar).toBe("true");
-      expect(document.documentElement.style.getPropertyValue("--titlebar-bg")).toBe("#001428");
-      expect(container.querySelector<HTMLElement>(".app-titlebar")!.style.background).toBe("rgb(0, 20, 40)");
+      expect(document.documentElement.dataset.accentTitlebar).toBe("false");
+      expect(container.querySelector<HTMLElement>(".app-titlebar")!.style.background).toBe("");
       expect(document.documentElement.style.getPropertyValue("--accent")).toBe("#2255cc");
 
       await act(async () => plasmaToggle.click());

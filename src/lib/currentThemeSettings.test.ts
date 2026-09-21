@@ -35,8 +35,8 @@ describe('saving current appearance as a theme', () => {
     expect(copy.noteAlignment).toBe('left');
     expect(hasCurrentThemeChanges(source, copy)).toBe(true);
   });
-  it('bakes a quick title bar override above custom CSS while keeping the Default dark-blue titlebar', () => {
-    const copy = captureCurrentThemeSettings(defaultTheme, { ...settings, accentTitlebar: true, quickAppearance: { coloredTitlebar: true, accentColor: '#4477cc' } });
+  it('captures an accent change on a theme-authored colored title bar', () => {
+    const copy = captureCurrentThemeSettings(defaultTheme, { ...settings, accentTitlebar: true, quickAppearance: { accentColor: '#4477cc' } });
     expect(copy.accentTitlebar).toBe(true);
     expect(copy.dark.titlebar).toBe('#001428');
     expect(copy.design?.css).toContain('background: #001428');
@@ -47,13 +47,14 @@ describe('saving current appearance as a theme', () => {
     const copy = captureCurrentThemeSettings(original, { ...settings, accentTitlebar: true, quickAppearance: { accentColor: original.dark.accent } });
     expect(hasCurrentThemeChanges(original, copy)).toBe(true);
   });
-  it('preserves an uncolored override and stops reporting changes when choices return to defaults', () => {
-    const colored = { ...defaultTheme, accentTitlebar: true };
-    const copy = captureCurrentThemeSettings(colored, { ...settings, quickAppearance: { coloredTitlebar: false } });
-    expect(copy.design?.css).toContain('background: var(--plasma-titlebar-fill)');
-    expect(copy.design?.css).toContain('background: var(--surface)');
-    expect(hasCurrentThemeChanges(colored, copy)).toBe(true);
-    const restored = captureCurrentThemeSettings(defaultTheme, { ...settings, quickAppearance: { coloredTitlebar: false } });
-    expect(hasCurrentThemeChanges(defaultTheme, restored)).toBe(false);
+  it('does not capture retired title-bar overrides as theme changes', () => {
+    for (const accentTitlebar of [false, true]) {
+      const original = { ...defaultTheme, accentTitlebar };
+      const legacy = { accentColor: undefined, coloredTitlebar: !accentTitlebar };
+      const copy = captureCurrentThemeSettings(original, { ...settings, accentTitlebar, quickAppearance: legacy });
+      expect(copy.accentTitlebar).toBe(accentTitlebar);
+      expect(copy.design).toBe(original.design);
+      expect(hasCurrentThemeChanges(original, copy)).toBe(false);
+    }
   });
 });

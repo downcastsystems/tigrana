@@ -808,14 +808,15 @@ export default function App() {
   }, [themePresetId, customTheme, invalidNotebookTheme]);
   const activeThemeColors = themeColors[resolvedTheme];
   const quickAppearance = metadata.appearance?.quickAppearance;
-  const accentTitlebar = quickAppearance?.coloredTitlebar ?? savedAccentTitlebar;
+  // Title-bar styling belongs to the theme; ignore retired notebook quick overrides.
+  const accentTitlebar = savedAccentTitlebar;
   const accentColor = quickAppearance?.accentColor ?? activeThemeColors.accentColor ?? null;
   const effectiveAccentColor = accentColor || themePreset.accent[resolvedTheme];
   const titlebarUseAccent = quickAppearance?.accentColor ? true : activeThemeColors.titlebarUseAccent ?? true;
   const titlebarColor = activeThemeColors.titlebarColor ?? null;
   const defaultTitlebarColor = !customTheme && themePresetId === "default" ? "#001428" : effectiveAccentColor;
   const effectiveTitlebarColor = titlebarUseAccent ? defaultTitlebarColor : (titlebarColor || defaultTitlebarColor);
-  const quickStyles = quickAppearanceStyles(quickAppearance, effectiveAccentColor, accentTitlebar, defaultTitlebarColor, { themeColored: savedAccentTitlebar, plasma: plasmaEnabled });
+  const quickStyles = quickAppearanceStyles(quickAppearance, accentTitlebar, defaultTitlebarColor);
   // Legacy notebook preferences are overlaid without rewriting saved metadata.
   // Both old presets and portable themes use the same renderer and preview document.
   const renderedTheme = useMemo<ThemeDocument>(() => {
@@ -5479,10 +5480,6 @@ export default function App() {
                   <p className="settings-description">These changes apply to this notebook. Choosing a theme resets them.</p>
                   <ThemeColorField label="Accent color" name="Quick accent color" value={effectiveAccentColor}
                     onChange={(value) => updateNotebookAppearance({ quickAppearance: { ...quickAppearance, accentColor: value } })} />
-                  <label className="setting-row">Colored title bar
-                    <input type="checkbox" checked={accentTitlebar}
-                      onChange={(event) => updateNotebookAppearance({ quickAppearance: { ...quickAppearance, coloredTitlebar: event.target.checked } })} />
-                  </label>
                 </section>}
                 builtInThemes={themePresets} builtInThemeId={themePresetId}
                 onBuiltInChange={(id) => updateNotebookAppearance({ navigationStyle, rightSidebarOpen: outlineVisible, quickAppearance: null, accentTitlebar: false, customTheme: null, themePresetId: id, colors: defaultNotebookThemeColors(), plasma: { ...defaultPlasmaSettings }, appFontFamily: defaultAppFontFamily, appFontSize: defaultAppFontSize, editorFontFamily: defaultEditorFontFamily, editorFontSize: defaultEditorFontSize })}

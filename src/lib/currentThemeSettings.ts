@@ -28,12 +28,11 @@ export function captureCurrentThemeSettings(theme: ThemeDocument, settings: Curr
     const accent = quick?.accentColor ?? theme[mode].accent;
     const titlebar = theme.id === 'default' ? '#001428' : accent;
     result[mode] = { ...theme[mode], ...(quick?.accentColor ? { accent, selectedText: readableThemeText(accent) } : {}) };
-    // A quick title-bar override outranks the theme's custom CSS and opacity.
-    // Preserve that visual result after the saved theme clears quick settings.
-    for (const plasma of [false, true]) {
-      const style = quickAppearanceStyles(quick, accent, settings.accentTitlebar, titlebar, { themeColored: theme.accentTitlebar, plasma }).titlebar;
-      if (style.background) {
-        result[mode].titlebar = settings.accentTitlebar ? titlebar : theme[mode].titlebar;
+    // Preserve an accent change on a theme-authored colored title bar.
+    const style = quickAppearanceStyles(quick, settings.accentTitlebar, titlebar).titlebar;
+    if (style.background) {
+      result[mode].titlebar = titlebar;
+      for (const plasma of [false, true]) {
         titlebarRules.push(`:scope.app-titlebar.theme-${mode}.theme-${plasma ? 'plasma' : 'standard'} { background: ${style.background}; color: ${style.color}; }`);
       }
     }
@@ -41,7 +40,7 @@ export function captureCurrentThemeSettings(theme: ThemeDocument, settings: Curr
   if (titlebarRules.length) {
     result.schemaVersion = 2;
     const design = theme.design ?? defaultThemeDesign;
-    result.design = { ...design, css: `${design.css}\n/* Captured notebook title-bar setting. */\n${titlebarRules.join('\n')}` };
+    result.design = { ...design, css: `${design.css}\n/* Captured notebook accent on the title bar. */\n${titlebarRules.join('\n')}` };
   }
   return result;
 }
