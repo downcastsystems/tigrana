@@ -55,7 +55,7 @@ describe('built-in theme catalog', () => {
     });
   }
   it.each([
-    ['builtin-old-basement-pc', 'vt323', 'monospace'],
+    ['builtin-old-basement-pc', 'ibm-plex-mono', 'monospace'],
     ['builtin-typewriter', 'solway', 'Georgia, serif'],
   ])('%s resolves packaged fonts in both preview and notebook without external requests', (id, font, fallback) => {
     const theme = bundledThemes.find(t => t.id === id)!;

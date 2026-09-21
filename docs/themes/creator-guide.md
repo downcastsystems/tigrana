@@ -44,7 +44,7 @@ The **Text sizes** group lets you tune:
 | Secondary text | Menu descriptions and section captions |
 | Word count | Status text at the bottom of the editor |
 
-Leave a size empty to follow the app/editor size. **Use automatic text sizes** clears all role overrides. Most roles accept 11–32 px; the full title accepts up to 96 px. Pixel fonts often need larger menu and status sizes than ordinary fonts. Adventure Quest and Old Basement PC demonstrate this without enlarging the note body.
+Leave a size empty to follow the app/editor size. **Use automatic text sizes** clears all role overrides. Most roles accept 11–32 px; the full title accepts up to 96 px. Pixel fonts often need larger menu and status sizes than ordinary fonts. Adventure Quest demonstrates this without enlarging the note body.
 
 You can package WOFF2 fonts. An asset named `assets/body.woff2` becomes `theme-font-body`; enter `theme-font-body, sans-serif` in the font field. Preview and notebook font registrations are isolated, so previewing another theme cannot replace an active theme's font.
 
