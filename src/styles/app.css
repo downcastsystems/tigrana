@@ -6131,10 +6131,11 @@ html[data-theme] .settings-modal .theme-editor :is(.settings-text-input, .theme-
 }
 .settings-appearance:has(.theme-editor) > :is(.settings-plasma, .settings-navigation-style, .settings-reset-appearance) { display: none; }
 
-html[data-theme] .settings-modal .theme-actions .toolbar-button {
+/* Settings actions share one border treatment regardless of their layout container. */
+html[data-theme] .settings-modal .toolbar-button {
   border-color: color-mix(in srgb, var(--text) 40%, var(--surface-strong) 60%);
 }
-html[data-theme] .settings-modal .theme-actions .toolbar-button:hover:not(:disabled) {
+html[data-theme] .settings-modal .toolbar-button:hover:not(:disabled) {
   border-color: color-mix(in srgb, var(--text) 65%, var(--surface-strong) 35%);
 }
 
