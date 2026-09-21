@@ -15,7 +15,7 @@ import { ThemeDesignEditor } from "./ThemeDesignEditor";
 import { defaultThemeDesign, themePackageLimit } from "../lib/themeDesign";
 import { decodeThemePackage, encodeThemePackage } from "../lib/themePackage";
 import { ThemePreviewPanel } from "./ThemePreviewHost";
-import { ChevronLeft, ChevronRight, FileText, Plus, X } from "lucide-react";
+import { ChevronLeft, ChevronRight, FileText, Plus, RefreshCw, X } from "lucide-react";
 import { defaultPlasmaSettings } from "../lib/themes";
 import PlasmaTheme from "./PlasmaTheme";
 import { ThemeColorField } from "./ThemeColorField";
@@ -314,51 +314,63 @@ export function ThemeBuilder({
               <strong>Theme</strong>
               <small>The selected theme travels with this notebook.</small>
             </span>
-            <select
-              className="settings-select"
-              aria-label="Theme"
-              disabled={busy}
-              value={
-                current ? `${currentIsBundled ? "bundled" : "saved"}:${current.id}` : `builtin:${builtInThemeId}`
-              }
-              onChange={(e) => {
-                const value = e.target.value;
-                if (value.startsWith("builtin:"))
-                  onBuiltInChange?.(value.slice(8));
-                else if (value.startsWith("bundled:")) {
-                  const theme = bundledThemes.find((t) => `bundled:${t.id}` === value);
-                  if (theme) onApply(theme);
-                } else {
-                  const theme = themes.find((t) => `saved:${t.id}` === value);
-                  if (theme) onApply(theme);
+            <div className="theme-picker-controls">
+              <select
+                className="settings-select"
+                aria-label="Theme"
+                disabled={busy}
+                value={
+                  current ? `${currentIsBundled ? "bundled" : "saved"}:${current.id}` : `builtin:${builtInThemeId}`
                 }
-              }}
-            >
-              <optgroup label="Built-in">
-                {builtInThemes.map((t) => (
-                  <option key={t.id} value={`builtin:${t.id}`}>
-                    {t.name}
-                  </option>
-                ))}
-                {bundledThemes.map((t) => <option key={t.id} value={`bundled:${t.id}`}>{t.name}</option>)}
-              </optgroup>
-              {(current && !currentIsBundled) || themes.length ? (
-                <optgroup label="Saved">
-                  {current && !currentIsBundled ? (
-                    <option value={`saved:${current.id}`}>
-                      {displayNames[current.id] ?? current.name}
+                onChange={(e) => {
+                  const value = e.target.value;
+                  if (value.startsWith("builtin:"))
+                    onBuiltInChange?.(value.slice(8));
+                  else if (value.startsWith("bundled:")) {
+                    const theme = bundledThemes.find((t) => `bundled:${t.id}` === value);
+                    if (theme) onApply(theme);
+                  } else {
+                    const theme = themes.find((t) => `saved:${t.id}` === value);
+                    if (theme) onApply(theme);
+                  }
+                }}
+              >
+                <optgroup label="Built-in">
+                  {builtInThemes.map((t) => (
+                    <option key={t.id} value={`builtin:${t.id}`}>
+                      {t.name}
                     </option>
-                  ) : null}
-                  {themes
-                    .filter((t) => t.id !== current?.id)
-                    .map((t) => (
-                      <option key={t.id} value={`saved:${t.id}`}>
-                        {displayNames[t.id] ?? t.name}
-                      </option>
-                    ))}
+                  ))}
+                  {bundledThemes.map((t) => <option key={t.id} value={`bundled:${t.id}`}>{t.name}</option>)}
                 </optgroup>
-              ) : null}
-            </select>
+                {(current && !currentIsBundled) || themes.length ? (
+                  <optgroup label="Saved">
+                    {current && !currentIsBundled ? (
+                      <option value={`saved:${current.id}`}>
+                        {displayNames[current.id] ?? current.name}
+                      </option>
+                    ) : null}
+                    {themes
+                      .filter((t) => t.id !== current?.id)
+                      .map((t) => (
+                        <option key={t.id} value={`saved:${t.id}`}>
+                          {displayNames[t.id] ?? t.name}
+                        </option>
+                      ))}
+                  </optgroup>
+                ) : null}
+              </select>
+              <button
+                type="button"
+                className="icon-button"
+                aria-label="Refresh themes"
+                title="Refresh themes"
+                disabled={busy}
+                onClick={() => void run(reload)}
+              >
+                <RefreshCw size={17} aria-hidden="true" />
+              </button>
+            </div>
           </div>
           {themes.some(t => displayNames[t.id] !== t.name) && <p className="settings-description">Some older themes share a name. Numbered labels distinguish them here; editing and saving one gives it a unique name.</p>}
           {settingsModified && <div className="theme-current-settings">
@@ -456,17 +468,6 @@ export function ThemeBuilder({
                 Export theme
               </button>
             ) : null}
-            <button
-              className="toolbar-button"
-              disabled={busy}
-              onClick={() => {
-                setDraft(null);
-                setExpected(null);
-                void reload();
-              }}
-            >
-              Reload library
-            </button>
           </div>
           <hr className="settings-appearance-divider" />
           <div className="setting-row">

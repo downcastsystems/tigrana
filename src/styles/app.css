@@ -6034,6 +6034,9 @@ html[data-theme-preset="default"][data-accent-titlebar="true"] .app-shell .app-t
 /* Theme editing is isolated from the active notebook until Save and use. */
 .theme-builder { padding-bottom: 20px; }
 .theme-actions { display: flex; flex-wrap: wrap; gap: 8px; margin: 14px 0; }
+.theme-picker-controls { display: flex; align-items: center; gap: 8px; min-width: 0; }
+.theme-picker-controls .settings-select { min-width: 0; width: 240px; max-width: 100%; }
+.theme-picker-controls .icon-button { flex-shrink: 0; }
 .theme-actions label { cursor: pointer; }
 .theme-editor { border-top: 1px solid var(--border); margin-top: 20px; padding-top: 12px; }
 .theme-preview { border: 1px solid; border-radius: 8px; overflow: hidden; margin: 12px 0; }
