@@ -16,6 +16,7 @@ export type ResolvedNotebookAppearance = {
   editorWidthMode?: NotebookAppearance["editorWidthMode"];
   noteAlignment?: NotebookAppearance["noteAlignment"];
   rightSidebarOpen?: boolean;
+  wordCountVisible?: boolean;
   plasma?: PlasmaSettings;
   colorScheme: "system" | "light" | "dark";
   themePresetId: string;
@@ -64,6 +65,7 @@ export function resolveNotebookAppearance(
     const selected = themeAppearance(theme);
     // Manual notebook choices survive reloads without changing the theme defaults.
     appearance = { ...appearance, ...selected, plasma: appearance.plasma ?? selected.plasma, navigationStyle: appearance.navigationStyle ?? selected.navigationStyle, rightSidebarOpen: appearance.rightSidebarOpen ?? selected.rightSidebarOpen,
+      wordCountVisible: appearance.wordCountVisible ?? selected.wordCountVisible,
       editorWidthMode: appearance.editorWidthMode ?? selected.editorWidthMode,
       noteAlignment: appearance.noteAlignment ?? selected.noteAlignment };
   }
@@ -76,6 +78,7 @@ export function resolveNotebookAppearance(
   return {
     editorWidthMode: appearance.editorWidthMode === "comfortable" || appearance.editorWidthMode === "narrow" || appearance.editorWidthMode === "full" ? appearance.editorWidthMode : defaults.editorWidthMode,
     noteAlignment: appearance.noteAlignment === "left" || appearance.noteAlignment === "center" ? appearance.noteAlignment : defaults.noteAlignment,
+    wordCountVisible: typeof appearance.wordCountVisible === "boolean" ? appearance.wordCountVisible : defaults.wordCountVisible,
     rightSidebarOpen: appearance.rightSidebarOpen ?? defaults.rightSidebarOpen,
     plasma: resolvePlasma(appearance.plasma, defaults.plasma),
     colorScheme: appearance.colorScheme ?? defaults.colorScheme,

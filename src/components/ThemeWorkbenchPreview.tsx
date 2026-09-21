@@ -288,7 +288,7 @@ export function ThemeWorkbenchPreview({
                         </select>
                       </div>
                     </div>
-                    <div className="note-status-bar"><span>125 words</span><span>720 characters</span></div>
+                    {theme.wordCountVisible !== false && <div className="note-status-bar"><span>125 words</span><span>720 characters</span></div>}
                   </main>
                   {outline && <aside className="right-sidebar"><div className="pane-header"><strong>Outline</strong></div><button className="outline-item">A fresh page</button></aside>}
                 </div>

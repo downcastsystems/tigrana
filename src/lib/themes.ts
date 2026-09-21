@@ -60,6 +60,7 @@ export type ThemeDocument = {
   baseThemeSnapshot?: ThemeDocument;
   baseThemeId?: string;
   rightSidebarOpen?: boolean;
+  wordCountVisible?: boolean;
   editorWidthMode?: "comfortable" | "narrow" | "full";
   noteAlignment?: "left" | "center";
   navigationStyle?: "dual-pane" | "single-pane" | "section-view";
@@ -128,6 +129,8 @@ export function parseTheme(value: unknown, allowBase = true): ThemeDocument {
     throw new Error("Invalid base theme ID.");
   if (v.rightSidebarOpen !== undefined && typeof v.rightSidebarOpen !== "boolean")
     throw new Error("Invalid right sidebar setting.");
+  if (v.wordCountVisible !== undefined && typeof v.wordCountVisible !== "boolean")
+    throw new Error("Invalid word count setting.");
   if (v.editorWidthMode !== undefined && !["comfortable", "narrow", "full"].includes(v.editorWidthMode as string))
     throw new Error("Invalid editor width setting.");
   if (v.noteAlignment !== undefined && !["left", "center"].includes(v.noteAlignment as string))
@@ -139,6 +142,7 @@ export function parseTheme(value: unknown, allowBase = true): ThemeDocument {
     ...(v.controls === undefined ? {} : { controls: parseControls(v.controls) }),
     ...(base ? { baseThemeSnapshot: base } : {}),
     ...(v.baseThemeId === undefined ? {} : { baseThemeId: v.baseThemeId }),
+    ...(v.wordCountVisible === undefined ? {} : { wordCountVisible: v.wordCountVisible }),
     ...(v.rightSidebarOpen === undefined ? {} : { rightSidebarOpen: v.rightSidebarOpen }),
     ...(v.editorWidthMode === undefined ? {} : { editorWidthMode: v.editorWidthMode as ThemeDocument["editorWidthMode"] }),
     ...(v.noteAlignment === undefined ? {} : { noteAlignment: v.noteAlignment as ThemeDocument["noteAlignment"] }),
@@ -326,6 +330,7 @@ export function themeAppearance(theme: ThemeDocument): NotebookAppearance {
     customTheme: theme,
     ...(theme.editorWidthMode === undefined ? {} : { editorWidthMode: theme.editorWidthMode }),
     ...(theme.noteAlignment === undefined ? {} : { noteAlignment: theme.noteAlignment }),
+    ...(theme.wordCountVisible === undefined ? {} : { wordCountVisible: theme.wordCountVisible }),
     ...(theme.rightSidebarOpen === undefined ? {} : { rightSidebarOpen: theme.rightSidebarOpen }),
     ...(theme.navigationStyle === undefined ? {} : { navigationStyle: theme.navigationStyle }),
     plasma: {

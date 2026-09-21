@@ -8,6 +8,7 @@ type CurrentSettings = {
   quickAppearance: NotebookAppearance['quickAppearance'];
   navigationStyle: NavigationStyle;
   rightSidebarOpen: boolean;
+  wordCountVisible?: boolean;
   editorWidthMode?: ThemeDocument['editorWidthMode'];
   noteAlignment?: ThemeDocument['noteAlignment'];
   plasma: PlasmaSettings;
@@ -17,6 +18,7 @@ type CurrentSettings = {
 /** Bake notebook overrides into a portable theme without changing the selected original. */
 export function captureCurrentThemeSettings(theme: ThemeDocument, settings: CurrentSettings): ThemeDocument {
   const result = { ...theme, navigationStyle: settings.navigationStyle, rightSidebarOpen: settings.rightSidebarOpen,
+    ...(settings.wordCountVisible === undefined ? {} : { wordCountVisible: settings.wordCountVisible }),
     ...(settings.editorWidthMode === undefined ? {} : { editorWidthMode: settings.editorWidthMode }),
     ...(settings.noteAlignment === undefined ? {} : { noteAlignment: settings.noteAlignment }),
     plasma: { ...settings.plasma }, accentTitlebar: settings.accentTitlebar };
@@ -52,6 +54,7 @@ export function hasCurrentThemeChanges(original: ThemeDocument, current: ThemeDo
     customCss: theme.design?.css ?? "",
     navigationStyle: theme.navigationStyle ?? current.navigationStyle,
     rightSidebarOpen: theme.rightSidebarOpen ?? current.rightSidebarOpen,
+    wordCountVisible: theme.wordCountVisible ?? current.wordCountVisible,
     editorWidthMode: theme.editorWidthMode ?? current.editorWidthMode,
     noteAlignment: theme.noteAlignment ?? current.noteAlignment,
     plasma: { ...defaultPlasmaSettings, flow: 0, ...theme.plasma,

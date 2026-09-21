@@ -228,3 +228,5 @@ Optional palette roles: `menuSelectedBackground`, `menuSelectedText`, `hoverBack
 Optional `typography` maps `title`, `compactTitle`, `navigation`, `tab`, `menu`, `secondary`, and `status` to pixel sizes. Runtime variables use `--tigrana-font-` with kebab-case role names. Missing roles follow interface/editor sizes.
 
 Optional `controls` exposes bounded range, color and toggle definitions as `--tigrana-control-ID` variables. Optional `baseThemeSnapshot` retains one validated original matching `baseThemeId`. See the [creator guide](creator-guide.md) for definitions and update rules. Entire saved documents including originals must fit within 8 MB; package manifests may use that same limit while individual asset files retain their existing limits.
+
+Optional `wordCountVisible` applies a word-count default when the theme is selected. Use `true` to show it, `false` to hide it, or omit it to keep the current choice. Manual changes persist with the notebook. The Visual editor exposes this as **Default word count**.

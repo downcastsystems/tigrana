@@ -628,6 +628,16 @@ export function ThemeBuilder({
                   </select>
                 </label>
                 <p className="settings-description">Applied when you choose this theme. Adjust them afterward in View or the editor options menu.</p>
+                <label className="setting-row">
+                  Default word count
+                  <select className="settings-select" value={draft.wordCountVisible === undefined ? "" : String(draft.wordCountVisible)}
+                    onChange={event => update({ wordCountVisible: event.target.value === "" ? undefined : event.target.value === "true" })}>
+                    <option value="">Keep current</option>
+                    <option value="true">Shown</option>
+                    <option value="false">Hidden</option>
+                  </select>
+                </label>
+                <p className="settings-description">Applied when you choose this theme. You can toggle word count afterward in View or General settings.</p>
                 <ThemeSurfacesEditor theme={draft} mode={mode} change={update} />
                 <div className="theme-font-grid">
                   {(["app", "editor"] as const).map((part) => (

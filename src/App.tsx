@@ -600,6 +600,7 @@ export default function App() {
     accentTitlebar: localStorage.getItem(accentTitlebarKey) === "true",
     navigationStyle: "section-view" as const,
     rightSidebarOpen: true,
+    wordCountVisible: readStoredWordCountVisibility(),
     editorWidthMode: readStoredEditorWidthMode(),
     noteAlignment: readStoredNoteAlignment(),
     appFontFamily: defaultAppFontFamily,
@@ -626,6 +627,7 @@ export default function App() {
         setThemeColors(appearance.colors);
         setAccentTitlebar(appearance.accentTitlebar);
         setNavigationStyle(appearance.navigationStyle);
+        if (appearance.wordCountVisible !== undefined) setWordCountVisible(appearance.wordCountVisible);
         if (appearance.editorWidthMode !== undefined) setEditorWidthMode(appearance.editorWidthMode);
         if (appearance.noteAlignment !== undefined) setNoteAlignment(appearance.noteAlignment);
         if (appearance.rightSidebarOpen !== undefined) setOutlineVisible(appearance.rightSidebarOpen);
@@ -1875,6 +1877,7 @@ export default function App() {
     if (patch.accentTitlebar !== undefined) setAccentTitlebar(patch.accentTitlebar);
     if (patch.rightSidebarOpen !== undefined) setOutlineVisible(patch.rightSidebarOpen);
     if (patch.navigationStyle !== undefined) setNavigationStyle(patch.navigationStyle);
+    if (patch.wordCountVisible !== undefined) setWordCountVisible(patch.wordCountVisible);
     if (patch.editorWidthMode !== undefined) setEditorWidthMode(patch.editorWidthMode);
     if (patch.noteAlignment !== undefined) setNoteAlignment(patch.noteAlignment);
     if (patch.appFontFamily !== undefined) setAppFontFamily(patch.appFontFamily);
@@ -1901,7 +1904,7 @@ export default function App() {
   function themeSeed(): ThemeDocument {
     return captureCurrentThemeSettings(renderedTheme, {
       quickAppearance, navigationStyle, rightSidebarOpen: outlineVisible,
-      editorWidthMode, noteAlignment,
+      editorWidthMode, noteAlignment, wordCountVisible,
       accentTitlebar, plasma: { enabled: plasmaEnabled, frost: plasmaFrost, backgroundBlur: plasmaBackgroundBlur, flow: plasmaFlow },
     });
   }
@@ -2070,7 +2073,7 @@ export default function App() {
         toggleEditorFocusMode();
         break;
       case "toggle_word_count":
-        setWordCountVisible((value) => !value);
+        updateNotebookAppearance({ wordCountVisible: !wordCountVisible });
         break;
       case "toggle_raw_markdown":
         toggleRawMarkdownMode();
@@ -5445,7 +5448,7 @@ export default function App() {
             spellcheckEnabled={spellcheckEnabled}
             onSpellcheckEnabledChange={setSpellcheckEnabled}
             wordCountVisible={wordCountVisible}
-            onWordCountVisibleChange={setWordCountVisible}
+            onWordCountVisibleChange={(wordCountVisible) => updateNotebookAppearance({ wordCountVisible })}
             plasmaSupported={customTheme?.design?.supportsPlasma}
             plasmaEnabled={plasmaEnabled}
             onPlasmaEnabledChange={(enabled) => updatePlasma({ enabled })}

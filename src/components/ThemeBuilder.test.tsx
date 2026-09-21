@@ -570,6 +570,11 @@ it("edits Typewriter writing defaults and reflects them in the preview", async (
     await act(async () => { width.value = 'full'; width.dispatchEvent(new Event('change', { bubbles: true })); });
     await act(async () => { alignment.value = 'left'; alignment.dispatchEvent(new Event('change', { bubbles: true })); });
     expect(preview.querySelector('.note-surface.is-full-width.is-left-aligned')).not.toBeNull();
+    const wordCount = [...host.querySelectorAll('label')].find(label => label.textContent?.includes('Default word count'))!.querySelector('select')!;
+    expect(wordCount.value).toBe('true');
+    expect(preview.querySelector('.note-status-bar')).not.toBeNull();
+    await act(async () => { wordCount.value = 'false'; wordCount.dispatchEvent(new Event('change', { bubbles: true })); });
+    expect(preview.querySelector('.note-status-bar')).toBeNull();
   } finally { await act(async () => root.unmount()); }
 });
 

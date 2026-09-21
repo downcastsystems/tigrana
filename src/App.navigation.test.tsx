@@ -217,6 +217,7 @@ describe("Note navigation persistence", () => {
   });
 
   it("applies Typewriter's writing layout, preserves manual changes on reload, and resets on reselection", async () => {
+    localStorage.setItem("tigrana-word-count-visible", "false");
     const container = document.createElement("div");
     document.body.appendChild(container);
     containers.push(container);
@@ -232,10 +233,15 @@ describe("Note navigation persistence", () => {
     const surface = () => container.querySelector(".note-surface")!;
     try {
       await act(async () => { root.render(<App />); await new Promise(resolve => window.setTimeout(resolve, 50)); });
+      expect(container.querySelector(".note-status-bar")).toBeNull();
       await openAppearance();
       await chooseTheme("bundled:builtin-typewriter");
       expect(surface().classList.contains("is-narrow-width")).toBe(true);
       expect(surface().classList.contains("is-center-aligned")).toBe(true);
+      expect(container.querySelector(".note-status-bar")).not.toBeNull();
+      await act(async () => { Array.from(container.querySelectorAll<HTMLButtonElement>(".settings-nav button")).find(b => b.textContent === "General")!.click(); });
+      await act(async () => Array.from(container.querySelectorAll("label")).find(label => label.textContent?.includes("Show word count"))!.querySelector("input")!.click());
+      expect(container.querySelector(".note-status-bar")).toBeNull();
       await act(async () => container.querySelector<HTMLButtonElement>('[aria-label="Close settings"]')!.click());
       await act(async () => container.querySelector<HTMLButtonElement>('[aria-label="Editor options"]')!.click());
       for (const text of ["Full Width", "Align left"]) {
@@ -243,9 +249,10 @@ describe("Note navigation persistence", () => {
       }
       await waitFor(() => {
         const appearance = JSON.parse(demoPersistence.get("tigrana-meta:/demo/Tigrana") ?? "{}").appearance;
-        return appearance?.editorWidthMode === "full" && appearance?.noteAlignment === "left";
+        return appearance?.editorWidthMode === "full" && appearance?.noteAlignment === "left" && appearance?.wordCountVisible === false;
       });
       await act(async () => { root.render(<App key="reload" />); await new Promise(resolve => window.setTimeout(resolve, 50)); });
+      expect(container.querySelector(".note-status-bar")).toBeNull();
       expect(surface().classList.contains("is-full-width")).toBe(true);
       expect(surface().classList.contains("is-left-aligned")).toBe(true);
       await openAppearance();
@@ -253,6 +260,7 @@ describe("Note navigation persistence", () => {
       await chooseTheme("bundled:builtin-typewriter");
       expect(surface().classList.contains("is-narrow-width")).toBe(true);
       expect(surface().classList.contains("is-center-aligned")).toBe(true);
+      expect(container.querySelector(".note-status-bar")).not.toBeNull();
       expect(container.textContent).not.toContain("Save current settings as new theme");
     } finally { await act(async () => root.unmount()); }
   });

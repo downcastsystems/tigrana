@@ -59,6 +59,7 @@ export type NotebookAppearance = {
   editorWidthMode?: "comfortable" | "narrow" | "full";
   noteAlignment?: "left" | "center";
   rightSidebarOpen?: boolean;
+  wordCountVisible?: boolean;
   quickAppearance?: { accentColor?: string; coloredTitlebar?: boolean } | null;
   acknowledgedThemeDifference?: ThemeDifferenceAcknowledgement;
   plasma?: import("./lib/themes").PlasmaSettings;
