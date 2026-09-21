@@ -3094,7 +3094,7 @@ html[data-theme="dark"] .tab-list-separator {
 }
 
 .note-meta {
-  width: min(880px, calc(100% - 72px));
+  width: min(860px, calc(100% - 72px));
   margin: 26px auto -8px;
   color: #938a7f;
   font-size: 12px;
@@ -3109,7 +3109,7 @@ html[data-theme="dark"] .tab-list-separator {
 
 .title-shell {
   position: relative;
-  width: min(880px, calc(100% - 72px));
+  width: min(860px, calc(100% - 72px));
   margin: 0 auto -4px;
   padding-bottom: 14px;
   border-bottom: 1px solid rgba(52, 48, 43, 0.12);
@@ -3201,7 +3201,7 @@ html[data-theme="dark"] .tab-list-separator {
 .editor-shell {
   position: relative;
   --editor-bottom-breathing-room: clamp(160px, 32vh, 280px);
-  width: min(880px, calc(100% - 72px));
+  width: min(860px, calc(100% - 72px));
   margin: 0 auto;
   padding: 28px 0 140px;
 }
@@ -3330,7 +3330,7 @@ html[data-theme="dark"] .tab-list-separator {
 .raw-markdown-shell {
   display: flex;
   flex-direction: column;
-  width: min(880px, calc(100% - 72px));
+  width: min(860px, calc(100% - 72px));
   margin: 0 auto;
   padding: 24px 0 28px;
   flex: 1 1 auto;
