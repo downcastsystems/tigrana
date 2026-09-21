@@ -322,3 +322,7 @@ Good next steps:
 ## User Artifact Preference
 
 Use a dark-mode theme by default for generated artifacts, including HTML reports, dashboards, diagrams, presentations, and documents. Use another theme only when the user explicitly requests it.
+
+## Bundled font licensing
+
+Only bundle fonts whose licenses explicitly permit redistribution with the open-source app. Free downloads or locally installed fonts are not sufficient evidence. Preserve the original copyright and full license in `public/licenses/` and in each theme's `design.license` when embedding fonts. Record the source/version in `public/licenses/README.md` and add the font to the reviewed inventory in `src/lib/builtInThemes.test.ts`. System-font fallback names do not distribute font files. Do not copy proprietary system fonts into the repository.

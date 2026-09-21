@@ -1,5 +1,6 @@
 // @vitest-environment jsdom
 import { describe, expect, it } from 'vitest';
+import { readFileSync } from 'node:fs';
 import { allBuiltInThemes, bundledThemes, classicThemes, builtInThemeDocuments, themeCatalogWarnings } from './bundledThemes';
 import { parseTheme, themeAppearance, themesMatch } from './themes';
 import { themeStylesheet, readableThemeText } from './themeRuntime';
@@ -15,6 +16,27 @@ function contrast(a: string, b: string) {
   return (values[0] + .05) / (values[1] + .05);
 }
 describe('built-in theme catalog', () => {
+  it('ships reviewed redistribution notices for every bundled theme font', () => {
+    const reviewedFonts: Record<string, string> = {
+      'assets/ibm-plex-mono.woff2': 'IBM-Plex-Mono',
+      'assets/solway.woff2': 'Solway',
+      'assets/vt323.woff2': 'VT323',
+    };
+    for (const theme of allBuiltInThemes) {
+      for (const [path, asset] of Object.entries(theme.design?.assets ?? {})) {
+        if (!asset.mime.startsWith('font/')) continue;
+        const name = reviewedFonts[path];
+        expect(name, `Review redistribution rights for ${theme.name}: ${path}`).toBeDefined();
+        const notice = readFileSync(`public/licenses/${name}-OFL.txt`, 'utf8').trim();
+        expect(notice).toContain('Copyright');
+        expect(notice).toContain('SIL OPEN FONT LICENSE Version 1.1');
+        expect(theme.design?.license).toContain(notice);
+      }
+    }
+    expect(readFileSync('public/licenses/Inter-OFL.txt', 'utf8')).toBe(
+      readFileSync('node_modules/@fontsource-variable/inter/LICENSE', 'utf8'),
+    );
+  });
   it('strictly validates every source package even when runtime recovery skips one', () => {
     expect(themeCatalogWarnings).toEqual([]);
     for (const document of builtInThemeDocuments) expect(() => parseTheme(document)).not.toThrow();

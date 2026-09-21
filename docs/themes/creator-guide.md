@@ -151,6 +151,8 @@ Theme check measures palette contrast in both modes, looking for 4.5:1 for norma
 
 Set your name, theme version and license in **Sharing details**. Include licenses/attribution for any fonts and artwork you redistribute. Export the package and publish it alongside screenshots and the Tigrana build you tested. There is no automatic marketplace submission or hosted update service.
 
+For packaged fonts, choose a license that explicitly permits redistribution, such as SIL OFL 1.1. A free download or a font installed on your computer is not enough. Include the original copyright and full font license in Sharing details so they travel with exports. Keep font licensing separate from your theme's styling/artwork license. See Tigrana's [bundled font inventory](../../public/licenses/README.md) for examples.
+
 If a theme breaks, open Appearance and choose another theme or **Restore default appearance**. The recovery shortcut is **Cmd+Option+Shift+T** on macOS or **Ctrl+Alt+Shift+T** elsewhere. Invalid notebook snapshots fall back to a safe Default appearance in memory with a notice; their saved content is kept until you choose a replacement. A bad bundled entry is isolated at startup, while the build checks still reject invalid shipped themes.
 
 ## Design references
