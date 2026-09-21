@@ -5,9 +5,9 @@ Tigrana bundles these font families under the SIL Open Font License 1.1. The fon
 | Font | Used by | Distributed source | Notice |
 | --- | --- | --- | --- |
 | [Inter](https://github.com/rsms/inter) | App interface and Settings | `@fontsource-variable/inter` 5.3.0, normal and italic WOFF2 subsets | [Inter-OFL.txt](Inter-OFL.txt) |
-| [IBM Plex Mono](https://github.com/IBM/plex) | Old Basement PC | `@fontsource/ibm-plex-mono` 5.3.0, Latin regular WOFF2 | [IBM-Plex-Mono-OFL.txt](IBM-Plex-Mono-OFL.txt) |
-| [Solway](https://github.com/mashavp/Solway) | Typewriter | `@fontsource/solway` 5.3.0, Latin regular WOFF2 | [Solway-OFL.txt](Solway-OFL.txt) |
-| [VT323](https://github.com/phoikoi/VT323) | Adventure Quest | `@fontsource/vt323` 5.2.5, Latin regular WOFF2 | [VT323-OFL.txt](VT323-OFL.txt) |
+| [IBM Plex Mono](https://github.com/IBM/plex) | Old Basement PC and Quick appearance | `@fontsource/ibm-plex-mono` 5.3.0, Latin regular WOFF2 | [IBM-Plex-Mono-OFL.txt](IBM-Plex-Mono-OFL.txt) |
+| [Solway](https://github.com/mashavp/Solway) | Typewriter and Quick appearance | `@fontsource/solway` 5.3.0, Latin regular WOFF2 | [Solway-OFL.txt](Solway-OFL.txt) |
+| [VT323](https://github.com/phoikoi/VT323) | Adventure Quest and Quick appearance | `@fontsource/vt323` 5.2.5, Latin regular WOFF2 | [VT323-OFL.txt](VT323-OFL.txt) |
 
 These files are copied into `dist/licenses/` by the frontend build and included in the desktop frontend assets. Embedded theme fonts also carry their notices in the theme document and exported package.
 

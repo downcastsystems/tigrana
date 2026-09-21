@@ -3,6 +3,8 @@ import { allBuiltInThemes } from './bundledThemes';
 import { captureCurrentThemeSettings, hasCurrentThemeChanges } from './currentThemeSettings';
 import { defaultPlasmaSettings, parseTheme } from './themes';
 import { themeStylesheet } from './themeRuntime';
+import { quickEditorFonts, applyQuickAppearanceFonts } from './quickAppearance';
+import { encodeThemePackage, decodeThemePackage } from './themePackage';
 
 const defaultTheme = allBuiltInThemes.find(t => t.id === 'default')!;
 const settings = { quickAppearance: null, navigationStyle: 'section-view' as const, rightSidebarOpen: true,
@@ -34,6 +36,22 @@ describe('saving current appearance as a theme', () => {
     expect(hasCurrentThemeChanges(defaultTheme, copy)).toBe(true);
     expect(() => parseTheme(copy)).not.toThrow();
     expect(hasCurrentThemeChanges(defaultTheme, captureCurrentThemeSettings(defaultTheme, settings))).toBe(false);
+  });
+  it.each(['IBM Plex Mono', 'Solway', 'VT323'])('keeps %s and its license when capturing fonts and accent together', label => {
+    const font = quickEditorFonts.find(font => font.label === label)!;
+    const quickAppearance = { editorFontFamily: font.value, accentColor: '#4477cc' };
+    // App passes the already rendered theme into the save-as-new-theme flow.
+    const rendered = applyQuickAppearanceFonts(defaultTheme, quickAppearance);
+    for (const source of [defaultTheme, rendered]) {
+      const copy = captureCurrentThemeSettings(source, { ...settings, accentTitlebar: true, quickAppearance });
+      const restored = decodeThemePackage(encodeThemePackage(copy));
+      expect(restored.editorFontFamily).toBe(font.value);
+      expect(restored.design?.assets).toEqual(rendered.design?.assets);
+      expect(restored.design?.license).toBe(rendered.design?.license);
+      expect(restored.design?.license).toContain('SIL OPEN FONT LICENSE');
+      expect(restored.design?.css).toContain('background: #001428');
+      expect(themeStylesheet(restored, 'light', 'preview')).toContain('@font-face');
+    }
   });
   it('captures manual writing layout changes and detects departures from theme defaults', () => {
     const source = allBuiltInThemes.find(t => t.id === 'builtin-typewriter')!;

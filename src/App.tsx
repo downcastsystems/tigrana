@@ -1,3 +1,6 @@
+import { themeDefaultsPatch, type ThemeDefaultsScope } from "./lib/themeDefaults";
+import { sidebarHoverEdgeWidth } from "./lib/useSidebarOverlay";
+import { sidebarSlideDuration } from "./lib/useSidebarOverlayMotion";
 import { useResponsivePanes } from "./lib/useResponsivePanes";
 import "./styles/responsive-panes.css";
 import { captureCurrentThemeSettings } from "./lib/currentThemeSettings";
@@ -5,8 +8,8 @@ import { recoveryTheme } from "./lib/themeCatalog";
 import { themeCatalogWarnings } from "./lib/bundledThemes";
 import { readableThemeText, themeVariables, themeBackgroundImage } from "./lib/themeRuntime";
 import { classicThemes } from "./lib/bundledThemes";
-import { applyQuickAppearanceFonts, quickAppearanceStyles, quickEditorFonts } from "./lib/quickAppearance";
-import { ThemeColorField } from "./components/ThemeColorField";
+import { applyQuickAppearanceFonts, quickAppearanceStyles, quickAppearanceResetPatch } from "./lib/quickAppearance";
+import { QuickAppearanceControls } from "./components/QuickAppearanceControls";
 import { ThemeStyles } from "./components/ThemeStyles";
 import "./styles/theme-api.css";
 import SettingsModal, { type SettingsSection } from "./components/SettingsModal";
@@ -819,6 +822,7 @@ export default function App() {
   }, [themePresetId, customTheme, invalidNotebookTheme]);
   const activeThemeColors = themeColors[resolvedTheme];
   const quickAppearance = metadata.appearance?.quickAppearance;
+  const quickAppearanceTheme = customTheme ?? classicThemes.find(theme => theme.id === themePresetId) ?? recoveryTheme;
   // Title-bar styling belongs to the theme; ignore retired notebook quick overrides.
   const accentTitlebar = savedAccentTitlebar;
   const accentColor = quickAppearance?.accentColor ?? activeThemeColors.accentColor ?? null;
@@ -901,6 +905,10 @@ export default function App() {
   const focusModeActive = !leftVisible && !outlineVisible;
   const renderedVariables = themeVariables(renderedTheme, resolvedTheme, "notebook");
   const frameStyle = {
+    "--sidebar-slide-duration": `${sidebarSlideDuration}ms`,
+    "--sidebar-hover-width": `${sidebarHoverEdgeWidth}px`,
+    "--sidebar-hover-offset": `${responsivePanes.hoverOffset}ms`,
+    "--sidebar-hover-duration": `${responsivePanes.hoverDelay}ms`,
     "--folder-pane-width": `${folderPaneWidth}px`,
     "--notes-pane-width": `${notesPaneWidth}px`,
     "--right-pane-width": `${rightPaneWidth}px`,
@@ -1900,22 +1908,33 @@ export default function App() {
 
   }, [updateMetadata]);
 
+  function useThemeDefaults(theme: ThemeDocument, scope: ThemeDefaultsScope) {
+    if (workspaceRef.current !== workspace) return;
+    if (theme.id === "default" && scope === "all") {
+      resetThemeAppearance();
+      return;
+    }
+    updateNotebookAppearance(themeDefaultsPatch(theme, scope));
+  }
+
   function resetThemeAppearance() {
-    updateNotebookAppearance({ quickAppearance: null, customTheme: null, themePresetId: "default", colors: defaultNotebookThemeColors(), accentTitlebar: false, appFontFamily: defaultAppFontFamily, appFontSize: defaultAppFontSize, editorFontFamily: defaultEditorFontFamily, editorFontSize: defaultEditorFontSize, plasma: { enabled: false, frost: 80, backgroundBlur: 0 } });
+    const defaultTheme = classicThemes.find(theme => theme.id === "default") ?? recoveryTheme;
+    updateNotebookAppearance({
+      ...themeDefaultsPatch(defaultTheme, "all"),
+      customTheme: null,
+      themePresetId: "default",
+      accentColor: null,
+      wordCountVisible: defaultTheme.wordCountVisible ?? true,
+    });
+    focusRestoreRef.current = null;
+    setPaneOverlay(null);
+    setLeftVisible(true);
   }
 
   function applyCustomTheme(theme: ThemeDocument) {
     if (workspaceRef.current !== workspace) return;
     // Retain notebook layout; the snapshot keeps the author defaults for the opt-in action.
     updateNotebookAppearance({ ...themeAppearance(theme), quickAppearance: null, navigationStyle, rightSidebarOpen: preferredOutlineVisible });
-  }
-
-  function applyThemeLayout(theme: ThemeDocument) {
-    if (workspaceRef.current !== workspace) return;
-    updateNotebookAppearance({
-      ...(theme.navigationStyle === undefined ? {} : { navigationStyle: theme.navigationStyle }),
-      ...(theme.rightSidebarOpen === undefined ? {} : { rightSidebarOpen: theme.rightSidebarOpen }),
-    });
   }
 
   function themeSeed(): ThemeDocument {
@@ -4705,13 +4724,18 @@ export default function App() {
 
       <div ref={responsivePanes.frameRef} onPointerDownCapture={(event) => {
         if (responsivePanes.overlay && event.target instanceof Element && event.target.closest(".main-pane") && !event.target.closest(".sidebar-toggle, .outline-toggle")) setPaneOverlay(null);
-      }} data-theme-region="notebook" data-theme-api={renderedTheme.design ? "1" : undefined} className={`app-frame${responsivePanes.overlay ? ` has-${responsivePanes.overlay}-overlay` : ""} theme-${resolvedTheme} ${plasmaEnabled ? "theme-plasma" : "theme-standard"} ${responsivePanes.docked.leftVisible ? "" : "is-left-hidden"} ${responsivePanes.docked.outlineVisible ? "" : "is-outline-hidden"} ${navigationStyle === "single-pane" ? "is-single-col" : ""}`} style={{ ...frameStyle, ...quickStyles.palette }}>
+      }} data-theme-region="notebook" data-theme-api={renderedTheme.design ? "1" : undefined} className={`app-frame${responsivePanes.visibleOverlay ? ` has-${responsivePanes.visibleOverlay}-overlay${responsivePanes.closing ? " is-overlay-closing" : ""}` : ""} theme-${resolvedTheme} ${plasmaEnabled ? "theme-plasma" : "theme-standard"} ${responsivePanes.docked.leftVisible ? "" : "is-left-hidden"} ${responsivePanes.docked.outlineVisible ? "" : "is-outline-hidden"} ${navigationStyle === "single-pane" ? "is-single-col" : ""}`} style={{ ...frameStyle, ...quickStyles.palette }}>
+      {!responsivePanes.docked.leftVisible && !responsivePanes.overlay && <div className="sidebar-hover-edge is-left" data-sidebar-peek="left" data-sidebar-peek-edge aria-hidden="true" />}
+      {responsivePanes.hoverSide && <div key={responsivePanes.hoverRevision} className={`sidebar-hover-glow is-${responsivePanes.hoverSide}`} aria-hidden="true" />}
       {leftVisible ? (
         <aside
           id="left-navigation-panes"
           className={`left-panes${navigationStyle === "single-pane" ? " is-single-col" : ""}`}
           onContextMenu={(event) => openContextMenu(event, { kind: "empty" })}
         >
+          {responsivePanes.visibleOverlay === "left" && <SidebarOverlayActions side="left"
+            onClose={() => setPaneOverlay(null)}
+            onPin={responsivePanes.canDockLeft ? () => { setPaneOverlay(null); setLeftVisible(true); } : undefined} />}
           {navigationStyle === "single-pane" ? (
             <UnifiedTreePane
               activePath={activePath}
@@ -4894,6 +4918,8 @@ export default function App() {
           animateTitle={dockedTitleState.animate}
           leftVisible={leftVisible}
           outlineVisible={outlineVisible}
+          leftPreview={responsivePanes.overlay === "left" && responsivePanes.canDockLeft}
+          rightPreview={responsivePanes.overlay === "right" && responsivePanes.canDockRight}
           title={titleDraft}
           titleVisible={dockedTitleState.visible}
           onTitleClick={() => noteSurfaceRef.current?.scrollTo({ top: 0, behavior: "smooth" })}
@@ -5238,6 +5264,9 @@ export default function App() {
       {outlineVisible ? (
         <RightSidebar
           id="right-note-sidebar"
+          overlayActions={responsivePanes.visibleOverlay === "right" ? <SidebarOverlayActions side="right"
+            onClose={() => setPaneOverlay(null)}
+            onPin={responsivePanes.canDockRight ? () => { setPaneOverlay(null); updateNotebookAppearance({ rightSidebarOpen: true }); } : undefined} /> : undefined}
           activeNote={activeNote}
           frontmatter={frontmatterDraft}
           frontmatterError={frontmatterError}
@@ -5502,33 +5531,12 @@ export default function App() {
             onClose={() => setSettingsOpen(false)}
             themeContent={(navigationControls) => <>
               {metadata.appearance?.customTheme && !customTheme ? <p role="alert">This notebook contains an invalid or unsupported theme. Choose a theme to replace it.</p> : null}
-              <ThemeBuilder navigationControls={navigationControls} key={workspace} current={customTheme} seed={themeSeed()} onApply={applyCustomTheme} onUseThemeLayout={applyThemeLayout}
+              <ThemeBuilder navigationControls={navigationControls} key={workspace} current={customTheme} seed={themeSeed()} onApply={applyCustomTheme} onUseThemeDefaults={useThemeDefaults} onRestoreDefault={resetThemeAppearance}
                 onSaved={() => setSettingsOpen(false)}
-                quickAppearanceControls={<section className="settings-quick-appearance" aria-label="Quick appearance">
-                  <h3>Quick appearance</h3>
-                  <p className="settings-description">These changes apply to this notebook. Choosing a theme resets them.</p>
-                  <ThemeColorField label="Accent color" name="Quick accent color" value={effectiveAccentColor}
-                    onChange={(value) => updateNotebookAppearance({ quickAppearance: { ...quickAppearance, accentColor: value } })} />
-                  <label className="setting-row">
-                    Editor font
-                    <select className="settings-select" aria-label="Quick editor font" value={quickEditorFonts.some(font => font.value === quickAppearance?.editorFontFamily) ? quickAppearance!.editorFontFamily : ""}
-                      onChange={event => updateNotebookAppearance({ quickAppearance: { ...quickAppearance, editorFontFamily: event.target.value || undefined } })}>
-                      <option value="">Theme font</option>
-                      {quickEditorFonts.map(font => <option key={font.value} value={font.value}>{font.label}</option>)}
-                    </select>
-                  </label>
-                  <label className="setting-row">
-                    Editor font size
-                    <span className="quick-font-size-control">
-                      <input aria-label="Quick editor font size" type="range" min={11} max={28} step={1} value={renderedTheme.editorFontSize}
-                        onChange={event => updateNotebookAppearance({ quickAppearance: { ...quickAppearance, editorFontSize: Number(event.target.value) } })} />
-                      <output>{renderedTheme.editorFontSize}px</output>
-                    </span>
-                  </label>
-                  {(quickAppearance?.editorFontFamily || quickAppearance?.editorFontSize !== undefined) && <button className="toolbar-button quick-font-reset"
-                    onClick={() => updateNotebookAppearance({ quickAppearance: { ...quickAppearance, editorFontFamily: undefined, editorFontSize: undefined } })}>Use theme fonts</button>}
-                  <p className="settings-description">Plasma glass effects are part of each theme. Adjust them in the Theme Editor under Advanced surfaces.</p>
-                </section>}
+                quickAppearanceControls={<QuickAppearanceControls theme={quickAppearanceTheme} mode={resolvedTheme} quick={quickAppearance}
+                  current={{ accentColor: effectiveAccentColor, editorFontFamily: renderedTheme.editorFontFamily, editorFontSize: renderedTheme.editorFontSize }}
+                  onChange={patch => updateNotebookAppearance({ quickAppearance: { ...quickAppearance, ...patch } })}
+                  onReset={field => updateNotebookAppearance(quickAppearanceResetPatch(quickAppearanceTheme, quickAppearance, field))} />}
                 builtInThemes={themePresets} builtInThemeId={themePresetId}
                 onBuiltInChange={(id) => updateNotebookAppearance({ navigationStyle, rightSidebarOpen: preferredOutlineVisible, quickAppearance: null, accentTitlebar: false, customTheme: null, themePresetId: id, colors: defaultNotebookThemeColors(), plasma: { ...defaultPlasmaSettings }, appFontFamily: defaultAppFontFamily, appFontSize: defaultAppFontSize, editorFontFamily: defaultEditorFontFamily, editorFontSize: defaultEditorFontSize })}
                 colorScheme={colorScheme} onColorSchemeChange={(scheme) => updateNotebookAppearance({ colorScheme: scheme })} />
@@ -7325,6 +7333,8 @@ function EmptyNoteSurface({
 
 export function EditorTopbar({
   animateTitle = false,
+  leftPreview = false,
+  rightPreview = false,
   children,
   leftVisible,
   outlineVisible,
@@ -7335,6 +7345,8 @@ export function EditorTopbar({
   onToggleOutline,
 }: {
   animateTitle?: boolean;
+  leftPreview?: boolean;
+  rightPreview?: boolean;
   children?: ReactNode;
   leftVisible: boolean;
   outlineVisible: boolean;
@@ -7344,12 +7356,13 @@ export function EditorTopbar({
   onToggleLeft: () => void;
   onToggleOutline: () => void;
 }) {
-  const leftLabel = leftVisible ? "Hide left sidebar" : "Show left sidebar";
-  const rightLabel = outlineVisible ? "Hide right sidebar" : "Show right sidebar";
+  const leftLabel = leftPreview ? "Keep left sidebar open" : leftVisible ? "Hide left sidebar" : "Show left sidebar";
+  const rightLabel = rightPreview ? "Keep right sidebar open" : outlineVisible ? "Hide right sidebar" : "Show right sidebar";
 
   return (
     <header className="topbar">
       <button
+        data-sidebar-peek="left"
         className="icon-button sidebar-toggle"
         type="button"
         title={leftLabel}
@@ -7373,6 +7386,7 @@ export function EditorTopbar({
       <div className="topbar-actions">
         {children}
         <button
+          data-sidebar-peek="right"
           className="icon-button outline-toggle"
           type="button"
           title={rightLabel}
@@ -7513,8 +7527,16 @@ function NotebookMenuButton({
   );
 }
 
+function SidebarOverlayActions({ side, onPin, onClose }: { side: "left" | "right"; onPin?: () => void; onClose: () => void }) {
+  return <div className={`sidebar-overlay-actions is-${side}`}>
+    {onPin && <button className="toolbar-button" aria-label={`Keep ${side} sidebar open`} onClick={onPin}><Pin size={14} />Keep open</button>}
+    <button className="icon-button" aria-label={`Close ${side} sidebar preview`} title="Close preview" onClick={onClose}><X size={16} /></button>
+  </div>;
+}
+
 function RightSidebar({
   id,
+  overlayActions,
   activeNote,
   frontmatter,
   frontmatterError,
@@ -7534,6 +7556,7 @@ function RightSidebar({
   onSelectBacklink,
 }: {
   id?: string;
+  overlayActions?: ReactNode;
   activeNote: NoteEntry | null;
   frontmatter: string;
   frontmatterError: string | null;
@@ -7562,6 +7585,7 @@ function RightSidebar({
       : "Properties";
   return (
     <aside id={id} className="right-sidebar">
+      {overlayActions}
       <div className="pane-header">
         <strong>{title}</strong>
         <div className="sidebar-tabs">

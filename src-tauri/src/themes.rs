@@ -369,6 +369,9 @@ fn save_in_dir(dir: &Path, theme: Value, expected: Option<Value>) -> Result<(), 
         .get("id")
         .and_then(Value::as_str)
         .ok_or("Missing theme ID")?;
+    if id == "default" {
+        return Err("Default is a protected built-in theme. Save your changes as a new theme.".into());
+    }
     if id.is_empty()
         || id.len() > 80
         || !id
@@ -447,6 +450,25 @@ mod tests {
         let mut invalid = copy.clone(); invalid["controls"][0]["value"] = json!(20); assert!(normalize_theme(&invalid).is_err());
         invalid = copy.clone(); invalid["typography"]["status"] = json!(5); assert!(normalize_theme(&invalid).is_err());
         invalid = copy.clone(); invalid["baseThemeSnapshot"]["baseThemeSnapshot"] = base; assert!(normalize_theme(&invalid).is_err());
+    }
+
+    #[test]
+    fn default_cannot_be_created_or_overwritten_in_the_theme_library() {
+        let catalog: Value = serde_json::from_str(include_str!("../../src/themes/classic.json")).unwrap();
+        let original = catalog.as_array().unwrap().iter().find(|theme| theme["id"] == "default").unwrap().clone();
+        let dir = std::env::temp_dir().join(format!("tigrana-default-theme-{}", uuid::Uuid::new_v4()));
+        assert!(save_in_dir(&dir, original.clone(), None).unwrap_err().contains("protected built-in"));
+        assert!(!dir.exists());
+        // An older release may have written this file. A rejected update must preserve it.
+        fs::create_dir_all(&dir).unwrap();
+        let path = dir.join("default.json");
+        let contents = serde_json::to_string(&original).unwrap();
+        fs::write(&path, &contents).unwrap();
+        let mut changed = original.clone();
+        changed["editorFontSize"] = json!(24);
+        assert!(save_in_dir(&dir, changed, Some(original)).unwrap_err().contains("protected built-in"));
+        assert_eq!(fs::read_to_string(path).unwrap(), contents);
+        fs::remove_dir_all(dir).unwrap();
     }
 
     #[test]

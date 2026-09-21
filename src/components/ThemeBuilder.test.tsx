@@ -1,4 +1,4 @@
-import { bundledThemes } from "../lib/bundledThemes";
+import { bundledThemes, classicThemes } from "../lib/bundledThemes";
 // @vitest-environment jsdom
 import { webcrypto } from "node:crypto";
 import type { ThemeDifferenceAcknowledgement } from "../types";
@@ -602,6 +602,60 @@ it("does not ask to register an unchanged built-in theme in the shared library",
   } finally { await act(async () => root.unmount()); }
 });
 
+it.each([false, true])("never offers to publish a Default notebook snapshot (modified: %s)", async modified => {
+  const original = classicThemes.find(theme => theme.id === 'default')!;
+  const current = modified ? { ...original, editorFontSize: 23 } : original;
+  const host = document.createElement('div'), root = createRoot(host);
+  try {
+    await act(async () => root.render(<ThemeReconciliation current={current} onApply={vi.fn()} />));
+    expect(host.textContent).toBe('');
+  } finally { await act(async () => root.unmount()); }
+});
+
+it.each([false, true])("labels local Default changes without replacing the built-in (legacy snapshot: %s)", async legacy => {
+  const original = classicThemes.find(theme => theme.id === 'default')!;
+  const changed = { ...original, editorFontSize: 23 };
+  const restore = vi.fn();
+  const host = document.createElement('div'), root = createRoot(host);
+  try {
+    await act(async () => root.render(<ThemeBuilder current={legacy ? changed : null} seed={changed}
+      builtInThemes={[{ id: 'default', name: 'Default' }]} onApply={vi.fn()} onRestoreDefault={restore} />));
+    const picker = host.querySelector<HTMLSelectElement>('[aria-label="Theme"]')!;
+    expect(picker.value).toBe('modified:default');
+    expect(picker.querySelector('option[value="builtin:default"]')?.textContent).toBe('Default');
+    expect(picker.querySelector('option[value="modified:default"]')?.textContent).toBe('Default (modified)');
+    expect(picker.querySelector('option[value="saved:default"]')).toBeNull();
+    expect(button(host, 'Edit theme')).toBeUndefined();
+    await act(async () => button(host, 'Return to Default').click());
+    expect(restore).toHaveBeenCalledTimes(1);
+    await act(async () => { picker.value = 'builtin:default'; picker.dispatchEvent(new Event('change', { bubbles: true })); });
+    expect(restore).toHaveBeenCalledTimes(2);
+    await act(async () => button(host, 'Save current settings as new theme').click());
+    expect(host.querySelector<HTMLInputElement>('[aria-label="Theme name"]')?.value).toBe('Default copy');
+  } finally { await act(async () => root.unmount()); }
+});
+
+it("imports a Default snapshot as a new named copy", async () => {
+  const original = classicThemes.find(theme => theme.id === 'default')!;
+  const host = document.createElement('div'), root = createRoot(host), apply = vi.fn();
+  try {
+    await act(async () => root.render(<ThemeBuilder current={null} seed={original} onApply={apply} />));
+    const input = host.querySelector<HTMLInputElement>('[aria-label="Import theme package or JSON"]')!;
+    const file = new File([JSON.stringify(original)], 'default.json', { type: 'application/json' });
+    Object.defineProperty(file, 'arrayBuffer', { value: async () => new TextEncoder().encode(JSON.stringify(original)).buffer });
+    Object.defineProperty(input, 'files', { value: [file] });
+    await act(async () => input.dispatchEvent(new Event('change', { bubbles: true })));
+    expect(host.querySelector<HTMLInputElement>('[aria-label="Theme name"]')!.value).toBe('Default copy');
+    await act(async () => button(host, 'Save and use').click());
+    await act(async () => button(host, 'Confirm and save').click());
+    const saved = (await listThemes()).themes;
+    expect(saved).toHaveLength(1);
+    expect(saved[0].id).not.toBe('default');
+    expect(saved[0].name).toBe('Default copy');
+    expect(apply).toHaveBeenCalledWith(saved[0]);
+  } finally { await act(async () => root.unmount()); }
+});
+
 
 it("keeps the theme editor open when saving fails", async () => {
   const theme = exampleTheme();
@@ -707,13 +761,51 @@ it("offers the author's layout separately and only when explicit defaults differ
   const seed = { ...theme, navigationStyle: 'dual-pane' as const, rightSidebarOpen: true };
   const apply = vi.fn(), useLayout = vi.fn();
   try {
-    await act(async () => root.render(<ThemeBuilder current={theme} seed={seed} onApply={apply} onUseThemeLayout={useLayout} />));
-    await act(async () => button(host, "Use theme's layout").click());
-    expect(useLayout).toHaveBeenCalledWith(theme);
+    await act(async () => root.render(<ThemeBuilder current={theme} seed={seed} onApply={apply} onUseThemeDefaults={useLayout} />));
+    await act(async () => button(host, "Use theme defaults").click());
+    await act(async () => button(host, "Use theme default layout options").click());
+    expect(useLayout).toHaveBeenCalledWith(theme, "layout");
     expect(apply).not.toHaveBeenCalled();
-    await act(async () => root.render(<ThemeBuilder current={theme} seed={theme} onApply={apply} onUseThemeLayout={useLayout} />));
-    expect(button(host, "Use theme's layout")).toBeUndefined();
-    await act(async () => root.render(<ThemeBuilder current={{ ...theme, navigationStyle: undefined, rightSidebarOpen: undefined }} seed={seed} onApply={apply} onUseThemeLayout={useLayout} />));
-    expect(button(host, "Use theme's layout")).toBeUndefined();
+    await act(async () => root.render(<ThemeBuilder current={theme} seed={theme} onApply={apply} onUseThemeDefaults={useLayout} />));
+    expect(button(host, "Use theme defaults")).toBeUndefined();
+    await act(async () => root.render(<ThemeBuilder current={{ ...theme, navigationStyle: undefined, rightSidebarOpen: undefined }} seed={seed} onApply={apply} onUseThemeDefaults={useLayout} />));
+    expect(button(host, "Use theme defaults")).toBeUndefined();
+  } finally { await act(async () => root.unmount()); }
+});
+
+it("refreshes saved themes on opening and window focus without applying them", async () => {
+  const host = document.createElement("div"), root = createRoot(host), apply = vi.fn();
+  const original = { ...exampleTheme(), name: "Available before opening" };
+  await saveTheme(original, null);
+  try {
+    await act(async () => root.render(<ThemeBuilder current={null} seed={exampleTheme()} onApply={apply} />));
+    expect(host.querySelector('[aria-label="Refresh themes"]')).toBeNull();
+    expect(host.querySelector('select[aria-label="Theme"]')?.textContent).toContain(original.name);
+    const updated = { ...original, name: "Updated in another window" };
+    await saveTheme(updated, original);
+    expect(host.textContent).not.toContain(updated.name);
+    await act(async () => window.dispatchEvent(new Event("focus")));
+    expect(host.querySelector('select[aria-label="Theme"]')?.textContent).toContain(updated.name);
+    expect(host.querySelector('select[aria-label="Theme"]')?.textContent).not.toContain(original.name);
+    expect(apply).not.toHaveBeenCalled();
+  } finally { await act(async () => root.unmount()); }
+});
+
+it("preserves an open theme draft when refreshing after window focus", async () => {
+  const host = document.createElement("div"), root = createRoot(host), apply = vi.fn();
+  try {
+    await act(async () => root.render(<ThemeBuilder current={null} seed={exampleTheme()} onApply={apply} />));
+    await act(async () => button(host, "Create theme").click());
+    const name = host.querySelector<HTMLInputElement>('[aria-label="Theme name"]')!;
+    await act(async () => {
+      Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")!.set!.call(name, "My unfinished draft");
+      name.dispatchEvent(new Event("input", { bubbles: true }));
+    });
+    await saveTheme({ ...exampleTheme(), name: "Saved elsewhere" }, null);
+    await act(async () => window.dispatchEvent(new Event("focus")));
+    expect(host.querySelector<HTMLInputElement>('[aria-label="Theme name"]')?.value).toBe("My unfinished draft");
+    expect(apply).not.toHaveBeenCalled();
+    await act(async () => button(host, "Cancel").click());
+    expect(host.querySelector('select[aria-label="Theme"]')?.textContent).toContain("Saved elsewhere");
   } finally { await act(async () => root.unmount()); }
 });

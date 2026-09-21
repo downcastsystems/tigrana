@@ -39,7 +39,7 @@ export function captureCurrentThemeSettings(theme: ThemeDocument, settings: Curr
   }
   if (titlebarRules.length) {
     result.schemaVersion = 2;
-    const design = theme.design ?? defaultThemeDesign;
+    const design = result.design ?? defaultThemeDesign;
     result.design = { ...design, css: `${design.css}\n/* Captured notebook accent on the title bar. */\n${titlebarRules.join('\n')}` };
   }
   return result;

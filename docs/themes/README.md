@@ -222,9 +222,10 @@ until a theme is selected again.
 Quick Appearance offers notebook-only accent color, editor font family, and editor
 font size overrides. They persist with the notebook, do not modify the shared
 theme, and reset when a theme is selected. **Save current settings as new theme**
-bakes the overrides into a portable copy. Font family choices are bundled Inter
-and system serif/monospace fallbacks. **Use theme fonts** clears just the font
-overrides, preserving the accent.
+bakes the overrides into a portable copy. Font choices include bundled Inter,
+IBM Plex Mono, Solway, and VT323, plus system font, serif, and monospace fallbacks.
+Packaged fonts carry their data and license notices into saved/exported themes.
+**Use theme defaults → Use theme default fonts & colors** resets these overrides.
 
 ## Authoring extensions
 

@@ -1,3 +1,5 @@
+import { ThemeDefaultsMenu } from "./ThemeDefaultsMenu";
+import type { ThemeDefaultsScope } from "../lib/themeDefaults";
 import { hasCurrentThemeChanges } from "../lib/currentThemeSettings";
 import { readableThemeText } from "../lib/themeRuntime";
 import { authoringOriginal, originalSnapshot, updateDerivedTheme } from "../lib/themeDerivation";
@@ -15,11 +17,11 @@ import { ThemeDesignEditor } from "./ThemeDesignEditor";
 import { defaultThemeDesign, themePackageLimit } from "../lib/themeDesign";
 import { decodeThemePackage, encodeThemePackage } from "../lib/themePackage";
 import { ThemePreviewPanel } from "./ThemePreviewHost";
-import { ChevronLeft, ChevronRight, FileText, Plus, RefreshCw, X } from "lucide-react";
+import { ChevronLeft, ChevronRight, FileText, Plus, X } from "lucide-react";
 import { defaultPlasmaSettings } from "../lib/themes";
 import PlasmaTheme from "./PlasmaTheme";
 import { ThemeColorField } from "./ThemeColorField";
-import { useEffect, useId, useMemo, useRef, useState, type CSSProperties } from "react";
+import { useCallback, useEffect, useId, useMemo, useRef, useState, type CSSProperties } from "react";
 import { exportThemePackageFile } from "../lib/desktop";
 import {
   listThemes,
@@ -210,7 +212,8 @@ export function ThemeBuilder({
   seed,
   onApply,
   onSaved,
-  onUseThemeLayout,
+  onUseThemeDefaults,
+  onRestoreDefault,
   quickAppearanceControls,
   navigationControls,
   builtInThemes = [],
@@ -223,7 +226,8 @@ export function ThemeBuilder({
   seed: ThemeDocument;
   onApply: (theme: ThemeDocument) => void;
   onSaved?: () => void;
-  onUseThemeLayout?: (theme: ThemeDocument) => void;
+  onUseThemeDefaults?: (theme: ThemeDocument, scope: ThemeDefaultsScope) => void;
+  onRestoreDefault?: () => void;
   quickAppearanceControls?: React.ReactNode;
   navigationControls?: React.ReactNode;
   builtInThemes?: { id: string; name: string }[];
@@ -247,18 +251,28 @@ export function ThemeBuilder({
   const [lastPickedThemeId, setLastPickedThemeId] = useState<string | null>(null);
   const [deleting, setDeleting] = useState<ThemeDocument | null>(null);
   const [verifying, setVerifying] = useState(false);
-  async function reload() {
+  const libraryRequest = useRef({ version: 0 });
+  const reload = useCallback(async () => {
+    const request = ++libraryRequest.current.version;
     try {
       const result = await listThemes();
+      if (request !== libraryRequest.current.version) return;
       setThemes(result.themes);
       setError(result.warnings.join(" "));
     } catch (e) {
-      setError(String(e));
+      if (request === libraryRequest.current.version) setError(String(e));
     }
-  }
-  useEffect(() => {
-    void reload();
   }, []);
+  useEffect(() => {
+    const requests = libraryRequest.current;
+    void reload();
+    const refresh = () => { void reload(); };
+    window.addEventListener("focus", refresh);
+    return () => {
+      window.removeEventListener("focus", refresh);
+      requests.version++;
+    };
+  }, [reload]);
   async function run(action: () => Promise<void>) {
     setBusy(true);
     setError("");
@@ -270,8 +284,11 @@ export function ThemeBuilder({
       setBusy(false);
     }
   }
-  const sourceTheme = current ?? allBuiltInThemes.find(theme => theme.id === builtInThemeId) ?? seed;
+  const isDefault = current ? current.id === "default" : builtInThemeId === "default";
+  const sourceTheme = (isDefault ? allBuiltInThemes.find(theme => theme.id === "default") : current)
+    ?? allBuiltInThemes.find(theme => theme.id === builtInThemeId) ?? seed;
   const settingsModified = hasCurrentThemeChanges(sourceTheme, seed);
+  const defaultModified = isDefault && settingsModified;
   const layoutDiffers = (sourceTheme.navigationStyle !== undefined && sourceTheme.navigationStyle !== seed.navigationStyle)
     || (sourceTheme.rightSidebarOpen !== undefined && sourceTheme.rightSidebarOpen !== seed.rightSidebarOpen);
   const sourceOriginal = useMemo(() => authoringOriginal(sourceTheme, [...allBuiltInThemes, ...themes]), [sourceTheme, themes]);
@@ -316,6 +333,36 @@ export function ThemeBuilder({
         <>
           <div className="setting-row">
             <span>
+              <strong>Color scheme</strong>
+              <small>Use light, dark, or follow this computer.</small>
+            </span>
+            <select
+              className="settings-select"
+              aria-label="Color scheme"
+              value={colorScheme}
+              onChange={(e) =>
+                onColorSchemeChange?.(
+                  e.target.value as "system" | "light" | "dark",
+                )
+              }
+            >
+              <option value="system">System</option>
+              <option value="light">Light</option>
+              <option value="dark">Dark</option>
+            </select>
+          </div>
+          <hr className="settings-appearance-divider" />
+          {navigationControls && <>
+            {navigationControls}
+            <hr className="settings-appearance-divider" />
+          </>}
+          {quickAppearanceControls && <>
+            {quickAppearanceControls}
+            <hr className="settings-appearance-divider" />
+          </>}
+          <section className="settings-theme-section" aria-label="Theme selection and management">
+          <div className="setting-row">
+            <span>
               <strong>Theme</strong>
               <small>The selected theme travels with this notebook.</small>
             </span>
@@ -325,12 +372,17 @@ export function ThemeBuilder({
                 aria-label="Theme"
                 disabled={busy}
                 value={
-                  current ? `${currentIsBundled ? "bundled" : "saved"}:${current.id}` : `builtin:${builtInThemeId}`
+                  isDefault ? (defaultModified ? "modified:default" : "builtin:default")
+                    : current ? `${currentIsBundled ? "bundled" : "saved"}:${current.id}` : `builtin:${builtInThemeId}`
                 }
                 onChange={(e) => {
                   const value = e.target.value;
+                  if (value === "modified:default") return;
                   setLastPickedThemeId(value.slice(value.indexOf(":") + 1));
-                  if (value.startsWith("builtin:"))
+                  if (value === "builtin:default" && defaultModified && onRestoreDefault) {
+                    onRestoreDefault();
+                    setLastPickedThemeId(null);
+                  } else if (value.startsWith("builtin:"))
                     onBuiltInChange?.(value.slice(8));
                   else if (value.startsWith("bundled:")) {
                     const theme = bundledThemes.find((t) => `bundled:${t.id}` === value);
@@ -349,9 +401,10 @@ export function ThemeBuilder({
                   ))}
                   {bundledThemes.map((t) => <option key={t.id} value={`bundled:${t.id}`}>{t.name}</option>)}
                 </optgroup>
-                {(current && !currentIsBundled) || themes.length ? (
+                {defaultModified && <optgroup label="This notebook"><option value="modified:default">Default (modified)</option></optgroup>}
+                {(current && !currentIsBundled && !isDefault) || themes.length ? (
                   <optgroup label="Saved">
-                    {current && !currentIsBundled ? (
+                    {current && !currentIsBundled && !isDefault ? (
                       <option value={`saved:${current.id}`}>
                         {displayNames[current.id] ?? current.name}
                       </option>
@@ -366,28 +419,21 @@ export function ThemeBuilder({
                   </optgroup>
                 ) : null}
               </select>
-              <button
-                type="button"
-                className="icon-button"
-                aria-label="Refresh themes"
-                title="Refresh themes"
-                disabled={busy}
-                onClick={() => void run(reload)}
-              >
-                <RefreshCw size={17} aria-hidden="true" />
-              </button>
             </div>
           </div>
           {themes.some(t => displayNames[t.id] !== t.name) && <p className="settings-description">Some older themes share a name. Numbered labels distinguish them here; editing and saving one gives it a unique name.</p>}
-          {(settingsModified || (onUseThemeLayout && layoutDiffers)) && <div className="theme-current-settings">
-            <p className="settings-description" role="status">{onUseThemeLayout && layoutDiffers
+          {(settingsModified || (onUseThemeDefaults && layoutDiffers)) && <div className="theme-current-settings">
+            <p className="settings-description" role="status">{defaultModified
+              ? "Default (modified) applies only to this notebook. The built-in Default theme is unchanged."
+              : onUseThemeDefaults && layoutDiffers
               ? lastPickedThemeId === sourceTheme.id
                 ? `${sourceTheme.name} applied. Your navigation and panels were kept.`
                 : "Your navigation and panels differ from this theme's defaults."
               : `Current settings differ from ${sourceTheme.name}.`}</p>
             <div className="theme-actions">
-              {onUseThemeLayout && layoutDiffers && <button type="button" className="toolbar-button" disabled={busy} onClick={() => { onUseThemeLayout(sourceTheme); setLastPickedThemeId(null); }}>Use theme's layout</button>}
+              {defaultModified && onRestoreDefault && <button type="button" className="toolbar-button" disabled={busy} onClick={onRestoreDefault}>Return to Default</button>}
               {settingsModified && <button type="button" className="toolbar-button" disabled={busy} onClick={create}>Save current settings as new theme</button>}
+              {onUseThemeDefaults && <ThemeDefaultsMenu disabled={busy} onSelect={scope => { onUseThemeDefaults(sourceTheme, scope); setLastPickedThemeId(null); }} />}
             </div>
           </div>}
           <div className="theme-actions">
@@ -451,7 +497,7 @@ export function ThemeBuilder({
                     (t) => t.id === theme.id,
                   );
                   // Preserve portable identity unless importing a different theme over an existing ID.
-                  const duplicate = existing && !themesMatch(existing, theme);
+                  const duplicate = theme.id === "default" || (existing && !themesMatch(existing, theme));
                   setExpected(duplicate ? null : (existing ?? null));
                   setDraft(
                     duplicate
@@ -482,30 +528,7 @@ export function ThemeBuilder({
               </button>
             ) : null}
           </div>
-          <hr className="settings-appearance-divider" />
-          <div className="setting-row">
-            <span>
-              <strong>Color scheme</strong>
-              <small>Use light, dark, or follow this computer.</small>
-            </span>
-            <select
-              className="settings-select"
-              aria-label="Color scheme"
-              value={colorScheme}
-              onChange={(e) =>
-                onColorSchemeChange?.(
-                  e.target.value as "system" | "light" | "dark",
-                )
-              }
-            >
-              <option value="system">System</option>
-              <option value="light">Light</option>
-              <option value="dark">Dark</option>
-            </select>
-          </div>
-          {navigationControls}
-          <hr className="settings-appearance-divider" />
-          {quickAppearanceControls}
+          </section>
         </>
       ) : null}
       {error ? <p role="alert">{error}</p> : null}
@@ -610,7 +633,7 @@ export function ThemeBuilder({
                     <option value="single-pane">Single pane</option>
                   </select>
                 </label>
-                <p className="settings-description">Applied only when you choose Use theme's layout. Switching themes keeps your current navigation.</p>
+                <p className="settings-description">Applied when you choose Use theme default layout options or Use all theme defaults. Switching themes keeps your current navigation.</p>
                 <label className="setting-row">
                   Default right sidebar
                   <select value={draft.rightSidebarOpen === undefined ? "" : draft.rightSidebarOpen ? "open" : "closed"}
@@ -620,7 +643,7 @@ export function ThemeBuilder({
                     <option value="closed">Closed</option>
                   </select>
                 </label>
-                <p className="settings-description">Applied only when you choose Use theme's layout. Switching themes keeps your current sidebar visibility.</p>
+                <p className="settings-description">Applied when you choose Use theme default layout options or Use all theme defaults. Switching themes keeps your current sidebar visibility.</p>
                 <label className="setting-row">
                   Default editor width
                   <select className="settings-select" value={draft.editorWidthMode ?? ""}
@@ -823,7 +846,7 @@ export function ThemeReconciliation({
     setMissing(false);
     setDismissed(false);
     setError("");
-    if (snapshot && !isBundledTheme(snapshot))
+    if (snapshot && snapshot.id !== "default" && !isBundledTheme(snapshot))
       void listThemes()
         .then(async (result) => {
           if (cancelled) return;
@@ -859,7 +882,7 @@ export function ThemeReconciliation({
       cancelled = true;
     };
   }, [snapshotJson, refresh, acknowledgedNotebook, acknowledgedAppWide]);
-  if (!current || dismissed || (!shared && !missing && !error)) return null;
+  if (!current || current.id === "default" || dismissed || (!shared && !missing && !error)) return null;
   return (
     <div className="dialog-backdrop settings-backdrop">
       <section

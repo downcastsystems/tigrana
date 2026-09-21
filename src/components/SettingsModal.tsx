@@ -29,7 +29,7 @@ export default function SettingsModal(props: {
         value={props.navigationStyle}
         onChange={event => props.onNavigationStyleChange(event.target.value as NavigationStyle)}>
         <option value="dual-pane">Dual pane</option>
-        <option value="section-view">Dual pane with sections</option>
+        <option value="section-view">Dual pane with sections (recommended)</option>
         <option value="single-pane">Single pane</option>
       </select>
     </div>
@@ -104,7 +104,7 @@ export default function SettingsModal(props: {
                     {props.onResetTheme ? (
                       <section className="settings-reset-appearance" aria-label="Default appearance">
                         <h3>Default appearance</h3>
-                        <p>Reset this notebook’s theme and quick appearance settings to their defaults.</p>
+                        <p>Restore the Default theme’s colors, fonts, effects, and layout, including sidebars and word count.</p>
                         <button className="toolbar-button" onClick={props.onResetTheme}>
                           <RotateCcw size={16} aria-hidden="true" />
                           Restore default appearance

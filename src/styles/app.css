@@ -1753,6 +1753,11 @@ body.is-dragging-section * {
   cursor: pointer;
 }
 
+/* Keep the icon intact when indentation and long names squeeze a folder row. */
+.folder-select > :first-child {
+  flex-shrink: 0;
+}
+
 .custom-icon {
   display: inline-flex;
   align-items: center;
@@ -5284,9 +5289,12 @@ html[data-theme="light"]:not([data-theme-preset="default"]) .accent-control inpu
 }
 
 html[data-theme="light"]:not([data-theme-preset="default"]) .toolbar-button:hover,
-html[data-theme="light"]:not([data-theme-preset="default"]) .segmented-button:hover,
-html[data-theme="light"]:not([data-theme-preset="default"]) .settings-select:hover {
+html[data-theme="light"]:not([data-theme-preset="default"]) .segmented-button:hover {
   background: var(--surface-muted);
+}
+
+html[data-theme="light"]:not([data-theme-preset="default"]) .settings-select:hover {
+  background-color: var(--surface-muted);
 }
 
 html[data-theme="light"]:not([data-theme-preset="default"]) .settings-sidebar,
@@ -6216,7 +6224,8 @@ html[data-theme] .settings-modal .toolbar-button:hover:not(:disabled) {
 }
 .settings-preview-host .theme-editor-preview { position: static; }
 .settings-preview-host .theme-preview { max-height: none; }
-.settings-reset-appearance { margin-top: 28px; padding-top: 24px; border-top: 1px solid var(--border); }
+.settings-appearance > .theme-builder:not(:has(.theme-editor)) { padding-bottom: 10px; }
+.settings-reset-appearance { margin-top: 14px; padding-top: 12px; border-top: 1px solid var(--border); }
 .settings-reset-appearance h3 { margin: 0; font-size: inherit; font-weight: 600; }
 .settings-reset-appearance p { margin: 8px 0 16px; color: var(--text-muted); line-height: 1.5; }
 html[data-theme] .settings-reset-appearance .toolbar-button { display: inline-flex; align-items: center; gap: 8px; border-color: color-mix(in srgb, var(--text) 40%, var(--surface-strong) 60%); }
@@ -6355,14 +6364,24 @@ html[data-theme] .theme-conflict .theme-actions .toolbar-button.is-recommended:h
 .theme-delete-confirmation .theme-actions { justify-content: flex-end; margin: 24px 0 0; }
 .theme-delete-confirmation .toolbar-button { border-color: color-mix(in srgb, var(--text) 45%, var(--surface-strong)); }
 
-.settings-appearance-divider { width: 100%; border: 0; border-top: 1px solid var(--border); margin: 24px 0; }
+.settings-appearance-divider { width: 100%; border: 0; border-top: 1px solid var(--border); margin: 12px 0; }
+/* Reserve space inside the scroller for the Theme background to extend past
+   the shared text edge without being clipped by overflow. */
+.settings-scroll:has(.settings-appearance):not(:has(.theme-editor)) { margin-left: -12px; padding-left: 12px; }
+.settings-theme-section { margin-inline: -12px; padding: 14px 12px; border-radius: 8px; background: rgb(0 0 0 / 4%); }
+html[data-theme="dark"] .settings-theme-section { background: rgb(0 0 0 / 16%); }
+.settings-theme-section > .setting-row { padding-top: 0; }
+.settings-theme-section > .theme-actions:last-child { margin-bottom: 0; }
 .settings-quick-appearance { margin-top: 0; padding-top: 0; }
+.settings-quick-appearance h3 { margin: 0; font-size: inherit; font-weight: bolder; }
 .settings-quick-appearance .theme-color-field { margin: 16px 0 0; }
 .settings-quick-appearance .setting-row { padding: 12px 0; }
+.quick-appearance-control { display: flex; align-items: center; gap: 8px; min-width: 0; }
+.quick-appearance-reset-slot { display: inline-flex; flex: 0 0 28px; width: 28px; height: 28px; }
+.quick-appearance-reset.icon-button { width: 28px; height: 28px; }
 .quick-font-size-control { display: flex; align-items: center; gap: 12px; }
 .quick-font-size-control input { width: 140px; min-width: 0; }
 .quick-font-size-control output { min-width: 4ch; text-align: right; font-variant-numeric: tabular-nums; }
-.quick-font-reset { margin: 8px 0; }
 
 .theme-recovery-notice { position: fixed; z-index: 20000; top: 60px; left: 20px; right: 20px; max-height: 35vh; overflow: auto; padding: 16px; color: #fff; background: #40252a; border: 1px solid #e49caa; border-radius: 8px; font: 14px/1.5 system-ui; }
 .theme-role-settings { margin: 20px 0; padding: 12px; border: 1px solid var(--border); border-radius: 8px; min-width: 0; }
@@ -6384,3 +6403,9 @@ html[data-theme] .theme-conflict .theme-actions .toolbar-button.is-recommended:h
 
 .theme-current-settings { margin: 12px 0 16px; }
 .theme-current-settings .settings-description { margin-bottom: 8px; }
+
+.theme-defaults-control { position: relative; }
+.theme-defaults-control > .toolbar-button { display: flex; align-items: center; gap: 6px; }
+.theme-defaults-menu { position: absolute; z-index: 20; top: calc(100% + 6px); left: 0; width: 285px; max-width: calc(100vw - 64px); overflow-y: auto; padding: 5px; border: 1px solid var(--border); border-radius: 8px; background: var(--surface-strong); color: var(--text); box-shadow: var(--shadow-modal-strong); }
+.theme-defaults-menu > button { display: block; width: 100%; padding: 10px 12px; border: 0; border-radius: 4px; background: transparent; color: inherit; text-align: left; font: 14px/1.4 Inter, sans-serif; cursor: pointer; }
+.theme-defaults-menu > button:hover, .theme-defaults-menu > button:focus-visible { background: var(--accent); color: var(--accent-contrast); outline: none; }

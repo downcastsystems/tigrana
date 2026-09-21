@@ -238,6 +238,9 @@ export async function listThemes(): Promise<{
       const theme = parseTheme(JSON.parse(file.contents));
       if (file.name !== `${theme.id}.json`)
         throw new Error("Theme filename must match its ID.");
+      // Older releases could register Default as a custom theme. Keep the file,
+      // but never let a library entry shadow the protected built-in.
+      if (theme.id === "default") continue;
       themes.push(theme);
     } catch {
       warnings.push(
@@ -253,6 +256,7 @@ export async function saveTheme(
   expected: ThemeDocument | null,
 ): Promise<void> {
   const clean = parseTheme(theme);
+  if (clean.id === "default") throw new Error("Default is a protected built-in theme. Save your changes as a new theme.");
   if (isTauri()) {
     await invoke("save_theme", { theme: clean, expected });
     return;

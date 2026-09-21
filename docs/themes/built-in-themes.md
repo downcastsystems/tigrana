@@ -29,8 +29,11 @@ original MIT copyright notice remains in the exported license text.
 
 ## Based
 
-A Tigrana theme with framed panels, uppercase navigation labels, bundled Inter,
-neutral surfaces and a purple accent. The editor toolbar has no divider below it.
+A Tigrana adaptation of [Baseline's default layout](https://github.com/aaaaalexis/obsidian-baseline),
+with neutral gray selections, soft borderless panels, normal-case navigation labels,
+and bundled Inter. White/light-gray and charcoal palettes keep the editor prominent;
+hover states are subtler than selections and links remain underlined. Panels have
+8px gaps, with 4px between the tab bar and panels. The editor toolbar has no divider below it.
 Defaults to Dual pane with sections, right sidebar closed, Comfortable Width, Align center,
 and Plasma off. Manual width and alignment changes remain available.
 
@@ -61,7 +64,7 @@ Minimal 1.1.0 stays flat, with quieter labels, underline tabs, and lighter title
 Browser layout verification covered all 16 combinations of single/dual navigation, left sidebar visibility, outline visibility, and standard/Plasma mode at 1200px workspace width. All retained the requested 18px inset and splitter width without horizontal overflow.
 
 
-All built-in themes default to **Comfortable Width**, **Dual pane with sections**, and **Align center**. Selecting a theme applies its writing width and alignment. Navigation and sidebar visibility remain as you set them unless you choose **Use theme's layout**. Sidebar defaults still vary by theme.
+All built-in themes default to **Comfortable Width**, **Dual pane with sections**, and **Align center**. Selecting a theme applies its writing width and alignment. Navigation and sidebar visibility remain as you set them unless you choose **Use theme defaults → Use theme default layout options**. Sidebar defaults still vary by theme.
 
 Custom themes may include `navigationStyle` with `dual-pane`, `single-pane`, or `section-view`, or omit it to keep the current layout. The theme editor exposes this as **Default navigation style**.
 

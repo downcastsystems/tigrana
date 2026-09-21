@@ -1,4 +1,6 @@
 import { useLayoutEffect, useRef, useState } from "react";
+import { useSidebarOverlayMotion } from "./useSidebarOverlayMotion";
+import { useSidebarOverlay } from "./useSidebarOverlay";
 import { resolveResponsivePanes, type PaneLayout } from "./responsivePanes";
 
 type Options = Omit<PaneLayout, "width" | "gap"> & { theme: unknown; mode: "light" | "dark"; notebook: string | null; plasma: boolean };
@@ -6,7 +8,9 @@ type Options = Omit<PaneLayout, "width" | "gap"> & { theme: unknown; mode: "ligh
 export function useResponsivePanes({ theme, mode, notebook, plasma, ...layout }: Options) {
   const frameRef = useRef<HTMLDivElement>(null);
   const [metrics, setMetrics] = useState({ width: Infinity, gap: 6 });
-  const [overlay, setOverlay] = useState<"left" | "right" | null>(null);
+  const docked = resolveResponsivePanes({ ...layout, ...metrics });
+  const { overlay, hoverSide, hoverDelay, hoverOffset, hoverRevision, setOverlay } = useSidebarOverlay(frameRef, docked);
+  const { visibleOverlay, closing } = useSidebarOverlayMotion(overlay, docked);
   useLayoutEffect(() => {
     const frame = frameRef.current;
     if (!frame) return;
@@ -29,13 +33,12 @@ export function useResponsivePanes({ theme, mode, notebook, plasma, ...layout }:
     return () => observer?.disconnect();
   }, [theme, mode, plasma]);
 
-  useLayoutEffect(() => { setOverlay(null); }, [metrics.width, theme, mode, notebook, plasma, layout.navigationStyle]);
-  const docked = resolveResponsivePanes({ ...layout, ...metrics });
+  useLayoutEffect(() => { setOverlay(null); }, [metrics.width, theme, mode, notebook, plasma, layout.navigationStyle, docked.leftVisible, docked.outlineVisible, setOverlay]);
   const canDockLeft = resolveResponsivePanes({ ...layout, ...metrics, leftVisible: true }).leftVisible;
   const canDockRight = resolveResponsivePanes({ ...layout, ...metrics, outlineVisible: true }).outlineVisible;
   return {
-    frameRef, docked, canDockLeft, canDockRight, overlay, setOverlay,
-    leftVisible: docked.leftVisible || overlay === "left",
-    outlineVisible: docked.outlineVisible || overlay === "right",
+    frameRef, docked, canDockLeft, canDockRight, overlay, hoverSide, hoverDelay, hoverOffset, hoverRevision, visibleOverlay, closing, setOverlay,
+    leftVisible: docked.leftVisible || visibleOverlay === "left",
+    outlineVisible: docked.outlineVisible || visibleOverlay === "right",
   };
 }

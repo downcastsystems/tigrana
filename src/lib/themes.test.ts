@@ -14,6 +14,16 @@ import {
 import { exampleTheme } from "./themes.fixture";
 beforeEach(() => localStorage.clear());
 describe("portable themes", () => {
+  it("rejects a shared theme using the reserved Default ID", async () => {
+    await expect(saveTheme({ ...exampleTheme(), id: 'default', name: 'Default' }, null)).rejects.toThrow('Default');
+    expect((await listThemes()).themes).toHaveLength(0);
+  });
+  it("keeps a legacy Default library file intact without offering it as a saved theme", async () => {
+    const contents = JSON.stringify([{ name: 'default.json', contents: JSON.stringify({ ...exampleTheme(), id: 'default', name: 'Default' }) }]);
+    localStorage.setItem('tigrana-shared-themes-v1', contents);
+    expect((await listThemes()).themes).toHaveLength(0);
+    expect(localStorage.getItem('tigrana-shared-themes-v1')).toBe(contents);
+  });
   it("validates and preserves optional writing layout defaults", () => {
     const theme = { ...exampleTheme(), editorWidthMode: "narrow" as const, noteAlignment: "center" as const, wordCountVisible: true };
     expect(parseTheme(theme)).toEqual(theme);
