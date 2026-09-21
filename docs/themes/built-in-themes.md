@@ -48,7 +48,7 @@ A read-only audit of the local app-wide collection on 2026-09-18 validated all t
 
 ## Old Basement PC
 
-Original Tigrana theme inspired by DOS file managers and blue-screen text interfaces. Dark mode uses navy panels, white editor text, cyan headings, and yellow selections. Light mode recalls a Windows 95 word processor: white paper, black text, gray toolbars and navigation, navy pane headers, and raised/sunken bevels. Separate framed panes sit over a subdued dark blue cloud wallpaper, with Plasma off by default. Editor and panel backgrounds remain solid.
+Original Tigrana theme inspired by DOS file managers and blue-screen text interfaces. Dark mode uses navy panels, white editor text, cyan headings, and yellow selections. Light mode recalls a Windows 95 word processor: white paper, black text, gray toolbars and navigation, navy pane headers, and raised/sunken bevels. Separate framed panes sit over a daylight sky and meadow wallpaper in light mode, and subdued dark blue clouds in dark mode, with Plasma off by default. Editor and panel backgrounds remain solid.
 
 The theme embeds the unmodified Latin regular WOFF2 of [IBM Plex Mono](https://github.com/IBM/plex), obtained from Fontsource 5.3.0, for clean monospace lettering. Its SIL OFL 1.1 notice travels in the package. Bold and italic use the editor's existing font synthesis support. Packaged font tokens resolve to isolated runtime/preview font names; no network requests are required. See [artwork and license details](old-basement-pc/README.md).
 
