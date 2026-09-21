@@ -2,7 +2,7 @@
 
 The bundled theme source is `src/themes/old-basement-pc.json`. It embeds the font and wallpaper so exports work offline.
 
-IBM Plex Mono Latin regular comes from `@fontsource/ibm-plex-mono` 5.3.0, unmodified, under SIL OFL 1.1. See [LICENSE](LICENSE). Its normal UI sizes replace the larger sizes needed by the previous pixel font. Editor body text is 19px; nested outline text stays at 14px.
+IBM Plex Mono Latin regular comes from `@fontsource/ibm-plex-mono` 5.3.0, unmodified, under SIL OFL 1.1. See [LICENSE](LICENSE). Its normal UI sizes replace the larger sizes needed by the previous pixel font. Editor body text is 17px; nested outline text stays at 14px.
 
 The original [midnight cloud wallpaper](assets/midnight-clouds.webp) was generated with the built-in image generation tool, then encoded as WebP for the theme. It is used only behind the panels. Theme styling and original artwork are supplied under CC0.
 
