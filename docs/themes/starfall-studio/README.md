@@ -31,6 +31,8 @@ does not intercept pointer input, change Markdown, or appear in print.
 Navigation starts at 72% opacity, the editor at 82%, and the outline at 76%.
 Adjust these in Advanced surfaces to reveal more or less of the landscape.
 Plasma retains the app's glass renderer and panel spacing.
+Panel frostiness and background blur both start at zero, keeping the landscape
+sharp through the tinted panels. Increase either in Appearance for softer glass.
 
 Rebuild the package and the app’s bundled theme document from the repository root:
 

@@ -85,7 +85,7 @@ export function ThemeSurfacesEditor({ theme, mode, change }: {
             <input type="range" min={0} max={100} value={theme.plasma.flow ?? 0}
               onChange={event => change({ plasma: { ...theme.plasma!, flow: Number(event.target.value) } })} />
           </label>
-          <p className="settings-description">Adds a gentle ripple to pane edges. Set to zero for still edges.</p>
+          <p className="settings-description">Ripples the glass edges. Higher values make the waves more visible; zero keeps them still. Paused when Reduce Motion is enabled.</p>
           <label className="setting-row">
             Panel frostiness
             <input

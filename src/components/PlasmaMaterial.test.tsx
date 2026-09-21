@@ -59,3 +59,30 @@ it('retains the CSS fallback when WebGL is unavailable', async () => {
   expect(host.querySelector('canvas')!.hidden).toBe(true);
   expect(images).toHaveLength(0);
 });
+
+it('gives Flow a visible range without animating panel layout or recreating the canvas', async () => {
+  await act(async () => root.render(<PlasmaMaterial {...props} flow={1} />));
+  expect(renderer.settings.flow).toBe(4);
+  expect(renderer.settings.animateSurfaces).toBe(false);
+  await act(async () => root.render(<PlasmaMaterial {...props} flow={0} frost={0} backgroundBlur={0} />));
+  expect(renderer.settings.flow).toBe(0);
+  expect(renderer.settings.frost).toBe(0);
+  expect(renderer.settings.opacity).toBe(0);
+  expect(renderer.settings.backgroundBlur).toBe(0);
+  expect(create).toHaveBeenCalledTimes(1);
+});
+
+it('disables edge motion for reduced motion and restores the current Flow setting afterward', async () => {
+  const motion = { matches: true, addEventListener: vi.fn(), removeEventListener: vi.fn() };
+  vi.stubGlobal('matchMedia', () => motion);
+  await act(async () => root.render(<PlasmaMaterial {...props} flow={0.5} />));
+  expect(renderer.settings.flow).toBe(0);
+  const listener = motion.addEventListener.mock.calls.at(-1)![1];
+  motion.matches = false;
+  listener();
+  expect(renderer.settings.flow).toBe(2);
+  expect(renderer.settings.reducedMotion).toBe(false);
+  motion.matches = true;
+  listener();
+  expect(renderer.settings.flow).toBe(0);
+});

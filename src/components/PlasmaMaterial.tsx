@@ -53,14 +53,7 @@ export default function PlasmaMaterial({ theme, accentColor, frost, backgroundBl
     const renderer = PlasmaRenderer.create(canvas, settings);
     rendererRef.current = renderer;
     if (!renderer) canvas.hidden = true;
-    const updateMotion = () => renderer?.configure({
-      ...renderer.settings,
-      reducedMotion: reducedMotion.matches,
-      pointerDrop: false,
-    });
-    reducedMotion.addEventListener("change", updateMotion);
     return () => {
-      reducedMotion.removeEventListener("change", updateMotion);
       renderer?.destroy();
       rendererRef.current = null;
       canvas.remove();
@@ -112,18 +105,25 @@ export default function PlasmaMaterial({ theme, accentColor, frost, backgroundBl
   useEffect(() => {
     const renderer = rendererRef.current;
     if (!renderer) return;
+    const reducedMotion = matchMedia("(prefers-reduced-motion: reduce)");
     // Keep the procedural swirl, but use shades of the notebook's accent.
     // configure interpolates colors without recreating the canvas or renderer.
-    renderer.configure({
+    const configure = () => renderer.configure({
       ...renderer.settings,
       frost,
       backgroundBlur,
-      flow,
+      // At viscosity .85, Plasma's 0–1 range moves edges by at most 1.8px.
+      // Give the slider a visible ripple (up to 7.2px) without moving the DOM.
+      flow: reducedMotion.matches ? 0 : flow * 4,
+      reducedMotion: reducedMotion.matches,
       rimColor: accentColor,
       // Fade the material tint too, so clear glass is not hidden by solid color.
       opacity: frost * 0.8125,
       colors: [mixAccent(accentColor, 0, 0.65), accentColor, mixAccent(accentColor, 255, 0.25)],
     });
+    configure();
+    reducedMotion.addEventListener("change", configure);
+    return () => reducedMotion.removeEventListener("change", configure);
   }, [accentColor, theme, frost, backgroundBlur, flow]);
 
   return <div className={preview ? "plasma-preview-background" : "plasma-background"} ref={hostRef} aria-hidden="true" />;

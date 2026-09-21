@@ -136,7 +136,7 @@ export default function SettingsModal(props: {
                             <input type="range" min={0} max={100} value={props.plasmaFlow ?? 0}
                               onChange={event => props.onPlasmaFlowChange?.(Number(event.target.value))} />
                           </label>
-                          <p className="settings-description">Adds a gentle ripple to pane edges. Set to zero for still edges.</p>
+                          <p className="settings-description">Ripples the glass edges. Higher values make the waves more visible; zero keeps them still. Paused when Reduce Motion is enabled.</p>
                           <label className="setting-row">
                             Panel frostiness
                             <input
