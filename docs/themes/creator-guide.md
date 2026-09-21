@@ -10,7 +10,7 @@ This guide describes the theme system on this branch. Older Tigrana releases may
 2. Give it a distinct name. In **Visual**, choose the accent, background, text, and fonts. The preview's **Dark / Light** selector also chooses which palette you are editing; fill out both.
 3. Choose default navigation and right-sidebar behavior. All three navigation styles are supported. **Keep current** leaves the notebook's current choice alone.
 4. Under **Advanced surfaces**, choose a background and set panel opacity. Lower opacity reveals the background without fading the text. This works with ordinary panels as well as Plasma. If you enable **Plasma UI by default**, adjust Flow, frostiness, and background blur too. Explicit surface opacity takes precedence over the opacity derived from frostiness.
-5. Use **Expand preview** to see more of the workspace. Try each navigation layout, turn Outline on and off, and enable Menu states and Compact title. Check the word count, selected rows, highlights, links, tables, and disabled controls. Scroll horizontally when the sample is wider than the window.
+5. Use **Expand preview** to see more of the workspace. Try each navigation layout, turn Outline on and off, and enable Menu states and Compact title. Check the word count, selected rows, highlights, links, tables, and disabled controls. The desktop layout scales down to fit the preview window. Scroll inside the note to inspect the rest of the sample.
 6. Open **Theme check** and review its findings. Choose **Save and use**, complete any save/conflict choice, and check the result in a real notebook.
 7. Use **Export theme** to share a `.tigrana-theme` file. Recipients use **Import theme** in Appearance.
 

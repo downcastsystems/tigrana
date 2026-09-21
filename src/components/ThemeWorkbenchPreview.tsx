@@ -1,5 +1,5 @@
 import { compileThemeCss } from "../lib/themeCss";
-import { useCallback, useMemo, useState } from "react";
+import { useCallback, useLayoutEffect, useMemo, useState } from "react";
 import { createPortal } from "react-dom";
 import { FileText, Plus, X, Folder, PanelLeftClose, PanelRightClose, Ellipsis } from "lucide-react";
 import appCss from "../styles/app.css?inline";
@@ -16,13 +16,16 @@ const previewCss = (appCss + plasmaCss)
     attrs ? `:host(${attrs})` : ":host",
   )
   .replace(/(?<![-\w.])body\b/g, ".preview-body");
-const fixtureCss = `:host{display:block;isolation:isolate;clip-path:inset(0 round 8px);position:relative;contain:style;}
+const previewWidth = 1200;
+const previewHeight = 800;
+
+const fixtureCss = `:host{display:block;isolation:isolate;clip-path:inset(0 round 8px);position:relative;contain:style;width:100%;aspect-ratio:${previewWidth}/${previewHeight};max-height:max(140px,calc(100dvh - 300px));overflow:hidden;}
 .preview-body{min-width:0;min-height:0;background:var(--app-bg);font-family:var(--app-font-family);font-size:var(--app-font-size);color:var(--text)}
-.preview-body{overflow:auto}.app-shell{height:auto;min-height:520px;min-width:1040px}.app-titlebar{z-index:1}.app-frame{display:grid;grid-template-columns:136px minmax(0,1fr);min-height:460px;padding:var(--tigrana-workspace-inset,0px);gap:var(--tigrana-panel-gap,0px)}
-.app-frame .left-panes>aside{width:auto;min-width:0;overflow:hidden}.app-frame>.folder-pane{width:auto;min-width:0;display:block}.app-frame>.main-pane{min-width:0;display:block;overflow:visible;position:relative}.note-title-input{height:1.3em;flex-shrink:0}.note-surface{padding:14px;overflow:auto;max-height:650px;padding-bottom:54px}.ProseMirror{flex-shrink:0;min-height:0;padding:0;font-size:var(--editor-font-size);font-family:var(--editor-font-family)}
+.preview-stage.app-shell{position:relative;width:100%;height:100%;min-height:0;overflow:hidden;background:var(--app-bg)}.preview-body{position:absolute;width:${previewWidth}px;height:${previewHeight}px;transform:scale(var(--preview-scale,1));transform-origin:top left;left:var(--preview-left,0px);overflow:hidden;background:transparent}.preview-layout{display:flex;flex-direction:column;height:100%;min-height:0}.app-titlebar{z-index:1}.app-frame{display:grid;grid-template-columns:136px minmax(0,1fr);flex:1;min-height:0;padding:var(--tigrana-workspace-inset,0px);gap:var(--tigrana-panel-gap,0px)}
+.app-frame .left-panes>aside{width:auto;min-width:0;overflow:hidden}.app-frame>.right-sidebar{display:flex}.app-frame>.folder-pane{width:auto;min-width:0;display:block}.app-frame>.main-pane{min-width:0;display:flex;flex-direction:column;overflow:hidden;position:relative}.note-title-input{height:1.3em;flex-shrink:0}.note-surface{padding:14px;overflow:auto;min-height:0;padding-bottom:54px}.ProseMirror{flex-shrink:0;min-height:0;padding:0;font-size:var(--editor-font-size);font-family:var(--editor-font-family)}
 .app-shell[data-plasma] .app-frame{padding:var(--tigrana-workspace-inset,18px 16px 16px);gap:var(--tigrana-panel-gap,20px)}.app-shell[data-plasma] .note-surface{padding:12px}.note-tab{width:160px;text-align:left}.note-tab-add{flex-shrink:0}.folder-row{margin-left:0;margin-right:6px;width:calc(100% - 6px)}.folder-select{min-width:0}.folder-select span{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.title-shell,.editor-shell{width:100%;margin:0}.editor-shell{padding:28px 0 40px}.preview-controls{display:flex;gap:6px;flex-wrap:wrap;margin-top:14px}.preview-controls input{width:100%;min-width:0}
 .plasma-background{position:fixed!important;inset:0;z-index:-1}.plasma-background canvas{position:fixed!important;width:100vw!important;height:100vh!important;inset:0}
-.note-surface.is-comfortable-width :is(.title-shell,.editor-shell){width:min(880px,calc(100% - 72px))}
+.note-surface.is-comfortable-width :is(.title-shell,.editor-shell){width:min(860px,calc(100% - 72px))}
 .note-surface.is-narrow-width :is(.title-shell,.editor-shell){width:min(640px,calc(100% - 72px))}
 .note-surface.is-full-width :is(.title-shell,.editor-shell){width:calc(100% - 48px)}
 .note-surface.is-center-aligned :is(.title-shell,.editor-shell){margin-left:auto;margin-right:auto}
@@ -49,6 +52,24 @@ export function ThemeWorkbenchPreview({
   const attach = useCallback((host: HTMLDivElement | null) => {
     if (host) setRoot(host.shadowRoot ?? host.attachShadow({ mode: "open" }));
   }, []);
+  const [fit, setFit] = useState({ scale: 1, left: 0 });
+  useLayoutEffect(() => {
+    if (!root) return;
+    const host = root.host as HTMLElement;
+    const fitPreview = () => {
+      // Use layout dimensions so application zoom is not applied twice.
+      const { clientWidth: width, clientHeight: height } = host;
+      if (!width || !height) return;
+      const scale = Math.min(1, width / previewWidth, height / previewHeight);
+      const left = Math.max(0, (width - previewWidth * scale) / 2);
+      setFit(previous => previous.scale === scale && previous.left === left ? previous : { scale, left });
+    };
+    fitPreview();
+    if (typeof ResizeObserver === "undefined") return;
+    const observer = new ResizeObserver(fitPreview);
+    observer.observe(host);
+    return () => observer.disconnect();
+  }, [root]);
   const compiled = useMemo(() => {
     try {
       return { css: themeStylesheet(theme, mode, "preview"), error: "" };
@@ -75,7 +96,7 @@ export function ThemeWorkbenchPreview({
         <label><input type="checkbox" checked={compactTitle} onChange={e => setCompactTitle(e.target.checked)} />Compact title</label>
         <button type="button" className="toolbar-button" onClick={() => { setNavigation(null); setOutline(null); }}>Theme defaults</button>
       </div>
-      <p className="settings-description">Preview at actual text size. Scroll horizontally to inspect every panel; hover items and use Tab to check focus.</p>
+      <p className="settings-description">Preview scales to fit the full layout. Scroll inside the note to explore its content; hover items and use Tab to check focus.</p>
       {fontCss ? <style>{fontCss}</style> : null}
       {compiled.error ? (
         <p role="alert">Preview uses visual settings until the CSS is valid.</p>
@@ -87,16 +108,15 @@ export function ThemeWorkbenchPreview({
         data-theme-preset="custom"
         data-accent-titlebar={theme.accentTitlebar ? "true" : "false"}
         aria-label={`${mode} full theme preview`}
-        style={themeVariables(theme, mode, "preview") as React.CSSProperties}
+        style={{ ...themeVariables(theme, mode, "preview"), "--preview-scale": fit.scale, "--preview-left": `${fit.left}px` } as React.CSSProperties}
       />
       {root &&
         createPortal(
           <>
             <style>{previewCss + apiCss + fixtureCss}</style>
             <style>{compiled.css}</style>
-            <div className="preview-body">
               <div
-                className="app-shell"
+                className="app-shell preview-stage"
                 data-plasma={plasma || undefined}
                 style={
                   {
@@ -105,6 +125,7 @@ export function ThemeWorkbenchPreview({
                   } as React.CSSProperties
                 }
               >
+                {/* Plasma measures viewport coordinates, so keep its canvas outside the scaled layout. */}
                 {plasma ? (
                   <PlasmaTheme
                     backgroundImage={backgroundImage}
@@ -113,9 +134,11 @@ export function ThemeWorkbenchPreview({
                     accentColor={theme[mode].accent}
                     frost={(theme.plasma?.frost ?? 80) / 100}
                     backgroundBlur={theme.plasma?.backgroundBlur ?? 0}
+                    surfaceScale={fit.scale}
                     layoutKey={`workbench-${navigation}-${outline}`}
                   />
                 ) : null}
+                <div className="preview-body"><div className="preview-layout">
                 <header
                   className={`app-titlebar theme-${mode} ${plasma ? "theme-plasma" : "theme-standard"}`}
                   data-theme-region="preview"
@@ -294,8 +317,8 @@ export function ThemeWorkbenchPreview({
                   </main>
                   {outline && <aside className="right-sidebar"><div className="pane-header"><strong>Outline</strong></div><button className="outline-item">A fresh page</button></aside>}
                 </div>
+                </div></div>
               </div>
-            </div>
           </>,
           root,
         )}

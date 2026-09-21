@@ -4,7 +4,7 @@ import { PlasmaRenderer, type RendererSettings } from "@cruxgarden/plasma-ui";
 
 const paneSelector = ".folder-pane, .notes-pane, .unified-tree-pane, .main-pane, .right-sidebar";
 
-export default function PlasmaMaterial({ theme, accentColor, frost, backgroundBlur, backgroundImage, flow = 0, layoutKey, preview = false }: { theme: "light" | "dark"; frost: number; flow?: number; backgroundBlur: number; backgroundImage?: string; accentColor: string; layoutKey: string; preview?: boolean }) {
+export default function PlasmaMaterial({ theme, accentColor, frost, backgroundBlur, backgroundImage, flow = 0, layoutKey, surfaceScale = 1, preview = false }: { theme: "light" | "dark"; frost: number; flow?: number; backgroundBlur: number; backgroundImage?: string; accentColor: string; layoutKey: string; surfaceScale?: number; preview?: boolean }) {
   const hostRef = useRef<HTMLDivElement>(null);
   const rendererRef = useRef<PlasmaRenderer | null>(null);
 
@@ -69,12 +69,12 @@ export default function PlasmaMaterial({ theme, accentColor, frost, backgroundBl
       preview ? ".theme-preview-body > aside, .theme-preview-body > article" : paneSelector,
     ) ?? [];
     const handles = Array.from(panes, (pane) => renderer.register(pane, {
-      radius: 18,
+      radius: 18 * surfaceScale,
       lean: 0,
       fuse: false,
     }));
     return () => handles.forEach((handle) => handle.remove());
-  }, [theme, layoutKey, preview]);
+  }, [theme, layoutKey, preview, surfaceScale]);
 
   useEffect(() => {
     const renderer = rendererRef.current;

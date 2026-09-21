@@ -86,3 +86,14 @@ it('disables edge motion for reduced motion and restores the current Flow settin
   listener();
   expect(renderer.settings.flow).toBe(0);
 });
+
+it('rescales glass corners with the preview without recreating the renderer', async () => {
+  const renderPreview = (surfaceScale: number) => act(async () => root.render(
+    <div><PlasmaMaterial {...props} surfaceScale={surfaceScale} /><main className="main-pane" /></div>,
+  ));
+  await renderPreview(0.5);
+  expect(renderer.register).toHaveBeenLastCalledWith(host.querySelector('.main-pane'), expect.objectContaining({ radius: 9 }));
+  await renderPreview(1);
+  expect(renderer.register).toHaveBeenLastCalledWith(host.querySelector('.main-pane'), expect.objectContaining({ radius: 18 }));
+  expect(create).toHaveBeenCalledTimes(1);
+});
