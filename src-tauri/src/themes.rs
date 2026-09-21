@@ -179,6 +179,25 @@ fn normalize_theme_inner(theme: &Value, allow_base: bool) -> Result<Value, Strin
     if let Some(sidebar) = theme.get("rightSidebarOpen") {
         clean.insert("rightSidebarOpen".into(), Value::from(sidebar.as_bool().ok_or("Invalid right sidebar setting")?));
     }
+    if let Some(word_count) = theme.get("wordCountVisible") {
+        clean.insert("wordCountVisible".into(), Value::from(word_count.as_bool().ok_or("Invalid word count setting")?));
+    }
+    if let Some(width) = theme.get("editorWidthMode") {
+        match width.as_str() {
+            Some("comfortable" | "narrow" | "full") => {
+                clean.insert("editorWidthMode".into(), width.clone());
+            }
+            _ => return Err("Invalid editor width setting".into()),
+        }
+    }
+    if let Some(alignment) = theme.get("noteAlignment") {
+        match alignment.as_str() {
+            Some("left" | "center") => {
+                clean.insert("noteAlignment".into(), alignment.clone());
+            }
+            _ => return Err("Invalid note alignment setting".into()),
+        }
+    }
     if let Some(navigation) = theme.get("navigationStyle") {
         match navigation.as_str() {
             Some("dual-pane" | "single-pane" | "section-view") => {
@@ -211,6 +230,10 @@ fn normalize_theme_inner(theme: &Value, allow_base: bool) -> Result<Value, Strin
             let n = flow.as_f64().ok_or("Invalid Plasma flow")?;
             if !(0.0..=100.0).contains(&n) { return Err("Invalid Plasma flow".into()); }
             settings.insert("flow".into(), if n.fract() == 0.0 { Value::from(n as u64) } else { Value::from(n) });
+        }
+        if let Some(ambient) = plasma.get("ambientDrops") {
+            let enabled = ambient.as_bool().ok_or("Invalid Plasma ambient bubbles")?;
+            settings.insert("ambientDrops".into(), Value::from(enabled));
         }
         clean.insert("plasma".into(), Value::Object(settings));
     }
@@ -435,6 +458,41 @@ mod tests {
     use super::*;
     use serde_json::json;
     #[test]
+    fn saved_theme_keeps_layout_settings_and_original_snapshot() {
+        let catalog: Value = serde_json::from_str(include_str!("../../src/themes/classic.json")).unwrap();
+        let original = catalog.as_array().unwrap().iter().find(|theme| theme["id"] == "dracula").unwrap().clone();
+        let mut theme = original.clone();
+        theme["id"] = json!("alucard-copy");
+        theme["name"] = json!("Alucard copy");
+        theme["baseThemeId"] = original["id"].clone();
+        theme["baseThemeSnapshot"] = original;
+        let dir = std::env::temp_dir().join(format!("tigrana-theme-layout-{}", uuid::Uuid::new_v4()));
+        let mut expected = None;
+        for width in ["comfortable", "narrow", "full"] {
+            for alignment in ["left", "center"] {
+                for word_count in [false, true] {
+                    theme["editorWidthMode"] = json!(width);
+                    theme["noteAlignment"] = json!(alignment);
+                    theme["wordCountVisible"] = json!(word_count);
+                    save_in_dir(&dir, theme.clone(), expected.clone()).unwrap();
+                    let saved: Value = serde_json::from_str(&fs::read_to_string(dir.join("alucard-copy.json")).unwrap()).unwrap();
+                    assert!(saved == theme, "Save and use must preserve the entire notebook snapshot");
+                    if let Some(stale) = &expected {
+                        assert!(save_in_dir(&dir, stale.clone(), Some(stale.clone())).is_err());
+                    }
+                    expected = Some(theme.clone());
+                }
+            }
+        }
+        for (key, value) in [("editorWidthMode", json!("invalid")), ("noteAlignment", json!("right")), ("wordCountVisible", json!("yes"))] {
+            let mut invalid = theme.clone();
+            invalid[key] = value;
+            assert!(save_in_dir(&dir, invalid, expected.clone()).is_err());
+        }
+        fs::remove_dir_all(dir).unwrap();
+    }
+
+    #[test]
     fn preserves_authoring_options_and_rejects_invalid_originals() {
         let palette = json!({"background":"#112233","surface":"#112233","surfaceSoft":"#112233","surfaceStrong":"#112233","surfaceMuted":"#112233","border":"#112233","text":"#ffffff","textMuted":"#aaaaaa","accent":"#225588","titlebar":"#112233","menuSelectedText":"#ABCDEF"});
         let base = json!({"schemaVersion":1,"id":"base","name":"Base","light":palette,"dark":palette,"appFontFamily":"system-ui","editorFontFamily":"serif","appFontSize":14,"editorFontSize":17,"accentTitlebar":false});
@@ -532,13 +590,16 @@ mod tests {
         assert!(save_in_dir(&dir, duplicate, None).unwrap_err().contains("name already exists"));
         assert!(!dir.join("different-id.json").exists());
         let mut plasma_theme = b.clone();
-        plasma_theme["plasma"] = json!({"enabled":true,"frost":60,"backgroundBlur":12,"flow":65});
+        plasma_theme["plasma"] = json!({"enabled":true,"frost":60,"backgroundBlur":12,"flow":65,"ambientDrops":true});
         save_in_dir(&dir, plasma_theme.clone(), Some(b)).unwrap();
         assert_eq!(
             serde_json::from_str::<Value>(&fs::read_to_string(dir.join("sample.json")).unwrap())
                 .unwrap(),
             plasma_theme
         );
+        let mut invalid_plasma = plasma_theme.clone();
+        invalid_plasma["plasma"]["ambientDrops"] = json!("yes");
+        assert!(save_in_dir(&dir, invalid_plasma, Some(plasma_theme.clone())).is_err());
         let mut invalid_plasma = plasma_theme.clone();
         invalid_plasma["plasma"]["frost"] = json!(101);
         assert!(save_in_dir(&dir, invalid_plasma, Some(plasma_theme.clone())).is_err());

@@ -3,7 +3,7 @@ import { describe, expect, it } from 'vitest';
 import { readFileSync } from 'node:fs';
 import { allBuiltInThemes, bundledThemes, classicThemes, builtInThemeDocuments, themeCatalogWarnings } from './bundledThemes';
 import { parseTheme, themeAppearance, themesMatch } from './themes';
-import { themeStylesheet, readableThemeText } from './themeRuntime';
+import { themeStylesheet, readableThemeText, themeRenderingMode } from './themeRuntime';
 import { encodeThemePackage, decodeThemePackage } from './themePackage';
 
 function contrast(a: string, b: string) {
@@ -16,6 +16,18 @@ function contrast(a: string, b: string) {
   return (values[0] + .05) / (values[1] + .05);
 }
 describe('built-in theme catalog', () => {
+  it('keeps Alucard identical in light and dark mode, including Plasma lighting', () => {
+    const alucard = classicThemes.find(theme => theme.id === 'dracula')!;
+    expect(alucard.light).toEqual(alucard.dark);
+    expect(themeStylesheet(alucard, 'light', 'notebook')).toBe(themeStylesheet(alucard, 'dark', 'notebook'));
+    expect(themeRenderingMode(alucard, 'light')).toBe('dark');
+    expect(themeRenderingMode(alucard, 'dark')).toBe('dark');
+    for (const theme of allBuiltInThemes.filter(theme => theme.id !== 'dracula')) {
+      expect(themeRenderingMode(theme, 'light')).toBe('light');
+      expect(themeRenderingMode(theme, 'dark')).toBe('dark');
+    }
+  });
+
   it('ships reviewed redistribution notices for every bundled theme font', () => {
     const reviewedFonts: Record<string, string> = {
       'assets/ibm-plex-mono.woff2': 'IBM-Plex-Mono',
@@ -45,7 +57,7 @@ describe('built-in theme catalog', () => {
     expect(classicThemes.map(t => t.id)).toEqual(['default', 'atom', 'solarized', 'dracula', 'nord', 'gruvbox', 'catppuccin-frappe', 'catppuccin-macchiato', 'catppuccin-mocha']);
     expect(new Set(allBuiltInThemes.map(t => t.id)).size).toBe(allBuiltInThemes.length);
     expect(new Set(allBuiltInThemes.map(t => t.name)).size).toBe(allBuiltInThemes.length);
-    expect(bundledThemes.map(t => t.name)).toEqual(['Minimal', 'Saratoga', 'Based', 'Starfall', 'Old Basement PC', 'Adventure Quest', 'Typewriter']);
+    expect(bundledThemes.map(t => t.name)).toEqual(['Minimal', 'Saratoga', 'Based', 'Starfall', 'Old Basement PC', 'Quest', 'Typewriter']);
   });
   for (const theme of allBuiltInThemes) {
     it(`${theme.name} validates, exports, and renders in both modes`, () => {

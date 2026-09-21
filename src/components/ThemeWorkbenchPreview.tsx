@@ -7,7 +7,7 @@ import plasmaCss from "../styles/plasma.css?inline";
 import apiCss from "../styles/theme-api.css?inline";
 import type { NavigationStyle } from "../types";
 import type { ThemeDocument } from "../lib/themes";
-import { themeStylesheet, themeVariables, themeBackgroundImage } from "../lib/themeRuntime";
+import { themeStylesheet, themeVariables, themeBackgroundImage, themeRenderingMode } from "../lib/themeRuntime";
 import PlasmaTheme from "./PlasmaTheme";
 
 const previewCss = (appCss + plasmaCss)
@@ -41,6 +41,7 @@ export function ThemeWorkbenchPreview({
   theme: ThemeDocument;
   mode: "light" | "dark";
 }) {
+  const renderedMode = themeRenderingMode(theme, mode);
   const backgroundImage = useMemo(() => themeBackgroundImage(theme), [theme]);
   const [navigationOverride, setNavigation] = useState<NavigationStyle | null>(null);
   const [outlineOverride, setOutline] = useState<boolean | null>(null);
@@ -104,7 +105,7 @@ export function ThemeWorkbenchPreview({
       <div
         ref={attach}
         className="theme-workbench-preview"
-        data-theme={mode}
+        data-theme={renderedMode}
         data-theme-preset="custom"
         data-accent-titlebar={theme.accentTitlebar ? "true" : "false"}
         aria-label={`${mode} full theme preview`}
@@ -129,8 +130,9 @@ export function ThemeWorkbenchPreview({
                 {plasma ? (
                   <PlasmaTheme
                     backgroundImage={backgroundImage}
+                    ambientDrops={theme.plasma?.ambientDrops}
                     flow={(theme.plasma?.flow ?? 0) / 100}
-                    theme={mode}
+                    theme={renderedMode}
                     accentColor={theme[mode].accent}
                     frost={(theme.plasma?.frost ?? 80) / 100}
                     backgroundBlur={theme.plasma?.backgroundBlur ?? 0}
@@ -140,7 +142,7 @@ export function ThemeWorkbenchPreview({
                 ) : null}
                 <div className="preview-body"><div className="preview-layout">
                 <header
-                  className={`app-titlebar theme-${mode} ${plasma ? "theme-plasma" : "theme-standard"}`}
+                  className={`app-titlebar theme-${renderedMode} ${plasma ? "theme-plasma" : "theme-standard"}`}
                   data-theme-region="preview"
                   data-theme-api={theme.design ? "1" : undefined}
                 >
@@ -162,7 +164,7 @@ export function ThemeWorkbenchPreview({
                   </button>
                 </header>
                 <div
-                  className={`app-frame theme-${mode} ${plasma ? "theme-plasma" : "theme-standard"} ${outline ? '' : 'is-outline-hidden'}`}
+                  className={`app-frame theme-${renderedMode} ${plasma ? "theme-plasma" : "theme-standard"} ${outline ? '' : 'is-outline-hidden'}`}
                   style={{ gridTemplateColumns: `${navigation === 'single-pane' ? '240px' : '460px'} minmax(360px,1fr)${outline ? ' 200px' : ''}` }}
                   data-theme-region="preview"
                   data-theme-api={theme.design ? "1" : undefined}

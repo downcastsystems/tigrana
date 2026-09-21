@@ -23,6 +23,7 @@ vi.mock("./PlasmaTheme", () => ({
     frost: number;
     backgroundBlur: number;
     preview?: boolean;
+    ambientDrops?: boolean;
   }) => (
     <div
       data-testid="plasma-renderer"
@@ -30,6 +31,7 @@ vi.mock("./PlasmaTheme", () => ({
       data-accent={props.accentColor}
       data-frost={props.frost}
       data-blur={props.backgroundBlur}
+      data-ambient={String(props.ambientDrops ?? false)}
       data-preview={String(props.preview)}
     />
   ),
@@ -278,6 +280,11 @@ it("previews Plasma locally and saves its settings with the theme", async () => 
     expect(renderer.getAttribute("data-frost")).toBe("0.6");
     expect(renderer.getAttribute("data-blur")).toBe("12");
     expect(renderer.getAttribute("data-accent")).toBe(theme.dark.accent);
+    const bubbles = [...host.querySelectorAll<HTMLInputElement>('input[type="checkbox"]')]
+      .find(input => input.parentElement?.textContent?.includes("Ambient bubbles"))!;
+    expect(bubbles.checked).toBe(false);
+    await act(async () => bubbles.click());
+    expect(renderer.getAttribute("data-ambient")).toBe("true");
     expect(
       host
         .querySelector(".theme-workbench-preview")
@@ -298,11 +305,13 @@ it("previews Plasma locally and saves its settings with the theme", async () => 
       enabled: true,
       frost: 60,
       backgroundBlur: 12,
+      ambientDrops: true,
     });
     expect((await listThemes()).themes[0].plasma).toEqual({
       enabled: true,
       frost: 60,
       backgroundBlur: 12,
+      ambientDrops: true,
     });
   } finally {
     await act(async () => root.unmount());
@@ -626,10 +635,9 @@ it.each([false, true])("labels local Default changes without replacing the built
     expect(picker.querySelector('option[value="modified:default"]')?.textContent).toBe('Default (modified)');
     expect(picker.querySelector('option[value="saved:default"]')).toBeNull();
     expect(button(host, 'Edit theme')).toBeUndefined();
-    await act(async () => button(host, 'Return to Default').click());
-    expect(restore).toHaveBeenCalledTimes(1);
+    expect(button(host, 'Return to Default')).toBeUndefined();
     await act(async () => { picker.value = 'builtin:default'; picker.dispatchEvent(new Event('change', { bubbles: true })); });
-    expect(restore).toHaveBeenCalledTimes(2);
+    expect(restore).toHaveBeenCalledTimes(1);
     await act(async () => button(host, 'Save current settings as new theme').click());
     expect(host.querySelector<HTMLInputElement>('[aria-label="Theme name"]')?.value).toBe('Default copy');
   } finally { await act(async () => root.unmount()); }
@@ -807,5 +815,28 @@ it("preserves an open theme draft when refreshing after window focus", async () 
     expect(apply).not.toHaveBeenCalled();
     await act(async () => button(host, "Cancel").click());
     expect(host.querySelector('select[aria-label="Theme"]')?.textContent).toContain("Saved elsewhere");
+  } finally { await act(async () => root.unmount()); }
+});
+
+it("alphabetizes built-in and saved themes, keeping Default first", async () => {
+  const alpha = { ...exampleTheme(), id: crypto.randomUUID(), name: "Alpha" };
+  const zulu = { ...exampleTheme(), id: crypto.randomUUID(), name: "Zulu" };
+  const current = { ...exampleTheme(), id: crypto.randomUUID(), name: "Middle" };
+  await saveTheme(zulu, null);
+  await saveTheme(alpha, null);
+  const host = document.createElement("div"), root = createRoot(host), apply = vi.fn();
+  const builtIns = [{ id: "nord", name: "Nord" }, { id: "default", name: "Default" }, { id: "atom", name: "Atom" }];
+  try {
+    await act(async () => root.render(<ThemeBuilder current={current} seed={current} builtInThemes={builtIns} onApply={apply} />));
+    const picker = host.querySelector<HTMLSelectElement>('select[aria-label="Theme"]')!;
+    const builtInNames = [...picker.querySelectorAll('optgroup[label="Built-in"] option')].map(option => option.textContent!);
+    expect(builtInNames).toEqual(['Default', ...['Nord', 'Atom', ...bundledThemes.map(theme => theme.name)].sort((a, b) => a.localeCompare(b))]);
+    expect(builtInNames).toContain('Quest');
+    expect(builtInNames).not.toContain('Adventure Quest');
+    expect([...picker.querySelectorAll('optgroup[label="Saved"] option')].map(option => option.textContent)).toEqual(['Alpha', 'Middle', 'Zulu']);
+    expect(picker.value).toBe(`saved:${current.id}`);
+    await act(async () => { picker.value = 'bundled:builtin-8-bit-adventure'; picker.dispatchEvent(new Event('change', { bubbles: true })); });
+    expect(apply).toHaveBeenCalledWith(expect.objectContaining({ id: 'builtin-8-bit-adventure', name: 'Quest' }));
+    expect(builtIns.map(theme => theme.name)).toEqual(['Nord', 'Default', 'Atom']);
   } finally { await act(async () => root.unmount()); }
 });

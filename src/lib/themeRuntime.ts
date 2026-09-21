@@ -2,6 +2,13 @@ import { resolveTypography } from "./themeOptions";
 import type { ThemeDocument } from "./themes";
 import { defaultThemeDesign } from "./themeDesign";
 import { compileThemeCss } from "./themeCss";
+/** Identical palettes represent one appearance, including its glass lighting. */
+export function themeRenderingMode(theme: ThemeDocument, requested: "light" | "dark"): "light" | "dark" {
+  const keys = Object.keys({ ...theme.light, ...theme.dark }) as (keyof ThemeDocument["light"])[];
+  if (keys.some(key => theme.light[key] !== theme.dark[key])) return requested;
+  return readableThemeText(theme[requested].background) === "#ffffff" ? "dark" : "light";
+}
+
 export function themeVariables(theme: ThemeDocument, mode: "light" | "dark", region?: string): Record<string, string> {
   const p = theme[mode],
     metrics = theme.design?.metrics ?? defaultThemeDesign.metrics;

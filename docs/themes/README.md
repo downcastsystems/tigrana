@@ -96,6 +96,7 @@ Stable component hooks for API 1:
 | Window chrome | `.app-titlebar`, `.note-tabs`, `.note-tab`, `.note-tab.is-active`, `.tab-close` |
 | Navigation | `.folder-pane`, `.notes-pane`, `.unified-tree-pane`, `.folder-row`, `.note-card`, `.unified-note-row`, `.unified-folder-row`, `.pane-header` |
 | Workspace | `.app-frame`, `.main-pane`, `.right-sidebar`, `.note-surface` |
+| Word count badge | `.note-status-bar`, `.note-status-bar span` |
 | Controls inside regions | `.toolbar-button`, `.icon-button`, `button`, `input`, `select` |
 | Editor | `.note-title-input`, `.ProseMirror`, headings, paragraphs, links, lists, blockquotes, pre/code, tables, images, marks, horizontal rules |
 | Tasks | `[data-type="taskList"]`, `[data-type="taskItem"]`, `[data-checked="true"]` |

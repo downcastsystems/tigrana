@@ -6,7 +6,7 @@ import "./styles/responsive-panes.css";
 import { captureCurrentThemeSettings } from "./lib/currentThemeSettings";
 import { recoveryTheme } from "./lib/themeCatalog";
 import { themeCatalogWarnings } from "./lib/bundledThemes";
-import { readableThemeText, themeVariables, themeBackgroundImage } from "./lib/themeRuntime";
+import { readableThemeText, themeVariables, themeBackgroundImage, themeRenderingMode } from "./lib/themeRuntime";
 import { classicThemes } from "./lib/bundledThemes";
 import { applyQuickAppearanceFonts, quickAppearanceStyles, quickAppearanceResetPatch } from "./lib/quickAppearance";
 import { QuickAppearanceControls } from "./components/QuickAppearanceControls";
@@ -537,6 +537,7 @@ export default function App() {
   const [appMenuOpen, setAppMenuOpen] = useState(false);
   const [preferredLeftVisible, setLeftVisible] = useState(true);
   const [plasmaFlow, setPlasmaFlow] = useState(0);
+  const [plasmaAmbientDrops, setPlasmaAmbientDrops] = useState(false);
   const [preferredOutlineVisible, setOutlineVisible] = useState(true);
   const focusRestoreRef = useRef<PaneVisibility | null>(null);
   const [wordCountVisible, setWordCountVisible] = useState(() => readStoredWordCountVisibility());
@@ -606,7 +607,7 @@ export default function App() {
   const metadataRef = useRef(metadata);
   const metadataSessionRef = useRef(new NotebookMetadataSession(workspace));
   const notebookAppearanceDefaultsRef = useRef({
-    plasma: { enabled: plasmaEnabled, frost: plasmaFrost, backgroundBlur: plasmaBackgroundBlur, flow: plasmaFlow },
+    plasma: { enabled: plasmaEnabled, frost: plasmaFrost, backgroundBlur: plasmaBackgroundBlur, flow: plasmaFlow, ambientDrops: plasmaAmbientDrops },
     colorScheme: readStoredColorScheme(),
     themePresetId: readStoredThemePreset(),
     colors: readStoredNotebookThemeColors(),
@@ -634,6 +635,7 @@ export default function App() {
           setPlasmaFrost(appearance.plasma.frost);
           setPlasmaBackgroundBlur(appearance.plasma.backgroundBlur);
           setPlasmaFlow(appearance.plasma.flow ?? 0);
+          setPlasmaAmbientDrops(appearance.plasma.ambientDrops ?? false);
         }
         setColorScheme(appearance.colorScheme);
         setThemePresetId(appearance.themePresetId as ThemePresetId);
@@ -849,6 +851,7 @@ export default function App() {
     return applyQuickAppearanceFonts({ ...base, light: palette("light"), dark: palette("dark"),
       appFontFamily, appFontSize, editorFontFamily, editorFontSize, accentTitlebar: savedAccentTitlebar }, quickAppearance);
   }, [customTheme, invalidNotebookTheme, themePresetId, themeColors, quickAppearance, appFontFamily, appFontSize, editorFontFamily, editorFontSize, savedAccentTitlebar]);
+  const renderedColorMode = themeRenderingMode(renderedTheme, resolvedTheme);
   const plasmaBackgroundImage = useMemo(() => themeBackgroundImage(renderedTheme), [renderedTheme]);
   useEffect(() => {
     const variables = themeVariables(renderedTheme, resolvedTheme, 'notebook');
@@ -1056,7 +1059,7 @@ export default function App() {
   }, [plasmaEnabled]);
 
   useEffect(() => {
-    document.documentElement.dataset.theme = resolvedTheme;
+    document.documentElement.dataset.theme = renderedColorMode;
     document.documentElement.dataset.themePreset = customTheme ? "custom" : themePreset.id;
     const root = document.documentElement.style;
     root.setProperty("--app-bg", themePreset.appBackground[resolvedTheme]);
@@ -1071,7 +1074,7 @@ export default function App() {
     root.setProperty("--muted", tokens.textMuted);
     localStorage.setItem(themeKey, colorScheme);
     localStorage.setItem(themePresetKey, themePreset.id);
-  }, [colorScheme, resolvedTheme, themePreset, customTheme]);
+  }, [colorScheme, resolvedTheme, renderedColorMode, themePreset, customTheme]);
 
   useEffect(() => {
     const root = document.documentElement.style;
@@ -1884,6 +1887,7 @@ export default function App() {
       setPlasmaFrost(patch.plasma.frost);
       setPlasmaBackgroundBlur(patch.plasma.backgroundBlur);
       setPlasmaFlow(patch.plasma.flow ?? 0);
+      setPlasmaAmbientDrops(patch.plasma.ambientDrops ?? false);
     }
     if (patch.colorScheme !== undefined) setColorScheme(patch.colorScheme);
     if (patch.themePresetId && themePresets.some((preset) => preset.id === patch.themePresetId)) {
@@ -1941,7 +1945,7 @@ export default function App() {
     return captureCurrentThemeSettings(renderedTheme, {
       quickAppearance, navigationStyle, rightSidebarOpen: preferredOutlineVisible,
       editorWidthMode, noteAlignment, wordCountVisible,
-      accentTitlebar, plasma: { enabled: plasmaEnabled, frost: plasmaFrost, backgroundBlur: plasmaBackgroundBlur, flow: plasmaFlow },
+      accentTitlebar, plasma: { enabled: plasmaEnabled, frost: plasmaFrost, backgroundBlur: plasmaBackgroundBlur, flow: plasmaFlow, ambientDrops: plasmaAmbientDrops },
     });
   }
 
@@ -4682,11 +4686,11 @@ export default function App() {
       "--plasma-panel-opacity": `${plasmaFrost * 0.9}%`,
       "--plasma-editor-opacity": `${Math.min(95, plasmaFrost * 1.1)}%`,
     } as CSSProperties : undefined}>
-      {plasmaEnabled ? <PlasmaTheme backgroundImage={plasmaBackgroundImage} flow={plasmaFlow / 100} backgroundBlur={plasmaBackgroundBlur} frost={plasmaFrost / 100} theme={resolvedTheme} accentColor={effectiveAccentColor} layoutKey={`${leftVisible}-${outlineVisible}-${navigationStyle}`} /> : null}
+      {plasmaEnabled ? <PlasmaTheme ambientDrops={plasmaAmbientDrops} backgroundImage={plasmaBackgroundImage} flow={plasmaFlow / 100} backgroundBlur={plasmaBackgroundBlur} frost={plasmaFrost / 100} theme={renderedColorMode} accentColor={effectiveAccentColor} layoutKey={`${leftVisible}-${outlineVisible}-${navigationStyle}`} /> : null}
       {isWindowsDesktop() ? <WindowsMenuBar onError={setAppError} onMouseDown={handleChromeMouseDown} onDoubleClick={handleChromeDoubleClick} /> : null}
       <header
         data-theme-region="notebook" data-theme-api={renderedTheme.design ? "1" : undefined}
-        className={`app-titlebar theme-${resolvedTheme} ${plasmaEnabled ? "theme-plasma" : "theme-standard"}`}
+        className={`app-titlebar theme-${renderedColorMode} ${plasmaEnabled ? "theme-plasma" : "theme-standard"}`}
         style={{ ...quickStyles.palette, ...quickStyles.titlebar }}
         data-tauri-drag-region=""
         onMouseDown={handleChromeMouseDown}
@@ -4724,7 +4728,7 @@ export default function App() {
 
       <div ref={responsivePanes.frameRef} onPointerDownCapture={(event) => {
         if (responsivePanes.overlay && event.target instanceof Element && event.target.closest(".main-pane") && !event.target.closest(".sidebar-toggle, .outline-toggle")) setPaneOverlay(null);
-      }} data-theme-region="notebook" data-theme-api={renderedTheme.design ? "1" : undefined} className={`app-frame${responsivePanes.visibleOverlay ? ` has-${responsivePanes.visibleOverlay}-overlay${responsivePanes.closing ? " is-overlay-closing" : ""}` : ""} theme-${resolvedTheme} ${plasmaEnabled ? "theme-plasma" : "theme-standard"} ${responsivePanes.docked.leftVisible ? "" : "is-left-hidden"} ${responsivePanes.docked.outlineVisible ? "" : "is-outline-hidden"} ${navigationStyle === "single-pane" ? "is-single-col" : ""}`} style={{ ...frameStyle, ...quickStyles.palette }}>
+      }} data-theme-region="notebook" data-theme-api={renderedTheme.design ? "1" : undefined} className={`app-frame${responsivePanes.visibleOverlay ? ` has-${responsivePanes.visibleOverlay}-overlay${responsivePanes.closing ? " is-overlay-closing" : ""}` : ""} theme-${renderedColorMode} ${plasmaEnabled ? "theme-plasma" : "theme-standard"} ${responsivePanes.docked.leftVisible ? "" : "is-left-hidden"} ${responsivePanes.docked.outlineVisible ? "" : "is-outline-hidden"} ${navigationStyle === "single-pane" ? "is-single-col" : ""}`} style={{ ...frameStyle, ...quickStyles.palette }}>
       {!responsivePanes.docked.leftVisible && !responsivePanes.overlay && <div className="sidebar-hover-edge is-left" data-sidebar-peek="left" data-sidebar-peek-edge aria-hidden="true" />}
       {responsivePanes.hoverSide && <div key={responsivePanes.hoverRevision} className={`sidebar-hover-glow is-${responsivePanes.hoverSide}`} aria-hidden="true" />}
       {leftVisible ? (
@@ -5538,7 +5542,7 @@ export default function App() {
                   onChange={patch => updateNotebookAppearance({ quickAppearance: { ...quickAppearance, ...patch } })}
                   onReset={field => updateNotebookAppearance(quickAppearanceResetPatch(quickAppearanceTheme, quickAppearance, field))} />}
                 builtInThemes={themePresets} builtInThemeId={themePresetId}
-                onBuiltInChange={(id) => updateNotebookAppearance({ navigationStyle, rightSidebarOpen: preferredOutlineVisible, quickAppearance: null, accentTitlebar: false, customTheme: null, themePresetId: id, colors: defaultNotebookThemeColors(), plasma: { ...defaultPlasmaSettings }, appFontFamily: defaultAppFontFamily, appFontSize: defaultAppFontSize, editorFontFamily: defaultEditorFontFamily, editorFontSize: defaultEditorFontSize })}
+                onBuiltInChange={(id) => updateNotebookAppearance({ navigationStyle, rightSidebarOpen: preferredOutlineVisible, quickAppearance: null, accentTitlebar: false, customTheme: null, themePresetId: id, colors: defaultNotebookThemeColors(), plasma: { ...defaultPlasmaSettings, ...classicThemes.find(theme => theme.id === id)?.plasma }, appFontFamily: defaultAppFontFamily, appFontSize: defaultAppFontSize, editorFontFamily: defaultEditorFontFamily, editorFontSize: defaultEditorFontSize })}
                 colorScheme={colorScheme} onColorSchemeChange={(scheme) => updateNotebookAppearance({ colorScheme: scheme })} />
             </>}
           />

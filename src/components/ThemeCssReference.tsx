@@ -41,6 +41,7 @@ const selectors = [
   ["Workspace", ".app-frame, .main-pane, .right-sidebar, .note-surface"],
   ["Controls", ".toolbar-button, .icon-button, button, input, select"],
   ["Note title", ".note-title-input"],
+  ["Word count badge", ".note-status-bar, .note-status-bar span"],
   [
     "Note content",
     ".ProseMirror h1, .ProseMirror h2, .ProseMirror p, .ProseMirror a",
@@ -130,6 +131,15 @@ export function ThemeCssReference() {
 }
 .pane-resizer { background: transparent; }`}</code></pre>
       <p>Use Advanced surfaces for panel transparency. Set different colors and gradients with <code>:scope.theme-light</code> and <code>:scope.theme-dark</code>.</p>
+      <h2>Word count badge</h2>
+      <p>Style the badge’s background, border, corners, shadow and typography. Use <code>--tigrana-font-status</code> for its text size. The same styling appears in the notebook and preview.</p>
+      <pre><code>{`.note-status-bar {
+  background: var(--tigrana-surface);
+  color: var(--tigrana-text);
+  border: 1px solid var(--tigrana-accent);
+  border-radius: 4px;
+  font-variant-numeric: tabular-nums;
+}`}</code></pre>
       <h2>Local images and fonts</h2>
       <p>
         Use Add asset in the Advanced CSS tab to include a PNG, JPEG, WebP image or WOFF2 font

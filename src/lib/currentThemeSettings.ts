@@ -56,7 +56,7 @@ export function hasCurrentThemeChanges(original: ThemeDocument, current: ThemeDo
     wordCountVisible: theme.wordCountVisible ?? current.wordCountVisible,
     editorWidthMode: theme.editorWidthMode ?? current.editorWidthMode,
     noteAlignment: theme.noteAlignment ?? current.noteAlignment,
-    plasma: { ...defaultPlasmaSettings, flow: 0, ...theme.plasma,
+    plasma: { ...defaultPlasmaSettings, flow: 0, ambientDrops: false, ...theme.plasma,
       enabled: (theme.plasma?.enabled ?? false) && theme.design?.supportsPlasma !== false },
   });
   return JSON.stringify(values(original)) !== JSON.stringify(values(current));

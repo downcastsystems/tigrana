@@ -427,6 +427,44 @@ describe("Note navigation persistence", () => {
     } finally { await act(async () => root.unmount()); }
   });
 
+  it("applies Alucard's Plasma defaults, persists them, and clears them when selecting Default", async () => {
+    const alucard = classicThemes.find(theme => theme.id === 'dracula')!;
+    demoPersistence.set('tigrana-meta:/demo/Tigrana', JSON.stringify({ revision: 0, appearance: { colorScheme: 'dark' } }));
+    const container = document.createElement('div'); document.body.appendChild(container); containers.push(container);
+    let root = createRoot(container);
+    const appearance = () => JSON.parse(demoPersistence.get('tigrana-meta:/demo/Tigrana') ?? '{}').appearance;
+    const openAppearance = async () => {
+      await act(async () => window.dispatchEvent(new KeyboardEvent('keydown', { key: ',', metaKey: true })));
+      await act(async () => [...container.querySelectorAll<HTMLButtonElement>('.settings-nav button')].find(b => b.textContent === 'Appearance')!.click());
+    };
+    const select = async (id: string) => {
+      const picker = container.querySelector<HTMLSelectElement>('select[aria-label="Theme"]')!;
+      await act(async () => { picker.value = `builtin:${id}`; picker.dispatchEvent(new Event('change', { bubbles: true })); });
+      await waitFor(() => appearance()?.themePresetId === id);
+    };
+    try {
+      await act(async () => root.render(<App />));
+      await waitFor(() => !!container.querySelector('.note-title-input'));
+      await openAppearance();
+      expect(container.querySelector('option[value="builtin:dracula"]')?.textContent).toBe('Alucard');
+      await select('dracula');
+      expect(appearance().plasma).toEqual(alucard.plasma);
+      expect(container.querySelector('.app-shell')?.hasAttribute('data-plasma')).toBe(true);
+      expect(document.documentElement.style.getPropertyValue('--accent')).toBe(alucard.dark.accent);
+      await act(async () => root.unmount()); root = createRoot(container);
+      await act(async () => root.render(<App />));
+      await waitFor(() => !!container.querySelector('.note-title-input'));
+      expect(container.querySelector('.app-shell')?.hasAttribute('data-plasma')).toBe(true);
+      expect(appearance().plasma.ambientDrops).toBe(true);
+      expect(document.documentElement.style.getPropertyValue('--accent')).toBe(alucard.dark.accent);
+      await openAppearance();
+      await select('default');
+      expect(container.querySelector('.app-shell')?.hasAttribute('data-plasma')).toBe(false);
+      expect(appearance().plasma.flow ?? 0).toBe(0);
+      expect(appearance().plasma.ambientDrops ?? false).toBe(false);
+    } finally { await act(async () => root.unmount()); }
+  });
+
   it("saves a shared theme with the notebook and restores its palette, typography, and Plasma settings after reload", async () => {
     const theme = { ...exampleTheme(), rightSidebarOpen: false, schemaVersion: 2 as const, design: { ...defaultThemeDesign, css: ".ProseMirror h1 { color: red; }" }, plasma: { enabled: true, frost: 60, backgroundBlur: 12 } };
     await saveTheme(theme, null);

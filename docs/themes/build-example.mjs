@@ -26,5 +26,6 @@ if (['starfall-studio', '8-bit-adventure', 'typewriter'].includes(name)) {
     .map(([path, bytes]) => [path, { mime: path.endsWith('.woff2') ? 'font/woff2' : path.endsWith('.png') ? 'image/png' : /\.jpe?g$/.test(path) ? 'image/jpeg' : 'image/webp', data: bytes.toString('base64') }]));
   const bundled = new URL('../../src/themes/', import.meta.url);
   mkdirSync(bundled, { recursive: true });
-  writeFileSync(new URL(`${name}.json`, bundled), JSON.stringify(theme));
+  const bundledName = name === '8-bit-adventure' ? 'quest' : name;
+  writeFileSync(new URL(`${bundledName}.json`, bundled), JSON.stringify(theme));
 }

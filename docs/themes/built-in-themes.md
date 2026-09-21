@@ -12,9 +12,29 @@ Minimal is a Tigrana adaptation, not an official port or Obsidian plugin integra
 | --- | --- | --- |
 | Minimal | [kepano/obsidian-minimal](https://github.com/kepano/obsidian-minimal), 9.1.0 | Neutral white/charcoal surfaces, muted blue-gray accent, system font stack, tighter corners and spacing, restrained heading weight. Accent is adjusted for readable selections. |
 
-Minimal, Saratoga, and Based default to standard UI and support Plasma when enabled. Starfall defaults to Plasma. Selecting another theme restores that theme's defaults and clears quick appearance overrides. Note rows retain rounded corners; section rows stay rectangular.
+Minimal, Saratoga, and Based default to standard UI and support Plasma when enabled. Starfall and Alucard default to Plasma. Selecting another theme restores that theme's defaults and clears quick appearance overrides. Note rows retain rounded corners; section rows stay rectangular.
 
 Typography, colors, and design metrics use the engine's editable values. Custom CSS refers to theme variables instead of repeating fixed colors. Obsidian-specific layouts, helper classes, alternate task syntax, plugins, and animation systems are not included.
+
+## Alucard
+
+Dark blood-red Plasma glass with warm charcoal panels in both color schemes.
+For now, light mode uses the same palette and glass lighting as dark mode. Deep red selections and highlights use white text. Red rim
+lighting and a gentle flow effect accompany readable editor text. Plasma starts enabled with ambient bubbles, 12% frost, 20% flow, and no background blur.
+The translucent panels reveal the red background while text stays opaque.
+Ambient bubbles use Plasma's native clear-glass rendering, refraction, orbiting
+motion, and smooth merging. Three small drops merge into amorphous shapes as
+they approach each other and separate again as they drift apart. Nearby bubbles gently stretch toward the normal pointer, with no separate
+cursor-following bubble. The pull fades as the pointer moves away. Bubble glass is drawn into
+the background before the panel pass, so panes cannot swallow its outline.
+Panel lighting remains subdued; bubbles have a faint iridescent rim and no
+milky wash. Darker panel fills keep text readable with the lower frost.
+Ambient bubbles can be toggled in Edit theme → Advanced surfaces → Plasma glass,
+and are hidden when Reduce Motion is enabled.
+The word-count badge uses ivory serif lettering and a dark blood-red frame. Its serif stack uses system fonts; no additional font files
+are bundled. The rest of the interface uses bundled Inter.
+Its internal ID remains `dracula` for notebook compatibility;
+reselect Alucard to apply its new defaults to an existing notebook.
 
 ## Saratoga
 
@@ -76,7 +96,7 @@ Default is a read-only starting point. Other built-ins expose Edit theme, which 
 
 Plasma rims use the effective accent color, including notebook quick-accent overrides.
 
-## Adventure Quest
+## Quest
 
 Retro adventure menus: pixel lettering, green and gold panel frames, an original generated woodland map, near-black dark mode, and parchment light mode. It bundles VT323 and its font license, plus the background image. Defaults to Dual pane with sections, right sidebar open, Plasma off. Editable source and assets live in `docs/themes/8-bit-adventure/`.
 

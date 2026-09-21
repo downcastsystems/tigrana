@@ -21,6 +21,7 @@ export const paletteKeys = [
 export const optionalPaletteKeys = ["editorText", "selectedText", "highlightText", "highlightBackground", "menuSelectedBackground", "menuSelectedText", "hoverBackground", "hoverText"] as const;
 export type ThemePalette = Record<(typeof paletteKeys)[number], string> & Partial<Record<(typeof optionalPaletteKeys)[number], string>>;
 export type PlasmaSettings = {
+  ambientDrops?: boolean;
   flow?: number;
   enabled: boolean;
   frost: number;
@@ -44,6 +45,7 @@ export function parsePlasma(value: unknown): PlasmaSettings {
     !Number.isFinite(p.backgroundBlur) ||
     p.backgroundBlur < 0 ||
     p.backgroundBlur > 40 ||
+    (p.ambientDrops !== undefined && typeof p.ambientDrops !== "boolean") ||
     (p.flow !== undefined && (typeof p.flow !== "number" || !Number.isFinite(p.flow) || p.flow < 0 || p.flow > 100))
   )
     throw new Error("Invalid Plasma settings.");
@@ -52,6 +54,7 @@ export function parsePlasma(value: unknown): PlasmaSettings {
     frost: p.frost,
     backgroundBlur: p.backgroundBlur,
     ...(p.flow === undefined ? {} : { flow: p.flow }),
+    ...(p.ambientDrops === undefined ? {} : { ambientDrops: p.ambientDrops }),
   };
 }
 export type ThemeDocument = {

@@ -30,7 +30,7 @@ When an optional foreground is automatic, Tigrana chooses a readable foreground 
 
 ## Fonts without tiny labels
 
-When using Default, notebook changes appear as **Default (modified)** under **This notebook** in the theme list. The original **Default** stays available and cannot be overwritten in the app-wide library. **Return to Default**, or selecting the original Default entry, restores its full appearance and layout. **Save current settings as new theme** creates a separate named copy. Older notebook snapshots named Default remain local and never trigger a sharing prompt; importing a package with Default's reserved ID creates a new copy.
+When using Default, notebook changes appear as **Default (modified)** under **This notebook** in the theme list. The original **Default** stays available and cannot be overwritten in the app-wide library. **Use theme defaults → Use all theme defaults**, or selecting the original Default entry, restores its full appearance and layout. **Save current settings as new theme** creates a separate named copy. Older notebook snapshots named Default remain local and never trigger a sharing prompt; importing a package with Default's reserved ID creates a new copy.
 
 In Visual, **Default editor width** and **Default note alignment** apply when someone selects the theme. The built-in themes use Comfortable Width and Align center. **Default word count** can show or hide the word count when the theme is selected; Typewriter starts with it shown. Alignment positions the note column, not the text inside paragraphs. **Keep current** leaves that choice alone. Manual changes in View or editor options are saved with the notebook; selecting a theme with explicit defaults reapplies them.
 
@@ -48,7 +48,7 @@ The **Text sizes** group lets you tune:
 | Secondary text | Menu descriptions and section captions |
 | Word count | Status text at the bottom of the editor |
 
-Leave a size empty to follow the app/editor size. **Use automatic text sizes** clears all role overrides. Most roles accept 11–32 px; the full title accepts up to 96 px. Pixel fonts often need larger menu and status sizes than ordinary fonts. Adventure Quest demonstrates this without enlarging the note body.
+Leave a size empty to follow the app/editor size. **Use automatic text sizes** clears all role overrides. Most roles accept 11–32 px; the full title accepts up to 96 px. Pixel fonts often need larger menu and status sizes than ordinary fonts. Quest demonstrates this without enlarging the note body.
 
 You can package WOFF2 fonts. An asset named `assets/body.woff2` becomes `theme-font-body`; enter `theme-font-body, sans-serif` in the font field. Preview and notebook font registrations are isolated, so previewing another theme cannot replace an active theme's font.
 
@@ -78,6 +78,8 @@ Window-like panels do not require Plasma. The built-in panel gap, inset, radius 
 
 Use the editor's **CSS reference and examples** for selectors and variables, or read the [Theme API reference](README.md#theme-api-1). Settings, recovery controls, native menus and dialogs are outside the custom CSS boundary, so arbitrary CSS cannot hide them. Settings keeps the theme's palette but uses consistent Inter typography with a 14px base size for controls and dropdowns. This prevents oversized native menus when a theme compensates for a small pixel font. App zoom still scales Settings. The notebook and live preview retain the theme's fonts and sizes.
 
+Style the word-count badge with `.note-status-bar` in Advanced CSS. Its background, border, corners, shadow and font can follow the theme; `--tigrana-font-status` controls the size. `.note-status-bar span` targets the count labels. These hooks work in both the notebook and live preview. Alucard demonstrates a dark red badge with serif lettering and a small decorative drip.
+
 Use local PNG, JPEG or WebP artwork and WOFF2 fonts. Reference a packaged image with `url("assets/paper.webp")`. Remote URLs, imports, arbitrary data URLs, scripts, SVG, CSS nesting, `!important`, animations, filters and functional selector pseudo-classes such as `:is(...)` are rejected. Write separate complete selectors instead. Invalid CSS is shown as an error and prevents saving; the preview temporarily uses the visual settings.
 
 ## Give your theme its own controls
@@ -106,7 +108,7 @@ Each definition exposes `--tigrana-control-ID` inside the theme. Ranges are unit
 
 These values do nothing until a CSS rule uses them. Keep IDs stable when releasing updates. Use up to 24 controls; IDs begin with a lowercase letter and contain lowercase letters, digits or hyphens, up to 48 characters. Labels have 1–80 characters. Range bounds are within −1000 to 1000 with a positive step and an in-range default. Colors use six-digit hex. Controls cannot run code.
 
-[Starfall](starfall-studio/README.md) demonstrates an artwork toggle. [Adventure Quest](8-bit-adventure/README.md) demonstrates panel border width.
+[Starfall](starfall-studio/README.md) demonstrates an artwork toggle. [Quest](8-bit-adventure/README.md) demonstrates panel border width.
 
 ## Keep your edits when an original changes
 
@@ -145,7 +147,7 @@ node docs/themes/build-example.mjs example
 npm run theme:check -- docs/themes/example.tigrana-theme
 ```
 
-The builder also regenerates the shipped Starfall and Adventure Quest documents when run for their source directories. Use your own ID and name before distributing a new theme. The optional `typography`, `controls`, `baseThemeId`, and `baseThemeSnapshot` fields are preserved by current imports/exports. Snapshots cannot contain another snapshot.
+The builder also regenerates the shipped Starfall and Quest documents when run for their source directories. Use your own ID and name before distributing a new theme. The optional `typography`, `controls`, `baseThemeId`, and `baseThemeSnapshot` fields are preserved by current imports/exports. Snapshots cannot contain another snapshot.
 
 Limits include 100 KB of CSS, 32 assets, approximately 2 MB per asset, 6 MB of base64 asset data per document, and 8 MB for a full saved theme including its original. Compressed and expanded packages also have an 8 MB limit. A package is checked before export, so an oversized snapshot cannot produce an unusable file. Reduce artwork sizes if you hit the limit.
 

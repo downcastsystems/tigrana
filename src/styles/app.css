@@ -807,6 +807,7 @@ body.is-dragging-bookmark * {
   min-height: 42px;
   padding: 0 14px;
   border-radius: inherit;
+  font-weight: 400;
 }
 
 body.is-dragging-section,
@@ -3114,6 +3115,7 @@ html[data-theme="dark"] .tab-list-separator {
 
 .title-shell {
   position: relative;
+  flex-shrink: 0;
   width: min(860px, calc(100% - 72px));
   margin: 0 auto -4px;
   padding-bottom: 14px;
@@ -3205,10 +3207,13 @@ html[data-theme="dark"] .tab-list-separator {
 
 .editor-shell {
   position: relative;
+  display: flex;
+  flex: 1 0 auto;
+  flex-direction: column;
   --editor-bottom-breathing-room: clamp(160px, 32vh, 280px);
   width: min(860px, calc(100% - 72px));
   margin: 0 auto;
-  padding: 28px 0 140px;
+  padding: 28px 0 0;
 }
 
 .editor-shell[data-editable="true"],
@@ -3420,7 +3425,10 @@ html[data-theme="dark"] .tab-list-separator {
 }
 
 .editor-content {
-  min-height: 68vh;
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  min-height: 0;
 }
 
 .editor-content h1,
@@ -3440,7 +3448,10 @@ html[data-theme="dark"] .tab-list-separator {
   font-family: var(--editor-font-family);
   font-size: var(--editor-font-size);
   line-height: 1.72;
-  min-height: 68vh;
+  /* Fill the actual panel, including inset themes, rather than the viewport.
+     Keep end-of-note breathing room here instead of padding both wrappers. */
+  flex: 1;
+  min-height: 0;
   padding-bottom: var(--editor-bottom-breathing-room);
 }
 
@@ -6050,6 +6061,9 @@ html[data-theme-preset="default"][data-accent-titlebar="true"] .app-shell .app-t
 .theme-preview h2 { font-size: 1.4em; margin: 0 0 16px; }
 .theme-preview p { margin: 12px 0; }
 .theme-color-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px 24px; margin: 20px 0; }
+.theme-color-group { min-width: 0; margin: 20px 0 24px; padding: 0; border: 0; }
+.theme-color-group > legend { padding: 0; font-size: 14px; font-weight: 600; }
+.theme-color-group > .theme-color-grid { margin: 12px 0 0; }
 .theme-color-field { display: flex; justify-content: space-between; align-items: center; gap: 10px; }
 .theme-color-grid input[type="color"] { width: 42px; height: 28px; border: 1px solid var(--border); background: transparent; border-radius: 4px; }
 .theme-font-grid { display: grid; gap: 12px; margin: 18px 0; }

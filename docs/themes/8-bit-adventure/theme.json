@@ -1,7 +1,7 @@
 {
   "schemaVersion": 2,
   "id": "builtin-8-bit-adventure",
-  "name": "Adventure Quest",
+  "name": "Quest",
   "navigationStyle": "section-view",
   "appFontFamily": "theme-font-vt323, monospace",
   "editorFontFamily": "theme-font-vt323, monospace",

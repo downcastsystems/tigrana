@@ -183,12 +183,18 @@ it("validates and applies optional right sidebar defaults including closed", () 
 });
 
 
-it("round-trips Plasma Flow and rejects values outside the slider range", async () => {
-  const plasma = { enabled: true, frost: 80, backgroundBlur: 0, flow: 65 };
+it("round-trips Plasma motion settings and rejects invalid values", async () => {
+  const plasma = { enabled: true, frost: 80, backgroundBlur: 0, flow: 65, ambientDrops: true };
   const theme = parseTheme({ ...exampleTheme(), plasma });
   await saveTheme(theme, null);
   expect((await listThemes()).themes[0].plasma?.flow).toBe(65);
   expect(themeAppearance(theme).plasma?.flow).toBe(65);
+  expect((await listThemes()).themes[0].plasma?.ambientDrops).toBe(true);
+  expect(themeAppearance(theme).plasma?.ambientDrops).toBe(true);
+  expect(parseTheme({ ...theme, plasma: { ...plasma, ambientDrops: false } }).plasma?.ambientDrops).toBe(false);
+  for (const ambientDrops of [1, "true", null]) {
+    expect(() => parseTheme({ ...theme, plasma: { ...plasma, ambientDrops } })).toThrow("Invalid Plasma settings");
+  }
   for (const flow of [-1, 101, NaN, "50"]) {
     expect(() => parseTheme({ ...theme, plasma: { ...plasma, flow } })).toThrow("Invalid Plasma settings");
   }

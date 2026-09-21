@@ -80,7 +80,7 @@ it.each(['IBM Plex Mono', 'Solway', 'VT323'])('loads %s offline in every built-i
 it('preserves an imported font with a colliding filename', () => {
   const solway = quickEditorFonts.find(font => font.label === 'Solway')!;
   const source = allBuiltInThemes.find(theme => theme.editorFontFamily === solway.value)!;
-  const other = allBuiltInThemes.find(theme => theme.name === 'Adventure Quest')!.design!.assets['assets/vt323.woff2'];
+  const other = allBuiltInThemes.find(theme => theme.name === 'Quest')!.design!.assets['assets/vt323.woff2'];
   const theme = { ...source, design: { ...source.design!, assets: { 'assets/solway.woff2': other } } };
   const result = applyQuickAppearanceFonts(theme, { editorFontFamily: solway.value });
   expect(result.design!.assets['assets/solway.woff2']).toEqual(other);

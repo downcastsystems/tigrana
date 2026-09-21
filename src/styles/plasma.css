@@ -120,7 +120,7 @@ body.is-resizing-pane .app-shell[data-plasma] .pane-resizer::after {
   border: 1px solid color-mix(in srgb, var(--text) 14%, transparent);
   border-radius: 18px;
   background: color-mix(in srgb, var(--surface) var(--plasma-panel-opacity, 72%), transparent);
-  box-shadow: inset 0 1px 0 color-mix(in srgb, white 14%, transparent);
+  box-shadow: inset 0 1px 0 color-mix(in srgb, white 8%, transparent);
 }
 
 .app-shell[data-plasma] .main-pane {

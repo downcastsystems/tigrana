@@ -52,7 +52,7 @@ export function ThemeSurfacesEditor({ theme, mode, change }: {
     </label>
     {error && <p role="alert">{error}</p>}
     {surfaceKeys.map(key => <label className="setting-row" key={key}>
-      <span>{names[key]} opacity <output>{surfaces[key]}%</output></span>
+      <span>{names[key]} opacity <output>{Math.round(surfaces[key])}%</output></span>
       <input type="range" aria-label={`${names[key]} opacity`} min={0} max={100} value={surfaces[key]}
         onChange={e => change({ surfaces: { ...surfaces, [key]: Number(e.target.value) } })}/>
     </label>)}
@@ -81,6 +81,12 @@ export function ThemeSurfacesEditor({ theme, mode, change }: {
       {theme.design?.supportsPlasma === false && <p className="settings-description">This theme does not support Plasma. Enable Supports Plasma in Sharing details to try it.</p>}
       {theme.plasma?.enabled ? (
         <>
+          <label className="theme-preview-toggle">
+            <input type="checkbox" checked={theme.plasma.ambientDrops ?? false}
+              onChange={event => change({ plasma: { ...theme.plasma!, ambientDrops: event.target.checked } })} />
+            Ambient bubbles
+          </label>
+          <p className="settings-description">Adds floating Plasma bubbles. Lower panel opacity to see them through the glass. Hidden when Reduce Motion is enabled.</p>
           <label className="setting-row">
             Flow
             <input type="range" min={0} max={100} value={theme.plasma.flow ?? 0}

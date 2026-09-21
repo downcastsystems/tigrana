@@ -27,7 +27,6 @@ import {
   listThemes,
   uniqueThemeName,
   themeDisplayNames,
-  paletteKeys,
   optionalPaletteKeys,
   parseTheme,
   saveTheme,
@@ -54,6 +53,12 @@ const labels = {
   accent: "Accent",
   titlebar: "Title bar (if colored)",
 };
+
+const colorGroups = [
+  { title: "Editor", keys: ["background", "editorText", "highlightBackground", "highlightText"] },
+  { title: "Interface", keys: ["surface", "text", "surfaceMuted", "textMuted", "surfaceSoft", "surfaceStrong", "border", "titlebar"] },
+  { title: "Selection and hover", keys: ["accent", "selectedText", "menuSelectedBackground", "menuSelectedText", "hoverBackground", "hoverText"] },
+] as const;
 
 export function ThemePreview({
   theme,
@@ -90,6 +95,7 @@ export function ThemePreview({
     >
       {plasma ? (
         <PlasmaTheme
+          ambientDrops={theme.plasma?.ambientDrops}
           flow={(theme.plasma?.flow ?? 0) / 100}
           preview
           theme={mode}
@@ -312,6 +318,14 @@ export function ThemeBuilder({
   // A notebook can retain an older built-in snapshot. Its origin does not
   // change just because a newer release has different contents.
   const currentIsBundled = !!current && bundledThemes.some(theme => theme.id === current.id);
+  const builtInOptions = [
+    ...builtInThemes.map(theme => ({ ...theme, value: `builtin:${theme.id}` })),
+    ...bundledThemes.map(theme => ({ ...theme, value: `bundled:${theme.id}` })),
+  ].sort((a, b) => a.id === "default" ? -1 : b.id === "default" ? 1 : a.name.localeCompare(b.name));
+  const savedOptions = [
+    ...themes.filter(theme => theme.id !== current?.id),
+    ...(current && !currentIsBundled && !isDefault ? [current] : []),
+  ].sort((a, b) => (displayNames[a.id] ?? a.name).localeCompare(displayNames[b.id] ?? b.name));
   const update = (patch: Partial<ThemeDocument>) =>
     setDraft(draft ? { ...draft, ...patch } : null);
   return (
@@ -394,24 +408,16 @@ export function ThemeBuilder({
                 }}
               >
                 <optgroup label="Built-in">
-                  {builtInThemes.map((t) => (
-                    <option key={t.id} value={`builtin:${t.id}`}>
+                  {builtInOptions.map((t) => (
+                    <option key={t.id} value={t.value}>
                       {t.name}
                     </option>
                   ))}
-                  {bundledThemes.map((t) => <option key={t.id} value={`bundled:${t.id}`}>{t.name}</option>)}
                 </optgroup>
                 {defaultModified && <optgroup label="This notebook"><option value="modified:default">Default (modified)</option></optgroup>}
-                {(current && !currentIsBundled && !isDefault) || themes.length ? (
+                {savedOptions.length ? (
                   <optgroup label="Saved">
-                    {current && !currentIsBundled && !isDefault ? (
-                      <option value={`saved:${current.id}`}>
-                        {displayNames[current.id] ?? current.name}
-                      </option>
-                    ) : null}
-                    {themes
-                      .filter((t) => t.id !== current?.id)
-                      .map((t) => (
+                    {savedOptions.map((t) => (
                         <option key={t.id} value={`saved:${t.id}`}>
                           {displayNames[t.id] ?? t.name}
                         </option>
@@ -431,7 +437,6 @@ export function ThemeBuilder({
                 : "Your navigation and panels differ from this theme's defaults."
               : `Current settings differ from ${sourceTheme.name}.`}</p>
             <div className="theme-actions">
-              {defaultModified && onRestoreDefault && <button type="button" className="toolbar-button" disabled={busy} onClick={onRestoreDefault}>Return to Default</button>}
               {settingsModified && <button type="button" className="toolbar-button" disabled={busy} onClick={create}>Save current settings as new theme</button>}
               {onUseThemeDefaults && <ThemeDefaultsMenu disabled={busy} onSelect={scope => { onUseThemeDefaults(sourceTheme, scope); setLastPickedThemeId(null); }} />}
             </div>
@@ -604,23 +609,28 @@ export function ThemeBuilder({
                     try { setDraft(updateDerivedTheme(draft, latestOriginal!)); setError(''); } catch (e) { setError(`The update could not be applied. Your theme is unchanged. ${String(e)}`); }
                   }}>Update original, keep my changes</button></div>}
 
-                <div className="theme-color-grid">
-                  {[...paletteKeys, ...optionalPaletteKeys].map((key) => (
-                    <ThemeColorField
-                      key={`${mode}:${key}`}
-                      label={labels[key]}
-                      name={`${mode} ${labels[key]}`}
-                      cssHint={cssHints[key]}
-                      onReset={optionalPaletteKeys.includes(key as typeof optionalPaletteKeys[number]) && draft[mode][key] !== undefined ? () => {
-                        const palette = { ...draft[mode] }; delete (palette as Partial<typeof palette>)[key]; update({ [mode]: palette });
-                      } : undefined}
-                      value={draft[mode][key] ?? (key === "menuSelectedBackground" || key === "hoverBackground" ? draft[mode].accent : key === "menuSelectedText" ? (draft[mode].menuSelectedBackground ? readableThemeText(draft[mode].menuSelectedBackground!) : draft[mode].selectedText ?? readableThemeText(draft[mode].accent)) : key === "hoverText" ? (draft[mode].hoverBackground ? readableThemeText(draft[mode].hoverBackground!) : draft[mode].selectedText ?? readableThemeText(draft[mode].accent)) : key === "selectedText" ? readableThemeText(draft[mode].accent) : key === "highlightText" ? "#000000" : key === "highlightBackground" ? "#ffff00" : draft[mode].text)}
-                      onChange={(color) =>
-                        update({ [mode]: { ...draft[mode], [key]: color } })
-                      }
-                    />
-                  ))}
-                </div>
+                {colorGroups.map((group) => (
+                  <fieldset className="theme-color-group" key={group.title}>
+                    <legend>{group.title}</legend>
+                    <div className="theme-color-grid">
+                      {group.keys.map((key) => (
+                        <ThemeColorField
+                          key={`${mode}:${key}`}
+                          label={labels[key]}
+                          name={`${mode} ${labels[key]}`}
+                          cssHint={cssHints[key]}
+                          onReset={optionalPaletteKeys.includes(key as typeof optionalPaletteKeys[number]) && draft[mode][key] !== undefined ? () => {
+                            const palette = { ...draft[mode] }; delete (palette as Partial<typeof palette>)[key]; update({ [mode]: palette });
+                          } : undefined}
+                          value={draft[mode][key] ?? (key === "menuSelectedBackground" || key === "hoverBackground" ? draft[mode].accent : key === "menuSelectedText" ? (draft[mode].menuSelectedBackground ? readableThemeText(draft[mode].menuSelectedBackground!) : draft[mode].selectedText ?? readableThemeText(draft[mode].accent)) : key === "hoverText" ? (draft[mode].hoverBackground ? readableThemeText(draft[mode].hoverBackground!) : draft[mode].selectedText ?? readableThemeText(draft[mode].accent)) : key === "selectedText" ? readableThemeText(draft[mode].accent) : key === "highlightText" ? "#000000" : key === "highlightBackground" ? "#ffff00" : draft[mode].text)}
+                          onChange={(color) =>
+                            update({ [mode]: { ...draft[mode], [key]: color } })
+                          }
+                        />
+                      ))}
+                    </div>
+                  </fieldset>
+                ))}
                 <label className="setting-row">
                   Default navigation style
                   <select
