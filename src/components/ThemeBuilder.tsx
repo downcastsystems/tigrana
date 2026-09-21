@@ -6,7 +6,7 @@ import { authoringOriginal, originalSnapshot, updateDerivedTheme } from "../lib/
 import { ThemeTypographyEditor } from "./ThemeTypographyEditor";
 import { ThemeControlsEditor } from "./ThemeControlsEditor";
 import { ThemeHealthCheck } from "./ThemeHealthCheck";
-import { allBuiltInThemes, bundledThemes, isBundledTheme } from "../lib/bundledThemes";
+import { allBuiltInThemes, bundledThemes } from "../lib/bundledThemes";
 import { ThemeDeleteDialog } from "./ThemeDeleteDialog";
 import { visualCssHints } from "../lib/themeVisualCss";
 import { ThemeSurfacesEditor } from "./ThemeSurfacesEditor";
@@ -848,7 +848,7 @@ export function ThemeReconciliation({
   const snapshotJson = JSON.stringify(current);
   const applyRef = useRef(onApply);
   applyRef.current = onApply;
-  const builtInUpdate = shared && bundledThemes.some(theme => theme.id === shared.id);
+  const builtInUpdate = shared && allBuiltInThemes.some(theme => theme.id === shared.id);
   useEffect(() => {
     const snapshot: ThemeDocument | null = JSON.parse(snapshotJson);
     let cancelled = false;
@@ -856,11 +856,13 @@ export function ThemeReconciliation({
     setMissing(false);
     setDismissed(false);
     setError("");
-    if (snapshot && snapshot.id !== "default" && !isBundledTheme(snapshot))
+    // Restoring defaults stores a snapshot even for classic built-in presets.
+    // Those themes already ship with the app; they need no library registration.
+    const builtIn = allBuiltInThemes.find((theme) => theme.id === snapshot?.id);
+    if (snapshot && snapshot.id !== "default" && !(builtIn && themesMatch(snapshot, builtIn)))
       void listThemes()
         .then(async (result) => {
           if (cancelled) return;
-          const builtIn = bundledThemes.find((t) => t.id === snapshot.id);
           const match = builtIn ?? result.themes.find((t) => t.id === snapshot.id);
           if (builtIn && localStorage.getItem(`tigrana-theme-update:${builtIn.id}`)) {
             const release = await themeDifferenceFingerprint(builtIn, null);

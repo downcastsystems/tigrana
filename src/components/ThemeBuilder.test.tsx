@@ -51,6 +51,17 @@ function button(host: HTMLElement, text: string) {
     (b) => (b.querySelector(".theme-choice-label")?.textContent ?? b.textContent) === text,
   )!;
 }
+it.each(classicThemes)("does not ask to publish built-in $name after restoring its snapshot", async (theme) => {
+  const host = document.createElement("div"), root = createRoot(host);
+  try {
+    await act(async () => root.render(<ThemeReconciliation current={theme} onApply={vi.fn()} />));
+    expect(host.querySelector('[role="dialog"]')).toBeNull();
+    expect((await listThemes()).themes).toHaveLength(0);
+  } finally {
+    await act(async () => root.unmount());
+  }
+});
+
 it("keeps draft edits local until save and lets the user cancel", async () => {
   const host = document.createElement("div"),
     root = createRoot(host),
