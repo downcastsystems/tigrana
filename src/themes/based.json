@@ -16,7 +16,7 @@
   "design": {
     "apiVersion": 1,
     "author": "Tigrana",
-    "version": "1.3.0",
+    "version": "1.3.1",
     "license": "MIT License\n\nCopyright (c) 2025 aaaaalexis\n\nPermission is hereby granted, free of charge, to any person obtaining a copy\nof this software and associated documentation files (the \"Software\"), to deal\nin the Software without restriction, including without limitation the rights\nto use, copy, modify, merge, publish, distribute, sublicense, and/or sell\ncopies of the Software, and to permit persons to whom the Software is\nfurnished to do so, subject to the following conditions:\n\nThe above copyright notice and this permission notice shall be included in all\ncopies or substantial portions of the Software.\n\nTHE SOFTWARE IS PROVIDED \"AS IS\", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR\nIMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,\nFITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE\nAUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER\nLIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,\nOUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE\nSOFTWARE.\n",
     "supportsPlasma": true,
     "css": "/* A quiet, neutral workspace inspired by Baseline's default layout. */\n:scope {\n  --tigrana-panel-gap: 8px;\n  --tigrana-workspace-inset: 8px;\n  --tigrana-panel-radius: 10px;\n  --tigrana-panel-shadow: none;\n  --tigrana-workspace-background: var(--surface-muted);\n}\n.app-frame { padding-top: 4px; }\n.app-titlebar { background: var(--surface-muted); border-bottom: 0; }\n.note-tab { border-radius: 8px; }\n.folder-pane, .notes-pane, .unified-tree-pane, .main-pane, .right-sidebar { border: 0; }\n.pane-header { color: var(--tigrana-text); text-transform: none; font-size: 13px; letter-spacing: 0; padding: 14px; border-bottom: 0; }\n.pane-header strong { font-weight: 500; }\n.topbar { border-bottom: 0; }\n.section-view-folder-pane .folder-row { border-radius: 0; margin-right: 6px; }\n.note-title-input { font-weight: 650; letter-spacing: -0.025em; }\n.ProseMirror h1, .ProseMirror h2, .ProseMirror h3 { font-weight: 600; letter-spacing: -0.015em; }\n.ProseMirror a { color: var(--tigrana-editor-text); text-decoration: underline; text-underline-offset: 3px; }\n.ProseMirror blockquote { border-left: 3px solid var(--tigrana-border); padding: 10px 16px; background: var(--surface-soft); }\n.ProseMirror pre, .ProseMirror table { border: 1px solid var(--tigrana-border); }\n.pane-resizer { background: transparent; }\n.pane-resizer::after { opacity: 0; }\n.pane-resizer:hover::after, .pane-resizer:focus-visible::after { opacity: 1; }\n",
@@ -62,8 +62,5 @@
     "highlightBackground": "#ffe89a",
     "hoverBackground": "#2e2e2e",
     "hoverText": "#dedede"
-  },
-  "rightSidebarOpen": false,
-  "editorWidthMode": "comfortable",
-  "noteAlignment": "center"
+  }
 }

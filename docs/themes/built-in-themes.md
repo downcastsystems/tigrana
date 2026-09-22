@@ -1,6 +1,6 @@
 # Built-in themes
 
-All built-ins are validated schema 2 documents using Theme API 1. `src/themes/classic.json` holds the original palette themes, and individual JSON files hold Minimal, Saratoga, Based, and Starfall. `src/lib/bundledThemes.ts` is the catalog.
+All built-ins are validated schema 2 documents using Theme API 1. `src/themes/classic.json` holds the original palette themes, and individual JSON files hold Vampire and the other newer themes. `src/lib/bundledThemes.ts` is the catalog.
 
 Old notebook preset IDs remain supported. The app overlays their existing font and color preferences on the corresponding document at render time; opening a notebook does not rewrite its appearance metadata. Saved schema 1 themes remain supported and are upgraded to schema 2 when edited and saved. Imported CSS still goes through the same scoped CSS compiler. No Obsidian CSS is injected into the app.
 
@@ -10,13 +10,15 @@ Minimal is a Tigrana adaptation, not an official port or Obsidian plugin integra
 
 | Theme | Source inspected | Tigrana choices |
 | --- | --- | --- |
-| Minimal | [kepano/obsidian-minimal](https://github.com/kepano/obsidian-minimal), 9.1.0 | Neutral white/charcoal surfaces, muted blue-gray accent, system font stack, tighter corners and spacing, restrained heading weight. Accent is adjusted for readable selections. |
+| Minimal | [kepano/obsidian-minimal](https://github.com/kepano/obsidian-minimal), 9.1.0 | Neutral white/charcoal surfaces, muted blue-gray accent, bundled Inter font, tighter corners and spacing, restrained heading weight. Accent is adjusted for readable selections. |
 
-Minimal, Saratoga, and Based default to standard UI and support Plasma when enabled. Starfall and Alucard default to Plasma. Selecting another theme restores that theme's defaults and clears quick appearance overrides. Note rows retain rounded corners; section rows stay rectangular.
+Minimal, Saratoga, and Based default to standard UI and support Plasma when enabled. Starfall and Vampire default to Plasma. Selecting another theme restores that theme's defaults and clears quick appearance overrides. Note rows retain rounded corners; section rows stay rectangular.
 
 Typography, colors, and design metrics use the engine's editable values. Custom CSS refers to theme variables instead of repeating fixed colors. Obsidian-specific layouts, helper classes, alternate task syntax, plugins, and animation systems are not included.
 
-## Alucard
+## Vampire
+
+Defined in `src/themes/vampire.json`. Formerly named Alucard.
 
 Dark blood-red Plasma glass with warm charcoal panels in both color schemes.
 For now, light mode uses the same palette and glass lighting as dark mode. Deep red selections and highlights use white text. Red rim
@@ -34,14 +36,13 @@ and are hidden when Reduce Motion is enabled.
 The word-count badge uses ivory serif lettering and a dark blood-red frame. Its serif stack uses system fonts; no additional font files
 are bundled. The rest of the interface uses bundled Inter.
 Its internal ID remains `dracula` for notebook compatibility;
-reselect Alucard to apply its new defaults to an existing notebook.
+reselect Vampire to apply its new defaults to an existing notebook.
 
 ## Saratoga
 
 Floating rounded panels on a subtle gradient workspace, raised tabs, soft gray
 surfaces and a blue accent. The editor retains its toolbar divider with 24px of
-space before the title. Defaults to Dual pane with sections, right sidebar open,
-Comfortable Width, Align center, and Plasma off. Uses installed system fonts with
+space before the title. Defaults to Dual pane with sections and Plasma off; writing layout and sidebar visibility keep their current values. Uses installed system fonts with
 Inter fallback; no proprietary font files are distributed.
 
 Its internal ID remains `builtin-cupertino` for saved-theme compatibility. The
@@ -54,8 +55,7 @@ with neutral gray selections, soft borderless panels, normal-case navigation lab
 and bundled Inter. White/light-gray and charcoal palettes keep the editor prominent;
 hover states are subtler than selections and links remain underlined. Panels have
 8px gaps, with 4px between the tab bar and panels. The editor toolbar has no divider below it.
-Defaults to Dual pane with sections, right sidebar closed, Comfortable Width, Align center,
-and Plasma off. Manual width and alignment changes remain available.
+Defaults to Dual pane with sections and Plasma off; writing layout and sidebar visibility keep their current values. Manual width and alignment changes remain available.
 
 Its internal ID remains `builtin-baseline` so existing saved copies can still
 update or revert to this original. The original MIT copyright notice remains in
@@ -79,18 +79,18 @@ The theme embeds the unmodified Latin regular WOFF2 of [IBM Plex Mono](https://g
 
 Theme API 1 exposes `--tigrana-panel-gap` and `--tigrana-workspace-inset` in both standard and Plasma layouts. Standard mode also supports `--tigrana-panel-radius`, `--tigrana-panel-shadow`, and `--tigrana-workspace-background`. Values can be set in Advanced CSS on `:scope`; the in-app CSS reference includes a complete example. The app still owns the grid variants and resize handles, so creators do not need to reproduce every sidebar visibility combination. Use gaps of at least 6px to retain a usable drag target. Advanced surfaces continues to control opacity independently.
 
-Minimal 1.1.0 stays flat, with quieter labels, underline tabs, and lighter title typography. Minimal remains an adaptation, not a pixel-for-pixel Obsidian port. Existing notebook snapshots are preserved; reselect the built-in to adopt the revised design.
+Minimal uses quieter labels, rounded gray active tabs, a soft blue-gray accent, matching note and text selection colors, bold note titles, and a soft shadow along the left sidebar edge facing the editor. Minimal remains an adaptation, not a pixel-for-pixel Obsidian port. Existing notebook snapshots are preserved; reselect the built-in to adopt the revised design.
 
 Browser layout verification covered all 16 combinations of single/dual navigation, left sidebar visibility, outline visibility, and standard/Plasma mode at 1200px workspace width. All retained the requested 18px inset and splitter width without horizontal overflow.
 
 
-All built-in themes default to **Comfortable Width**, **Dual pane with sections**, and **Align center**. Selecting a theme applies its writing width and alignment. Navigation and sidebar visibility remain as you set them unless you choose **Use theme defaults → Use theme default layout options**. Sidebar defaults still vary by theme.
+All built-in themes use **Keep current** for editor width, note alignment, and word count. Right-sidebar visibility also uses **Keep current**, except Minimal, which hides it by default. Navigation defaults remain **Dual pane with sections**. Choosing a theme preserves your writing layout.
 
 Custom themes may include `navigationStyle` with `dual-pane`, `single-pane`, or `section-view`, or omit it to keep the current layout. The theme editor exposes this as **Default navigation style**.
 
 Themes may also set `rightSidebarOpen` to `true` or `false`. Omit it for Keep current. The theme editor's Default right sidebar control sets this preference. Manual sidebar changes are saved with the notebook and remain until another theme supplies a sidebar default.
 
-Minimal, Based, and Typewriter default to a closed right sidebar. All other built-in themes, including Default, open it by default. Based uses rounded tabs and separate framed panels without an accent border across the title bar or editor.
+Minimal defaults to a closed right sidebar. All other built-in themes leave its visibility unchanged. Based uses rounded tabs and separate framed panels without an accent border across the title bar or editor.
 
 Default is a read-only starting point. Other built-ins expose Edit theme, which saves a customized copy with a portable `baseThemeId` pointing to the original built-in. Revert to defaults restores that built-in's settings in the draft while retaining the copy's identity and name; Save and use commits the reset. Existing custom themes without a recorded built-in origin are not guessed from their names.
 
@@ -98,13 +98,13 @@ Plasma rims use the effective accent color, including notebook quick-accent over
 
 ## Quest
 
-Retro adventure menus: pixel lettering, green and gold panel frames, an original generated woodland map, near-black dark mode, and parchment light mode. It bundles VT323 and its font license, plus the background image. Defaults to Dual pane with sections, right sidebar open, Plasma off. Editable source and assets live in `docs/themes/8-bit-adventure/`.
+Retro adventure menus: pixel lettering, green and gold panel frames, an original generated woodland map, near-black dark mode, and parchment light mode. It bundles VT323 and its font license, plus the background image. Defaults to Dual pane with sections and Plasma off; sidebar visibility keeps its current value. Editable source and assets live in `docs/themes/8-bit-adventure/`.
 
 ## Typewriter
 
 Word count starts on when Typewriter is selected. It can be turned off afterward in View or General settings.
 
-Warm ivory paper and brown ink in light mode; charcoal paper, cream text, and a muted tan accent in dark mode. Thin panel borders, small corner radii, and regular-weight serif titles keep the writing area quiet. Defaults to Dual pane with sections, right sidebar closed, Comfortable Width, Align center, and Plasma off. Manual layout changes remain available and persist with the notebook.
+Warm ivory paper and brown ink in light mode; charcoal paper, cream text, and a muted tan accent in dark mode. Thin panel borders, small corner radii, and regular-weight serif titles keep the writing area quiet. Defaults to Dual pane with sections and Plasma off; writing layout and sidebar visibility keep their current values. Manual layout changes remain available and persist with the notebook.
 
 Both the interface and editor use [Solway](https://github.com/mashavp/Solway), a proportional slab serif with a typewriter feel. The unmodified Latin regular WOFF2 from `@fontsource/solway` 5.3.0 is bundled for offline use, with Georgia/serif fallbacks for other glyphs. The full SIL Open Font License 1.1 and attribution travel with the theme. No American Typewriter font files are distributed.
 
@@ -151,7 +151,7 @@ base02 to meet 4.5:1 on base2 sidebar backgrounds. Dark interface labels use bas
 
 All seven adaptations define explicit menu and hover colors, a quieter text
 selection tint, and an opaque word-count badge using theme colors. They default
-to Plasma off, Comfortable Width, Dual pane with sections, Align center, and the
-right sidebar open. Existing theme IDs are unchanged; Latte adds
+to Plasma off and Dual pane with sections. Editor width, alignment, word count,
+and right-sidebar visibility keep their current values. Existing theme IDs are unchanged; Latte adds
 `catppuccin-latte`. Version 1.1.0 snapshots export through the normal theme system.
 Existing saved copies are preserved; select the built-in to adopt these defaults.

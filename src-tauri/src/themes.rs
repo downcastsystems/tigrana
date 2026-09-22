@@ -459,11 +459,10 @@ mod tests {
     use serde_json::json;
     #[test]
     fn saved_theme_keeps_layout_settings_and_original_snapshot() {
-        let catalog: Value = serde_json::from_str(include_str!("../../src/themes/classic.json")).unwrap();
-        let original = catalog.as_array().unwrap().iter().find(|theme| theme["id"] == "dracula").unwrap().clone();
+        let original: Value = serde_json::from_str(include_str!("../../src/themes/vampire.json")).unwrap();
         let mut theme = original.clone();
-        theme["id"] = json!("alucard-copy");
-        theme["name"] = json!("Alucard copy");
+        theme["id"] = json!("vampire-copy");
+        theme["name"] = json!("Vampire copy");
         theme["baseThemeId"] = original["id"].clone();
         theme["baseThemeSnapshot"] = original;
         let dir = std::env::temp_dir().join(format!("tigrana-theme-layout-{}", uuid::Uuid::new_v4()));
@@ -475,7 +474,7 @@ mod tests {
                     theme["noteAlignment"] = json!(alignment);
                     theme["wordCountVisible"] = json!(word_count);
                     save_in_dir(&dir, theme.clone(), expected.clone()).unwrap();
-                    let saved: Value = serde_json::from_str(&fs::read_to_string(dir.join("alucard-copy.json")).unwrap()).unwrap();
+                    let saved: Value = serde_json::from_str(&fs::read_to_string(dir.join("vampire-copy.json")).unwrap()).unwrap();
                     assert!(saved == theme, "Save and use must preserve the entire notebook snapshot");
                     if let Some(stale) = &expected {
                         assert!(save_in_dir(&dir, stale.clone(), Some(stale.clone())).is_err());

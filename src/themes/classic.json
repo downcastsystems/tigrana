@@ -17,7 +17,7 @@
     "design": {
       "apiVersion": 1,
       "author": "Tigrana",
-      "version": "1.0.1",
+      "version": "1.0.2",
       "license": "Tigrana built-in palette adaptation",
       "supportsPlasma": true,
       "css": ".section-view-folder-pane .folder-row { border-radius: 0; }\n.note-tab.is-active { background: var(--tigrana-accent); border-color: transparent; }\n:scope.theme-light .ProseMirror::selection, :scope.theme-light .ProseMirror *::selection, :scope.theme-light .note-title-input::selection, :scope.theme-light .raw-markdown-input::selection { background-color: color-mix(in srgb, var(--tigrana-accent) 35%, white); color: currentColor; }\n:scope.theme-dark .ProseMirror::selection, :scope.theme-dark .ProseMirror *::selection, :scope.theme-dark .note-title-input::selection, :scope.theme-dark .raw-markdown-input::selection { background-color: color-mix(in srgb, var(--tigrana-accent) 40%, white); color: currentColor; }\n",
@@ -59,10 +59,7 @@
       "selectedText": "#ffffff",
       "highlightText": "#000000",
       "highlightBackground": "#ffff00"
-    },
-    "rightSidebarOpen": true,
-    "editorWidthMode": "comfortable",
-    "noteAlignment": "center"
+    }
   },
   {
     "schemaVersion": 2,
@@ -82,7 +79,7 @@
     "design": {
       "apiVersion": 1,
       "author": "Tigrana",
-      "version": "1.0.1",
+      "version": "1.0.2",
       "license": "Tigrana built-in palette adaptation",
       "supportsPlasma": true,
       "css": ".section-view-folder-pane .folder-row { border-radius: 0; }",
@@ -124,10 +121,7 @@
       "selectedText": "#000000",
       "highlightText": "#000000",
       "highlightBackground": "#ffff00"
-    },
-    "rightSidebarOpen": true,
-    "editorWidthMode": "comfortable",
-    "noteAlignment": "center"
+    }
   },
   {
     "schemaVersion": 2,
@@ -147,7 +141,7 @@
     "design": {
       "apiVersion": 1,
       "author": "Tigrana",
-      "version": "1.1.0",
+      "version": "1.1.1",
       "license": "Tigrana built-in palette adaptation. Palette source: https://ethanschoonover.com/solarized/",
       "supportsPlasma": true,
       "css": ".section-view-folder-pane .folder-row { border-radius: 0; }\n.ProseMirror::selection, .ProseMirror *::selection, .note-title-input::selection, .raw-markdown-input::selection { background-color: color-mix(in srgb, var(--surface-strong) 50%, var(--tigrana-background)); color: var(--tigrana-editor-text); }\n.note-status-bar { background: var(--surface); color: var(--tigrana-text); border: 1px solid var(--tigrana-border); box-shadow: none; }\n",
@@ -197,83 +191,6 @@
       "menuSelectedText": "#000000",
       "hoverBackground": "#073642",
       "hoverText": "#93a1a1"
-    },
-    "rightSidebarOpen": true,
-    "editorWidthMode": "comfortable",
-    "noteAlignment": "center"
-  },
-  {
-    "schemaVersion": 2,
-    "id": "dracula",
-    "name": "Alucard",
-    "navigationStyle": "section-view",
-    "appFontFamily": "Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, \"Segoe UI\", sans-serif",
-    "editorFontFamily": "Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, \"Segoe UI\", sans-serif",
-    "appFontSize": 14,
-    "editorFontSize": 17,
-    "accentTitlebar": false,
-    "plasma": {
-      "enabled": true,
-      "frost": 12,
-      "backgroundBlur": 0,
-      "flow": 20,
-      "ambientDrops": true
-    },
-    "design": {
-      "apiVersion": 1,
-      "author": "Tigrana",
-      "version": "1.3.9",
-      "license": "Tigrana built-in palette adaptation",
-      "supportsPlasma": true,
-      "css": ".section-view-folder-pane .folder-row { border-radius: 0; }\n.note-status-bar {\n  gap: 12px;\n  padding: 3px 12px;\n  border: 1px solid #741b1b;\n  border-top-color: #a34336;\n  border-radius: 3px;\n  color: #f4e5d0;\n  background: linear-gradient(180deg, #381313, #180b0b);\n  box-shadow: inset 0 0 0 2px #180b0b, 0 3px 12px #00000040;\n  font-family: Georgia, \"Times New Roman\", serif;\n  font-weight: 600;\n  font-variant-numeric: lining-nums tabular-nums;\n  letter-spacing: 0.025em;\n}\n.ProseMirror::selection, .ProseMirror *::selection, .note-title-input::selection, .raw-markdown-input::selection {\n  background: #b43a3a;\n  color: #ffffff;\n}",
-      "assets": {},
-      "metrics": {
-        "radius": 8,
-        "spacing": 1,
-        "lineHeight": 1.72
-      }
-    },
-    "light": {
-      "surface": "#140b0b",
-      "surfaceSoft": "#1d1111",
-      "surfaceStrong": "#291717",
-      "surfaceMuted": "#0d0707",
-      "border": "#512b27",
-      "text": "#f4eae4",
-      "textMuted": "#bca39a",
-      "background": "#100808",
-      "accent": "#5c0700",
-      "titlebar": "#5c0700",
-      "editorText": "#f4eae4",
-      "selectedText": "#ffffff",
-      "highlightText": "#ffffff",
-      "highlightBackground": "#5c0700"
-    },
-    "dark": {
-      "surface": "#140b0b",
-      "surfaceSoft": "#1d1111",
-      "surfaceStrong": "#291717",
-      "surfaceMuted": "#0d0707",
-      "border": "#512b27",
-      "text": "#f4eae4",
-      "textMuted": "#bca39a",
-      "background": "#100808",
-      "accent": "#5c0700",
-      "titlebar": "#5c0700",
-      "editorText": "#f4eae4",
-      "selectedText": "#ffffff",
-      "highlightText": "#ffffff",
-      "highlightBackground": "#5c0700"
-    },
-    "rightSidebarOpen": true,
-    "editorWidthMode": "comfortable",
-    "noteAlignment": "center",
-    "surfaces": {
-      "background": "#100808",
-      "navigation": 25,
-      "editor": 35,
-      "outline": 25,
-      "titlebar": 45
     }
   },
   {
@@ -294,7 +211,7 @@
     "design": {
       "apiVersion": 1,
       "author": "Tigrana",
-      "version": "1.1.0",
+      "version": "1.1.1",
       "license": "Tigrana built-in palette adaptation. Palette source: https://www.nordtheme.com/docs/colors-and-palettes/",
       "supportsPlasma": true,
       "css": ".section-view-folder-pane .folder-row { border-radius: 0; }\n.ProseMirror::selection, .ProseMirror *::selection, .note-title-input::selection, .raw-markdown-input::selection { background-color: color-mix(in srgb, var(--surface-strong) 50%, var(--tigrana-background)); color: var(--tigrana-editor-text); }\n.note-status-bar { background: var(--surface); color: var(--tigrana-text); border: 1px solid var(--tigrana-border); box-shadow: none; }\n",
@@ -344,10 +261,7 @@
       "menuSelectedText": "#2e3440",
       "hoverBackground": "#434c5e",
       "hoverText": "#eceff4"
-    },
-    "rightSidebarOpen": true,
-    "editorWidthMode": "comfortable",
-    "noteAlignment": "center"
+    }
   },
   {
     "schemaVersion": 2,
@@ -367,7 +281,7 @@
     "design": {
       "apiVersion": 1,
       "author": "Tigrana",
-      "version": "1.1.0",
+      "version": "1.1.1",
       "license": "Tigrana built-in palette adaptation. Palette source: https://github.com/morhetz/gruvbox",
       "supportsPlasma": true,
       "css": ".section-view-folder-pane .folder-row { border-radius: 0; }\n.ProseMirror::selection, .ProseMirror *::selection, .note-title-input::selection, .raw-markdown-input::selection { background-color: color-mix(in srgb, var(--surface-strong) 50%, var(--tigrana-background)); color: var(--tigrana-editor-text); }\n.note-status-bar { background: var(--surface); color: var(--tigrana-text); border: 1px solid var(--tigrana-border); box-shadow: none; }\n",
@@ -417,10 +331,7 @@
       "menuSelectedText": "#282828",
       "hoverBackground": "#3c3836",
       "hoverText": "#ebdbb2"
-    },
-    "rightSidebarOpen": true,
-    "editorWidthMode": "comfortable",
-    "noteAlignment": "center"
+    }
   },
   {
     "schemaVersion": 2,
@@ -440,7 +351,7 @@
     "design": {
       "apiVersion": 1,
       "author": "Tigrana",
-      "version": "1.1.0",
+      "version": "1.1.1",
       "license": "Tigrana palette adaptation. Catppuccin palette: https://catppuccin.com/palette/ (MIT, Catppuccin).",
       "supportsPlasma": true,
       "css": ".section-view-folder-pane .folder-row { border-radius: 0; }\n.ProseMirror::selection, .ProseMirror *::selection, .note-title-input::selection, .raw-markdown-input::selection { background-color: color-mix(in srgb, var(--surface-strong) 50%, var(--tigrana-background)); color: var(--tigrana-editor-text); }\n.note-status-bar { background: var(--surface); color: var(--tigrana-text); border: 1px solid var(--tigrana-border); box-shadow: none; }\n:scope.theme-light .ProseMirror a { color: #1e66f5; }\n:scope.theme-dark .ProseMirror a { color: #8caaee; }\n",
@@ -490,10 +401,7 @@
       "menuSelectedText": "#303446",
       "hoverBackground": "#414559",
       "hoverText": "#c6d0f5"
-    },
-    "rightSidebarOpen": true,
-    "editorWidthMode": "comfortable",
-    "noteAlignment": "center"
+    }
   },
   {
     "schemaVersion": 2,
@@ -513,7 +421,7 @@
     "design": {
       "apiVersion": 1,
       "author": "Tigrana",
-      "version": "1.1.0",
+      "version": "1.1.1",
       "license": "Tigrana palette adaptation. Catppuccin palette: https://catppuccin.com/palette/ (MIT, Catppuccin).",
       "supportsPlasma": true,
       "css": ".section-view-folder-pane .folder-row { border-radius: 0; }\n.ProseMirror::selection, .ProseMirror *::selection, .note-title-input::selection, .raw-markdown-input::selection { background-color: color-mix(in srgb, var(--surface-strong) 50%, var(--tigrana-background)); color: var(--tigrana-editor-text); }\n.note-status-bar { background: var(--surface); color: var(--tigrana-text); border: 1px solid var(--tigrana-border); box-shadow: none; }\n:scope.theme-light .ProseMirror a { color: #1e66f5; }\n:scope.theme-dark .ProseMirror a { color: #8aadf4; }\n",
@@ -563,10 +471,7 @@
       "menuSelectedText": "#24273a",
       "hoverBackground": "#363a4f",
       "hoverText": "#cad3f5"
-    },
-    "rightSidebarOpen": true,
-    "editorWidthMode": "comfortable",
-    "noteAlignment": "center"
+    }
   },
   {
     "schemaVersion": 2,
@@ -586,7 +491,7 @@
     "design": {
       "apiVersion": 1,
       "author": "Tigrana",
-      "version": "1.1.0",
+      "version": "1.1.1",
       "license": "Tigrana palette adaptation. Catppuccin palette: https://catppuccin.com/palette/ (MIT, Catppuccin).",
       "supportsPlasma": true,
       "css": ".section-view-folder-pane .folder-row { border-radius: 0; }\n.ProseMirror::selection, .ProseMirror *::selection, .note-title-input::selection, .raw-markdown-input::selection { background-color: color-mix(in srgb, var(--surface-strong) 50%, var(--tigrana-background)); color: var(--tigrana-editor-text); }\n.note-status-bar { background: var(--surface); color: var(--tigrana-text); border: 1px solid var(--tigrana-border); box-shadow: none; }\n:scope.theme-light .ProseMirror a { color: #1e66f5; }\n:scope.theme-dark .ProseMirror a { color: #89b4fa; }\n",
@@ -636,10 +541,7 @@
       "menuSelectedText": "#1e1e2e",
       "hoverBackground": "#313244",
       "hoverText": "#cdd6f4"
-    },
-    "rightSidebarOpen": true,
-    "editorWidthMode": "comfortable",
-    "noteAlignment": "center"
+    }
   },
   {
     "schemaVersion": 2,
@@ -659,7 +561,7 @@
     "design": {
       "apiVersion": 1,
       "author": "Tigrana",
-      "version": "1.1.0",
+      "version": "1.1.1",
       "license": "Tigrana palette adaptation. Catppuccin palette: https://catppuccin.com/palette/ (MIT, Catppuccin).",
       "supportsPlasma": true,
       "css": ".section-view-folder-pane .folder-row { border-radius: 0; }\n.ProseMirror::selection, .ProseMirror *::selection, .note-title-input::selection, .raw-markdown-input::selection { background-color: color-mix(in srgb, var(--surface-strong) 50%, var(--tigrana-background)); color: var(--tigrana-editor-text); }\n.note-status-bar { background: var(--surface); color: var(--tigrana-text); border: 1px solid var(--tigrana-border); box-shadow: none; }\n:scope.theme-light .ProseMirror a { color: #1e66f5; }\n:scope.theme-dark .ProseMirror a { color: #8caaee; }\n",
@@ -709,9 +611,6 @@
       "menuSelectedText": "#303446",
       "hoverBackground": "#414559",
       "hoverText": "#c6d0f5"
-    },
-    "rightSidebarOpen": true,
-    "editorWidthMode": "comfortable",
-    "noteAlignment": "center"
+    }
   }
 ]

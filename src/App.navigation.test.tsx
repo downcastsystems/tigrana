@@ -223,7 +223,7 @@ describe("Note navigation persistence", () => {
     }
   });
 
-  it("applies Typewriter's writing layout, preserves manual changes on reload, and resets on reselection", async () => {
+  it("keeps writing layout and word count through Typewriter selection, reload, and reselection", async () => {
     localStorage.setItem("tigrana-word-count-visible", "false");
     const container = document.createElement("div");
     document.body.appendChild(container);
@@ -247,9 +247,6 @@ describe("Note navigation persistence", () => {
       if (useLayout) await chooseThemeDefaults(container);
       expect(surface().classList.contains("is-comfortable-width")).toBe(true);
       expect(surface().classList.contains("is-center-aligned")).toBe(true);
-      expect(container.querySelector(".note-status-bar")).not.toBeNull();
-      await act(async () => { Array.from(container.querySelectorAll<HTMLButtonElement>(".settings-nav button")).find(b => b.textContent === "General")!.click(); });
-      await act(async () => Array.from(container.querySelectorAll("label")).find(label => label.textContent?.includes("Show word count"))!.querySelector("input")!.click());
       expect(container.querySelector(".note-status-bar")).toBeNull();
       await act(async () => container.querySelector<HTMLButtonElement>('[aria-label="Close settings"]')!.click());
       await act(async () => container.querySelector<HTMLButtonElement>('[aria-label="Editor options"]')!.click());
@@ -258,7 +255,7 @@ describe("Note navigation persistence", () => {
       }
       await waitFor(() => {
         const appearance = JSON.parse(demoPersistence.get("tigrana-meta:/demo/Tigrana") ?? "{}").appearance;
-        return appearance?.editorWidthMode === "full" && appearance?.noteAlignment === "left" && appearance?.wordCountVisible === false;
+        return appearance?.editorWidthMode === "full" && appearance?.noteAlignment === "left" && appearance?.wordCountVisible !== true;
       });
       await act(async () => { root.render(<App key="reload" />); await new Promise(resolve => window.setTimeout(resolve, 50)); });
       expect(container.querySelector(".note-status-bar")).toBeNull();
@@ -267,9 +264,9 @@ describe("Note navigation persistence", () => {
       await openAppearance();
       await chooseTheme("builtin:default");
       await chooseTheme("bundled:builtin-typewriter");
-      expect(surface().classList.contains("is-comfortable-width")).toBe(true);
-      expect(surface().classList.contains("is-center-aligned")).toBe(true);
-      expect(container.querySelector(".note-status-bar")).not.toBeNull();
+      expect(surface().classList.contains("is-full-width")).toBe(true);
+      expect(surface().classList.contains("is-left-aligned")).toBe(true);
+      expect(container.querySelector(".note-status-bar")).toBeNull();
       expect(container.textContent).not.toContain("Save current settings as new theme");
     } finally { await act(async () => root.unmount()); }
   });
@@ -302,7 +299,7 @@ describe("Note navigation persistence", () => {
         if (useLayout) await chooseThemeDefaults(container);
         expect(findThemeLayoutAction()).toBeUndefined();
         previousNavigation = theme.navigationStyle!;
-        previousOutlineHidden = theme.rightSidebarOpen === false;
+        previousOutlineHidden = theme.rightSidebarOpen === undefined ? previousOutlineHidden : !theme.rightSidebarOpen;
         expect(container.querySelector<HTMLSelectElement>('select[aria-label="Navigation style"]')!.value).toBe(previousNavigation);
         expect(container.querySelector(".app-frame")?.classList.contains("is-outline-hidden")).toBe(previousOutlineHidden);
         expect(container.querySelector('[data-theme-styles="notebook"]')?.textContent).toContain(`--tigrana-accent:${theme.dark.accent}`);
@@ -321,16 +318,16 @@ describe("Note navigation persistence", () => {
       expect(navigation.value).toBe("section-view");
       await act(async () => { picker.value = "bundled:builtin-minimal"; picker.dispatchEvent(new Event("change", { bubbles: true })); });
       expect(navigation.value).toBe("section-view");
-      await chooseThemeDefaults(container);
+      expect(findThemeLayoutAction()).toBeUndefined();
       expect(navigation.value).toBe("section-view");
       expect(container.querySelector(".app-frame")?.classList.contains("is-single-col")).toBe(false);
       await act(async () => { picker.value = "builtin:nord"; picker.dispatchEvent(new Event("change", { bubbles: true })); });
       expect(container.querySelector('[data-theme-styles="notebook"]')?.textContent).toContain("--tigrana-accent:#88c0d0");
       expect(navigation.value).toBe("section-view");
       expect(container.querySelector(".app-frame")?.classList.contains("is-outline-hidden")).toBe(true);
-      await chooseThemeDefaults(container);
+      if (findThemeLayoutAction()) await chooseThemeDefaults(container);
       expect(navigation.value).toBe("section-view");
-      expect(container.querySelector(".app-frame")?.classList.contains("is-outline-hidden")).toBe(false);
+      expect(container.querySelector(".app-frame")?.classList.contains("is-outline-hidden")).toBe(true);
       expect(document.documentElement.style.getPropertyValue("--editor-font-family")).toContain("Inter");
       expect(container.querySelector(".app-frame")?.getAttribute("data-theme-api")).toBe("1");
     } finally { await act(async () => root.unmount()); }
@@ -427,8 +424,8 @@ describe("Note navigation persistence", () => {
     } finally { await act(async () => root.unmount()); }
   });
 
-  it("applies Alucard's Plasma defaults, persists them, and clears them when selecting Default", async () => {
-    const alucard = classicThemes.find(theme => theme.id === 'dracula')!;
+  it("applies Vampire's Plasma defaults, persists them, and clears them when selecting Default", async () => {
+    const vampire = classicThemes.find(theme => theme.id === 'dracula')!;
     demoPersistence.set('tigrana-meta:/demo/Tigrana', JSON.stringify({ revision: 0, appearance: { colorScheme: 'dark' } }));
     const container = document.createElement('div'); document.body.appendChild(container); containers.push(container);
     let root = createRoot(container);
@@ -446,17 +443,17 @@ describe("Note navigation persistence", () => {
       await act(async () => root.render(<App />));
       await waitFor(() => !!container.querySelector('.note-title-input'));
       await openAppearance();
-      expect(container.querySelector('option[value="builtin:dracula"]')?.textContent).toBe('Alucard');
+      expect(container.querySelector('option[value="builtin:dracula"]')?.textContent).toBe('Vampire');
       await select('dracula');
-      expect(appearance().plasma).toEqual(alucard.plasma);
+      expect(appearance().plasma).toEqual(vampire.plasma);
       expect(container.querySelector('.app-shell')?.hasAttribute('data-plasma')).toBe(true);
-      expect(document.documentElement.style.getPropertyValue('--accent')).toBe(alucard.dark.accent);
+      expect(document.documentElement.style.getPropertyValue('--accent')).toBe(vampire.dark.accent);
       await act(async () => root.unmount()); root = createRoot(container);
       await act(async () => root.render(<App />));
       await waitFor(() => !!container.querySelector('.note-title-input'));
       expect(container.querySelector('.app-shell')?.hasAttribute('data-plasma')).toBe(true);
       expect(appearance().plasma.ambientDrops).toBe(true);
-      expect(document.documentElement.style.getPropertyValue('--accent')).toBe(alucard.dark.accent);
+      expect(document.documentElement.style.getPropertyValue('--accent')).toBe(vampire.dark.accent);
       await openAppearance();
       await select('default');
       expect(container.querySelector('.app-shell')?.hasAttribute('data-plasma')).toBe(false);

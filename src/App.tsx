@@ -1928,7 +1928,11 @@ export default function App() {
       customTheme: null,
       themePresetId: "default",
       accentColor: null,
-      wordCountVisible: defaultTheme.wordCountVisible ?? true,
+      // Full appearance recovery is independent of themes that keep the current layout.
+      editorWidthMode: "comfortable",
+      noteAlignment: "center",
+      rightSidebarOpen: true,
+      wordCountVisible: true,
     });
     focusRestoreRef.current = null;
     setPaneOverlay(null);

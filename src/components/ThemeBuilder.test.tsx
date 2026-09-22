@@ -75,7 +75,7 @@ it.each(classicThemes)("keeps the built-in $name snapshot out of Saved", async (
   } finally { await act(async () => root.unmount()); }
 });
 
-it("keeps an older Alucard snapshot built-in and a separately saved copy in Saved", async () => {
+it("keeps an older Vampire snapshot built-in and a separately saved copy in Saved", async () => {
   const latest = classicThemes.find(theme => theme.id === "dracula")!;
   const old = { ...latest, design: { ...latest.design!, version: "0.9.0" } };
   const copy = { ...latest, id: crypto.randomUUID() };
@@ -618,15 +618,15 @@ it("edits Typewriter writing defaults and reflects them in the preview", async (
     await act(async () => button(host, "Edit theme").click());
     const width = [...host.querySelectorAll('label')].find(label => label.textContent?.includes('Default editor width'))!.querySelector('select')!;
     const alignment = [...host.querySelectorAll('label')].find(label => label.textContent?.includes('Default note alignment'))!.querySelector('select')!;
-    expect(width.value).toBe('comfortable');
-    expect(alignment.value).toBe('center');
+    expect(width.value).toBe('');
+    expect(alignment.value).toBe('');
     const preview = host.querySelector('[aria-label="dark full theme preview"]')!.shadowRoot!;
-    expect(preview.querySelector('.note-surface.is-comfortable-width.is-center-aligned')).not.toBeNull();
+    expect(preview.querySelector('.note-surface.is-comfortable-width.is-center-aligned')).toBeNull();
     await act(async () => { width.value = 'full'; width.dispatchEvent(new Event('change', { bubbles: true })); });
     await act(async () => { alignment.value = 'left'; alignment.dispatchEvent(new Event('change', { bubbles: true })); });
     expect(preview.querySelector('.note-surface.is-full-width.is-left-aligned')).not.toBeNull();
     const wordCount = [...host.querySelectorAll('label')].find(label => label.textContent?.includes('Default word count'))!.querySelector('select')!;
-    expect(wordCount.value).toBe('true');
+    expect(wordCount.value).toBe('');
     expect(preview.querySelector('.note-status-bar')).not.toBeNull();
     await act(async () => { wordCount.value = 'false'; wordCount.dispatchEvent(new Event('change', { bubbles: true })); });
     expect(preview.querySelector('.note-status-bar')).toBeNull();

@@ -16,12 +16,12 @@ function contrast(a: string, b: string) {
   return (values[0] + .05) / (values[1] + .05);
 }
 describe('built-in theme catalog', () => {
-  it('keeps Alucard identical in light and dark mode, including Plasma lighting', () => {
-    const alucard = classicThemes.find(theme => theme.id === 'dracula')!;
-    expect(alucard.light).toEqual(alucard.dark);
-    expect(themeStylesheet(alucard, 'light', 'notebook')).toBe(themeStylesheet(alucard, 'dark', 'notebook'));
-    expect(themeRenderingMode(alucard, 'light')).toBe('dark');
-    expect(themeRenderingMode(alucard, 'dark')).toBe('dark');
+  it('keeps Vampire identical in light and dark mode, including Plasma lighting', () => {
+    const vampire = classicThemes.find(theme => theme.id === 'dracula')!;
+    expect(vampire.light).toEqual(vampire.dark);
+    expect(themeStylesheet(vampire, 'light', 'notebook')).toBe(themeStylesheet(vampire, 'dark', 'notebook'));
+    expect(themeRenderingMode(vampire, 'light')).toBe('dark');
+    expect(themeRenderingMode(vampire, 'dark')).toBe('dark');
     for (const theme of allBuiltInThemes.filter(theme => theme.id !== 'dracula')) {
       expect(themeRenderingMode(theme, 'light')).toBe('light');
       expect(themeRenderingMode(theme, 'dark')).toBe('dark');
@@ -85,7 +85,7 @@ describe('built-in theme catalog', () => {
     for (const document of builtInThemeDocuments) expect(() => parseTheme(document)).not.toThrow();
   });
   it('retains legacy IDs and has unique names and IDs', () => {
-    expect(classicThemes.map(t => t.id)).toEqual(['default', 'atom', 'solarized', 'dracula', 'nord', 'gruvbox', 'catppuccin-frappe', 'catppuccin-macchiato', 'catppuccin-mocha', 'catppuccin-latte']);
+    expect(classicThemes.map(t => t.id)).toEqual(['default', 'atom', 'solarized', 'nord', 'gruvbox', 'catppuccin-frappe', 'catppuccin-macchiato', 'catppuccin-mocha', 'catppuccin-latte', 'dracula']);
     expect(new Set(allBuiltInThemes.map(t => t.id)).size).toBe(allBuiltInThemes.length);
     expect(new Set(allBuiltInThemes.map(t => t.name)).size).toBe(allBuiltInThemes.length);
     expect(bundledThemes.map(t => t.name)).toEqual(['Minimal', 'Saratoga', 'Based', 'Starfall', 'Old Basement PC', 'Quest', 'Typewriter']);
@@ -99,10 +99,11 @@ describe('built-in theme catalog', () => {
       expect(themesMatch(theme, nativeSnapshot)).toBe(true);
       expect(themesMatch(theme, { ...nativeSnapshot, editorFontSize: theme.editorFontSize + 1 })).toBe(false);
       expect(theme.schemaVersion).toBe(2);
-      expect(themeAppearance(theme).rightSidebarOpen).toBe(!["builtin-minimal", "builtin-baseline", "builtin-typewriter"].includes(theme.id));
+      expect(themeAppearance(theme).rightSidebarOpen).toBe(theme.id === "builtin-minimal" ? false : undefined);
       expect(themeAppearance(theme).navigationStyle).toBe("section-view");
-      expect(themeAppearance(theme).editorWidthMode).toBe("comfortable");
-      expect(themeAppearance(theme).noteAlignment).toBe("center");
+      expect(themeAppearance(theme)).not.toHaveProperty("editorWidthMode");
+      expect(themeAppearance(theme)).not.toHaveProperty("noteAlignment");
+      expect(themeAppearance(theme)).not.toHaveProperty("wordCountVisible");
       expect(decodeThemePackage(encodeThemePackage(theme))).toEqual(theme);
       expect(themeAppearance(theme).plasma?.enabled).toBe(theme.plasma?.enabled);
       for (const mode of ['light', 'dark'] as const) {

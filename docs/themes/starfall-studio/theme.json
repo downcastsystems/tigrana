@@ -46,7 +46,7 @@
   "design": {
     "apiVersion": 1,
     "author": "Tigrana example",
-    "version": "1.4.1",
+    "version": "1.4.2",
     "license": "",
     "supportsPlasma": true,
     "css": "",
@@ -65,7 +65,6 @@
     "titlebar": 100,
     "image": "assets/starfall-landscape.webp"
   },
-  "rightSidebarOpen": true,
   "controls": [
     {
       "id": "character",
@@ -73,7 +72,5 @@
       "type": "toggle",
       "value": true
     }
-  ],
-  "editorWidthMode": "comfortable",
-  "noteAlignment": "center"
+  ]
 }
