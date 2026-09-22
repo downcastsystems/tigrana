@@ -164,3 +164,24 @@ If a theme breaks, open Appearance and choose another theme or **Restore default
 ## Design references
 
 Tigrana adopts named UI color roles and the ability to start from an existing theme, approaches documented by [VS Code](https://code.visualstudio.com/api/extension-guides/color-theme). The expanded surface preview follows the same useful principle as [Zed's theme builder](https://zed.dev/docs/themes#build-your-theme): inspect the whole interface before exporting. These are design references, not compatible package formats. Tigrana keeps its own portable Markdown notebook and scoped CSS contract.
+
+## Color variants
+
+In Create theme or Edit theme, choose **Add color variant**. Name the current
+colors and the new variant. The new variant copies both current palettes.
+Use **Colors** to switch the variant you are editing, then Light/Dark to edit
+its two modes. Rename, Duplicate, Make default, and Delete manage the list.
+Deleting asks for confirmation and cannot remove the last variant. Canceling
+the theme editor discards unsaved variant changes too.
+
+Colors are per variant. Fonts, spacing, navigation, surfaces, Plasma effects,
+assets, and CSS are shared. Use palette variables in CSS; hard-coded colors
+can override a variant. Save and export includes every variant in one package.
+Appearance shows Colors for imported themes with variants. Each notebook
+remembers its own selection; missing selections fall back to the author's default.
+
+The optional `colorVariants` array contains 1–32 objects with stable `id`, unique
+`name`, and complete `light`/`dark` palettes. `defaultColorVariantId` must identify
+one entry. Root light/dark palettes mirror the default for older readers.
+Older app versions may discard variants when re-saving; use a current version
+for editing. Built-in Classic/Catppuccin/Plasma families retain their legacy IDs.

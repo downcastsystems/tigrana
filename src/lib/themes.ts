@@ -57,7 +57,10 @@ export function parsePlasma(value: unknown): PlasmaSettings {
     ...(p.ambientDrops === undefined ? {} : { ambientDrops: p.ambientDrops }),
   };
 }
+export type ThemeColorVariant = { id: string; name: string; light: ThemePalette; dark: ThemePalette };
 export type ThemeDocument = {
+  colorVariants?: ThemeColorVariant[];
+  defaultColorVariantId?: string;
   editorLineHeight?: number;
   editorLetterSpacing?: number;
   typography?: ThemeTypography;
@@ -100,8 +103,8 @@ export function parseTheme(value: unknown, allowBase = true): ThemeDocument {
     throw new Error("Invalid theme ID.");
   if (typeof v.name !== "string" || !v.name.trim() || v.name.length > 100)
     throw new Error("Theme name must contain 1–100 characters.");
-  const palette = (mode: "light" | "dark"): ThemePalette => {
-    const input = v[mode] as Record<string, unknown> | undefined;
+  const palette = (mode: "light" | "dark", source = v): ThemePalette => {
+    const input = source[mode] as Record<string, unknown> | undefined;
     return Object.fromEntries(
       [...paletteKeys, ...optionalPaletteKeys.filter((key) => input?.[key] !== undefined)].map((key) => {
         const color = input?.[key];
@@ -147,7 +150,21 @@ export function parseTheme(value: unknown, allowBase = true): ThemeDocument {
     if (n !== undefined && (typeof n !== "number" || !Number.isFinite(n) || n < min || n > max))
       throw new Error(`Invalid ${key}.`);
   }
+  let colorVariants: ThemeColorVariant[] | undefined;
+  if (v.colorVariants !== undefined) {
+    if (!Array.isArray(v.colorVariants) || v.colorVariants.length < 1 || v.colorVariants.length > 32) throw new Error("Use 1–32 color variants.");
+    const ids = new Set<string>(), names = new Set<string>();
+    colorVariants = v.colorVariants.map((item: unknown) => {
+      const c = item as Record<string, unknown> | null;
+      if (!c || typeof c.id !== "string" || !/^[a-zA-Z0-9_-]{1,80}$/.test(c.id) || ids.has(c.id)) throw new Error("Invalid or duplicate color variant ID.");
+      if (typeof c.name !== "string" || !c.name.trim() || c.name.length > 100 || names.has(c.name.trim().toLowerCase())) throw new Error("Color variant names must be unique and contain 1–100 characters.");
+      ids.add(c.id); names.add(c.name.trim().toLowerCase());
+      return { id: c.id, name: c.name.trim(), light: palette("light", c), dark: palette("dark", c) };
+    });
+    if (typeof v.defaultColorVariantId !== "string" || !ids.has(v.defaultColorVariantId)) throw new Error("Choose a valid default color variant.");
+  } else if (v.defaultColorVariantId !== undefined) throw new Error("Default color variant requires color variants.");
   const clean: ThemeDocument = {
+    ...(colorVariants ? { colorVariants, defaultColorVariantId: v.defaultColorVariantId as string } : {}),
     ...(v.editorLineHeight === undefined ? {} : { editorLineHeight: v.editorLineHeight as number }),
     ...(v.editorLetterSpacing === undefined ? {} : { editorLetterSpacing: v.editorLetterSpacing as number }),
     ...(v.typography === undefined ? {} : { typography: parseTypography(v.typography) }),
@@ -175,7 +192,16 @@ export function parseTheme(value: unknown, allowBase = true): ThemeDocument {
   };
   if (allowBase && new Blob([JSON.stringify(clean, null, 2) + "\n"]).size > 8 * 1024 * 1024)
     throw new Error("Theme including its original snapshot must be smaller than 8 MB.");
+  if (colorVariants) {
+    const initial = colorVariants.find(c => c.id === clean.defaultColorVariantId)!;
+    clean.light = initial.light; clean.dark = initial.dark;
+  }
   return clean;
+}
+export function resolveThemeVariant(theme: ThemeDocument, id?: string): ThemeDocument {
+  const variant = theme.colorVariants?.find(c => c.id === (id ?? theme.defaultColorVariantId))
+    ?? theme.colorVariants?.find(c => c.id === theme.defaultColorVariantId);
+  return variant ? { ...theme, light: variant.light, dark: variant.dark } : theme;
 }
 export function readTheme(value: unknown): ThemeDocument | null {
   try {

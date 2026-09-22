@@ -912,3 +912,25 @@ it('groups palettes and remembers the selected color when returning to a family'
     expect(choose).toHaveBeenCalledWith('nord');
   } finally { await act(async () => root.unmount()); }
 });
+
+it("blocks theme saving until a pending color variant is created or cancelled", async () => {
+  const host = document.createElement("div"), root = createRoot(host);
+  try {
+    await act(async () => root.render(<ThemeBuilder current={null} seed={exampleTheme()} onApply={vi.fn()} />));
+    await act(async () => button(host, "Create theme").click());
+    await act(async () => button(host, "Add color variant").click());
+    expect(button(host, "Save and use").disabled).toBe(true);
+    expect(host.querySelector('.theme-variant-pending-name[aria-invalid="true"]')).not.toBeNull();
+    await act(async () => host.querySelector<HTMLButtonElement>('.theme-variants-editor [role="group"] > button:last-child')!.click());
+    expect(button(host, "Save and use").disabled).toBe(false);
+    await act(async () => button(host, "Add color variant").click());
+    await act(async () => {
+      const input = host.querySelector<HTMLInputElement>('.theme-variant-pending-name')!;
+      Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')!.set!.call(input, 'Ocean');
+      input.dispatchEvent(new Event('input', { bubbles: true }));
+    });
+    expect(button(host, "Save and use").disabled).toBe(true);
+    await act(async () => button(host, "Create variant").click());
+    expect(button(host, "Save and use").disabled).toBe(false);
+  } finally { await act(async () => root.unmount()); }
+});

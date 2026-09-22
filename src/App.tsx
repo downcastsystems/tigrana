@@ -1,3 +1,4 @@
+import { resolveThemeVariant } from "./lib/themes";
 import { themeFamily } from "./lib/themeFamilies";
 import { themeDefaultsPatch, type ThemeDefaultsScope } from "./lib/themeDefaults";
 import { sidebarHoverEdgeWidth } from "./lib/useSidebarOverlay";
@@ -841,11 +842,11 @@ export default function App() {
   }, [themePresetId, customTheme, invalidNotebookTheme]);
   const activeThemeColors = themeColors[resolvedTheme];
   const quickAppearance = metadata.appearance?.quickAppearance;
-  const quickAppearanceTheme = customTheme ?? classicThemes.find(theme => theme.id === themePresetId) ?? recoveryTheme;
+  const quickAppearanceTheme = (customTheme ? resolveThemeVariant(customTheme, metadata.appearance?.themeColorPreferences?.[customTheme.id]) : null) ?? classicThemes.find(theme => theme.id === themePresetId) ?? recoveryTheme;
   // Title-bar styling belongs to the theme; ignore retired notebook quick overrides.
   const accentTitlebar = savedAccentTitlebar;
   const accentColor = quickAppearance?.accentColor ?? activeThemeColors.accentColor ?? null;
-  const effectiveAccentColor = accentColor || themePreset.accent[resolvedTheme];
+  const effectiveAccentColor = quickAppearance?.accentColor || (customTheme?.colorVariants ? quickAppearanceTheme[resolvedTheme].accent : accentColor || themePreset.accent[resolvedTheme]);
   const titlebarUseAccent = quickAppearance?.accentColor ? true : activeThemeColors.titlebarUseAccent ?? true;
   const titlebarColor = activeThemeColors.titlebarColor ?? null;
   const defaultTitlebarColor = !customTheme && themePresetId === "default" ? "#001428" : effectiveAccentColor;
@@ -855,7 +856,7 @@ export default function App() {
   // Both old presets and portable themes use the same renderer and preview document.
   const renderedTheme = useMemo<ThemeDocument>(() => {
     if (invalidNotebookTheme) return recoveryTheme;
-    if (customTheme) return applyQuickAppearanceFonts(customTheme, quickAppearance);
+    if (customTheme) return applyQuickAppearanceFonts(resolveThemeVariant(customTheme, metadata.appearance?.themeColorPreferences?.[customTheme.id]), quickAppearance);
     const base = classicThemes.find(t => t.id === themePresetId) ?? classicThemes[0];
     const palette = (mode: "light" | "dark") => {
       const colors = themeColors[mode];
@@ -867,7 +868,7 @@ export default function App() {
     };
     return applyQuickAppearanceFonts({ ...base, light: palette("light"), dark: palette("dark"),
       appFontFamily, appFontSize, editorFontFamily, editorFontSize, accentTitlebar: savedAccentTitlebar }, quickAppearance);
-  }, [customTheme, invalidNotebookTheme, themePresetId, themeColors, quickAppearance, appFontFamily, appFontSize, editorFontFamily, editorFontSize, savedAccentTitlebar]);
+  }, [metadata.appearance?.themeColorPreferences, customTheme, invalidNotebookTheme, themePresetId, themeColors, quickAppearance, appFontFamily, appFontSize, editorFontFamily, editorFontSize, savedAccentTitlebar]);
   const renderedColorMode = themeRenderingMode(renderedTheme, resolvedTheme);
   const plasmaBackgroundImage = useMemo(() => themeBackgroundImage(renderedTheme), [renderedTheme]);
   useEffect(() => {
@@ -5596,6 +5597,12 @@ export default function App() {
                   onReset={field => updateNotebookAppearance(quickAppearanceResetPatch(quickAppearanceTheme, quickAppearance, field))} />}
                 builtInThemes={themePresets} builtInThemeId={themePresetId}
                 themeColorPreferences={metadata.appearance?.themeColorPreferences}
+                selectedVariantId={customTheme ? metadata.appearance?.themeColorPreferences?.[customTheme.id] : undefined}
+                onVariantChange={id => {
+                  if (!customTheme) return;
+                  const chosen = resolveThemeVariant(customTheme, id);
+                  updateNotebookAppearance({ colors: themeAppearance(chosen).colors, quickAppearance: { ...quickAppearance, accentColor: undefined }, themeColorPreferences: { ...metadata.appearance?.themeColorPreferences, [customTheme.id]: id } });
+                }}
                 onColorChange={id => selectThemeColor(id, true)}
                 onBuiltInChange={id => selectThemeColor(id, false)}
                 colorScheme={colorScheme} onColorSchemeChange={(scheme) => updateNotebookAppearance({ colorScheme: scheme })} />

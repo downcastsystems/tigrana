@@ -1,3 +1,5 @@
+import { ThemeVariantsEditor } from "./ThemeVariantsEditor";
+import { resolveThemeVariant } from "../lib/themes";
 import { themeFamilies, themeFamily, rememberedThemeColor } from "../lib/themeFamilies";
 import { ThemeDefaultsMenu } from "./ThemeDefaultsMenu";
 import type { ThemeDefaultsScope } from "../lib/themeDefaults";
@@ -226,6 +228,8 @@ export function ThemeBuilder({
   builtInThemeId = "default",
   onBuiltInChange,
   onColorChange,
+  onVariantChange,
+  selectedVariantId,
   themeColorPreferences,
   colorScheme = "system",
   onColorSchemeChange,
@@ -241,12 +245,16 @@ export function ThemeBuilder({
   builtInThemeId?: string;
   onBuiltInChange?: (id: string) => void;
   onColorChange?: (id: string) => void;
+  onVariantChange?: (id: string) => void;
+  selectedVariantId?: string;
   themeColorPreferences?: Record<string, string>;
   colorScheme?: "system" | "light" | "dark";
   onColorSchemeChange?: (scheme: "system" | "light" | "dark") => void;
 }) {
   const importInput = useRef<HTMLInputElement>(null);
   const [themes, setThemes] = useState<ThemeDocument[]>([]);
+  const [variantPending, setVariantPending] = useState(false);
+  const [draftVariantId, setDraftVariantId] = useState<string>();
   const [draft, setDraft] = useState<ThemeDocument | null>(null);
   const displayNames = themeDisplayNames([...themes.filter(t => t.id !== current?.id), ...(current ? [current] : [])]);
   const [expected, setExpected] = useState<ThemeDocument | null>(null);
@@ -296,7 +304,7 @@ export function ThemeBuilder({
   const isDefault = current ? current.id === "default" : builtInThemeId === "default";
   const sourceTheme = (isDefault ? allBuiltInThemes.find(theme => theme.id === "default") : current)
     ?? allBuiltInThemes.find(theme => theme.id === builtInThemeId) ?? seed;
-  const settingsModified = hasCurrentThemeChanges(sourceTheme, seed);
+  const settingsModified = hasCurrentThemeChanges(resolveThemeVariant(sourceTheme, selectedVariantId), seed);
   const defaultModified = isDefault && settingsModified;
   const layoutDiffers = (sourceTheme.navigationStyle !== undefined && sourceTheme.navigationStyle !== seed.navigationStyle)
     || (sourceTheme.rightSidebarOpen !== undefined && sourceTheme.rightSidebarOpen !== seed.rightSidebarOpen);
@@ -306,6 +314,7 @@ export function ThemeBuilder({
   const latestOriginal = [...allBuiltInThemes, ...themes].find(theme => theme.id === draft?.baseThemeId && theme.id !== draft?.id);
   const originalChanged = !!(draft?.baseThemeSnapshot && latestOriginal && !themesMatch(draft.baseThemeSnapshot, originalSnapshot(latestOriginal)));
   function create() {
+    setDraftVariantId(selectedVariantId);
     setExpected(null);
     setDraft({
       ...seed,
@@ -333,8 +342,16 @@ export function ThemeBuilder({
     ...themes.filter(theme => theme.id !== current?.id),
     ...(current && !currentIsBuiltIn && !isDefault ? [current] : []),
   ].sort((a, b) => (displayNames[a.id] ?? a.name).localeCompare(displayNames[b.id] ?? b.name));
-  const update = (patch: Partial<ThemeDocument>) =>
-    setDraft(draft ? { ...draft, ...patch } : null);
+  const editingTheme = draft ? resolveThemeVariant(draft, draftVariantId) : null;
+  const update = (patch: Partial<ThemeDocument>) => {
+    if (!draft) return;
+    if (draft.colorVariants && (patch.light || patch.dark)) {
+      const id = draft.colorVariants.some(v => v.id === draftVariantId) ? draftVariantId : draft.defaultColorVariantId;
+      const colorVariants = draft.colorVariants.map(v => v.id === id ? { ...v, ...(patch.light ? { light: patch.light } : {}), ...(patch.dark ? { dark: patch.dark } : {}) } : v);
+      const initial = colorVariants.find(v => v.id === draft.defaultColorVariantId)!;
+      setDraft({ ...draft, ...patch, colorVariants, light: initial.light, dark: initial.dark });
+    } else setDraft({ ...draft, ...patch });
+  };
   return (
     <div className="theme-builder">
       {deleting && <ThemeDeleteDialog
@@ -437,6 +454,11 @@ export function ThemeBuilder({
             </select>
           </div>}
           {selectedFamily?.id === 'catppuccin' && <p className="settings-description">Light mode uses Latte. In dark mode, Latte uses Frappe; the other colors use their named dark palette.</p>}
+          {sourceTheme.colorVariants && <div className="setting-row theme-color-presets">
+            <strong>Colors</strong><select className="settings-select" aria-label="Colors" value={sourceTheme.colorVariants.some(v => v.id === selectedVariantId) ? selectedVariantId : sourceTheme.defaultColorVariantId} onChange={e => onVariantChange?.(e.target.value)}>
+              {sourceTheme.colorVariants.map(v => <option key={v.id} value={v.id}>{v.name}</option>)}
+            </select>
+          </div>}
           {quickAppearanceControls}
           {themes.some(t => displayNames[t.id] !== t.name) && <p className="settings-description">Some older themes share a name. Numbered labels distinguish them here; editing and saving one gives it a unique name.</p>}
           {(settingsModified || (onUseThemeDefaults && layoutDiffers)) && <div className="theme-current-settings">
@@ -461,6 +483,7 @@ export function ThemeBuilder({
                 className="toolbar-button"
                 disabled={busy}
                 onClick={() => {
+                  setDraftVariantId(selectedVariantId);
                   setDraft({
                     ...sourceTheme,
                     baseThemeId: sourceOriginal.id,
@@ -620,6 +643,7 @@ export function ThemeBuilder({
                     try { setDraft(updateDerivedTheme(draft, latestOriginal!)); setError(''); } catch (e) { setError(`The update could not be applied. Your theme is unchanged. ${String(e)}`); }
                   }}>Update original, keep my changes</button></div>}
 
+                <ThemeVariantsEditor theme={draft} selected={draftVariantId} onSelect={setDraftVariantId} onChange={setDraft} onPendingChange={setVariantPending} />
                 {colorGroups.map((group) => (
                   <fieldset className="theme-color-group" key={group.title}>
                     <legend>{group.title}</legend>
@@ -630,12 +654,12 @@ export function ThemeBuilder({
                           label={labels[key]}
                           name={`${mode} ${labels[key]}`}
                           cssHint={cssHints[key]}
-                          onReset={optionalPaletteKeys.includes(key as typeof optionalPaletteKeys[number]) && draft[mode][key] !== undefined ? () => {
-                            const palette = { ...draft[mode] }; delete (palette as Partial<typeof palette>)[key]; update({ [mode]: palette });
+                          onReset={optionalPaletteKeys.includes(key as typeof optionalPaletteKeys[number]) && editingTheme![mode][key] !== undefined ? () => {
+                            const palette = { ...editingTheme![mode] }; delete (palette as Partial<typeof palette>)[key]; update({ [mode]: palette });
                           } : undefined}
-                          value={draft[mode][key] ?? (key === "menuSelectedBackground" || key === "hoverBackground" ? draft[mode].accent : key === "menuSelectedText" ? (draft[mode].menuSelectedBackground ? readableThemeText(draft[mode].menuSelectedBackground!) : draft[mode].selectedText ?? readableThemeText(draft[mode].accent)) : key === "hoverText" ? (draft[mode].hoverBackground ? readableThemeText(draft[mode].hoverBackground!) : draft[mode].selectedText ?? readableThemeText(draft[mode].accent)) : key === "selectedText" ? readableThemeText(draft[mode].accent) : key === "highlightText" ? "#000000" : key === "highlightBackground" ? "#ffff00" : draft[mode].text)}
+                          value={editingTheme![mode][key] ?? (key === "menuSelectedBackground" || key === "hoverBackground" ? editingTheme![mode].accent : key === "menuSelectedText" ? (editingTheme![mode].menuSelectedBackground ? readableThemeText(editingTheme![mode].menuSelectedBackground!) : editingTheme![mode].selectedText ?? readableThemeText(editingTheme![mode].accent)) : key === "hoverText" ? (editingTheme![mode].hoverBackground ? readableThemeText(editingTheme![mode].hoverBackground!) : editingTheme![mode].selectedText ?? readableThemeText(editingTheme![mode].accent)) : key === "selectedText" ? readableThemeText(editingTheme![mode].accent) : key === "highlightText" ? "#000000" : key === "highlightBackground" ? "#ffff00" : editingTheme![mode].text)}
                           onChange={(color) =>
-                            update({ [mode]: { ...draft[mode], [key]: color } })
+                            update({ [mode]: { ...editingTheme![mode], [key]: color } })
                           }
                         />
                       ))}
@@ -696,6 +720,7 @@ export function ThemeBuilder({
                   </select>
                 </label>
                 <p className="settings-description">Applied when you choose this theme. You can toggle word count afterward in View or General settings.</p>
+                <p className="settings-description">Layout, typography, surfaces, effects, and CSS apply to all color variants.</p>
                 <ThemeSurfacesEditor theme={draft} mode={mode} change={update} />
                 <div className="theme-font-grid">
                   {(["app", "editor"] as const).map((part) => (
@@ -744,7 +769,7 @@ export function ThemeBuilder({
                 cssMode={cssMode}
               />
             </div>
-            <ThemeHealthCheck theme={draft} />
+            <ThemeHealthCheck theme={editingTheme!} />
             <p>
               Save updates the shared library and this notebook. Other notebooks
               choose whether to adopt the changes when opened.
@@ -753,8 +778,10 @@ export function ThemeBuilder({
           <div className="theme-actions theme-editor-actions">
             <button
               className="toolbar-button"
-              disabled={busy}
+              disabled={busy || variantPending}
+              title={variantPending ? "Finish or cancel the color variant action before saving." : undefined}
               onClick={() => {
+                if (variantPending) return;
                 setError("");
                 try {
                   parseTheme(draft);
@@ -793,7 +820,7 @@ export function ThemeBuilder({
             </button>
           </div>
           {verifying ? (
-            <ThemeVerificationDialog theme={draft} busy={busy} error={error}
+            <ThemeVerificationDialog theme={editingTheme!} busy={busy} error={error}
               onCancel={() => { setVerifying(false); setError(""); }}
               onConfirm={() => void run(async () => {
                 const theme = parseTheme(draft);
@@ -821,7 +848,7 @@ export function ThemeBuilder({
                   <option value="light">Light</option>
                 </select>
               </div>
-              <ThemeWorkbenchPreview theme={draft} mode={mode} />
+              <ThemeWorkbenchPreview theme={editingTheme!} mode={mode} />
             </div>
           </ThemePreviewPanel>
         </div>

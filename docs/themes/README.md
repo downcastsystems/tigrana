@@ -242,3 +242,16 @@ Optional `typography` maps `title`, `compactTitle`, `navigation`, `tab`, `menu`,
 Optional `controls` exposes bounded range, color and toggle definitions as `--tigrana-control-ID` variables. Optional `baseThemeSnapshot` retains one validated original matching `baseThemeId`. See the [creator guide](creator-guide.md) for definitions and update rules. Entire saved documents including originals must fit within 8 MB; package manifests may use that same limit while individual asset files retain their existing limits.
 
 Optional `wordCountVisible` applies a word-count default when the theme is selected. Use `true` to show it, `false` to hide it, or omit it to keep the current choice. Manual changes persist with the notebook. The Visual editor exposes this as **Default word count**.
+
+## Named color variants
+
+See [Color variants](creator-guide.md#color-variants) for the editor workflow
+and portable `colorVariants` / `defaultColorVariantId` fields. Variant selection
+is a notebook preference, not a modification to the installed theme.
+
+Design precedent: [Minimal for Obsidian](https://minimal.guide/features/color-schemes)
+provides schemes within one theme, with independent light/dark choices. Tigrana
+pairs those modes under one variant name. [Typora](https://theme.typora.io/doc/Write-Custom-Theme/)
+uses a CSS file per theme menu entry, while [Bear](https://bear.app/faq/about-free-and-pro-themes-in-bear/)
+offers named light, dark, and color themes. These support the general distinction
+between visual design and color choice, but do not establish a shared variant format.

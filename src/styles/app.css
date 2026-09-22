@@ -6434,3 +6434,14 @@ html[data-theme="dark"] .settings-theme-section { background: rgb(0 0 0 / 16%); 
 
 .theme-spacing-control { display: flex; align-items: center; gap: 12px; }
 .theme-spacing-control output { width: 7ch; flex: 0 0 7ch; text-align: right; font-variant-numeric: tabular-nums; }
+
+.theme-variants-editor { margin: 16px 0 24px; }
+.theme-variants-editor > label { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.theme-variants-editor .theme-actions { flex-wrap: wrap; margin-top: 12px; }
+.theme-variants-editor [role="group"] { margin-top: 14px; padding: 14px 0; border-top: 1px solid var(--border); }
+.theme-variants-editor [role="group"] label { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 12px; }
+.theme-variants-editor input { min-width: 0; padding: 8px; color: var(--text); background: var(--surface); border: 1px solid var(--border); border-radius: 6px; }
+.theme-variants-editor p { color: var(--text-muted); font-size: 13px; }
+.theme-variants-editor [role="group"] > .toolbar-button + .toolbar-button { margin-left: 10px; }
+
+.theme-variants-editor input.theme-variant-pending-name { border-color: #d94747; box-shadow: 0 0 0 1px #d94747; }

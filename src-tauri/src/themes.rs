@@ -305,6 +305,30 @@ fn normalize_theme_inner(theme: &Value, allow_base: bool) -> Result<Value, Strin
         }
         clean.insert(mode.into(), Value::Object(colors));
     }
+    if let Some(variants) = theme.get("colorVariants") {
+        let variants = variants.as_array().ok_or("Invalid color variants")?;
+        if variants.is_empty() || variants.len() > 32 { return Err("Use 1–32 color variants".into()); }
+        let mut ids = std::collections::HashSet::new();
+        let mut names = std::collections::HashSet::new();
+        let mut result = Vec::new();
+        for variant in variants {
+            let id = variant["id"].as_str().ok_or("Invalid color variant ID")?;
+            let name = variant["name"].as_str().ok_or("Invalid color variant name")?;
+            if id.is_empty() || id.len() > 80 || !id.bytes().all(|b| b.is_ascii_alphanumeric() || b == b'_' || b == b'-') || !ids.insert(id.to_string()) { return Err("Invalid or duplicate color variant ID".into()); }
+            if name.trim().is_empty() || name.chars().count() > 100 || !names.insert(name.trim().to_lowercase()) { return Err("Invalid or duplicate color variant name".into()); }
+            let mut sample = Value::Object(clean.clone());
+            sample.as_object_mut().unwrap().remove("baseThemeSnapshot");
+            sample["light"] = variant["light"].clone(); sample["dark"] = variant["dark"].clone();
+            let palette = normalize_theme_inner(&sample, false)?;
+            result.push(serde_json::json!({"id":id,"name":name.trim(),"light":palette["light"],"dark":palette["dark"]}));
+        }
+        let default_id = theme["defaultColorVariantId"].as_str().ok_or("Choose a default color variant")?;
+        let initial = result.iter().find(|v| v["id"].as_str() == Some(default_id)).ok_or("Invalid default color variant")?;
+        clean.insert("light".into(), initial["light"].clone());
+        clean.insert("dark".into(), initial["dark"].clone());
+        clean.insert("defaultColorVariantId".into(), Value::from(default_id));
+        clean.insert("colorVariants".into(), Value::Array(result));
+    } else if theme.get("defaultColorVariantId").is_some() { return Err("Default color variant requires color variants".into()); }
     Ok(Value::Object(clean))
 }
 
@@ -477,6 +501,26 @@ mod tests {
             invalid[key] = value;
             assert!(normalize_theme(&invalid).is_err());
         }
+    }
+
+    #[test]
+    fn color_variants_round_trip_and_validate() {
+        let mut theme: Value = serde_json::from_str(include_str!("../../src/themes/vampire.json")).unwrap();
+        let mut dark = theme["dark"].clone(); dark["accent"] = json!("#abcdef");
+        theme["colorVariants"] = json!([
+            {"id":"original", "name":"Original", "light":theme["light"], "dark":theme["dark"]},
+            {"id":"ocean", "name":"Ocean", "light":theme["light"], "dark":dark}
+        ]);
+        theme["defaultColorVariantId"] = json!("ocean");
+        let clean = normalize_theme(&theme).unwrap();
+        assert_eq!(clean["dark"]["accent"], json!("#abcdef"));
+        assert_eq!(clean["colorVariants"].as_array().unwrap().len(), 2);
+        assert_eq!(normalize_theme(&clean).unwrap(), clean);
+        theme["colorVariants"][1]["name"] = json!(" original ");
+        assert!(normalize_theme(&theme).is_err());
+        theme["colorVariants"][1]["name"] = json!("Ocean");
+        theme["colorVariants"][1]["dark"]["accent"] = json!("url(bad)");
+        assert!(normalize_theme(&theme).is_err());
     }
 
     #[test]
