@@ -20,6 +20,15 @@ const defaults = {
 };
 
 describe("Notebook appearance", () => {
+  it("recovers a broken notebook snapshot without changing its saved data", () => {
+    const appearance = { customTheme: { ...exampleTheme(), schemaVersion: 99 }, appFontSize: 30, navigationStyle: "single-pane" as const, colorScheme: "dark" as const };
+    const before = JSON.stringify(appearance);
+    const resolved = resolveNotebookAppearance(appearance as unknown as NotebookAppearance, defaults, ["default"]);
+    expect(resolved.appFontSize).toBe(14);
+    expect(resolved.navigationStyle).toBe("section-view");
+    expect(resolved.colorScheme).toBe("dark");
+    expect(JSON.stringify(appearance)).toBe(before);
+  });
   it("uses all snapshot settings even if legacy appearance mirrors are absent or different", () => {
     const theme = exampleTheme();
     const appearance = { customTheme: theme, editorFontFamily: "Old font", accentTitlebar: false };
@@ -120,4 +129,22 @@ describe("Notebook appearance", () => {
     expect(notebookA.themePresetId).toBe("nord");
     expect(notebookB).toEqual({ ...defaults, editorFontSize: 20 });
   });
+});
+
+it('keeps notebook Plasma overrides separate from the selected theme default', () => {
+  const theme = { ...exampleTheme(), plasma: { enabled: true, frost: 60, backgroundBlur: 12 } };
+  const manual = { enabled: false, frost: 70, backgroundBlur: 8 };
+  expect(resolveNotebookAppearance({ customTheme: theme, plasma: manual }, defaults, ['default']).plasma).toEqual(manual);
+  expect(resolveNotebookAppearance({ customTheme: theme }, defaults, ['default']).plasma).toEqual(theme.plasma);
+  expect(theme.plasma.enabled).toBe(true);
+  const standard = { ...theme, plasma: { ...theme.plasma, enabled: false } };
+  expect(resolveNotebookAppearance({ customTheme: standard, plasma: { ...manual, enabled: true } }, defaults, ['default']).plasma?.enabled).toBe(true);
+});
+
+
+it("preserves manual sidebar visibility over the theme default on metadata adoption", () => {
+  const theme = { ...exampleTheme(), rightSidebarOpen: false };
+  expect(resolveNotebookAppearance({ customTheme: theme }, defaults, ["default"]).rightSidebarOpen).toBe(false);
+  expect(resolveNotebookAppearance({ customTheme: theme, rightSidebarOpen: true }, defaults, ["default"]).rightSidebarOpen).toBe(true);
+  expect(resolveNotebookAppearance({ customTheme: { ...theme, rightSidebarOpen: true }, rightSidebarOpen: false }, defaults, ["default"]).rightSidebarOpen).toBe(false);
 });

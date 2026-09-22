@@ -1,0 +1,71 @@
+<!doctype html><html><head><meta charset="utf-8"></head><body style="margin:0;background:#1d1010;color:#eee;font:16px system-ui"><canvas style="position:fixed;inset:0;z-index:-1"></canvas><div id="scope" style="position:absolute;left:0;top:0;width:800px;height:500px;pointer-events:none"></div><pre id="result" style="margin:20px"></pre><button id="compare" style="margin:20px">Toggle pointer pull</button><script type="module">
+import { PlasmaRenderer } from '@cruxgarden/plasma-ui';
+if (innerWidth < 1200 || innerHeight < 600) throw new Error('Use a viewport at least 1200 by 600 for this check.');
+const settings = {
+ colors:['#240404','#800c0c','#a03a3a'], blend:0, theme:'dark', tint:'#100808', opacity:.1,
+ frost:.12, quality:1, freezeOnScroll:false, shimmer:.5, glow:.55, wash:.12, grain:1,
+ backgroundBlur:0,maxSurfaces:4,pointerDrop:false,pointerLightAtCursor:true,ambientDrops:true,ambientBehindSurfaces:true,
+ ambientPointerPull:true,ambientBounds:document.querySelector('#scope'),animateSurfaces:false,
+ reducedMotion:false,stretch:0,flow:.8,viscosity:.85,refraction:.7,dispersion:.4,rim:.25,
+ rimColor:'#800c0c',rimWidth:1,highlight:.25,edgeLine:.35,smoothness:1,elevation:.2,background:null,
+};
+// Intentional internal access: this fixture verifies the pinned renderer patch.
+const r=PlasmaRenderer.create(document.querySelector('canvas'),settings);
+cancelAnimationFrame(r.raf); r.raf=0; r.time=0; r.energy=0;
+r.colors=r.colorTarget.map(c=>[...c]);
+// Call the real renderer with frozen orbit time, and read its actual GPU silhouette.
+function sample(pull,x=884,amount=1){
+ r.settings={...settings,ambientPointerPull:pull};
+ Object.assign(r.mouse,{x,y:400,tx:x,ty:400,amt:amount,target:amount});
+ r.draw([]);
+ // Read the ambient mask by drawing that pass once more (the panel pass clears it).
+ r.draw([],true);
+ const gl=r.gl, t=r.rtA;
+ gl.bindFramebuffer(gl.FRAMEBUFFER,t.fb);
+ const pixels=r.floatOK?new Float32Array(t.w*t.h*4):new Uint8Array(t.w*t.h*4);
+ gl.readPixels(0,0,t.w,t.h,gl.RGBA,r.floatOK?gl.FLOAT:gl.UNSIGNED_BYTE,pixels);
+ const threshold=r.floatOK ? 0.5 : 127;
+ let right=0;
+ for(let y=0;y<t.h;y++)for(let x=0;x<t.w;x++)if(pixels[(y*t.w+x)*4]>threshold)right=Math.max(right,(x+.5)*innerWidth/t.w);
+ const px=Math.floor(x*t.w/innerWidth), py=Math.floor((innerHeight-400)*t.h/innerHeight);
+ return {right,cursorCovered:pixels[(py*t.w+px)*4]>threshold,error:gl.getError()};
+}
+const baseline=sample(false), near=sample(true), far=sample(true,1174), left=sample(true,884,0);
+const advance=near.right-baseline.right;
+const valid = [baseline, near, far, left].every(result => result.error === 0 && result.right > 0);
+const pane=document.createElement('div');pane.style.cssText='position:absolute;left:200px;top:50px;width:600px;height:600px;pointer-events:none';document.body.append(pane);
+r.register(pane,{radius:18,lean:0,fuse:false});
+const recs=[...r.recs.values()];recs.forEach(rec=>rec.form=1);
+function shot(highlight,x,y){
+ r.settings={...settings,ambientDrops:false,flow:0,rim:0,edgeLine:0,shimmer:0,glow:0,grain:0,frost:0,opacity:0,highlight};
+ Object.assign(r.mouse,{x,y,tx:x,ty:y,amt:1,target:1});
+ r.draw(recs);
+ const pixels=new Uint8Array(r.canvas.width*r.canvas.height*4);
+ r.gl.readPixels(0,0,r.canvas.width,r.canvas.height,r.gl.RGBA,r.gl.UNSIGNED_BYTE,pixels);
+ return pixels;
+}
+function measure(x,y,edge="right"){
+ const off=shot(0,x,y),on=shot(1,x,y);let brightest=0,at=0;
+ for(let along=edge==="right"?85:235;along<(edge==="right"?620:765);along++){
+  let brightness=0;
+  for(let across=0;across<15;across++){
+   const px=edge==="right"?785+across:along, py=edge==="right"?along:50+across;
+   const i=(Math.floor((innerHeight-py)*r.dpr)*r.canvas.width+Math.floor(px*r.dpr))*4;
+   brightness+=on[i]+on[i+1]+on[i+2]-off[i]-off[i+1]-off[i+2];
+  }
+  if(brightness>brightest){brightest=brightness;at=along;}
+ }
+ return {edge,mouseX:x,mouseY:y,highlight:at,brightness:brightest,error:Math.abs(at-(edge==="right"?y:x)),glError:r.gl.getError()};
+}
+
+const rimChecks=[measure(760,500),measure(920,500),measure(760,320),measure(500,100,"top"),measure(320,100,"top")];
+const bubblePass=valid&&advance>=30&&advance<=44&&far.right===baseline.right&&left.right===baseline.right&&!far.cursorCovered;
+const rimPass=rimChecks.every(check=>check.brightness>0&&check.error<=2&&check.glError===0);
+document.querySelector('#result').textContent=JSON.stringify({bubble:{baseline,near,far,left,advance,passes:bubblePass},rim:rimChecks,passes:bubblePass&&rimPass},null,2);
+
+let enabled=true;
+function show(){r.settings={...settings,ambientPointerPull:enabled};Object.assign(r.mouse,{x:884,y:400,tx:884,ty:400,amt:1,target:1});r.draw([]);}
+document.querySelector('#compare').onclick=()=>{enabled=!enabled;document.querySelector('#compare').textContent=enabled?'Pull enabled':'Pull disabled';show();};
+show();
+
+</script></body></html>

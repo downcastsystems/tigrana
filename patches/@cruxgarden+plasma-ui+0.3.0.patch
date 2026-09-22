@@ -1,0 +1,295 @@
+diff --git a/node_modules/@cruxgarden/plasma-ui/dist/index.js b/node_modules/@cruxgarden/plasma-ui/dist/index.js
+--- a/node_modules/@cruxgarden/plasma-ui/dist/index.js
++++ b/node_modules/@cruxgarden/plasma-ui/dist/index.js
+@@ -9,8 +9,8 @@
+ function makeShaders(MAX_SHAPES) {
+   const common = `
+ precision highp float;
+-uniform vec2 uRes; uniform vec4 uView; uniform float uScale, uTime, uGoo, uEnergy, uLight, uMouseAmt, uDropR, uAmbient, uScroll, uVisc, uFlow;
+-uniform vec2 uMouse;
++uniform vec2 uRes; uniform vec4 uView; uniform float uScale, uTime, uGoo, uEnergy, uLight, uMouseAmt, uDropR, uAmbient, uAmbientPull, uScroll, uVisc, uFlow;
++uniform vec2 uMouse; uniform vec4 uAmbientView;
+ uniform vec4 uP[${MAX_SHAPES}]; uniform vec4 uR[${MAX_SHAPES}]; uniform float uF[${MAX_SHAPES}]; uniform vec4 uT[${MAX_SHAPES}]; uniform float uFr[${MAX_SHAPES}]; uniform float uEl[${MAX_SHAPES}]; uniform float uSolo[${MAX_SHAPES}];
+ uniform int uCount;
+ uniform vec4 uRip[${MAX_PULSES}];
+@@ -36,6 +36,23 @@
+   vec2 g = lo > 0. ? mq / lo : (q.x > q.y ? vec2(1., 0.) : vec2(0., 1.));
+   float sharp = (mq.x > 0. && mq.y > 0.) ? 1. - smoothstep(0., rmax * .35 + .01, r) : 0.;
+   return vec4(lo + min(max(q.x, q.y), 0.) - r, g * sign(p + 1e-5), sharp);
++}
++
++// Pull only existing drops. No independent cursor silhouette is added.
++float ambientBubble(vec2 p, vec2 center, float radius){
++  vec2 delta = uMouse - center;
++  float reach = length(delta);
++  float pull = uAmbientPull * uMouseAmt * (1. - smoothstep(radius + 30., radius + 150., reach));
++  vec2 axis = delta / max(reach, 1.);
++  center += axis * min(reach * .35, 29.) * pull;
++  vec2 offset = p - center;
++  float along = dot(offset, axis);
++  // Stretch along the pull and narrow slightly across it. The silhouette stays
++  // attached to its drifting drop; the pointer never contributes a new shape.
++  vec2 across = offset - axis * along;
++  float stretch = 1. + .625 * pull * smoothstep(8., radius + 30., reach);
++  vec2 warped = axis * along / stretch + across / (1. - .095 * pull);
++  return (length(warped) - radius) * (1. - .095 * pull);
+ }
+
+ float scene(vec2 p){
+@@ -61,10 +78,10 @@
+   d = min(d, ds);
+   if(uAmbient > .5){
+     float t = uTime*.4;
+-    vec2 home = uView.xy + vec2(uView.z*.88, uView.w*.74);
+-    d = smin(d, length(p - home - vec2(cos(t),sin(t*1.3))*70.) - 38., uGoo);
+-    d = smin(d, length(p - home - vec2(cos(t*1.7+2.),sin(t*.9+1.))*90.) - 26., uGoo);
+-    d = smin(d, length(p - home - vec2(sin(t*.7),cos(t*1.1))*40.) - 20., uGoo);
++    vec2 home = uAmbientView.xy + vec2(uAmbientView.z*.88, uAmbientView.w*.80);
++    d = smin(d, ambientBubble(p, home + vec2(cos(t),sin(t*1.3))*70., 38.), uGoo);
++    d = smin(d, ambientBubble(p, home + vec2(cos(t*1.7+2.),sin(t*.9+1.))*90., 26.), uGoo);
++    d = smin(d, ambientBubble(p, home + vec2(sin(t*.7),cos(t*1.1))*40., 20.), uGoo);
+   }
+   if(uDropR > 0.){
+     d = smin(d, length(p-uMouse) - uDropR*uMouseAmt, 18.);
+@@ -180,6 +197,7 @@
+ uniform sampler2D uH, uS, uTint, uBg, uBgM, uBgH, uFrost;
+ uniform float uRefract, uDisp, uRim, uRimMode, uRimWidth, uSpec, uHair, uShim, uGlow, uWash, uGrain;
+ uniform vec3 uRimColor;
++uniform vec2 uLightMouse; uniform float uCursorLight;
+ out vec4 o;
+
+ vec3 pal(float t){ return .5 + .5*cos(6.2831*(t + vec3(0., .33, .67))); }
+@@ -272,12 +290,16 @@
+     // a little of the background shows through partial tints; full opacity is a flat color
+     refr = mix(refr, tcol * mix(1., .92, uLight) + refr * .08 * (1. - talpha), talpha);
+
+-    vec2 L = normalize(uMouse - p + vec2(0., -200.));
+-    float spec = pow(max(dot(n, L), 0.), 26.) * pow(bevel, 2.) * slope;
++    vec2 lightDelta = uLightMouse - p;
++    vec2 L = lightDelta / max(length(lightDelta), .001);
++    // Glass responds to a pointer on either side of a pane's rim, including
++    // inside the editor. Bubble lighting keeps its original directional falloff.
++    float facingLight = mix(max(dot(n, L), 0.), abs(dot(n, L)), uCursorLight);
++    float spec = pow(facingLight, 26.) * pow(bevel, 2.) * slope;
+     float fres = pow(bevel, 5. / max(uRimWidth, .05)) * slope;
+     // rim color: 0 iridescent, 1 solid color, 2 each surface's tint
+     vec3 rimCol = pal(dot(n, L)*.35*slope + depth*.8 + uTime*.04 + uEnergy*.3);
+-    float facing = .75 + .5 * max(dot(n, L), 0.) * slope;
++    float facing = .75 + .5 * facingLight * slope;
+     if (uRimMode > .5 && uRimMode < 1.5) rimCol = uRimColor * facing * 1.4;
+     else if (uRimMode > 1.5) rimCol = tcol * facing * 1.4;
+
+@@ -328,6 +350,8 @@
+   "uMouseAmt",
+   "uDropR",
+   "uAmbient",
++  "uAmbientPull",
++  "uAmbientView",
+   "uScroll",
+   "uMouse",
+   "uP",
+@@ -364,6 +388,8 @@
+   "uRim",
+   "uRimMode",
+   "uRimColor",
++  "uLightMouse",
++  "uCursorLight",
+   "uRimWidth",
+   "uSpec",
+   "uHair",
+@@ -578,7 +604,7 @@
+       this.dpr = dpr;
+       const cw = Math.max(1, Math.round(rw * this.dpr));
+       const ch = Math.max(1, Math.round(rh * this.dpr));
+-      if (cw === this.canvas.width && ch === this.canvas.height) return;
++      if (cw === this.canvas.width && ch === this.canvas.height && this.rtBg.w === cw && this.rtBg.h === ch && (!this.rtAmbient || (this.rtAmbient.w === cw && this.rtAmbient.h === ch))) return;
+       this.canvas.width = cw;
+       this.canvas.height = ch;
+       const w = Math.max(1, Math.round(this.canvas.width * MASK_SCALE));
+@@ -594,6 +620,7 @@
+       };
+       [this.rtA, this.rtB, this.rtC, this.rtT, this.rtFr, this.rtBgM, this.rtBgH].forEach((t) => size(t, w, h));
+       size(this.rtBg, this.canvas.width, this.canvas.height, true);
++      if (this.rtAmbient) size(this.rtAmbient, this.canvas.width, this.canvas.height, true);
+       gl.bindFramebuffer(gl.FRAMEBUFFER, this.mrtFb);
+       gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, this.rtT.tex, 0);
+       gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT1, gl.TEXTURE_2D, this.rtFr.tex, 0);
+@@ -625,7 +652,7 @@
+       const list = [];
+       this.recs.forEach((r) => {
+         if (!r.el.isConnected) return;
+-        if (!s.reducedMotion) {
++        if (!s.reducedMotion && s.animateSurfaces !== false) {
+           r.formV += (170 * (1 - r.form) - 26 * r.formV) * dt;
+           r.form += r.formV * dt;
+         } else r.form = 1;
+@@ -667,7 +694,7 @@
+           r.onSides?.(sides);
+         }
+         let tx = 0, ty = 0;
+-        if (r.lean > 0 && !joined && !r.dragging && !s.reducedMotion) {
++        if (r.lean > 0 && !joined && !r.dragging && !s.reducedMotion && s.animateSurfaces !== false) {
+           const dx = m.tx - (a.l + a.w / 2), dy = m.ty - (a.t + a.h / 2);
+           const pull = Math.exp(-(dx * dx + dy * dy) / 12e4) * r.lean * m.amt;
+           const len = Math.hypot(dx, dy) || 1;
+@@ -687,7 +714,7 @@
+           r.el.style.translate = lean;
+         }
+         const u = (this.time - r.pulseAt) / 0.36;
+-        const scale = r.pulseAt >= 0 && u >= 0 && u <= 1 && !s.reducedMotion ? String(1 + 0.04 * r.pulseS * Math.sin(Math.PI * u)) : "";
++        const scale = r.pulseAt >= 0 && u >= 0 && u <= 1 && !s.reducedMotion && s.animateSurfaces !== false ? String(1 + 0.04 * r.pulseS * Math.sin(Math.PI * u)) : "";
+         if (scale !== r.scaleCss) {
+           r.scaleCss = scale;
+           r.el.style.scale = scale;
+@@ -706,7 +733,7 @@
+         const rr = r.el.getBoundingClientRect();
+         const tgt = [rr.left + sx, rr.top + sy, rr.right + sx, rr.bottom + sy];
+         const sp = r.sp;
+-        if (!sp.live || st < 0.01 || s.reducedMotion) {
++        if (!sp.live || st < 0.01 || s.reducedMotion || s.animateSurfaces === false) {
+           sp.e = tgt.slice();
+           sp.v = [0, 0, 0, 0];
+           sp.live = true;
+@@ -857,7 +884,7 @@
+       id,
+       el,
+       ...o,
+-      form: this.settings.reducedMotion ? 1 : 0,
++      form: this.settings.reducedMotion || this.settings.animateSurfaces === false ? 1 : 0,
+       formV: 0,
+       removing: false,
+       lx: 0,
+@@ -991,6 +1018,7 @@
+     this.rtT = this.target();
+     this.rtFr = this.target();
+     this.rtBg = this.target();
++    this.rtAmbient = null;
+     this.rtBgM = this.target();
+     this.rtBgH = this.target();
+     this.mrtFb = gl.createFramebuffer();
+@@ -1045,8 +1073,21 @@
+     if (attr === "light" || attr === "dark") return attr === "light";
+     return !!this.lightQuery?.matches;
+   }
+-  draw(list) {
++  draw(list, ambientPass = false) {
+     const gl = this.gl, s = this.settings, rg = this.region;
++    const separateAmbient = !!s.ambientBehindSurfaces;
++    const drawAmbient = separateAmbient && s.ambientDrops && !s.reducedMotion;
++    // Render the original native drops into the background before panel masks.
++    // Otherwise the scene's hard union swallows every drop inside a full pane.
++    // Reuse this context, shader programs, intermediate targets, and frame loop.
++    if (drawAmbient && !ambientPass) {
++      if (!this.rtAmbient) {
++        this.rtAmbient = this.target();
++        this.allocate();
++      }
++      this.draw([], true);
++    }
++    const ambientRect = ambientPass ? s.ambientBounds?.getBoundingClientRect() : null;
+     const drawn = list.map((r) => r.drawn ?? elementBox(r.el));
+     list.forEach((r, i) => {
+       const b = drawn[i];
+@@ -1068,17 +1109,19 @@
+     const setCommon = (u, scale) => {
+       gl.uniform2f(u.uRes, rg.w, rg.h);
+       gl.uniform4f(u.uView, rg.ox, rg.oy, innerWidth, innerHeight);
++      gl.uniform4f(u.uAmbientView, (ambientRect?.left ?? 0) + rg.ox, (ambientRect?.top ?? 0) + rg.oy, ambientRect?.width ?? innerWidth, ambientRect?.height ?? innerHeight);
+       gl.uniform1f(u.uScale, scale);
+       gl.uniform1f(u.uTime, this.time);
+-      gl.uniform1f(u.uGoo, this.blend);
++      gl.uniform1f(u.uGoo, ambientPass ? Math.max(36, this.blend) : this.blend);
+       gl.uniform1f(u.uEnergy, this.energy);
+       gl.uniform1f(u.uLight, light);
+       gl.uniform1f(u.uMouseAmt, this.mouse.amt);
+-      gl.uniform1f(u.uDropR, s.pointerDrop ? 15 : 0);
+-      gl.uniform1f(u.uAmbient, s.ambientDrops ? 1 : 0);
++      gl.uniform1f(u.uDropR, s.pointerDrop && (!separateAmbient || ambientPass) && !s.reducedMotion ? 15 : 0);
++      gl.uniform1f(u.uAmbient, s.ambientDrops && (!separateAmbient || ambientPass) && !s.reducedMotion ? 1 : 0);
++      gl.uniform1f(u.uAmbientPull, s.ambientPointerPull && s.ambientDrops && (!separateAmbient || ambientPass) && !s.reducedMotion ? 1 : 0);
+       gl.uniform1f(u.uScroll, this.coarse && s.freezeOnScroll ? scrollY - rg.oy : scrollY * 0.25);
+-      gl.uniform1f(u.uVisc, Math.min(Math.max(s.viscosity, 0), 1));
+-      gl.uniform1f(u.uFlow, Math.max(s.flow, 0));
++      gl.uniform1f(u.uVisc, ambientPass ? 0.35 : Math.min(Math.max(s.viscosity, 0), 1));
++      gl.uniform1f(u.uFlow, ambientPass ? 0.7 : Math.max(s.flow, 0));
+       gl.uniform2f(u.uMouse, this.mouse.x + rg.ox, this.mouse.y + rg.oy);
+       gl.uniform4fv(u.uP, this.P);
+       gl.uniform4fv(u.uR, this.R);
+@@ -1104,6 +1147,12 @@
+     const k = this.dpr / 1.25;
+     gl.bindFramebuffer(gl.FRAMEBUFFER, this.rtBg.fb);
+     gl.viewport(0, 0, this.rtBg.w, this.rtBg.h);
++    if (drawAmbient && !ambientPass) {
++      gl.useProgram(bl.pr);
++      gl.uniform1i(bl.u.uTex, 0);
++      gl.activeTexture(gl.TEXTURE0);
++      pass(this.rtAmbient, this.rtBg, 0, 0);
++    } else {
+     gl.useProgram(this.progs.bg.pr);
+     setCommon(this.progs.bg.u, this.dpr);
+     gl.activeTexture(gl.TEXTURE7);
+@@ -1128,12 +1177,13 @@
+     gl.uniform3f(this.progs.bg.u.uBgColor, bc?.[0] ?? 0, bc?.[1] ?? 0, bc?.[2] ?? 0);
+     gl.uniform1f(this.progs.bg.u.uBgSolid, bc ? 1 : 0);
+     gl.drawArrays(gl.TRIANGLES, 0, 3);
++    }
+     gl.activeTexture(gl.TEXTURE0);
+     gl.viewport(0, 0, this.rtA.w, this.rtA.h);
+     gl.useProgram(bl.pr);
+     gl.uniform1i(bl.u.uTex, 0);
+     gl.activeTexture(gl.TEXTURE0);
+-    const bgBlur = Math.min(40, Math.max(0, s.backgroundBlur || 0));
++    const bgBlur = drawAmbient && !ambientPass ? 0 : Math.min(40, Math.max(0, s.backgroundBlur || 0));
+     if (bgBlur > 0) {
+       const step = bgBlur * this.dpr * MASK_SCALE / 4;
+       pass(this.rtBg, this.rtBgM, 0, 0);
+@@ -1198,14 +1248,17 @@
+       pass(this.rtB, this.rtC, 0, 2 * k);
+     }
+     const c = this.progs.comp;
+-    gl.bindFramebuffer(gl.FRAMEBUFFER, null);
++    gl.bindFramebuffer(gl.FRAMEBUFFER, ambientPass ? this.rtAmbient.fb : null);
+     gl.viewport(0, 0, this.canvas.width, this.canvas.height);
+     gl.useProgram(c.pr);
+     setCommon(c.u, this.dpr);
++    // Use raw viewport coordinates for light, leaving bubble motion smoothed.
++    gl.uniform2f(c.u.uLightMouse, (s.pointerLightAtCursor ? this.mouse.tx : this.mouse.x) + rg.ox, (s.pointerLightAtCursor ? this.mouse.ty : this.mouse.y - 200) + rg.oy);
++    gl.uniform1f(c.u.uCursorLight, s.pointerLightAtCursor && !ambientPass ? 1 : 0);
+     gl.uniform1f(c.u.uRefract, s.refraction);
+     gl.uniform1f(c.u.uDisp, s.dispersion);
+     gl.uniform1f(c.u.uRim, s.rim);
+-    const mode = s.rimColor === "iridescent" ? 0 : s.rimColor === "tint" ? 2 : 1;
++    const mode = ambientPass || s.rimColor === "iridescent" ? 0 : s.rimColor === "tint" ? 2 : 1;
+     gl.uniform1f(c.u.uRimMode, mode);
+     gl.uniform3fv(c.u.uRimColor, mode === 1 ? this.rgb(s.rimColor) : [1, 1, 1]);
+     gl.uniform1f(c.u.uRimWidth, s.rimWidth);
+@@ -1213,8 +1266,8 @@
+     gl.uniform1f(c.u.uHair, s.edgeLine);
+     gl.uniform1f(c.u.uShim, s.shimmer);
+     gl.uniform1f(c.u.uGlow, s.glow);
+-    gl.uniform1f(c.u.uWash, s.wash);
+-    gl.uniform1f(c.u.uGrain, s.grain);
++    gl.uniform1f(c.u.uWash, ambientPass ? 0 : s.wash);
++    gl.uniform1f(c.u.uGrain, drawAmbient && !ambientPass ? 0 : s.grain);
+     gl.activeTexture(gl.TEXTURE0);
+     gl.bindTexture(gl.TEXTURE_2D, this.rtC.tex);
+     gl.activeTexture(gl.TEXTURE1);
+diff --git a/node_modules/@cruxgarden/plasma-ui/dist/renderer.d.ts b/node_modules/@cruxgarden/plasma-ui/dist/renderer.d.ts
+--- a/node_modules/@cruxgarden/plasma-ui/dist/renderer.d.ts
++++ b/node_modules/@cruxgarden/plasma-ui/dist/renderer.d.ts
+@@ -1,5 +1,15 @@
+ import { Box } from "./snap";
+ export interface RendererSettings {
++    /** Tigrana: align pane rim lighting with the actual pointer, including inside panes. */
++    pointerLightAtCursor?: boolean;
++    /** Tigrana: draw native ambient drops into the background before panel glass. */
++    ambientBehindSurfaces?: boolean;
++    /** Tigrana: nearby drops stretch toward the pointer without adding a cursor drop. */
++    ambientPointerPull?: boolean;
++    /** Tigrana: keep native ambient orbits inside the notebook or preview bounds. */
++    ambientBounds?: HTMLElement;
++    /** Tigrana: false keeps panel geometry fixed to DOM bounds without slowing the background. */
++    animateSurfaces?: boolean;
+     colors: [string, string, string];
+     blend: number;
+     refraction: number;

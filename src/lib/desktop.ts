@@ -1,3 +1,4 @@
+import type { NavigationStyle } from "../types";
 import { invoke } from "@tauri-apps/api/core";
 import { getCurrentWebview } from "@tauri-apps/api/webview";
 import { save } from "@tauri-apps/plugin-dialog";
@@ -18,6 +19,7 @@ export type AppMenuState = {
   outlineVisible: boolean;
   wordCountVisible: boolean;
   spellcheckEnabled: boolean;
+  navigationStyle: NavigationStyle;
   editorWidthMode: "comfortable" | "narrow" | "full";
   noteAlignment: "left" | "center";
   recentNotes: Array<{ path: string; title: string }>;
@@ -102,4 +104,15 @@ export async function unregisterNotebookWindow(label: string) {
 export async function focusNotebookWindow(workspace: string) {
   if (!isTauri()) return false;
   return invoke<boolean>("focus_notebook_window", { workspace });
+}
+
+export async function exportThemePackageFile(name: string, contents: Uint8Array) {
+  if (isTauri()) {
+    const path = await save({ title: "Export theme", defaultPath: name, filters: [{ name: "Tigrana theme", extensions: ["tigrana-theme"] }] });
+    if (path) await invoke("write_theme_package", { path, contents: Array.from(contents) });
+    return;
+  }
+  const url = URL.createObjectURL(new Blob([new Uint8Array(contents)], { type: "application/zip" }));
+  const link = document.createElement("a"); link.href = url; link.download = name; link.click();
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
 }

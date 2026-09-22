@@ -1,0 +1,104 @@
+/* STARFALL STUDIO — Theme API 1
+ * Original character artwork is packaged locally; no remote requests.
+ * Change these private variables to remix the theme. The image URL is declared
+ * once so the scoped stylesheet embeds only one copy of the WebP.
+ */
+:scope {
+  --tigrana-character: url("assets/starfall-artist.webp");
+  --tigrana-orbit: #74e4eb;
+  --tigrana-pink: #f6a4d5;
+}
+.theme-light {
+  --tigrana-orbit: #087783;
+  --tigrana-pink: #aa327e;
+}
+
+/* A smooth gradient behind the ordinary, fully usable note tabs. */
+.app-titlebar {
+  background-image: linear-gradient(115deg, #271f50, #49336e 55%, #194653);
+  background-size: 100% 100%;
+  border-bottom: 2px solid var(--tigrana-orbit);
+  color: #f4ecff;
+}
+.note-tab {
+  border: 1px solid #a59bc066;
+  border-radius: 14px;
+  background: #201b3d;
+  color: #e7def5;
+}
+.note-tab.is-active {
+  background: var(--tigrana-accent);
+  color: var(--tigrana-selected-text);
+  border-color: var(--tigrana-pink);
+  box-shadow: 0 -2px 12px #d97ddd33;
+}
+.note-tab-add { color: #f4ecff; }
+
+/* Small celestial accents, without changing pane sizes or drag targets. */
+.pane-header {
+  border-bottom: 1px solid var(--tigrana-border);
+  background: transparent;
+  color: var(--tigrana-text);
+  letter-spacing: 0.025em;
+}
+/* Sections stay rectangular; items in the note panel use rounded highlights. */
+.folder-row, .bookmark-item {
+  border-radius: 0;
+}
+.note-card, .unified-note-row, .unified-folder-row {
+  border-radius: var(--tigrana-radius);
+}
+.folder-row.is-active, .note-card.is-active, .unified-note-row.is-active,
+.unified-folder-row.is-active, .bookmark-item.is-active {
+  background: var(--tigrana-accent);
+  color: var(--tigrana-selected-text);
+  box-shadow: none;
+}
+/* The landscape lives behind all panels through Advanced surfaces. This
+ * isolated background layer keeps the character in the editor's lower-right
+ * corner without adding a second tint over the landscape or fading the text.
+ */
+.main-pane { isolation: isolate; }
+.main-pane::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  background-image: var(--tigrana-character);
+  background-position: right 12px bottom 12px;
+  background-size: min(42%, 340px) auto;
+  background-repeat: no-repeat;
+  opacity: calc((100% - var(--tigrana-editor-opacity, 82%)) * var(--tigrana-control-character, 1));
+  pointer-events: none;
+}
+.ProseMirror h1, .ProseMirror h2 {
+  color: var(--tigrana-pink);
+  letter-spacing: -0.025em;
+}
+.ProseMirror h3 { color: var(--tigrana-orbit); }
+.ProseMirror blockquote {
+  border-left: 3px solid var(--tigrana-pink);
+  border-radius: 0 16px 16px 0;
+  background: color-mix(in srgb, var(--tigrana-accent) 12%, var(--tigrana-background));
+  padding: 14px 20px;
+}
+.ProseMirror pre {
+  border: 1px solid var(--tigrana-border);
+  border-top: 3px solid var(--tigrana-orbit);
+  border-radius: 12px;
+}
+.ProseMirror hr {
+  height: 2px;
+  border: 0;
+  background: linear-gradient(90deg, transparent, var(--tigrana-pink), var(--tigrana-orbit), transparent);
+}
+.ProseMirror a { text-decoration-color: var(--tigrana-pink); text-underline-offset: 4px; }
+.ProseMirror th { background: color-mix(in srgb, var(--tigrana-accent) 15%, var(--tigrana-background)); }
+.ProseMirror td, .ProseMirror th { color: var(--tigrana-editor-text); border-color: var(--tigrana-border); }
+.toolbar-button, .icon-button { border-radius: 10px; }
+
+/* Printing keeps the note content free of decorative artwork. */
+@media print {
+  .main-pane::before { display: none; }
+  .app-frame { background-image: none; }
+}

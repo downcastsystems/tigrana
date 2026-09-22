@@ -31,6 +31,8 @@ pub struct WorkspaceMetadata {
     pub folder_icons: Map<String, Value>,
     #[serde(default)]
     pub folder_colors: Map<String, Value>,
+    #[serde(default, skip_serializing_if = "Map::is_empty")]
+    pub folder_colors_by_navigation_style: Map<String, Value>,
     #[serde(default)]
     pub note_icons: Map<String, Value>,
     #[serde(default)]
@@ -58,6 +60,7 @@ impl Default for WorkspaceMetadata {
             pinned_notes: Map::new(),
             folder_icons: Map::new(),
             folder_colors: Map::new(),
+            folder_colors_by_navigation_style: Map::new(),
             note_icons: Map::new(),
             note_positions: Map::new(),
             note_created_at: Map::new(),
@@ -165,6 +168,11 @@ pub fn repair_folder_path(
     replace_prefix_map_keys(&mut metadata.pinned_notes, old_path, new_path);
     replace_prefix_map_keys(&mut metadata.folder_icons, old_path, new_path);
     replace_prefix_map_keys(&mut metadata.folder_colors, old_path, new_path);
+    for colors in metadata.folder_colors_by_navigation_style.values_mut() {
+        if let Some(colors) = colors.as_object_mut() {
+            replace_prefix_map_keys(colors, old_path, new_path);
+        }
+    }
     replace_prefix_map_keys(&mut metadata.expanded_folders, old_path, new_path);
     replace_prefix_map_keys(&mut metadata.note_icons, old_path, new_path);
     replace_prefix_map_keys(&mut metadata.note_positions, old_path, new_path);
@@ -331,6 +339,28 @@ mod tests {
         fn drop(&mut self) {
             let _ = fs::remove_dir_all(&self.0);
         }
+    }
+
+    #[test]
+    fn folder_style_colors_survive_storage_and_path_repair() {
+        let notebook = TestNotebook::new();
+        let mut metadata: WorkspaceMetadata = serde_json::from_value(json!({
+            "folderColors": { "Projects": "#111111" },
+            "folderColorsByNavigationStyle": {
+                "section-view": {},
+                "single-pane": { "Projects": "#222222", "Projects/App": "#333333" },
+                "dual-pane": { "Projects": "#444444", "ProjectsOther": "#555555" }
+            }
+        })).unwrap();
+        repair_folder_path(&mut metadata, "Projects", "Archive/Work", "", "Archive", None);
+        write_workspace_metadata(&notebook.0, &metadata).unwrap();
+        let reopened = read_workspace_metadata(&notebook.0).unwrap();
+        assert_eq!(reopened.folder_colors_by_navigation_style, json!({
+            "section-view": {},
+            "single-pane": { "Archive/Work": "#222222", "Archive/Work/App": "#333333" },
+            "dual-pane": { "Archive/Work": "#444444", "ProjectsOther": "#555555" }
+        }).as_object().unwrap().clone());
+        assert_eq!(reopened.folder_colors["Archive/Work"], "#111111");
     }
 
     #[test]

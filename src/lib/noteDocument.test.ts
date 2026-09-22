@@ -11,6 +11,12 @@ import {
 } from "./noteDocument";
 import { markdownToHtml } from "./markdown";
 
+it("omits underline tags from previews, outlines, and word counts", () => {
+  expect(readNotePreview("<u>Hello world</u>")).toBe("Hello world");
+  expect(measureNoteText("<u>Hello world</u>")).toEqual({ words: 2, characters: 11 });
+  expect(createNoteDocument({ title: "", frontmatter: "", body: "## <u>Hello world</u>" }).outline[0].text).toBe("Hello world");
+});
+
 describe("readNoteCreatedAt", () => {
   it("reads a portable creation timestamp from saved frontmatter", () => {
     expect(readNoteCreatedAt("---\ncreated_at: 2024-02-03T04:05:06Z\n---\n\nBody\n"))

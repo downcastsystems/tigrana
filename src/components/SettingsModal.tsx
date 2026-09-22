@@ -1,25 +1,43 @@
 import { ThemePreviewHostContext } from "./ThemePreviewHost";
 import type { ReactNode } from "react";
 import { useState } from "react";
-import { Settings, X } from "lucide-react";
+import { Maximize2, Minimize2, RotateCcw, Settings, X } from "lucide-react";
 import type { NavigationStyle } from "../types";
 
+export type SettingsSection = "general" | "appearance";
+
 export default function SettingsModal(props: {
+  initialSection?: SettingsSection;
+  onSectionChange?: (section: SettingsSection) => void;
   navigationStyle: NavigationStyle;
   onNavigationStyleChange: (value: NavigationStyle) => void;
+  editorWidthMode: "comfortable" | "narrow" | "full";
+  onEditorWidthModeChange: (value: "comfortable" | "narrow" | "full") => void;
+  noteAlignment: "left" | "center";
+  onNoteAlignmentChange: (value: "left" | "center") => void;
   spellcheckEnabled: boolean;
   onSpellcheckEnabledChange: (value: boolean) => void;
-  plasmaEnabled: boolean;
-  onPlasmaEnabledChange: (value: boolean) => void;
-  plasmaFrost: number;
-  onPlasmaFrostChange: (value: number) => void;
-  plasmaBackgroundBlur: number;
-  onPlasmaBackgroundBlurChange: (value: number) => void;
+  wordCountVisible: boolean;
+  onWordCountVisibleChange: (value: boolean) => void;
   onClose: () => void;
+  onResetTheme?: () => void;
   themeContent: ReactNode;
 }) {
-  const [section, setSection] = useState("general");
+  const [maximized, setMaximized] = useState(false);
+  const [section, setSection] = useState<SettingsSection>(props.initialSection ?? "general");
   const [previewHost, setPreviewHost] = useState<HTMLDivElement | null>(null);
+  const navigationControls = (
+    <div className="setting-row settings-navigation-style">
+      <strong>Navigation style</strong>
+      <select className="settings-select" aria-label="Navigation style"
+        value={props.navigationStyle}
+        onChange={event => props.onNavigationStyleChange(event.target.value as NavigationStyle)}>
+        <option value="dual-pane">Dual pane</option>
+        <option value="section-view">Dual pane with sections (recommended)</option>
+        <option value="single-pane">Single pane</option>
+      </select>
+    </div>
+  );
   return (
     <div
       className="dialog-backdrop settings-backdrop"
@@ -27,7 +45,7 @@ export default function SettingsModal(props: {
     >
       <ThemePreviewHostContext.Provider value={previewHost}>
         <div
-          className="settings-window"
+          className={`settings-window${maximized ? " is-maximized" : ""}`}
           role="dialog"
           aria-modal="true"
           aria-label="Settings"
@@ -40,13 +58,13 @@ export default function SettingsModal(props: {
                 <h2>Settings</h2>
               </div>
               <nav className="settings-nav" aria-label="Settings sections">
-                {["general", "appearance"].map((id) => (
+                {(["general", "appearance"] as const).map((id) => (
                   <button
                     key={id}
                     className={`settings-nav-item ${section === id ? "is-active" : ""}`}
-                    onClick={() => setSection(id)}
+                    onClick={() => { setSection(id); props.onSectionChange?.(id); }}
                   >
-                    {id === "appearance" ? "Themes" : "General"}
+                    {id === "appearance" ? "Appearance" : "General"}
                   </button>
                 ))}
               </nav>
@@ -54,13 +72,24 @@ export default function SettingsModal(props: {
             <div className="settings-content">
               <div className="settings-content-header">
                 <div>
-                  <h2>{section === "appearance" ? "Themes" : "General"}</h2>
+                  <h2>{section === "appearance" ? "Appearance" : "General"}</h2>
                   <p>
                     {section === "appearance"
-                      ? "Choose a theme or make one of your own."
-                      : "Navigation and editing preferences."}
+                      ? "Customize themes, colors, and typography."
+                      : "Navigation, editing, and word count preferences."}
                   </p>
                 </div>
+                <div className="settings-window-actions">
+                <button
+                  type="button"
+                  className="icon-button"
+                  aria-label={maximized ? "Restore settings size" : "Maximize settings"}
+                  title={maximized ? "Restore settings size" : "Maximize settings"}
+                  aria-pressed={maximized}
+                  onClick={() => setMaximized(value => !value)}
+                >
+                  {maximized ? <Minimize2 size={17} /> : <Maximize2 size={17} />}
+                </button>
                 <button
                   className="icon-button"
                   aria-label="Close settings"
@@ -68,86 +97,45 @@ export default function SettingsModal(props: {
                 >
                   <X size={17} />
                 </button>
+                </div>
               </div>
               <div className="settings-scroll" key={section}>
                 {section === "appearance" ? (
                   <div className="settings-appearance">
                     {props.themeContent}
-                    <section
-                      className="settings-experimental"
-                      aria-label="Experimental appearance"
-                    >
-                      <h3>Experimental appearance</h3>
-                      <p>
-                        These settings travel with this notebook. Create or edit
-                        a theme to save them in the shared library.
-                      </p>
-                      <label className="setting-row">
-                        Plasma glass panes
-                        <input
-                          type="checkbox"
-                          checked={props.plasmaEnabled}
-                          onChange={(e) =>
-                            props.onPlasmaEnabledChange(e.target.checked)
-                          }
-                        />
-                      </label>
-                      {props.plasmaEnabled ? (
-                        <>
-                          <label className="setting-row">
-                            Panel frostiness
-                            <input
-                              type="range"
-                              min={0}
-                              max={100}
-                              value={props.plasmaFrost}
-                              onChange={(e) =>
-                                props.onPlasmaFrostChange(
-                                  Number(e.target.value),
-                                )
-                              }
-                            />
-                          </label>
-                          <label className="setting-row">
-                            Background blur
-                            <input
-                              type="range"
-                              min={0}
-                              max={40}
-                              value={props.plasmaBackgroundBlur}
-                              onChange={(e) =>
-                                props.onPlasmaBackgroundBlurChange(
-                                  Number(e.target.value),
-                                )
-                              }
-                            />
-                          </label>
-                        </>
-                      ) : null}
-                    </section>
+                    {props.onResetTheme ? (
+                      <section className="settings-reset-appearance" aria-label="Default appearance">
+                        <h3>Default appearance</h3>
+                        <p>Restore Classic with Default colors, fonts, effects, and layout, including sidebars and word count.</p>
+                        <button className="toolbar-button" onClick={props.onResetTheme}>
+                          <RotateCcw size={16} aria-hidden="true" />
+                          Restore default appearance
+                        </button>
+                      </section>
+                    ) : null}
                   </div>
                 ) : null}
                 {section === "general" ? (
                   <div>
-                    <div className="setting-row">
-                      <strong>Navigation style</strong>
-                      <select
-                        className="settings-select"
-                        aria-label="Navigation style"
-                        value={props.navigationStyle}
-                        onChange={(e) =>
-                          props.onNavigationStyleChange(
-                            e.target.value as NavigationStyle,
-                          )
-                        }
-                      >
-                        <option value="dual-pane">Dual pane</option>
-                        <option value="single-pane">Single pane</option>
-                        <option value="section-view">
-                          Dual pane with sections
-                        </option>
+                    {navigationControls}
+                    <hr className="settings-appearance-divider" />
+                    <label className="setting-row">
+                      Editor width
+                      <select className="settings-select" aria-label="Editor width" value={props.editorWidthMode}
+                        onChange={event => props.onEditorWidthModeChange(event.target.value as "comfortable" | "narrow" | "full")}>
+                        <option value="comfortable">Comfortable Width</option>
+                        <option value="narrow">Narrow Width</option>
+                        <option value="full">Full Width</option>
                       </select>
-                    </div>
+                    </label>
+                    <label className="setting-row">
+                      Note alignment
+                      <select className="settings-select" aria-label="Note alignment" value={props.noteAlignment}
+                        onChange={event => props.onNoteAlignmentChange(event.target.value as "left" | "center")}>
+                        <option value="left">Align left</option>
+                        <option value="center">Align center</option>
+                      </select>
+                    </label>
                     <label className="setting-row">
                       Check spelling while typing
                       <input
@@ -156,6 +144,14 @@ export default function SettingsModal(props: {
                         onChange={(e) =>
                           props.onSpellcheckEnabledChange(e.target.checked)
                         }
+                      />
+                    </label>
+                    <label className="setting-row">
+                      Show word count
+                      <input
+                        type="checkbox"
+                        checked={props.wordCountVisible}
+                        onChange={(e) => props.onWordCountVisibleChange(e.target.checked)}
                       />
                     </label>
                   </div>

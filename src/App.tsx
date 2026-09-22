@@ -1,6 +1,22 @@
-import SettingsModal from "./components/SettingsModal";
+import { resolveThemeVariant } from "./lib/themes";
+import { themeFamily } from "./lib/themeFamilies";
+import { themeDefaultsPatch, type ThemeDefaultsScope } from "./lib/themeDefaults";
+import { sidebarHoverEdgeWidth } from "./lib/useSidebarOverlay";
+import { sidebarSlideDuration } from "./lib/useSidebarOverlayMotion";
+import { useResponsivePanes } from "./lib/useResponsivePanes";
+import "./styles/responsive-panes.css";
+import { captureCurrentThemeSettings } from "./lib/currentThemeSettings";
+import { recoveryTheme } from "./lib/themeCatalog";
+import { themeCatalogWarnings } from "./lib/bundledThemes";
+import { readableThemeText, themeVariables, themeBackgroundImage, themeRenderingMode } from "./lib/themeRuntime";
+import { classicThemes } from "./lib/bundledThemes";
+import { applyQuickAppearanceFonts, quickAppearanceStyles, quickAppearanceResetPatch } from "./lib/quickAppearance";
+import { QuickAppearanceControls } from "./components/QuickAppearanceControls";
+import { ThemeStyles } from "./components/ThemeStyles";
+import "./styles/theme-api.css";
+import SettingsModal, { type SettingsSection } from "./components/SettingsModal";
 import { ThemeBuilder, ThemeReconciliation } from "./components/ThemeBuilder";
-import { opaqueThemeColor, readTheme, themeAppearance, type ThemeDocument } from "./lib/themes";
+import { readTheme, themeAppearance, type ThemeDocument } from "./lib/themes";
 import PlasmaTheme from "./components/PlasmaTheme";
 import { isSortCommand, type SortCommand } from "./editor/sortLines";
 import { ReleaseNotice } from "./components/ReleaseNotice";
@@ -113,6 +129,8 @@ import {
   buildBookmarkViews,
   buildFolderTree,
   getNotebookName,
+  getFolderColors,
+  setFolderColor,
   orderFolders,
   orderNotes,
   placeNoteInOrder,
@@ -230,7 +248,6 @@ const sessionKeyPrefix = "tigrana-session:";
 const notePositionFreshMs = 24 * 60 * 60 * 1000;
 const autosaveDelayMs = 650;
 const autosaveRetryDelayMs = 1_500;
-const defaultLightAccent = "#666666";
 const defaultAppFontFamily = 'Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif';
 const defaultEditorFontFamily = defaultAppFontFamily;
 const defaultAppFontSize = 14;
@@ -270,7 +287,6 @@ class EditorErrorBoundary extends Component<
     return this.props.children;
   }
 }
-const defaultDarkAccent = "#333333";
 const lucideIconPrefix = "lucide:";
 const lucideIconMap = Object.fromEntries(
   Object.entries(LucideIcons).filter(([name, value]) => /^[A-Z]/.test(name) && !name.endsWith("Icon") && isLucideIcon(value)),
@@ -306,7 +322,7 @@ type RecentNotebook = {
 
 type PropertyDialogState =
   | { kind: "rename-folder"; path: string; value: string; name: string }
-  | { kind: "folder-color"; path: string; value: string; name: string; subject?: "folder" | "section" };
+  | { kind: "folder-color"; path: string; value: string; name: string; subject?: "folder" | "section"; navigationStyle: NavigationStyle; previewColor?: string };
 
 type IconBrowserState =
   | { kind: "folder"; path: string; value: string; name: string; onReset?: () => void }
@@ -354,15 +370,9 @@ type FolderCreationTarget = Pick<NoteCreationTarget, "parentName" | "parentPath"
 
 type ColorScheme = "system" | "light" | "dark";
 type ThemePresetId =
-  | "default"
-  | "atom"
-  | "solarized"
-  | "dracula"
-  | "nord"
-  | "gruvbox"
-  | "catppuccin-frappe"
-  | "catppuccin-macchiato"
-  | "catppuccin-mocha";
+  | "default" | "atom" | "solarized" | "dracula" | "nord" | "gruvbox" | "everforest"
+  | "catppuccin-latte" | "catppuccin-frappe" | "catppuccin-macchiato" | "catppuccin-mocha"
+  | "plasma-ooze" | "plasma-undertow" | "plasma-witches-brew";
 type RightSidebarMode = "outline" | "frontmatter" | "properties" | "backlinks";
 type EditorCommand =
   | SortCommand
@@ -442,23 +452,6 @@ type SpeechRecognitionLike = {
 
 type SpeechRecognitionConstructor = new () => SpeechRecognitionLike;
 
-type ThemeTokens = {
-  surface: string;
-  surfaceSoft: string;
-  surfaceStrong: string;
-  surfaceMuted: string;
-  border: string;
-  text: string;
-  textMuted: string;
-};
-
-type ThemePreset = {
-  id: ThemePresetId;
-  name: string;
-  accent: Record<"light" | "dark", string>;
-  appBackground: Record<"light" | "dark", string>;
-  tokens?: Partial<Record<"light" | "dark", Partial<ThemeTokens>>>;
-};
 
 type NotebookThemeColorSettings = Record<"light" | "dark", NotebookThemeColors>;
 
@@ -467,15 +460,6 @@ const defaultNotebookThemeColors = (): NotebookThemeColorSettings => ({
   dark: { accentColor: null, titlebarColor: null, titlebarUseAccent: true },
 });
 
-const catppuccinLatteTokens: ThemeTokens = {
-  surface: "#e6e9ef",
-  surfaceSoft: "#eff1f5",
-  surfaceStrong: "#ffffff",
-  surfaceMuted: "#dce0e8",
-  border: "#ccd0da",
-  text: "#4c4f69",
-  textMuted: "#6c6f85",
-};
 
 type PersistDraftSnapshot = {
   workspace: string;
@@ -490,107 +474,19 @@ type PersistDraftSnapshot = {
   saveRevision: DraftSaveRevision;
 };
 
-const themePresets: ThemePreset[] = [
-  {
-    id: "default",
-    name: "Default",
-    accent: { light: defaultLightAccent, dark: defaultDarkAccent },
-    appBackground: { light: "#ffffff", dark: "#212225" },
-    tokens: {
-      light: {
-        surface: "#f5f5f5",
-        surfaceSoft: "#f5f5f5",
-        surfaceMuted: "#ececec",
-      },
-    },
-  },
-  {
-    id: "atom",
-    name: "Atom One",
-    accent: { light: "#4078c0", dark: "#61afef" },
-    appBackground: { light: "#fafafa", dark: "#20252b" },
-    tokens: {
-      light: { surface: "#f0f0f0", surfaceSoft: "#f6f6f6", surfaceStrong: "#ffffff", surfaceMuted: "#e5e5e6", border: "#d4d4d5", text: "#383a42", textMuted: "#696c77" },
-      dark: { surface: "#21252b", surfaceSoft: "#282c34", surfaceStrong: "#2c313a", surfaceMuted: "#181a1f", border: "#3e4451", text: "#abb2bf", textMuted: "#7f848e" },
-    },
-  },
-  {
-    id: "solarized",
-    name: "Solarized",
-    accent: { light: "#268bd2", dark: "#2aa198" },
-    appBackground: { light: "#fdf6e3", dark: "#002b36" },
-    tokens: {
-      light: { surface: "#eee8d5", surfaceSoft: "#fdf6e3", surfaceStrong: "#fffdf5", surfaceMuted: "#e4ddc8", border: "#d5cfba", text: "#586e75", textMuted: "#839496" },
-      dark: { surface: "#073642", surfaceSoft: "#002b36", surfaceStrong: "#0b404d", surfaceMuted: "#00232c", border: "#24515b", text: "#eee8d5", textMuted: "#93a1a1" },
-    },
-  },
-  {
-    id: "dracula",
-    name: "Dracula",
-    accent: { light: "#bd93f9", dark: "#ff79c6" },
-    appBackground: { light: "#f7f2fb", dark: "#282a36" },
-    tokens: {
-      light: { surface: "#eee7f4", surfaceSoft: "#f7f2fb", surfaceStrong: "#ffffff", surfaceMuted: "#e5daee", border: "#d5c7e0", text: "#282a36", textMuted: "#6272a4" },
-      dark: { surface: "#21222c", surfaceSoft: "#282a36", surfaceStrong: "#343746", surfaceMuted: "#191a21", border: "#44475a", text: "#f8f8f2", textMuted: "#a8a4b8" },
-    },
-  },
-  {
-    id: "nord",
-    name: "Nord",
-    accent: { light: "#5e81ac", dark: "#88c0d0" },
-    appBackground: { light: "#eceff4", dark: "#2e3440" },
-    tokens: {
-      light: { surface: "#e5e9f0", surfaceSoft: "#eceff4", surfaceStrong: "#ffffff", surfaceMuted: "#d8dee9", border: "#c6ccd6", text: "#2e3440", textMuted: "#4c566a" },
-      dark: { surface: "#292e39", surfaceSoft: "#2e3440", surfaceStrong: "#3b4252", surfaceMuted: "#242933", border: "#4c566a", text: "#eceff4", textMuted: "#aeb8c8" },
-    },
-  },
-  {
-    id: "gruvbox",
-    name: "Gruvbox",
-    accent: { light: "#b57614", dark: "#fabd2f" },
-    appBackground: { light: "#fbf1c7", dark: "#282828" },
-    tokens: {
-      light: { surface: "#f2e5bc", surfaceSoft: "#fbf1c7", surfaceStrong: "#fff9dc", surfaceMuted: "#ebdbb2", border: "#d5c4a1", text: "#3c3836", textMuted: "#7c6f64" },
-      dark: { surface: "#1d2021", surfaceSoft: "#282828", surfaceStrong: "#3c3836", surfaceMuted: "#171819", border: "#504945", text: "#ebdbb2", textMuted: "#a89984" },
-    },
-  },
-  {
-    id: "catppuccin-frappe",
-    name: "Catppuccin Frappé",
-    accent: { light: "#8839ef", dark: "#ca9ee6" },
-    appBackground: { light: "#eff1f5", dark: "#303446" },
-    tokens: {
-      light: catppuccinLatteTokens,
-      dark: { surface: "#292c3c", surfaceSoft: "#303446", surfaceStrong: "#414559", surfaceMuted: "#232634", border: "#51576d", text: "#c6d0f5", textMuted: "#a5adce" },
-    },
-  },
-  {
-    id: "catppuccin-macchiato",
-    name: "Catppuccin Macchiato",
-    accent: { light: "#7651c9", dark: "#c6a0f6" },
-    appBackground: { light: "#f2eff8", dark: "#24273a" },
-    tokens: {
-      light: { surface: "#e5e1f0", surfaceSoft: "#eeebf6", surfaceStrong: "#fcfaff", surfaceMuted: "#dad4e8", border: "#c8c0d9", text: "#49465e", textMuted: "#706b87" },
-      dark: { surface: "#1e2030", surfaceSoft: "#24273a", surfaceStrong: "#363a4f", surfaceMuted: "#181926", border: "#494d64", text: "#cad3f5", textMuted: "#a5adcb" },
-    },
-  },
-  {
-    id: "catppuccin-mocha",
-    name: "Catppuccin Mocha",
-    accent: { light: "#95507f", dark: "#cba6f7" },
-    appBackground: { light: "#f5eef3", dark: "#1e1e2e" },
-    tokens: {
-      light: { surface: "#e9dde7", surfaceSoft: "#f1e7ef", surfaceStrong: "#fffafe", surfaceMuted: "#ddcedb", border: "#cbb9c9", text: "#4d414d", textMuted: "#776877" },
-      dark: { surface: "#181825", surfaceSoft: "#1e1e2e", surfaceStrong: "#313244", surfaceMuted: "#11111b", border: "#45475a", text: "#cdd6f4", textMuted: "#a6adc8" },
-    },
-  },
-];
+const themePresets = classicThemes.map(theme => ({
+  id: theme.id, name: theme.name,
+  accent: { light: theme.light.accent, dark: theme.dark.accent },
+  appBackground: { light: theme.light.background, dark: theme.dark.background },
+  tokens: { light: theme.light, dark: theme.dark },
+}));
 
 export default function App() {
   const initialOpenTargetRef = useRef(readInitialOpenTarget());
   const [workspace, setWorkspace] = useState(() => readInitialWorkspace());
   const [colorScheme, setColorScheme] = useState<ColorScheme>(() => readStoredColorScheme());
   const [prefersDark, setPrefersDark] = useState(() => window.matchMedia?.("(prefers-color-scheme: dark)").matches ?? false);
+  const resolvedTheme = colorScheme === "system" ? (prefersDark ? "dark" : "light") : colorScheme;
   const [plasmaBackgroundBlur, setPlasmaBackgroundBlur] = useState(() => {
     const stored = Number(localStorage.getItem(plasmaBackgroundBlurKey) ?? 0);
     return Number.isFinite(stored) ? Math.min(40, Math.max(0, stored)) : 0;
@@ -603,7 +499,7 @@ export default function App() {
   const [plasmaEnabled, setPlasmaEnabled] = useState(() => localStorage.getItem(plasmaThemeKey) === "true");
   const [themePresetId, setThemePresetId] = useState<ThemePresetId>(() => readStoredThemePreset());
   const [themeColors, setThemeColors] = useState<NotebookThemeColorSettings>(() => readStoredNotebookThemeColors());
-  const [accentTitlebar, setAccentTitlebar] = useState<boolean>(() => localStorage.getItem(accentTitlebarKey) === "true");
+  const [savedAccentTitlebar, setAccentTitlebar] = useState<boolean>(() => localStorage.getItem(accentTitlebarKey) === "true");
   const [navigationStyle, setNavigationStyle] = useState<NavigationStyle>("section-view");
   const [appFontFamily, setAppFontFamily] = useState(defaultAppFontFamily);
   const [appFontSize, setAppFontSize] = useState(defaultAppFontSize);
@@ -636,6 +532,7 @@ export default function App() {
   const [noteFindRequest, setNoteFindRequest] = useState(0);
   const [appError, setAppError] = useState<string | null>(null);
   const [settingsOpen, setSettingsOpen] = useState(false);
+  const [settingsSection, setSettingsSection] = useState<SettingsSection>("general");
   const [notebooksManageOpen, setNotebooksManageOpen] = useState(false);
   const [recentlyDeletedOpen, setRecentlyDeletedOpen] = useState(false);
   const [trashEntries, setTrashEntries] = useState<TrashEntry[]>([]);
@@ -643,8 +540,10 @@ export default function App() {
   const [versionHistory, setVersionHistory] = useState<VersionHistoryState | null>(null);
   const [recentNotebooks, setRecentNotebooks] = useState<RecentNotebook[]>(() => readRecentNotebooks());
   const [appMenuOpen, setAppMenuOpen] = useState(false);
-  const [leftVisible, setLeftVisible] = useState(true);
-  const [outlineVisible, setOutlineVisible] = useState(true);
+  const [preferredLeftVisible, setLeftVisible] = useState(true);
+  const [plasmaFlow, setPlasmaFlow] = useState(0);
+  const [plasmaAmbientDrops, setPlasmaAmbientDrops] = useState(false);
+  const [preferredOutlineVisible, setOutlineVisible] = useState(true);
   const focusRestoreRef = useRef<PaneVisibility | null>(null);
   const [wordCountVisible, setWordCountVisible] = useState(() => readStoredWordCountVisibility());
   const [noteScrollFades, setNoteScrollFades] = useState<ScrollFadeVisibility>({ top: false, bottom: false });
@@ -660,11 +559,31 @@ export default function App() {
   const [folderPaneWidth, setFolderPaneWidth] = useState(() => readStoredNumber(folderPaneWidthKey, 292));
   const [notesPaneWidth, setNotesPaneWidth] = useState(() => readStoredNumber(notesPaneWidthKey, 268));
   const [rightPaneWidth, setRightPaneWidth] = useState(() => readStoredNumber(rightPaneWidthKey, 300));
+  const responsivePanes = useResponsivePanes({
+    leftVisible: preferredLeftVisible, outlineVisible: preferredOutlineVisible,
+    navigationStyle, folderWidth: folderPaneWidth, notesWidth: notesPaneWidth, rightWidth: rightPaneWidth,
+    theme: metadata.appearance?.customTheme, mode: resolvedTheme, notebook: workspace, plasma: plasmaEnabled,
+  });
+  const { leftVisible, outlineVisible, setOverlay: setPaneOverlay } = responsivePanes;
+
   const [contextMenu, setContextMenu] = useState<ContextMenuState | null>(null);
   const [tabContextMenu, setTabContextMenu] = useState<TabContextMenuState | null>(null);
   const [folderDialogParent, setFolderDialogParent] = useState<string | null>(null);
   const [folderName, setFolderName] = useState("");
   const [propertyDialog, setPropertyDialog] = useState<PropertyDialogState | null>(null);
+  // Preview stays local to navigation; only Save updates Notebook metadata.
+  const navigationMetadata = useMemo(() => {
+    const folderColors = getFolderColors(metadata, navigationStyle);
+    const preview = propertyDialog?.kind === "folder-color" &&
+      propertyDialog.navigationStyle === navigationStyle ? propertyDialog : null;
+    const color = preview?.previewColor?.trim();
+    return {
+      ...metadata,
+      folderColors: preview && color && /^#(?:[0-9a-f]{3,4}|[0-9a-f]{6}|[0-9a-f]{8})$/i.test(color)
+        ? { ...folderColors, [preview.path]: color }
+        : folderColors,
+    };
+  }, [metadata, navigationStyle, propertyDialog]);
   const [iconBrowser, setIconBrowser] = useState<IconBrowserState | null>(null);
   const [moveDialog, setMoveDialog] = useState<{ kind: "note" | "folder"; path: string } | null>(null);
   const [emojiPickerOpen, setEmojiPickerOpen] = useState(false);
@@ -706,12 +625,16 @@ export default function App() {
   const metadataRef = useRef(metadata);
   const metadataSessionRef = useRef(new NotebookMetadataSession(workspace));
   const notebookAppearanceDefaultsRef = useRef({
-    plasma: { enabled: plasmaEnabled, frost: plasmaFrost, backgroundBlur: plasmaBackgroundBlur },
+    plasma: { enabled: plasmaEnabled, frost: plasmaFrost, backgroundBlur: plasmaBackgroundBlur, flow: plasmaFlow, ambientDrops: plasmaAmbientDrops },
     colorScheme: readStoredColorScheme(),
     themePresetId: readStoredThemePreset(),
     colors: readStoredNotebookThemeColors(),
     accentTitlebar: localStorage.getItem(accentTitlebarKey) === "true",
     navigationStyle: "section-view" as const,
+    rightSidebarOpen: true,
+    wordCountVisible: readStoredWordCountVisibility(),
+    editorWidthMode: readStoredEditorWidthMode(),
+    noteAlignment: readStoredNoteAlignment(),
     appFontFamily: defaultAppFontFamily,
     appFontSize: defaultAppFontSize,
     editorFontFamily: defaultEditorFontFamily,
@@ -729,12 +652,18 @@ export default function App() {
           setPlasmaEnabled(appearance.plasma.enabled);
           setPlasmaFrost(appearance.plasma.frost);
           setPlasmaBackgroundBlur(appearance.plasma.backgroundBlur);
+          setPlasmaFlow(appearance.plasma.flow ?? 0);
+          setPlasmaAmbientDrops(appearance.plasma.ambientDrops ?? false);
         }
         setColorScheme(appearance.colorScheme);
         setThemePresetId(appearance.themePresetId as ThemePresetId);
         setThemeColors(appearance.colors);
         setAccentTitlebar(appearance.accentTitlebar);
         setNavigationStyle(appearance.navigationStyle);
+        if (appearance.wordCountVisible !== undefined) setWordCountVisible(appearance.wordCountVisible);
+        if (appearance.editorWidthMode !== undefined) setEditorWidthMode(appearance.editorWidthMode);
+        if (appearance.noteAlignment !== undefined) setNoteAlignment(appearance.noteAlignment);
+        if (appearance.rightSidebarOpen !== undefined) setOutlineVisible(appearance.rightSidebarOpen);
         setAppFontFamily(appearance.appFontFamily);
         setAppFontSize(appearance.appFontSize);
         setEditorFontFamily(appearance.editorFontFamily);
@@ -810,6 +739,7 @@ export default function App() {
     persistDraft: () => void;
     requestCreateNoteInContext: () => void;
     toggleRawMarkdown: () => void;
+    toggleSidebar: () => void;
   }>({
     addEmptyTab: () => {},
     chooseWorkspace: () => {},
@@ -817,6 +747,7 @@ export default function App() {
     persistDraft: () => {},
     requestCreateNoteInContext: () => {},
     toggleRawMarkdown: () => {},
+    toggleSidebar: () => {},
   });
 
   const activeNote = notes.find((note) => note.path === activePath) ?? null;
@@ -900,21 +831,57 @@ export default function App() {
     draftSaveRevisions.observe(rawMarkdownDraft);
   }, [draftSaveRevisions, rawMarkdownDraft]);
   backlinkPaneVisibleRef.current = outlineVisible && rightSidebarMode === "backlinks";
-  const resolvedTheme = colorScheme === "system" ? (prefersDark ? "dark" : "light") : colorScheme;
   const customTheme = useMemo(() => readTheme(metadata.appearance?.customTheme), [metadata.appearance?.customTheme]);
+  const invalidNotebookTheme = !!metadata.appearance?.customTheme && !customTheme;
   const themePreset = useMemo(() => {
-    const base = getThemePreset(themePresetId);
+    const base = getThemePreset(invalidNotebookTheme ? "default" : themePresetId);
     if (!customTheme) return base;
     return { ...base, accent: { light: customTheme.light.accent, dark: customTheme.dark.accent },
       appBackground: { light: customTheme.light.background, dark: customTheme.dark.background },
       tokens: { light: customTheme.light, dark: customTheme.dark } };
-  }, [themePresetId, customTheme]);
+  }, [themePresetId, customTheme, invalidNotebookTheme]);
   const activeThemeColors = themeColors[resolvedTheme];
-  const accentColor = activeThemeColors.accentColor ?? null;
-  const effectiveAccentColor = accentColor || themePreset.accent[resolvedTheme];
-  const titlebarUseAccent = activeThemeColors.titlebarUseAccent ?? true;
+  const quickAppearance = metadata.appearance?.quickAppearance;
+  const quickAppearanceTheme = (customTheme ? resolveThemeVariant(customTheme, metadata.appearance?.themeColorPreferences?.[customTheme.id]) : null) ?? classicThemes.find(theme => theme.id === themePresetId) ?? recoveryTheme;
+  // Title-bar styling belongs to the theme; ignore retired notebook quick overrides.
+  const accentTitlebar = savedAccentTitlebar;
+  const accentColor = quickAppearance?.accentColor ?? activeThemeColors.accentColor ?? null;
+  const effectiveAccentColor = quickAppearance?.accentColor || (customTheme?.colorVariants ? quickAppearanceTheme[resolvedTheme].accent : accentColor || themePreset.accent[resolvedTheme]);
+  const titlebarUseAccent = quickAppearance?.accentColor ? true : activeThemeColors.titlebarUseAccent ?? true;
   const titlebarColor = activeThemeColors.titlebarColor ?? null;
-  const effectiveTitlebarColor = titlebarUseAccent ? effectiveAccentColor : (titlebarColor || effectiveAccentColor);
+  const defaultTitlebarColor = !customTheme && themePresetId === "default" ? "#001428" : effectiveAccentColor;
+  const effectiveTitlebarColor = titlebarUseAccent ? defaultTitlebarColor : (titlebarColor || defaultTitlebarColor);
+  const quickStyles = quickAppearanceStyles(quickAppearance, accentTitlebar, defaultTitlebarColor);
+  // Legacy notebook preferences are overlaid without rewriting saved metadata.
+  // Both old presets and portable themes use the same renderer and preview document.
+  const renderedTheme = useMemo<ThemeDocument>(() => {
+    if (invalidNotebookTheme) return recoveryTheme;
+    if (customTheme) return applyQuickAppearanceFonts(resolveThemeVariant(customTheme, metadata.appearance?.themeColorPreferences?.[customTheme.id]), quickAppearance);
+    const base = classicThemes.find(t => t.id === themePresetId) ?? classicThemes[0];
+    const palette = (mode: "light" | "dark") => {
+      const colors = themeColors[mode];
+      const accent = quickAppearance?.accentColor || colors.accentColor || base[mode].accent;
+      return { ...base[mode], accent, selectedText: accent === base[mode].accent ? base[mode].selectedText : readableThemeText(accent),
+        titlebar: colors.titlebarUseAccent !== false
+          ? (base.id === "default" ? "#001428" : accent)
+          : colors.titlebarColor || base[mode].titlebar };
+    };
+    return applyQuickAppearanceFonts({ ...base, light: palette("light"), dark: palette("dark"),
+      appFontFamily, appFontSize, editorFontFamily, editorFontSize, accentTitlebar: savedAccentTitlebar }, quickAppearance);
+  }, [metadata.appearance?.themeColorPreferences, customTheme, invalidNotebookTheme, themePresetId, themeColors, quickAppearance, appFontFamily, appFontSize, editorFontFamily, editorFontSize, savedAccentTitlebar]);
+  const renderedColorMode = themeRenderingMode(renderedTheme, resolvedTheme);
+  const plasmaBackgroundImage = useMemo(() => themeBackgroundImage(renderedTheme), [renderedTheme]);
+  useEffect(() => {
+    const variables = themeVariables(renderedTheme, resolvedTheme, 'notebook');
+    const root = document.documentElement.style;
+    const roles = Object.entries(variables).filter(([key]) => key.startsWith('--tigrana-'));
+    for (const [key, value] of roles) root.setProperty(key, value);
+    if (quickAppearance?.accentColor) {
+      root.setProperty('--tigrana-accent', quickAppearance.accentColor);
+      root.setProperty('--tigrana-selected-text', readableThemeText(quickAppearance.accentColor));
+    }
+    return () => { for (const [key] of roles) root.removeProperty(key); };
+  }, [renderedTheme, resolvedTheme, quickAppearance?.accentColor]);
   const selectedFolderTitle = useMemo(() => displayFolderName(selectedFolder, folders, workspace), [folders, selectedFolder, workspace]);
   const selectedSection = useMemo(() => getTopLevelFolderPath(selectedFolder), [selectedFolder]);
   const selectedSectionTitle = useMemo(
@@ -957,14 +924,19 @@ export default function App() {
     activeTabHistory && activeTabHistory.historyIndex < activeTabHistory.history.length - 1,
   );
   const focusModeActive = !leftVisible && !outlineVisible;
+  const renderedVariables = themeVariables(renderedTheme, resolvedTheme, "notebook");
   const frameStyle = {
+    "--sidebar-slide-duration": `${sidebarSlideDuration}ms`,
+    "--sidebar-hover-width": `${sidebarHoverEdgeWidth}px`,
+    "--sidebar-hover-offset": `${responsivePanes.hoverOffset}ms`,
+    "--sidebar-hover-duration": `${responsivePanes.hoverDelay}ms`,
     "--folder-pane-width": `${folderPaneWidth}px`,
     "--notes-pane-width": `${notesPaneWidth}px`,
     "--right-pane-width": `${rightPaneWidth}px`,
-    "--app-font-family": appFontFamily,
+    "--app-font-family": renderedVariables["--app-font-family"],
     "--app-font-size": `${appFontSize}px`,
-    "--editor-font-family": editorFontFamily,
-    "--editor-font-size": `${editorFontSize}px`,
+    "--editor-font-family": renderedVariables["--editor-font-family"],
+    "--editor-font-size": renderedVariables["--editor-font-size"],
   } as CSSProperties;
 
   useEffect(() => {
@@ -1105,11 +1077,11 @@ export default function App() {
   }, [plasmaEnabled]);
 
   useEffect(() => {
-    document.documentElement.dataset.theme = resolvedTheme;
+    document.documentElement.dataset.theme = renderedColorMode;
     document.documentElement.dataset.themePreset = customTheme ? "custom" : themePreset.id;
     const root = document.documentElement.style;
     root.setProperty("--app-bg", themePreset.appBackground[resolvedTheme]);
-    const tokens = deriveThemeTokens(themePreset, resolvedTheme);
+    const tokens = themePreset.tokens[resolvedTheme];
     root.setProperty("--surface", tokens.surface);
     root.setProperty("--surface-soft", tokens.surfaceSoft);
     root.setProperty("--surface-strong", tokens.surfaceStrong);
@@ -1120,15 +1092,15 @@ export default function App() {
     root.setProperty("--muted", tokens.textMuted);
     localStorage.setItem(themeKey, colorScheme);
     localStorage.setItem(themePresetKey, themePreset.id);
-  }, [colorScheme, resolvedTheme, themePreset, customTheme]);
+  }, [colorScheme, resolvedTheme, renderedColorMode, themePreset, customTheme]);
 
   useEffect(() => {
     const root = document.documentElement.style;
-    root.setProperty("--app-font-family", appFontFamily || defaultAppFontFamily);
-    root.setProperty("--app-font-size", `${appFontSize || defaultAppFontSize}px`);
-    root.setProperty("--editor-font-family", editorFontFamily || defaultEditorFontFamily);
-    root.setProperty("--editor-font-size", `${editorFontSize || defaultEditorFontSize}px`);
-  }, [appFontFamily, appFontSize, editorFontFamily, editorFontSize]);
+    const variables = themeVariables(renderedTheme, resolvedTheme, "notebook");
+    for (const name of ["--app-font-family", "--app-font-size", "--editor-font-family", "--editor-font-size"]) {
+      root.setProperty(name, variables[name]);
+    }
+  }, [renderedTheme, resolvedTheme]);
 
   useEffect(() => {
     document.documentElement.dataset.accentTitlebar = accentTitlebar ? "true" : "false";
@@ -1299,6 +1271,7 @@ export default function App() {
       outlineVisible,
       wordCountVisible,
       spellcheckEnabled,
+      navigationStyle,
       editorWidthMode,
       noteAlignment,
       recentNotes: recentNotes.map(({ path, title }) => ({ path, title })),
@@ -1312,6 +1285,7 @@ export default function App() {
   }, [
     activeNoteEditable,
     hasEditorSelection,
+    navigationStyle,
     editorWidthMode,
     frontmatterError,
     hasOpenNote,
@@ -1930,6 +1904,8 @@ export default function App() {
       setPlasmaEnabled(patch.plasma.enabled);
       setPlasmaFrost(patch.plasma.frost);
       setPlasmaBackgroundBlur(patch.plasma.backgroundBlur);
+      setPlasmaFlow(patch.plasma.flow ?? 0);
+      setPlasmaAmbientDrops(patch.plasma.ambientDrops ?? false);
     }
     if (patch.colorScheme !== undefined) setColorScheme(patch.colorScheme);
     if (patch.themePresetId && themePresets.some((preset) => preset.id === patch.themePresetId)) {
@@ -1942,7 +1918,11 @@ export default function App() {
       }));
     }
     if (patch.accentTitlebar !== undefined) setAccentTitlebar(patch.accentTitlebar);
+    if (patch.rightSidebarOpen !== undefined) setOutlineVisible(patch.rightSidebarOpen);
     if (patch.navigationStyle !== undefined) setNavigationStyle(patch.navigationStyle);
+    if (patch.wordCountVisible !== undefined) setWordCountVisible(patch.wordCountVisible);
+    if (patch.editorWidthMode !== undefined) setEditorWidthMode(patch.editorWidthMode);
+    if (patch.noteAlignment !== undefined) setNoteAlignment(patch.noteAlignment);
     if (patch.appFontFamily !== undefined) setAppFontFamily(patch.appFontFamily);
     if (patch.appFontSize !== undefined) setAppFontSize(patch.appFontSize);
     if (patch.editorFontFamily !== undefined) setEditorFontFamily(patch.editorFontFamily);
@@ -1950,28 +1930,62 @@ export default function App() {
 
   }, [updateMetadata]);
 
-  function updatePlasma(patch: Partial<NonNullable<ThemeDocument["plasma"]>>) {
-    const plasma = { enabled: plasmaEnabled, frost: plasmaFrost, backgroundBlur: plasmaBackgroundBlur, ...patch };
-    updateNotebookAppearance({ plasma, ...(customTheme ? { customTheme: { ...customTheme, plasma } } : {}) });
+  function useThemeDefaults(theme: ThemeDocument, scope: ThemeDefaultsScope) {
+    if (workspaceRef.current !== workspace) return;
+    if (theme.id === "default" && scope === "all") {
+      resetThemeAppearance();
+      return;
+    }
+    updateNotebookAppearance(themeDefaultsPatch(theme, scope));
+  }
+
+  function resetThemeAppearance() {
+    const defaultTheme = classicThemes.find(theme => theme.id === "default") ?? recoveryTheme;
+    updateNotebookAppearance({
+      ...themeDefaultsPatch(defaultTheme, "all"),
+      customTheme: null,
+      themePresetId: "default",
+      themeColorPreferences: { ...metadata.appearance?.themeColorPreferences, classic: "default" },
+      accentColor: null,
+      // Full appearance recovery is independent of themes that keep the current layout.
+      editorWidthMode: "comfortable",
+      noteAlignment: "center",
+      rightSidebarOpen: true,
+      wordCountVisible: true,
+    });
+    focusRestoreRef.current = null;
+    setPaneOverlay(null);
+    setLeftVisible(true);
+  }
+
+  function selectThemeColor(id: string, colorsOnly: boolean) {
+    const theme = classicThemes.find(theme => theme.id === id);
+    if (!theme) return;
+    const family = themeFamily(id);
+    updateNotebookAppearance({
+      ...themeAppearance(theme), customTheme: null, themePresetId: id,
+      navigationStyle, rightSidebarOpen: preferredOutlineVisible,
+      ...(colorsOnly ? {
+        editorWidthMode, noteAlignment, wordCountVisible, plasma: metadata.appearance?.plasma,
+        appFontFamily, appFontSize, editorFontFamily, editorFontSize, accentTitlebar: savedAccentTitlebar,
+      } : {}),
+      quickAppearance: colorsOnly ? { ...quickAppearance, accentColor: undefined } : null,
+      themeColorPreferences: { ...metadata.appearance?.themeColorPreferences, ...(family ? { [family.id]: id } : {}) },
+    });
   }
 
   function applyCustomTheme(theme: ThemeDocument) {
     if (workspaceRef.current !== workspace) return;
-    updateNotebookAppearance(themeAppearance(theme));
+    // Retain notebook layout; the snapshot keeps the author defaults for the opt-in action.
+    updateNotebookAppearance({ ...themeAppearance(theme), quickAppearance: null, navigationStyle, rightSidebarOpen: preferredOutlineVisible });
   }
 
   function themeSeed(): ThemeDocument {
-    const palette = (mode: "light" | "dark") => {
-      const tokens = deriveThemeTokens(themePreset, mode);
-      const colors = themeColors[mode];
-      const accent = colors.accentColor || themePreset.accent[mode];
-      return { ...tokens, border: opaqueThemeColor(tokens.border, themePreset.appBackground[mode]), textMuted: opaqueThemeColor(tokens.textMuted, themePreset.appBackground[mode]),
-        background: themePreset.appBackground[mode], accent,
-        titlebar: colors.titlebarUseAccent !== false ? accent : colors.titlebarColor || accent };
-    };
-    return { schemaVersion: 1, id: "draft", name: "My theme", light: palette("light"), dark: palette("dark"),
-      appFontFamily, appFontSize, editorFontFamily, editorFontSize, accentTitlebar,
-      plasma: { enabled: plasmaEnabled, frost: plasmaFrost, backgroundBlur: plasmaBackgroundBlur } };
+    return captureCurrentThemeSettings(renderedTheme, {
+      quickAppearance, navigationStyle, rightSidebarOpen: preferredOutlineVisible,
+      editorWidthMode, noteAlignment, wordCountVisible,
+      accentTitlebar, plasma: { enabled: plasmaEnabled, frost: plasmaFrost, backgroundBlur: plasmaBackgroundBlur, flow: plasmaFlow, ambientDrops: plasmaAmbientDrops },
+    });
   }
 
   function requestEditorCommand(command: EditorCommand, payload: Partial<EditorCommandRequest> = {}) {
@@ -2129,16 +2143,16 @@ export default function App() {
         setSpellcheckEnabled((value) => !value);
         break;
       case "toggle_sidebar":
-        setLeftVisible((value) => !value);
+        toggleLeftSidebar();
         break;
       case "toggle_outline":
-        setOutlineVisible((value) => !value);
+        toggleRightSidebar();
         break;
       case "toggle_focus":
         toggleEditorFocusMode();
         break;
       case "toggle_word_count":
-        setWordCountVisible((value) => !value);
+        updateNotebookAppearance({ wordCountVisible: !wordCountVisible });
         break;
       case "toggle_raw_markdown":
         toggleRawMarkdownMode();
@@ -2152,20 +2166,29 @@ export default function App() {
       case "zoom_reset":
         applyAppZoomCommand("reset");
         break;
+      case "navigation_dual_pane":
+        updateNotebookAppearance({ navigationStyle: "dual-pane" });
+        break;
+      case "navigation_section_view":
+        updateNotebookAppearance({ navigationStyle: "section-view" });
+        break;
+      case "navigation_single_pane":
+        updateNotebookAppearance({ navigationStyle: "single-pane" });
+        break;
       case "width_comfortable":
-        setEditorWidthMode("comfortable");
+        updateNotebookAppearance({ editorWidthMode: "comfortable" });
         break;
       case "width_narrow":
-        setEditorWidthMode("narrow");
+        updateNotebookAppearance({ editorWidthMode: "narrow" });
         break;
       case "width_full":
-        setEditorWidthMode("full");
+        updateNotebookAppearance({ editorWidthMode: "full" });
         break;
       case "align_left":
-        setNoteAlignment("left");
+        updateNotebookAppearance({ noteAlignment: "left" });
         break;
       case "align_center":
-        setNoteAlignment("center");
+        updateNotebookAppearance({ noteAlignment: "center" });
         break;
       case "format_image":
         void requestImage().then((pick) => {
@@ -2288,14 +2311,39 @@ export default function App() {
     setRawMarkdownVisible((value) => !value);
   }
 
+  function toggleLeftSidebar() {
+    if (!responsivePanes.canDockLeft) {
+      setPaneOverlay(current => current === "left" ? null : "left");
+      return;
+    }
+    setPaneOverlay(null);
+    setLeftVisible(value => !value);
+  }
+
+  function toggleRightSidebar() {
+    if (!responsivePanes.canDockRight) {
+      setPaneOverlay(current => current === "right" ? null : "right");
+      return;
+    }
+    setPaneOverlay(null);
+    updateNotebookAppearance({ rightSidebarOpen: !preferredOutlineVisible });
+  }
+
   function toggleEditorFocusMode() {
+    // Automatic focus mode must still offer a way to reach navigation.
+    if (!leftVisible && !outlineVisible && (preferredLeftVisible || preferredOutlineVisible)) {
+      toggleLeftSidebar();
+      return;
+    }
+    setPaneOverlay(null);
     const transition = toggleFocusMode(
-      { leftVisible, outlineVisible },
+      { leftVisible: preferredLeftVisible, outlineVisible: preferredOutlineVisible },
       focusRestoreRef.current,
     );
     focusRestoreRef.current = transition.restore;
     setLeftVisible(transition.panes.leftVisible);
-    setOutlineVisible(transition.panes.outlineVisible);
+    updateNotebookAppearance({ rightSidebarOpen: transition.panes.outlineVisible });
+    if (transition.panes.leftVisible && !responsivePanes.canDockLeft) setPaneOverlay("left");
   }
 
   function getRestorableNotePosition(current: WorkspaceMetadata, path: string, markdown: string) {
@@ -2543,6 +2591,7 @@ export default function App() {
     });
     if (!isWorkspaceActive(operationWorkspace) || !isCurrentNoteNavigation(navigationToken)) return;
     setSearchQuery("");
+    setPaneOverlay(null);
   }
 
   function findLastOpenedNoteInSection(sectionPath: string) {
@@ -3013,6 +3062,7 @@ export default function App() {
     persistDraft: persistDraftInBackground,
     requestCreateNoteInContext: () => void requestCreateNoteInCurrentContext(),
     toggleRawMarkdown: toggleRawMarkdownMode,
+    toggleSidebar: toggleLeftSidebar,
   };
 
   useEffect(() => {
@@ -3022,6 +3072,7 @@ export default function App() {
       const command = event.metaKey || event.ctrlKey;
       const key = event.key.toLowerCase();
       if (event.key === "Escape") {
+        setPaneOverlay(null);
         setSearchOpen(false);
         setSearchQuery("");
         setSettingsOpen(false);
@@ -3072,7 +3123,7 @@ export default function App() {
       }
       if (command && key === "\\") {
         event.preventDefault();
-        setLeftVisible((value) => !value);
+        actions.toggleSidebar();
         return;
       }
       if (command && event.altKey && key === "r") {
@@ -3092,7 +3143,7 @@ export default function App() {
     };
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
-  }, []);
+  }, [setPaneOverlay]);
 
   useEffect(() => {
     if (activeNoteLifecycle.isLoading) return;
@@ -3207,6 +3258,7 @@ export default function App() {
       setSelectedFolder(navigationStyle === "section-view" ? getTopLevelFolderPath(createdNote.parent_path) : createdNote.parent_path);
       placePathInActiveTab(createdNote.path);
       updateMetadata((current) => placeCreatedNote(current, createdNote));
+      setPaneOverlay(null);
       setTitleFocusRequest((value) => value + 1);
       activeNoteLifecycle.settleNavigation(navigationToken);
       await refreshWorkspace(operationWorkspace);
@@ -3893,8 +3945,8 @@ export default function App() {
     const value =
       kind === "rename-folder"
         ? folder?.name ?? ""
-        : metadata.folderColors[path] ?? effectiveAccentColor;
-    setPropertyDialog({ kind, path, value, name, ...(kind === "folder-color" ? { subject } : {}) } as PropertyDialogState);
+        : getFolderColors(metadata, navigationStyle)[path] ?? effectiveAccentColor;
+    setPropertyDialog({ kind, path, value, name, ...(kind === "folder-color" ? { subject, navigationStyle } : {}) } as PropertyDialogState);
     setContextMenu(null);
     setAppError(null);
   }
@@ -3905,8 +3957,8 @@ export default function App() {
     setContextMenu(null);
   }
 
-  function resetFolderColor(path: string) {
-    updateMetadata((current) => setMetadataValue(current, "folderColors", path, ""));
+  function resetFolderColor(path: string, style: NavigationStyle) {
+    updateMetadata((current) => setFolderColor(current, style, path, ""));
     setPropertyDialog(null);
     setContextMenu(null);
   }
@@ -3953,7 +4005,7 @@ export default function App() {
       if (propertyDialog.kind === "rename-folder") {
         await notebookPathMutations.renameFolder(propertyDialog.path, propertyDialog.value);
       } else if (propertyDialog.kind === "folder-color") {
-        updateMetadata((current) => setMetadataValue(current, "folderColors", propertyDialog.path, propertyDialog.value.trim()));
+        updateMetadata((current) => setFolderColor(current, propertyDialog.navigationStyle, propertyDialog.path, propertyDialog.value.trim()));
       }
       if (!isWorkspaceActive(operationWorkspace)) return;
       setPropertyDialog(null);
@@ -4605,6 +4657,7 @@ export default function App() {
   }
 
   function handleOutlineSelect(id: string) {
+    setPaneOverlay(null);
     const index = Number(id.replace("heading-", ""));
     if (index === 0) {
       noteSurfaceRef.current?.scrollTo({ top: 0, behavior: "smooth" });
@@ -4672,10 +4725,12 @@ export default function App() {
       "--plasma-panel-opacity": `${plasmaFrost * 0.9}%`,
       "--plasma-editor-opacity": `${Math.min(95, plasmaFrost * 1.1)}%`,
     } as CSSProperties : undefined}>
-      {plasmaEnabled ? <PlasmaTheme backgroundBlur={plasmaBackgroundBlur} frost={plasmaFrost / 100} theme={resolvedTheme} accentColor={effectiveAccentColor} layoutKey={`${leftVisible}-${outlineVisible}-${navigationStyle}`} /> : null}
+      {plasmaEnabled ? <PlasmaTheme ambientDrops={plasmaAmbientDrops} backgroundImage={plasmaBackgroundImage} flow={plasmaFlow / 100} backgroundBlur={plasmaBackgroundBlur} frost={plasmaFrost / 100} theme={renderedColorMode} accentColor={effectiveAccentColor} layoutKey={`${leftVisible}-${outlineVisible}-${navigationStyle}`} /> : null}
       {isWindowsDesktop() ? <WindowsMenuBar onError={setAppError} onMouseDown={handleChromeMouseDown} onDoubleClick={handleChromeDoubleClick} /> : null}
       <header
-        className="app-titlebar"
+        data-theme-region="notebook" data-theme-api={renderedTheme.design ? "1" : undefined}
+        className={`app-titlebar theme-${renderedColorMode} ${plasmaEnabled ? "theme-plasma" : "theme-standard"}`}
+        style={{ ...quickStyles.palette, ...quickStyles.titlebar }}
         data-tauri-drag-region=""
         onMouseDown={handleChromeMouseDown}
         onDoubleClick={handleChromeDoubleClick}
@@ -4700,6 +4755,17 @@ export default function App() {
           }}
           onSelect={(tabId) => void activateTab(tabId)}
         />
+        <button
+          className="icon-button chrome-interactive"
+          type="button"
+          title="Settings"
+          aria-label="Settings"
+          aria-haspopup="dialog"
+          onMouseDown={stopChromeMouseDown}
+          onClick={() => setSettingsOpen(true)}
+        >
+          <Settings size={15} aria-hidden="true" />
+        </button>
         <TabListDropdown
           tabs={visibleTabs}
           activeTabId={activeTabId}
@@ -4710,13 +4776,20 @@ export default function App() {
         <ReleaseNotice />
       </header>
 
-      <div className={`app-frame ${leftVisible ? "" : "is-left-hidden"} ${outlineVisible ? "" : "is-outline-hidden"} ${navigationStyle === "single-pane" ? "is-single-col" : ""}`} style={frameStyle}>
+      <div ref={responsivePanes.frameRef} onPointerDownCapture={(event) => {
+        if (responsivePanes.overlay && event.target instanceof Element && event.target.closest(".main-pane") && !event.target.closest(".sidebar-toggle, .outline-toggle")) setPaneOverlay(null);
+      }} data-theme-region="notebook" data-theme-api={renderedTheme.design ? "1" : undefined} className={`app-frame${responsivePanes.visibleOverlay ? ` has-${responsivePanes.visibleOverlay}-overlay${responsivePanes.closing ? " is-overlay-closing" : ""}` : ""} theme-${renderedColorMode} ${plasmaEnabled ? "theme-plasma" : "theme-standard"} ${responsivePanes.docked.leftVisible ? "" : "is-left-hidden"} ${responsivePanes.docked.outlineVisible ? "" : "is-outline-hidden"} ${navigationStyle === "single-pane" ? "is-single-col" : ""}`} style={{ ...frameStyle, ...quickStyles.palette }}>
+      {!responsivePanes.docked.leftVisible && !responsivePanes.overlay && <div className="sidebar-hover-edge is-left" data-sidebar-peek="left" data-sidebar-peek-edge aria-hidden="true" />}
+      {responsivePanes.hoverSide && <div key={responsivePanes.hoverRevision} className={`sidebar-hover-glow is-${responsivePanes.hoverSide}`} aria-hidden="true" />}
       {leftVisible ? (
         <aside
           id="left-navigation-panes"
           className={`left-panes${navigationStyle === "single-pane" ? " is-single-col" : ""}`}
           onContextMenu={(event) => openContextMenu(event, { kind: "empty" })}
         >
+          {responsivePanes.visibleOverlay === "left" && <SidebarOverlayActions side="left"
+            onClose={() => setPaneOverlay(null)}
+            onPin={responsivePanes.canDockLeft ? () => { setPaneOverlay(null); setLeftVisible(true); } : undefined} />}
           {navigationStyle === "single-pane" ? (
             <UnifiedTreePane
               activePath={activePath}
@@ -4729,7 +4802,7 @@ export default function App() {
               folderOrderingMode="alphabetical"
               folders={folders}
               menuOpen={appMenuOpen}
-              metadata={metadata}
+              metadata={navigationMetadata}
               notes={notes}
               recentNotebooks={recentNotebooks}
               rootPath=""
@@ -4776,7 +4849,7 @@ export default function App() {
                 draggingItem={draggingItem}
                 dropTargetFolder={dropTargetFolder}
                 folders={folderTree[0]?.children ?? []}
-                metadata={metadata}
+                metadata={navigationMetadata}
                 selectedFolder={selectedSection}
                 workspace={workspace}
                 menuOpen={appMenuOpen}
@@ -4809,7 +4882,7 @@ export default function App() {
                 folderDropIntent={folderDropIntent}
                 folderOrderingMode="custom"
                 folders={folders}
-                metadata={metadata}
+                metadata={navigationMetadata}
                 notes={notes}
                 rootPath={selectedSection}
                 hiddenFolderParentPath={selectedSection === "" ? "" : undefined}
@@ -4842,7 +4915,7 @@ export default function App() {
                 draggingItem={draggingItem}
                 dropTargetFolder={dropTargetFolder}
                 folders={folderTree}
-                metadata={metadata}
+                metadata={navigationMetadata}
                 menuOpen={appMenuOpen}
                 recentNotebooks={recentNotebooks}
                 selectedFolder={selectedFolder}
@@ -4892,18 +4965,20 @@ export default function App() {
           )}
         </aside>
       ) : null}
-      {leftVisible ? <PaneResizer label="Resize notes pane" variant="left-of-main" onPointerDown={startNotesPaneResize} /> : null}
+      {responsivePanes.docked.leftVisible ? <PaneResizer label="Resize notes pane" variant="left-of-main" onPointerDown={startNotesPaneResize} /> : null}
 
       <main className="main-pane">
         <EditorTopbar
           animateTitle={dockedTitleState.animate}
           leftVisible={leftVisible}
           outlineVisible={outlineVisible}
+          leftPreview={responsivePanes.overlay === "left" && responsivePanes.canDockLeft}
+          rightPreview={responsivePanes.overlay === "right" && responsivePanes.canDockRight}
           title={titleDraft}
           titleVisible={dockedTitleState.visible}
           onTitleClick={() => noteSurfaceRef.current?.scrollTo({ top: 0, behavior: "smooth" })}
-          onToggleLeft={() => setLeftVisible((value) => !value)}
-          onToggleOutline={() => setOutlineVisible((value) => !value)}
+          onToggleLeft={toggleLeftSidebar}
+          onToggleOutline={toggleRightSidebar}
         >
           {noteOpen ? (
             <>
@@ -5004,7 +5079,7 @@ export default function App() {
                         role="menuitemradio"
                         aria-checked={option.value === editorWidthMode}
                         onClick={() => {
-                          setEditorWidthMode(option.value);
+                          updateNotebookAppearance({ editorWidthMode: option.value });
                         }}
                       >
                         <span>
@@ -5023,7 +5098,7 @@ export default function App() {
                         className={alignment === noteAlignment ? "is-active" : ""}
                         role="menuitemradio"
                         aria-checked={alignment === noteAlignment}
-                        onClick={() => setNoteAlignment(alignment)}
+                        onClick={() => updateNotebookAppearance({ noteAlignment: alignment })}
                       >
                         <span>
                           <strong>{alignment === "left" ? "Align left" : "Align center"}</strong>
@@ -5233,16 +5308,19 @@ export default function App() {
         )}
         {noteOpen && wordCountVisible ? (
           <div className="note-status-bar">
-            <span>{noteStats.words} {noteStats.words === 1 ? "word" : "words"}</span>
-            <span>{noteStats.characters} {noteStats.characters === 1 ? "character" : "characters"}</span>
+            <span>{noteStats.words.toLocaleString()} {noteStats.words === 1 ? "word" : "words"}</span>
+            <span>{noteStats.characters.toLocaleString()} {noteStats.characters === 1 ? "character" : "characters"}</span>
           </div>
         ) : null}
       </main>
 
-      {outlineVisible ? <PaneResizer label="Resize right sidebar" variant="right-of-main" onPointerDown={startRightPaneResize} /> : null}
+      {responsivePanes.docked.outlineVisible ? <PaneResizer label="Resize right sidebar" variant="right-of-main" onPointerDown={startRightPaneResize} /> : null}
       {outlineVisible ? (
         <RightSidebar
           id="right-note-sidebar"
+          overlayActions={responsivePanes.visibleOverlay === "right" ? <SidebarOverlayActions side="right"
+            onClose={() => setPaneOverlay(null)}
+            onPin={responsivePanes.canDockRight ? () => { setPaneOverlay(null); updateNotebookAppearance({ rightSidebarOpen: true }); } : undefined} /> : undefined}
           activeNote={activeNote}
           frontmatter={frontmatterDraft}
           frontmatterError={frontmatterError}
@@ -5487,30 +5565,54 @@ export default function App() {
         />
       ) : null}
 
+      {invalidNotebookTheme ? <div className="theme-recovery-notice" role="alert"><strong>This notebook’s theme could not be loaded. Showing Default.</strong><p>Your saved theme has been kept. Open Settings to choose another theme or import a corrected version.</p><button className="toolbar-button" onClick={() => { setSettingsSection('appearance'); setSettingsOpen(true); }}>Open Appearance</button></div> : null}
+      {themeCatalogWarnings.length > 0 ? <div className="theme-recovery-notice" role="alert">
+        <strong>Some themes could not be loaded. Default is available.</strong>
+        {themeCatalogWarnings.map(message => <p key={message}>{message}</p>)}
+      </div> : null}
+      <ThemeStyles theme={renderedTheme} mode={resolvedTheme} onReset={resetThemeAppearance} />
       {settingsOpen ? (
           <SettingsModal
+            initialSection={settingsSection}
+            onSectionChange={setSettingsSection}
+            editorWidthMode={editorWidthMode}
+            onEditorWidthModeChange={value => updateNotebookAppearance({ editorWidthMode: value })}
+            noteAlignment={noteAlignment}
+            onNoteAlignmentChange={value => updateNotebookAppearance({ noteAlignment: value })}
             navigationStyle={navigationStyle}
             onNavigationStyleChange={(style) => updateNotebookAppearance({ navigationStyle: style })}
             spellcheckEnabled={spellcheckEnabled}
             onSpellcheckEnabledChange={setSpellcheckEnabled}
-            plasmaEnabled={plasmaEnabled}
-            onPlasmaEnabledChange={(enabled) => updatePlasma({ enabled })}
-            plasmaFrost={plasmaFrost}
-            onPlasmaFrostChange={(frost) => updatePlasma({ frost })}
-            plasmaBackgroundBlur={plasmaBackgroundBlur}
-            onPlasmaBackgroundBlurChange={(backgroundBlur) => updatePlasma({ backgroundBlur })}
+            wordCountVisible={wordCountVisible}
+            onWordCountVisibleChange={(wordCountVisible) => updateNotebookAppearance({ wordCountVisible })}
+            onResetTheme={resetThemeAppearance}
             onClose={() => setSettingsOpen(false)}
             themeContent={<>
               {metadata.appearance?.customTheme && !customTheme ? <p role="alert">This notebook contains an invalid or unsupported theme. Choose a theme to replace it.</p> : null}
-              <ThemeBuilder key={workspace} current={customTheme} seed={themeSeed()} onApply={applyCustomTheme}
+              <ThemeBuilder key={workspace} current={customTheme} seed={themeSeed()} onApply={applyCustomTheme} onUseThemeDefaults={useThemeDefaults} onRestoreDefault={resetThemeAppearance}
+                onSaved={() => setSettingsOpen(false)}
+                quickAppearanceControls={<QuickAppearanceControls theme={quickAppearanceTheme} mode={resolvedTheme} quick={quickAppearance}
+                  current={{ accentColor: effectiveAccentColor, editorFontFamily: renderedTheme.editorFontFamily, editorFontSize: renderedTheme.editorFontSize }}
+                  onChange={patch => updateNotebookAppearance({ quickAppearance: { ...quickAppearance, ...patch } })}
+                  onReset={field => updateNotebookAppearance(quickAppearanceResetPatch(quickAppearanceTheme, quickAppearance, field))} />}
                 builtInThemes={themePresets} builtInThemeId={themePresetId}
-                onBuiltInChange={(id) => updateNotebookAppearance({ customTheme: null, themePresetId: id, colors: defaultNotebookThemeColors() })}
+                themeColorPreferences={metadata.appearance?.themeColorPreferences}
+                selectedVariantId={customTheme ? metadata.appearance?.themeColorPreferences?.[customTheme.id] : undefined}
+                onVariantChange={id => {
+                  if (!customTheme) return;
+                  const chosen = resolveThemeVariant(customTheme, id);
+                  updateNotebookAppearance({ colors: themeAppearance(chosen).colors, quickAppearance: { ...quickAppearance, accentColor: undefined }, themeColorPreferences: { ...metadata.appearance?.themeColorPreferences, [customTheme.id]: id } });
+                }}
+                onColorChange={id => selectThemeColor(id, true)}
+                onBuiltInChange={id => selectThemeColor(id, false)}
                 colorScheme={colorScheme} onColorSchemeChange={(scheme) => updateNotebookAppearance({ colorScheme: scheme })} />
             </>}
           />
       ) : null}
 
-      {workspace && metadataLoaded && !settingsOpen ? <ThemeReconciliation key={workspace} current={customTheme} onApply={applyCustomTheme} /> : null}
+      {workspace && metadataLoaded && !settingsOpen ? <ThemeReconciliation key={workspace} current={customTheme} onApply={applyCustomTheme}
+        acknowledgedDifference={metadata.appearance?.acknowledgedThemeDifference}
+        onKeepBoth={(difference) => updateNotebookAppearance({ acknowledgedThemeDifference: difference })} /> : null}
 
       {notebooksManageOpen ? (
         <ManageNotebooksModal
@@ -5554,9 +5656,11 @@ export default function App() {
         <PropertyDialog
           state={propertyDialog}
           appError={appError}
-          onChange={(value) => setPropertyDialog({ ...propertyDialog, value } as PropertyDialogState)}
+          onChange={(value) => setPropertyDialog(propertyDialog.kind === "folder-color"
+            ? { ...propertyDialog, value, previewColor: value }
+            : { ...propertyDialog, value })}
           onClose={() => setPropertyDialog(null)}
-          onReset={propertyDialog.kind === "folder-color" ? () => resetFolderColor(propertyDialog.path) : undefined}
+          onReset={propertyDialog.kind === "folder-color" ? () => resetFolderColor(propertyDialog.path, propertyDialog.navigationStyle) : undefined}
           onSubmit={() => void submitPropertyDialog()}
         />
       ) : null}
@@ -7297,6 +7401,8 @@ function EmptyNoteSurface({
 
 export function EditorTopbar({
   animateTitle = false,
+  leftPreview = false,
+  rightPreview = false,
   children,
   leftVisible,
   outlineVisible,
@@ -7307,6 +7413,8 @@ export function EditorTopbar({
   onToggleOutline,
 }: {
   animateTitle?: boolean;
+  leftPreview?: boolean;
+  rightPreview?: boolean;
   children?: ReactNode;
   leftVisible: boolean;
   outlineVisible: boolean;
@@ -7316,12 +7424,13 @@ export function EditorTopbar({
   onToggleLeft: () => void;
   onToggleOutline: () => void;
 }) {
-  const leftLabel = leftVisible ? "Hide left sidebar" : "Show left sidebar";
-  const rightLabel = outlineVisible ? "Hide right sidebar" : "Show right sidebar";
+  const leftLabel = leftPreview ? "Keep left sidebar open" : leftVisible ? "Hide left sidebar" : "Show left sidebar";
+  const rightLabel = rightPreview ? "Keep right sidebar open" : outlineVisible ? "Hide right sidebar" : "Show right sidebar";
 
   return (
     <header className="topbar">
       <button
+        data-sidebar-peek="left"
         className="icon-button sidebar-toggle"
         type="button"
         title={leftLabel}
@@ -7345,6 +7454,7 @@ export function EditorTopbar({
       <div className="topbar-actions">
         {children}
         <button
+          data-sidebar-peek="right"
           className="icon-button outline-toggle"
           type="button"
           title={rightLabel}
@@ -7485,8 +7595,16 @@ function NotebookMenuButton({
   );
 }
 
+function SidebarOverlayActions({ side, onPin, onClose }: { side: "left" | "right"; onPin?: () => void; onClose: () => void }) {
+  return <div className={`sidebar-overlay-actions is-${side}`}>
+    {onPin && <button className="toolbar-button" aria-label={`Keep ${side} sidebar open`} onClick={onPin}><Pin size={14} />Keep open</button>}
+    <button className="icon-button" aria-label={`Close ${side} sidebar preview`} title="Close preview" onClick={onClose}><X size={16} /></button>
+  </div>;
+}
+
 function RightSidebar({
   id,
+  overlayActions,
   activeNote,
   frontmatter,
   frontmatterError,
@@ -7506,6 +7624,7 @@ function RightSidebar({
   onSelectBacklink,
 }: {
   id?: string;
+  overlayActions?: ReactNode;
   activeNote: NoteEntry | null;
   frontmatter: string;
   frontmatterError: string | null;
@@ -7534,6 +7653,7 @@ function RightSidebar({
       : "Properties";
   return (
     <aside id={id} className="right-sidebar">
+      {overlayActions}
       <div className="pane-header">
         <strong>{title}</strong>
         <div className="sidebar-tabs">
@@ -9794,78 +9914,6 @@ function hexToRgb(value: string) {
   };
 }
 
-function rgbToHsl(r: number, g: number, b: number) {
-  const rN = r / 255;
-  const gN = g / 255;
-  const bN = b / 255;
-  const max = Math.max(rN, gN, bN);
-  const min = Math.min(rN, gN, bN);
-  const l = (max + min) / 2;
-  if (max === min) return { h: 0, s: 0, l: l * 100 };
-  const d = max - min;
-  const s = l > 0.5 ? d / (2 - max - min) : d / (max + min);
-  let h = 0;
-  switch (max) {
-    case rN: h = (gN - bN) / d + (gN < bN ? 6 : 0); break;
-    case gN: h = (bN - rN) / d + 2; break;
-    case bN: h = (rN - gN) / d + 4; break;
-  }
-  return { h: h * 60, s: s * 100, l: l * 100 };
-}
-
-function hslToHex({ h, s, l }: { h: number; s: number; l: number }) {
-  const sN = s / 100;
-  const lN = l / 100;
-  const c = (1 - Math.abs(2 * lN - 1)) * sN;
-  const x = c * (1 - Math.abs(((h / 60) % 2) - 1));
-  const m = lN - c / 2;
-  let r = 0, g = 0, b = 0;
-  if (h < 60) [r, g, b] = [c, x, 0];
-  else if (h < 120) [r, g, b] = [x, c, 0];
-  else if (h < 180) [r, g, b] = [0, c, x];
-  else if (h < 240) [r, g, b] = [0, x, c];
-  else if (h < 300) [r, g, b] = [x, 0, c];
-  else [r, g, b] = [c, 0, x];
-  const to = (v: number) => Math.round((v + m) * 255).toString(16).padStart(2, "0");
-  return `#${to(r)}${to(g)}${to(b)}`;
-}
-
-function shiftLightness(hex: string, deltaL: number) {
-  const rgb = hexToRgb(hex);
-  if (!rgb) return hex;
-  const hsl = rgbToHsl(rgb.r, rgb.g, rgb.b);
-  return hslToHex({ ...hsl, l: clamp(hsl.l + deltaL, 0, 100) });
-}
-
-function deriveThemeTokens(preset: ThemePreset, mode: "light" | "dark"): ThemeTokens {
-  const bg = preset.appBackground[mode];
-  const overrides = preset.tokens?.[mode] ?? {};
-  if (mode === "dark") {
-    const sidebar = shiftLightness(bg, -3);
-    return {
-      surface: sidebar,
-      surfaceSoft: sidebar,
-      surfaceStrong: shiftLightness(bg, 4),
-      surfaceMuted: shiftLightness(sidebar, -1),
-      border: "rgba(238, 232, 223, 0.1)",
-      text: "#eee8df",
-      textMuted: "rgba(238, 232, 223, 0.62)",
-      ...overrides,
-    };
-  }
-  const sidebar = shiftLightness(bg, -4);
-  return {
-    surface: sidebar,
-    surfaceSoft: sidebar,
-    surfaceStrong: shiftLightness(bg, 4),
-    surfaceMuted: shiftLightness(sidebar, -2),
-    border: "rgba(52, 48, 43, 0.1)",
-    text: "#22211f",
-    textMuted: "rgba(34, 33, 31, 0.62)",
-    ...overrides,
-  };
-}
-
 function normalizeColorForInput(value: string) {
   if (/^#[0-9a-f]{6}$/i.test(value)) return value;
   const rgb = value.match(/rgba?\((\d+),\s*(\d+),\s*(\d+)/i);
@@ -9876,12 +9924,5 @@ function normalizeColorForInput(value: string) {
 }
 
 function readableTextColor(background: string) {
-  const rgb = hexToRgb(background);
-  if (!rgb) return "#ffffff";
-  const channels = [rgb.r, rgb.g, rgb.b].map((channel) => {
-    const value = channel / 255;
-    return value <= 0.03928 ? value / 12.92 : ((value + 0.055) / 1.055) ** 2.4;
-  });
-  const luminance = channels[0] * 0.2126 + channels[1] * 0.7152 + channels[2] * 0.0722;
-  return luminance > 0.54 ? "#192d2b" : "#ffffff";
+  return readableThemeText(background);
 }

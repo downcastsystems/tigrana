@@ -150,3 +150,9 @@ Please keep one principle in mind: features should preserve clean, readable Mark
 ## License
 
 Tigrana is free and open-source software released under the [MIT License](LICENSE).
+
+Bundled fonts are separately licensed under SIL OFL 1.1. Their sources and redistribution notices are listed in [Bundled font licenses](public/licenses/README.md).
+
+## Theme creation
+
+Build a theme visually, add optional CSS and custom controls, and export a portable package. Start with the [Theme creator guide](docs/themes/creator-guide.md); the [API reference](docs/themes/README.md) covers supported selectors and limits.

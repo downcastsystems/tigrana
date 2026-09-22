@@ -1,4 +1,4 @@
-import type { BookmarkEntry, FolderEntry, NoteEntry, WorkspaceMetadata } from "../types";
+import type { BookmarkEntry, FolderEntry, NoteEntry, NavigationStyle, WorkspaceMetadata } from "../types";
 
 export type FolderNode = FolderEntry & {
   children: FolderNode[];
@@ -289,7 +289,11 @@ export function replaceFolderPathPrefix(metadata: WorkspaceMetadata, oldPrefix: 
     ...bookmark,
     path: replacePathPrefix(bookmark.path, oldPrefix, newPrefix),
   }));
-  return { ...metadata, folderOrder, noteOrder, pinnedNotes, folderIcons, folderColors, expandedFolders, noteIcons, notePositions, bookmarks };
+  return { ...metadata,
+    ...mapFolderColorPaths(metadata, (colors) => Object.fromEntries(
+      Object.entries(colors).map(([path, color]) => [replacePathPrefix(path, oldPrefix, newPrefix), color]),
+    )),
+    folderOrder, noteOrder, pinnedNotes, folderIcons, folderColors, expandedFolders, noteIcons, notePositions, bookmarks };
 }
 
 export function removeFolderFromMetadata(metadata: WorkspaceMetadata, folderPath: string): WorkspaceMetadata {
@@ -305,10 +309,38 @@ export function removeFolderFromMetadata(metadata: WorkspaceMetadata, folderPath
     pinnedNotes: Object.fromEntries(Object.entries(metadata.pinnedNotes).filter(([path]) => !isInFolder(path))),
     folderIcons: Object.fromEntries(Object.entries(metadata.folderIcons).filter(([path]) => !isInFolder(path))),
     folderColors: Object.fromEntries(Object.entries(metadata.folderColors).filter(([path]) => !isInFolder(path))),
+    ...mapFolderColorPaths(metadata, (colors) => Object.fromEntries(
+      Object.entries(colors).filter(([path]) => !isInFolder(path)),
+    )),
     expandedFolders: Object.fromEntries(Object.entries(metadata.expandedFolders).filter(([path]) => !isInFolder(path))),
     noteIcons: Object.fromEntries(Object.entries(metadata.noteIcons).filter(([path]) => !isInFolder(path))),
     notePositions: Object.fromEntries(Object.entries(metadata.notePositions).filter(([path]) => !isInFolder(path))),
     bookmarks: metadata.bookmarks.filter((bookmark) => !isInFolder(bookmark.path)),
+  };
+}
+
+/** Older notebooks keep their colors in Sections; other layouts start uncolored. */
+export function getFolderColors(metadata: WorkspaceMetadata, style: NavigationStyle): Record<string, string> {
+  return metadata.folderColorsByNavigationStyle?.[style] ??
+    (style === "section-view" ? metadata.folderColors : {});
+}
+
+export function setFolderColor(metadata: WorkspaceMetadata, style: NavigationStyle, path: string, value: string): WorkspaceMetadata {
+  const colors = { ...getFolderColors(metadata, style) };
+  if (value) colors[path] = value;
+  else delete colors[path];
+  return {
+    ...metadata,
+    folderColorsByNavigationStyle: { ...metadata.folderColorsByNavigationStyle, [style]: colors },
+  };
+}
+
+function mapFolderColorPaths(metadata: WorkspaceMetadata, transform: (colors: Record<string, string>) => Record<string, string>): Partial<WorkspaceMetadata> {
+  if (!metadata.folderColorsByNavigationStyle) return {};
+  return {
+    folderColorsByNavigationStyle: Object.fromEntries(
+      Object.entries(metadata.folderColorsByNavigationStyle).map(([style, colors]) => [style, transform(colors)]),
+    ),
   };
 }
 

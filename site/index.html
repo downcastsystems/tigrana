@@ -1,0 +1,65 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="description" content="Make your first Tigrana custom theme with a small, copyable Advanced CSS example.">
+  <meta name="color-scheme" content="dark">
+  <title>Your first custom theme · Tigrana</title>
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <a class="skip-link" href="#tutorial">Skip to tutorial</a>
+  <header><a href="https://github.com/downcastsystems/tigrana">Tigrana</a><span>Theme workshop</span></header>
+  <main id="tutorial">
+    <p class="eyebrow">A five-minute first project</p>
+    <h1>Your first custom theme</h1>
+    <p class="lead">Give your notebook softer panels, an accent under each heading, and a tidy word-count badge. You only need a few lines of Advanced CSS.</p>
+
+    <section aria-labelledby="start"><h2 id="start">1. Make your own copy</h2>
+      <p>Open <strong>Settings → Appearance</strong>, choose <strong>Default</strong>, then select <strong>Create theme</strong>. Name it <strong>Quiet Corners</strong>. This creates a draft; the built-in Default stays available.</p>
+      <p>In <strong>Visual</strong>, pick an accent you like for both light and dark mode. For this first project, leave <strong>Plasma glass</strong> off under <strong>Advanced surfaces</strong>.</p>
+    </section>
+
+    <section aria-labelledby="css"><h2 id="css">2. Add a little CSS</h2>
+      <p>Open <strong>Advanced CSS</strong>. Replace the contents of <strong>Custom CSS</strong> with this example. The generated CSS is read-only; leave it alone.</p>
+      <pre tabindex="0" aria-label="Copyable custom theme CSS"><code>:scope {
+  --tigrana-workspace-inset: 12px;
+  --tigrana-panel-gap: 12px;
+  --tigrana-panel-radius: 14px;
+}
+
+.ProseMirror h2 {
+  padding-bottom: 0.3em;
+  border-bottom: 2px solid var(--tigrana-accent);
+}
+
+.note-status-bar {
+  border: 1px solid var(--tigrana-border);
+  border-radius: 6px;
+  background: var(--tigrana-surface);
+  color: var(--tigrana-text);
+  box-shadow: none;
+}</code></pre>
+      <p><code>:scope</code> means the notebook area. The first rule gives panels breathing room and rounder corners. <code>.ProseMirror h2</code> targets second-level headings in your notes. <code>.note-status-bar</code> targets the word count.</p>
+      <p>The <code>var(...)</code> values use your theme’s colors, so the same CSS works in light and dark mode. Try changing <code>14px</code> to <code>4px</code> to see squarer panels.</p>
+    </section>
+
+    <section aria-labelledby="preview"><h2 id="preview">3. Check both appearances</h2>
+      <p>Use the preview to compare light and dark mode. Check selected notes, headings, links, and the word count. Try the navigation options and toggle the outline. Open <strong>Theme check</strong> and review its findings.</p>
+      <p>If you see a CSS error, check braces, semicolons, and spelling. Start with this example again if needed. Tigrana supports a limited set of CSS; remote imports and <code>!important</code> are not supported.</p>
+    </section>
+
+    <section aria-labelledby="save"><h2 id="save">4. Save and try it</h2>
+      <p>Choose <strong>Save and use</strong>, inspect the light and dark previews, then choose <strong>Confirm and save</strong>. Open a real note with a Heading 2 to see your underline.</p>
+      <p>To change your CSS later, open <strong>Edit theme</strong>. To go back, choose <strong>Default</strong> in Appearance. <strong>Restore default appearance</strong> also resets layout and effects.</p>
+    </section>
+
+    <aside><h2>Ready to share?</h2>
+      <p>Choose <strong>Export theme</strong> to create a <code>.tigrana-theme</code> file. Someone else can use <strong>Import theme</strong> to try it. This example uses the app’s existing fonts and needs no downloaded assets.</p>
+      <p>Next: explore the <a href="https://github.com/downcastsystems/tigrana/blob/proper-theme-support/docs/themes/creator-guide.md">creator guide</a> and <a href="https://github.com/downcastsystems/tigrana/blob/proper-theme-support/docs/themes/README.md">supported CSS hooks and variables</a>.</p>
+    </aside>
+  </main>
+  <footer>Custom themes change the look of Tigrana. Your notes stay Markdown.</footer>
+</body>
+</html>

@@ -1,0 +1,84 @@
+@layer tigrana-base, tigrana-plasma, tigrana-api;
+@layer tigrana-api {
+/* Theme API 1. Stable visual hooks; behavior and note structure remain app-owned. */
+[data-theme-region][data-theme-api="1"] {
+  color: var(--tigrana-text, var(--text));
+}
+[data-theme-region][data-theme-api="1"] :is(.ProseMirror, .raw-markdown-input) { letter-spacing: var(--tigrana-letter-spacing, 0em); font-kerning: normal; line-height: var(--tigrana-line-height); color: var(--tigrana-editor-text, var(--text)); }
+[data-theme-region][data-theme-api="1"] .ProseMirror a { color: var(--link-color); }
+[data-theme-region][data-theme-api="1"] :is(.folder-row, .folder-select, .note-card, .note-row, .unified-folder-row, .unified-folder-name, .unified-note-row, .bookmark-item, .note-tab) { color: var(--tigrana-text); }
+[data-theme-region][data-theme-api="1"] :is(.folder-row, .note-card, .note-row, .unified-folder-row, .unified-note-row, .note-tab):is(.is-active, .is-context-target) { color: var(--tigrana-selected-text); }
+[data-theme-region][data-theme-api="1"] :is(.folder-row, .note-card, .note-row, .unified-folder-row, .unified-note-row):hover { color: var(--tigrana-selected-text); }
+[data-theme-region][data-theme-api="1"] :is(.folder-row, .note-card, .unified-folder-row, .unified-note-row):is(.is-active, .is-context-target, :hover) :is(.folder-select, .folder-select span, .unified-folder-name, strong, small) { color: inherit; }
+[data-theme-region][data-theme-api="1"] :is(.folder-row, .note-card, .unified-note-row, .unified-folder-row, .toolbar-button, .icon-button, .note-tab) { border-radius: var(--tigrana-radius); }
+[data-theme-region][data-theme-api="1"] :is(.folder-row, .note-card, .unified-note-row, .unified-folder-row) { min-height: calc(32px * var(--tigrana-spacing)); }
+[data-theme-region][data-theme-api="1"] .ProseMirror :is(p, blockquote, ul, ol) { margin-block: calc(0.75em * var(--tigrana-spacing)); }
+/* List rows use line height for spacing. Paragraph margins belong between
+   standalone blocks, not between bullets or around nested lists. */
+[data-theme-region][data-theme-api="1"] .ProseMirror li > :is(p, ul, ol),
+[data-theme-region][data-theme-api="1"] .ProseMirror ul[data-type="taskList"] > li > div > :is(p, ul, ol) { margin-block: 0; }
+[data-theme-region][data-theme-api="1"] .ProseMirror :is(pre, blockquote, table) { border-radius: var(--tigrana-radius); }
+[data-theme-region][data-theme-api="1"] .note-surface { background-color: var(--tigrana-background, var(--app-bg)); }
+[data-theme-region][data-theme-api="1"] :is(.folder-pane, .notes-pane, .unified-tree-pane, .right-sidebar) { background-color: var(--tigrana-surface, var(--surface)); }
+/* Window-like panels are independent of the optional Plasma renderer. The
+   splitter columns remain in the layout so custom gaps stay draggable. */
+[data-theme-region].app-frame.theme-standard {
+  background: var(--tigrana-workspace-background, var(--app-bg));
+}
+[data-theme-region] .left-panes { background: transparent; backdrop-filter: none; }
+[data-theme-region].theme-standard :is(.folder-pane, .notes-pane, .unified-tree-pane, .main-pane, .right-sidebar) {
+  border-radius: var(--tigrana-panel-radius, 0px);
+  box-shadow: var(--tigrana-panel-shadow, none);
+}
+[data-theme-region].theme-standard .note-surface {
+  border-radius: 0 0 var(--tigrana-panel-radius, 0px) var(--tigrana-panel-radius, 0px);
+}
+[data-theme-region].theme-standard :is(.pane-header, .topbar) {
+  border-radius: var(--tigrana-panel-radius, 0px) var(--tigrana-panel-radius, 0px) 0 0;
+}
+/* Text colors also apply to legacy palettes and note titles, which had fixed colors. */
+[data-theme-region] :is(.ProseMirror, .note-title-input, .raw-markdown-input) { color: var(--tigrana-editor-text, var(--text)); }
+[data-theme-region] .ProseMirror blockquote { color: var(--tigrana-editor-text, var(--text)); }
+[data-theme-region] .ProseMirror mark { color: var(--tigrana-highlight-text, #000000); background-color: var(--tigrana-highlight-background, #ffff00); }
+[data-theme-region] :is(.ProseMirror, .ProseMirror *, .note-title-input, .raw-markdown-input)::selection { background: var(--accent); color: var(--accent-contrast); }
+/* Default uses a light accent tint so text selection stands apart from the page
+   in both color schemes, including when a quick accent override is selected. */
+html[data-theme-preset="default"] [data-theme-region] :is(.ProseMirror, .ProseMirror *, .note-title-input, .raw-markdown-input)::selection {
+  background-color: color-mix(in srgb, var(--accent) 35%, white);
+  color: currentColor;
+}
+html[data-theme-preset="default"][data-theme="dark"] [data-theme-region] :is(.ProseMirror, .ProseMirror *, .note-title-input, .raw-markdown-input)::selection {
+  background-color: color-mix(in srgb, var(--accent) 40%, white);
+}
+/* The fixed window's GPU layer must not be changed by the generic surface rules. */
+.app-shell[data-plasma] [data-theme-region][data-theme-api="1"] .note-surface { background-color: transparent; }
+.app-shell[data-plasma] [data-theme-region][data-theme-api="1"] :is(.folder-pane, .notes-pane, .unified-tree-pane, .right-sidebar) { background-color: color-mix(in srgb, var(--tigrana-surface, var(--surface)) var(--plasma-panel-opacity, 72%), transparent); }
+
+
+/* Shared roles keep all interaction states and small text consistent. */
+[data-theme-region] .note-view-dropdown button.is-active { background: var(--tigrana-menu-selected-background); color: var(--tigrana-menu-selected-text); }
+[data-theme-region] .note-view-dropdown button:not(:disabled):hover { background: var(--tigrana-hover-background); color: var(--tigrana-hover-text); }
+[data-theme-region] .note-view-dropdown button:is(.is-active, :hover) :is(strong, small) { color: inherit; }
+[data-theme-region] :is(.folder-row,.note-row,.note-card,.unified-note-row,.unified-folder-row):hover { background: var(--tigrana-hover-background); color: var(--tigrana-hover-text); }
+[data-theme-region] :is(.folder-row,.note-row,.note-card,.unified-note-row,.unified-folder-row).is-active { background: var(--tigrana-accent); color: var(--tigrana-selected-text); }
+[data-theme-region] .note-title-input { font-size: var(--tigrana-font-title); }
+[data-theme-region] .topbar-note-title { font-size: var(--tigrana-font-compact-title); }
+[data-theme-region] :is(.folder-row,.note-row,.note-card,.unified-tree-row,.pane-header,.folder-select) { font-size: var(--tigrana-font-navigation); }
+[data-theme-region] .note-tab { font-size: var(--tigrana-font-tab); }
+[data-theme-region] .note-view-dropdown strong { font-size: var(--tigrana-font-menu); }
+[data-theme-region] :is(.note-view-dropdown small,.note-view-menu-label) { font-size: var(--tigrana-font-secondary); }
+[data-theme-region] .note-status-bar { font-size: var(--tigrana-font-status); }
+}
+@layer tigrana-api {
+/* Portaled menus and Settings consume safe role values, never custom theme CSS. */
+.settings-nav-item.is-active {
+  background: var(--tigrana-menu-selected-background, var(--accent));
+  color: var(--tigrana-menu-selected-text, var(--accent-contrast));
+}
+.context-menu button:not(:disabled):hover, .app-menu button:not(:disabled):hover {
+  background: var(--tigrana-hover-background, var(--accent));
+  color: var(--tigrana-hover-text, var(--accent-contrast));
+}
+.context-menu button, .app-menu button { font-size: var(--tigrana-font-menu, 14px); }
+.context-menu button:not(:disabled):hover small, .app-menu button:not(:disabled):hover small { color: inherit; }
+}

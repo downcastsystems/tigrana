@@ -318,6 +318,42 @@ describe("Note editor typing performance", () => {
     expect(document.activeElement).toBe(findInput);
   });
 
+  it("does not clear the selected new-note title when the editor loads", async () => {
+    vi.useFakeTimers();
+    const container = document.createElement("div");
+    const title = document.createElement("textarea");
+    title.value = "Untitled";
+    const editorHost = document.createElement("div");
+    container.append(title, editorHost);
+    document.body.appendChild(container);
+    const root = createRoot(editorHost);
+    mounted.push({ container, root });
+    const renderEditor = (path: string) => (
+      <NotesEditor content="" commandRequest={null} editable findRequest={0}
+        focusAtEndRequest={0} focusRequest={0} historyKey={path} notePath={path}
+        onChange={() => undefined} onLoadError={(error) => { throw error; }}
+        onPendingChange={() => undefined} onPositionChange={() => undefined}
+        reloadRequest={0} restorePosition={null} spellcheckEnabled workspace="/Notebook" />
+    );
+    await act(async () => root.render(renderEditor("Previous.md")));
+    await act(async () => { await vi.advanceTimersByTimeAsync(100); });
+
+    // App focuses the title in a layout effect before the editor's load effect.
+    title.focus();
+    title.select();
+    const clearSelection = vi.spyOn(window.getSelection()!, "removeAllRanges");
+    try {
+      await act(async () => root.render(renderEditor("Untitled.md")));
+      await act(async () => { await vi.advanceTimersByTimeAsync(100); });
+      expect(document.activeElement).toBe(title);
+      expect([title.selectionStart, title.selectionEnd]).toEqual([0, title.value.length]);
+      // WebKit's textarea highlight must not be cleared by a deferred global blur.
+      expect(clearSelection).not.toHaveBeenCalled();
+    } finally {
+      clearSelection.mockRestore();
+    }
+  });
+
   it("keeps the Note viewport pinned while focus moves from a new title to the empty editor", async () => {
     const container = document.createElement("div");
     const noteSurface = document.createElement("section");

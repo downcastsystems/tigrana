@@ -1,3 +1,5 @@
+@layer tigrana-base, tigrana-plasma, tigrana-api;
+@layer tigrana-plasma {
 /* The canvas lives behind this isolated shell, above the body background.
    Translucent CSS surfaces also work while loading or without WebGL2. */
 .app-shell[data-plasma] {
@@ -47,21 +49,21 @@ html[data-accent-titlebar="true"] .app-shell[data-plasma] .app-titlebar {
 }
 
 .app-shell[data-plasma] .app-frame {
-  padding: 18px 16px 16px;
+  padding: var(--tigrana-workspace-inset, 18px 16px 16px);
   gap: 0;
 }
 
 /* Keep the standard layout definitions untouched. */
 .app-shell[data-plasma] .app-frame {
-  grid-template-columns: calc(var(--folder-pane-width, 292px) + 20px + var(--notes-pane-width, 268px)) 20px minmax(0, 1fr) 20px var(--right-pane-width, 300px);
+  grid-template-columns: calc(var(--folder-pane-width, 292px) + var(--tigrana-panel-gap, 20px) + var(--notes-pane-width, 268px)) var(--tigrana-panel-gap, 20px) minmax(0, 1fr) var(--tigrana-panel-gap, 20px) var(--right-pane-width, 300px);
 }
 
 .app-shell[data-plasma] .app-frame.is-left-hidden {
-  grid-template-columns: minmax(0, 1fr) 20px var(--right-pane-width, 300px);
+  grid-template-columns: minmax(0, 1fr) var(--tigrana-panel-gap, 20px) var(--right-pane-width, 300px);
 }
 
 .app-shell[data-plasma] .app-frame.is-outline-hidden {
-  grid-template-columns: calc(var(--folder-pane-width, 292px) + 20px + var(--notes-pane-width, 268px)) 20px minmax(0, 1fr);
+  grid-template-columns: calc(var(--folder-pane-width, 292px) + var(--tigrana-panel-gap, 20px) + var(--notes-pane-width, 268px)) var(--tigrana-panel-gap, 20px) minmax(0, 1fr);
 }
 
 .app-shell[data-plasma] .app-frame.is-left-hidden.is-outline-hidden {
@@ -69,15 +71,15 @@ html[data-accent-titlebar="true"] .app-shell[data-plasma] .app-titlebar {
 }
 
 .app-shell[data-plasma] .app-frame.is-single-col {
-  grid-template-columns: var(--notes-pane-width, 268px) 20px minmax(0, 1fr) 20px var(--right-pane-width, 300px);
+  grid-template-columns: var(--notes-pane-width, 268px) var(--tigrana-panel-gap, 20px) minmax(0, 1fr) var(--tigrana-panel-gap, 20px) var(--right-pane-width, 300px);
 }
 
 .app-shell[data-plasma] .app-frame.is-single-col.is-left-hidden {
-  grid-template-columns: minmax(0, 1fr) 20px var(--right-pane-width, 300px);
+  grid-template-columns: minmax(0, 1fr) var(--tigrana-panel-gap, 20px) var(--right-pane-width, 300px);
 }
 
 .app-shell[data-plasma] .app-frame.is-single-col.is-outline-hidden {
-  grid-template-columns: var(--notes-pane-width, 268px) 20px minmax(0, 1fr);
+  grid-template-columns: var(--notes-pane-width, 268px) var(--tigrana-panel-gap, 20px) minmax(0, 1fr);
 }
 
 .app-shell[data-plasma] .app-frame.is-single-col.is-left-hidden.is-outline-hidden {
@@ -85,7 +87,7 @@ html[data-accent-titlebar="true"] .app-shell[data-plasma] .app-titlebar {
 }
 
 .app-shell[data-plasma] .left-panes {
-  grid-template-columns: var(--folder-pane-width, 292px) 20px var(--notes-pane-width, 268px);
+  grid-template-columns: var(--folder-pane-width, 292px) var(--tigrana-panel-gap, 20px) var(--notes-pane-width, 268px);
 }
 
 .app-shell[data-plasma] .left-panes.is-single-col {
@@ -118,11 +120,16 @@ body.is-resizing-pane .app-shell[data-plasma] .pane-resizer::after {
   border: 1px solid color-mix(in srgb, var(--text) 14%, transparent);
   border-radius: 18px;
   background: color-mix(in srgb, var(--surface) var(--plasma-panel-opacity, 72%), transparent);
-  box-shadow: inset 0 1px 0 color-mix(in srgb, white 14%, transparent);
+  box-shadow: inset 0 1px 0 color-mix(in srgb, white 8%, transparent);
 }
 
 .app-shell[data-plasma] .main-pane {
   background: color-mix(in srgb, var(--app-bg) var(--plasma-editor-opacity, 88%), transparent);
+}
+
+/* Leave the right glass rim visible behind section selection and hover fills. */
+.app-shell[data-plasma] .section-view-folder-pane .folder-row {
+  margin-right: 6px;
 }
 
 /* The scrolling content and its sticky fade must fit inside the panel's
@@ -202,4 +209,6 @@ body.is-resizing-pane .app-shell[data-plasma] .pane-resizer::after {
   text-align: right;
   font-variant-numeric: tabular-nums;
   color: var(--text-muted);
+}
+
 }

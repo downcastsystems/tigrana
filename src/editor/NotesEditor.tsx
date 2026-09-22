@@ -42,10 +42,12 @@ import {
   Search,
   Scissors,
   Strikethrough,
+  Underline,
   Trash2,
   X,
 } from "lucide-react";
 import { common, createLowlight } from "lowlight";
+import { createPortal } from "react-dom";
 import { type CSSProperties, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { ensureParagraphAfterCurrentTable, filterSlashCommands, markCurrentTableAsTigranaHtml } from "./slashCommands";
 import { createDeferredCommit, type DeferredCommit } from "../lib/deferredCommit";
@@ -2523,7 +2525,6 @@ export function NotesEditor({ content, commandRequest, focusRequest, focusAtEndR
     () => [
       StarterKit.configure({
         codeBlock: false,
-        underline: false,
         heading: {
           levels: [1, 2, 3, 4, 5, 6],
         },
@@ -2857,15 +2858,15 @@ export function NotesEditor({ content, commandRequest, focusRequest, focusAtEndR
       typeof selectionTo === "number" &&
       selectionFrom >= 0 &&
       selectionTo >= selectionFrom;
-    // If the editor isn't focused, blur first so the browser removes any cached
-    // cursor before new content is painted, preventing a ghost caret from the
-    // previous note appearing briefly. If it IS focused (e.g. user just pressed
-    // Enter on a new note's title and we just routed focus to the editor),
-    // skip the blur — Tiptap's blur defers via rAF and would land AFTER any
-    // refocus we attempt, dropping focus back to BODY.
+    // Clear only a stale editor caret, synchronously, when no control has focus.
+    // Tiptap's blur schedules a page-wide removeAllRanges in the next frame;
+    // that can erase the new title's selection after App has focused it.
     const wasFocused = editor.isFocused || editor.view.dom === document.activeElement;
-    if (!wasFocused) {
-      editor.commands.blur();
+    if (!wasFocused && document.activeElement === document.body) {
+      const selection = window.getSelection();
+      if (selection?.anchorNode && editor.view.dom.contains(selection.anchorNode)) {
+        selection.removeAllRanges();
+      }
     }
     setFindOpen(false);
     try {
@@ -3429,6 +3430,7 @@ export function FormattingBubbleMenu({
   editor: Editor;
   onRequestLink?: () => Promise<{ href: string; title: string } | null>;
 }) {
+  const bubbleRef = useRef<HTMLDivElement>(null);
   const [suppressed, setSuppressed] = useState(false);
   const [tick, setTick] = useState(0);
   const [positionRevision, setPositionRevision] = useState(0);
@@ -3572,7 +3574,8 @@ export function FormattingBubbleMenu({
   const buttons = [
     { label: "Bold", icon: Bold, active: editor.isActive("bold"), run: () => editor.chain().focus().toggleBold().run() },
     { label: "Italic", icon: Italic, active: editor.isActive("italic"), run: () => editor.chain().focus().toggleItalic().run() },
-    { label: "Strike", icon: Strikethrough, active: editor.isActive("strike"), run: () => editor.chain().focus().toggleStrike().run() },
+    { label: "Underline", icon: Underline, active: editor.isActive("underline"), run: () => editor.chain().focus().toggleUnderline().run() },
+    { label: "Strikethrough", icon: Strikethrough, active: editor.isActive("strike"), run: () => editor.chain().focus().toggleStrike().run() },
     { label: "Code", icon: Code, active: editor.isActive("code"), run: () => editor.chain().focus().toggleCode().run() },
     { label: "Highlight", icon: Highlighter, active: editor.isActive("highlight"), run: () => editor.chain().focus().toggleHighlight().run() },
     { label: "Link", icon: LinkIcon, active: editor.isActive("link"), run: setLink },
@@ -3631,11 +3634,26 @@ export function FormattingBubbleMenu({
       const end = editor.view.coordsAtPos(to);
       const top = Math.min(start.top, end.top);
       const left = (start.left + end.left) / 2;
-      return { top, left };
+      return { top, left, bottom: Math.max(start.bottom, end.bottom) };
     } catch {
       return null;
     }
   }, [editor, positionRevision, visible]);
+
+  useLayoutEffect(() => {
+    const bubble = bubbleRef.current;
+    if (!position || !bubble) return;
+    const { width, height } = bubble.getBoundingClientRect();
+    const margin = 8;
+    const left = Math.max(margin, Math.min(position.left - width / 2, window.innerWidth - width - margin));
+    const above = position.top - height - margin;
+    const top = Math.max(margin, Math.min(
+      above >= margin ? above : position.bottom + margin,
+      window.innerHeight - height - margin,
+    ));
+    bubble.style.left = `${left}px`;
+    bubble.style.top = `${top}px`;
+  }, [position]);
 
   // Reference `tick` so editor state changes still refresh button/visibility
   // state without treating every transaction as an anchor invalidation.
@@ -3643,14 +3661,17 @@ export function FormattingBubbleMenu({
 
   if (!visible || !position) return null;
 
-  return (
+  return createPortal(
     <div
+      ref={bubbleRef}
       className="format-bubble"
       style={{
         position: "fixed",
         top: position.top,
         left: position.left,
-        transform: "translate(-50%, calc(-100% - 8px))",
+        maxWidth: "calc(100vw - 16px)",
+        boxSizing: "border-box",
+        overflowX: "auto",
         zIndex: 55,
       }}
       onMouseDown={(event) => event.preventDefault()}
@@ -3672,7 +3693,8 @@ export function FormattingBubbleMenu({
           </button>
         );
       })}
-    </div>
+    </div>,
+    document.body,
   );
 }
 

@@ -6,18 +6,20 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
-    "build": "tsc && vite build",
+    "build": "tsc && vitest run src/lib/builtInThemes.test.ts && vite build",
     "test": "vitest run",
     "test:watch": "vitest",
     "preview": "vite preview",
     "tauri": "tauri",
     "install:app": "npm run tauri -- build --bundles app && rm -rf \"/Applications/Tigrana.app\" && ditto \"src-tauri/target/release/bundle/macos/Tigrana.app\" \"/Applications/Tigrana.app\" && echo \"✓ Installed to /Applications\"",
     "lint": "eslint . --ext ts,tsx --report-unused-disable-directives --max-warnings 0",
-    "postinstall": "patch-package --error-on-fail"
+    "postinstall": "patch-package --error-on-fail",
+    "theme:check": "node scripts/check-theme.mjs"
   },
   "dependencies": {
-    "@cruxgarden/plasma-ui": "0.2.0",
+    "@cruxgarden/plasma-ui": "0.3.0",
     "@floating-ui/dom": "^1.8.0",
+    "@fontsource-variable/inter": "^5.3.0",
     "@tauri-apps/api": "^2.0.0",
     "@tauri-apps/plugin-dialog": "^2.0.0",
     "@tiptap/core": "^3.29.2",
@@ -32,6 +34,8 @@
     "@tiptap/react": "^3.29.2",
     "@tiptap/starter-kit": "^3.29.2",
     "@tiptap/suggestion": "^3.29.2",
+    "css-tree": "^3.2.1",
+    "fflate": "^0.8.3",
     "fuse.js": "^7.0.0",
     "lowlight": "^3.3.0",
     "lucide-react": "^0.468.0",
@@ -45,6 +49,7 @@
   },
   "devDependencies": {
     "@tauri-apps/cli": "^2.0.0",
+    "@types/css-tree": "^3.2.0",
     "@types/node": "^20.14.10",
     "@types/react": "^18.3.3",
     "@types/react-dom": "^18.3.0",

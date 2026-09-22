@@ -1,3 +1,4 @@
+import { recoveryTheme } from "./themeCatalog";
 import {
   readTheme,
   themeAppearance,
@@ -12,6 +13,10 @@ import type {
 } from "../types";
 
 export type ResolvedNotebookAppearance = {
+  editorWidthMode?: NotebookAppearance["editorWidthMode"];
+  noteAlignment?: NotebookAppearance["noteAlignment"];
+  rightSidebarOpen?: boolean;
+  wordCountVisible?: boolean;
   plasma?: PlasmaSettings;
   colorScheme: "system" | "light" | "dark";
   themePresetId: string;
@@ -52,7 +57,18 @@ export function resolveNotebookAppearance(
 ): ResolvedNotebookAppearance {
   if (!appearance) return cloneResolvedAppearance(defaults);
   const theme = readTheme(appearance.customTheme);
-  if (theme) appearance = { ...appearance, ...themeAppearance(theme) };
+  if (appearance.customTheme && !theme) {
+    // Recovery is in-memory only: never overwrite a damaged portable snapshot.
+    return resolveNotebookAppearance({ ...themeAppearance(recoveryTheme), colorScheme: appearance.colorScheme }, defaults, validThemePresetIds);
+  }
+  if (theme) {
+    const selected = themeAppearance(theme);
+    // Manual notebook choices survive reloads without changing the theme defaults.
+    appearance = { ...appearance, ...selected, plasma: appearance.plasma ?? selected.plasma, navigationStyle: appearance.navigationStyle ?? selected.navigationStyle, rightSidebarOpen: appearance.rightSidebarOpen ?? selected.rightSidebarOpen,
+      wordCountVisible: appearance.wordCountVisible ?? selected.wordCountVisible,
+      editorWidthMode: appearance.editorWidthMode ?? selected.editorWidthMode,
+      noteAlignment: appearance.noteAlignment ?? selected.noteAlignment };
+  }
 
   const navigationStyle = resolveNavigationStyle(
     appearance.navigationStyle as string | undefined,
@@ -60,6 +76,10 @@ export function resolveNotebookAppearance(
   );
 
   return {
+    editorWidthMode: appearance.editorWidthMode === "comfortable" || appearance.editorWidthMode === "narrow" || appearance.editorWidthMode === "full" ? appearance.editorWidthMode : defaults.editorWidthMode,
+    noteAlignment: appearance.noteAlignment === "left" || appearance.noteAlignment === "center" ? appearance.noteAlignment : defaults.noteAlignment,
+    wordCountVisible: typeof appearance.wordCountVisible === "boolean" ? appearance.wordCountVisible : defaults.wordCountVisible,
+    rightSidebarOpen: appearance.rightSidebarOpen ?? defaults.rightSidebarOpen,
     plasma: resolvePlasma(appearance.plasma, defaults.plasma),
     colorScheme: appearance.colorScheme ?? defaults.colorScheme,
     themePresetId:

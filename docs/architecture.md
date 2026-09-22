@@ -22,6 +22,8 @@ rules that must remain consistent across UI flows.
 | `notebookStorage.ts` | `NotebookStorage` | Selects one Native or demo adapter and exposes explicit capability differences |
 | `notebookSnapshot.ts` | Latest-request Notebook refresh | Rejects stale and inactive refresh results before React state is replaced |
 | `notebookMetadataSession.ts` | Workspace-scoped metadata ownership | Prevents delayed work or pre-load settings changes from reading or writing another Notebook's metadata |
+| `responsivePanes.ts` / `useResponsivePanes.ts` | Editor-first pane visibility | Reserves 520 CSS pixels for the editor, hides the right then left panes, and restores chosen visibility without changing Notebook metadata; narrow-window toggles open temporary overlays |
+| `useSidebarOverlay.ts` | Collapsed sidebar previews | Hovering within 28 px of the left edge charges at a rate ranging from 1 second at the inner boundary to 250 ms at the edge. Movement preserves accumulated progress and changes only the remaining charge rate. Either sidebar toggle uses a fixed 1 second delay. Hovering builds an accent-colored edge glow, then opens a temporary overlay without reflow; the right edge never triggers a preview so the scrollbar stays usable. The glow cancels on hover exit and stays faint and static with reduced motion. Modal dialogs cancel pending or open previews and block new hover previews until dismissed. Leaving dismisses the overlay after 300 ms with a 180 ms slide in/out, respecting reduced motion, while Keep open explicitly docks it when space permits |
 | `notebookAppearance.ts` | Authoritative appearance adoption | Resolves legacy/partial values and updates metadata plus every mirrored appearance value through one seam |
 | `activeNoteLifecycle.ts` | `ActiveNoteLifecycle` | Load/navigation generations, serialized edit-lock transitions, accepted-disk baselines, save queues, latest-request persistence, and serialized path changes |
 | `notebookPathMutations.ts` | Completed Note/Folder move and rename operations | Repairs ephemeral tabs, selection, active lock paths, and React metadata after Native storage commits |
@@ -155,6 +157,12 @@ only after `markdown.ts` can round-trip it without making the Note unreadable
 outside Tigrana. Clipboard fragment serialization uses the same conversion
 policy as whole-Note persistence.
 
+Underline uses inline HTML, `<u>text</u>`, because Markdown has no standard
+underline delimiter. The formatting bar orders Bold, Italic, Underline, then
+Strikethrough. Cmd+U on macOS or Ctrl+U on Windows toggles underline. Bare `<u>`
+pairs round-trip in paragraphs, headings, lists and tables; code examples remain
+literal. Markdown readers that disable HTML may not display underlining.
+
 Derived Note values are lazy. Sidebar previews are memoized by Note content,
 whole-Note text statistics run off the main thread, and outline extraction is
 deferred until typing is idle. Markdown serialization is also deferred, but
@@ -223,8 +231,7 @@ document with a stable ID, name, complete light and dark palettes, interface and
 editor fonts and sizes, and a colored-title-bar preference. The builder previews
 changes locally; Save and use validates the document, saves it to the shared
 library, and queues the notebook metadata update through the existing revisioned
-metadata persistence. Navigation, color-scheme selection, and experimental GPU
-settings remain separate preferences. Fonts use CSS family names and fall back to
+metadata persistence. Navigation and color-scheme selection remain separate preferences. Fonts use CSS family names and fall back to
 fonts installed on the destination computer; font files are not embedded.
 
 The notebook stores the full selected document at
@@ -263,3 +270,28 @@ notebooks without saved settings. The notebook snapshot is authoritative when
 Plasma settings are present. Experimental appearance controls update the notebook
 copy; editing and saving the theme updates the shared library. Differences are
 reconciled after closing Settings or reopening the notebook.
+
+### Theme API and packages
+
+Extended themes use schema version 2 with a versioned `design` block. The
+normalized library/notebook snapshot includes author metadata, metrics, CSS and
+bounded embedded assets. A `.tigrana-theme` ZIP is an interchange format; storage
+continues using the existing atomic JSON snapshots and CAS conflict resolution.
+See [theme authoring](themes/README.md) for the public API, package contract,
+recovery shortcut and deliberate CSS restrictions.
+
+`themeCss.ts` parses all styles with CSSTree before application, rejects unsupported
+nodes/resources, and scopes selectors to title-bar/notebook-frame regions. Styles
+are layered beneath creator CSS. Settings suspends live creator styles. The
+workbench uses a separate ShadowRoot and the production stylesheets; it does not
+instantiate or mutate the user's editor. `ThemeStyles` only recompiles when the
+theme or color scheme changes. Editor transaction behavior is unchanged.
+
+
+Folder colors are stored per Notebook in
+`folderColorsByNavigationStyle[style][folderPath]`, independently for
+`single-pane`, `dual-pane`, and `section-view`. A missing Sections map reads
+legacy `folderColors`; the other styles start without custom colors. An
+explicit empty map preserves a reset without reviving legacy colors. Folder
+moves and renames repair paths in every style, and deletion removes them.
+Folder icons remain shared in `folderIcons`.

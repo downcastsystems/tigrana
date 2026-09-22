@@ -17,12 +17,30 @@ describe("Markdown round trips", () => {
     ["code block", "```ts\nconst chapter = 1;\n```"],
     ["divider", "---"],
     ["inline marks and link", "**Bold** *italic* ~~cut~~ `code` [reference](https://example.com)"],
+    ["underline", "Plain <u>underlined</u> text."],
+    ["combined underline", "<u>**Bold** *italic* ~~cut~~</u>"],
+    ["underlined heading and list", "## <u>Heading</u>\n\n- <u>Item</u>"],
+    ["underlined table cell", "| Name | Value |\n| --- | --- |\n| <u>Label</u> | Text |"],
+    ["underline tags inside code", "`<u>literal</u>` and <u>`</u>`</u>"],
     ["image", "![Map](.assets/map.png)"],
     ["table", "| Character | Role |\n| --- | --- |\n| Mina | Lead |"],
   ] as const;
 
   it.each(cases)("round-trips %s through the editor HTML policy", (_name, markdown) => {
     expect(htmlToMarkdown(markdownToHtml(markdown)).trimEnd()).toBe(markdown);
+  });
+
+  it("renders only bare underline tags while leaving arbitrary HTML and attributes escaped", () => {
+    const doc = new DOMParser().parseFromString(markdownToHtml('<u>Safe</u> <u onclick="alert(1)">Unsafe</u> <script>alert(1)</script>'), "text/html");
+    expect(doc.querySelectorAll("u")).toHaveLength(1);
+    expect(doc.querySelector("u")?.textContent).toBe("Safe");
+    expect(doc.querySelector("[onclick], script")).toBeNull();
+  });
+
+  it("keeps underline examples literal inside inline and fenced code", () => {
+    const doc = new DOMParser().parseFromString(markdownToHtml('`<u>literal</u>`\n\n```html\n<u>literal</u>\n```'), "text/html");
+    expect(doc.querySelector("u")).toBeNull();
+    expect([...doc.querySelectorAll("code")].map(el => el.textContent)).toEqual(["<u>literal</u>", "<u>literal</u>"]);
   });
 
   it("renders known emoji shortcodes as plain emoji text", () => {

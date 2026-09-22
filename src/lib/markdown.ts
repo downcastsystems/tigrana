@@ -26,17 +26,27 @@ const inlineMarkdownToHtml = (value: string, options: MarkdownOptions = {}) => {
   let html = escapeHtml(value);
   html = html.replace(new RegExp(HARD_BREAK_PLACEHOLDER, "g"), "<br>");
   html = replaceEmojiShortcodes(html);
+  // Protect code before recognizing inline markup, including literal <u> examples.
+  const codeSpans: string[] = [];
+  let codeToken = "\u0000";
+  while (html.includes(codeToken)) codeToken += "\u0000";
+  html = html.replace(/`([^`]+)`/g, (_match, code: string) => {
+    const index = codeSpans.push(`<code>${code}</code>`) - 1;
+    return `${codeToken}${index}${codeToken}`;
+  });
+  // Markdown has no underline delimiter. Accept only the bare HTML pair we emit,
+  // keeping arbitrary tags and attributes escaped.
+  html = html.replace(/&lt;u&gt;([\s\S]*?)&lt;\/u&gt;/gi, "<u>$1</u>");
   html = html.replace(/!\[([^\]]*)\]\(([^)]+)\)/g, (_match, alt: string, src: string) => {
     const resolvedSrc = options.resolveImageSrc?.(src) ?? src;
     return `<img src="${escapeHtml(resolvedSrc)}" alt="${escapeHtml(alt)}" data-markdown-src="${escapeHtml(src)}" />`;
   });
   html = html.replace(/\[([^\]]+)\]\(([^)]+)\)/g, '<a href="$2">$1</a>');
-  html = html.replace(/`([^`]+)`/g, "<code>$1</code>");
   html = html.replace(/==([^=]+)==/g, "<mark>$1</mark>");
   html = html.replace(/~~([^~]+)~~/g, "<s>$1</s>");
   html = html.replace(/\*\*([^*]+)\*\*/g, "<strong>$1</strong>");
   html = html.replace(/\*([^*]+)\*/g, "<em>$1</em>");
-  return html;
+  return html.replace(new RegExp(`${codeToken}(\\d+)${codeToken}`, "g"), (_match, index: string) => codeSpans[Number(index)]);
 };
 
 const EM_SPACE = " ";
@@ -483,6 +493,7 @@ function inlineHtmlToMarkdown(element: Element): string {
 
     if (tag === "strong" || tag === "b") value += `**${content}**`;
     else if (tag === "em" || tag === "i") value += `*${content}*`;
+    else if (tag === "u") value += `<u>${content}</u>`;
     else if (tag === "s" || tag === "strike" || tag === "del") value += `~~${content}~~`;
     else if (tag === "mark") value += `==${content}==`;
     else if (tag === "code") value += `\`${content}\``;

@@ -50,7 +50,19 @@ export type NotebookThemeColors = {
   titlebarUseAccent?: boolean;
 };
 
+export type ThemeDifferenceAcknowledgement = {
+  notebook: string;
+  appWide: string | null;
+};
+
 export type NotebookAppearance = {
+  editorWidthMode?: "comfortable" | "narrow" | "full";
+  noteAlignment?: "left" | "center";
+  rightSidebarOpen?: boolean;
+  wordCountVisible?: boolean;
+  themeColorPreferences?: Record<string, string>;
+  quickAppearance?: { accentColor?: string; editorFontFamily?: string; editorFontSize?: number; editorLineHeight?: number; editorLetterSpacing?: number } | null;
+  acknowledgedThemeDifference?: ThemeDifferenceAcknowledgement;
   plasma?: import("./lib/themes").PlasmaSettings;
   customTheme?: import("./lib/themes").ThemeDocument | null;
   colorScheme?: "system" | "light" | "dark";
@@ -109,7 +121,9 @@ export type WorkspaceMetadata = {
   noteOrder: Record<string, string[]>;
   pinnedNotes: Record<string, boolean>;
   folderIcons: Record<string, string>;
+  /** Legacy colors, used only by section-view until it has its own map. */
   folderColors: Record<string, string>;
+  folderColorsByNavigationStyle?: Partial<Record<NavigationStyle, Record<string, string>>>;
   noteIcons: Record<string, string>;
   notePositions: Record<string, NotePositionMetadata>;
   noteCreatedAt?: Record<string, number>;

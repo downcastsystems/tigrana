@@ -1,0 +1,54 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>Editor overflow regression check</title>
+<div id="root"></div>
+<output id="results" style="position:fixed;bottom:0;left:0;z-index:9999;background:#111;color:#fff;font:12px monospace;pointer-events:none"></output>
+<script type="module">
+// Run with Vite at /scripts/check-editor-overflow.html?theme=dracula.
+// Check at 1200x800 and 1400x1100; append &long for genuine content overflow.
+// Other theme IDs: default, builtin-typewriter, builtin-baseline, builtin-old-basement-pc.
+// Uses the production editor and CSS, without the Theme Editor preview's sizing overrides.
+import React from 'react';
+import {createRoot} from 'react-dom/client';
+import {NotesEditor} from '/src/editor/NotesEditor.tsx';
+import {allBuiltInThemes} from '/src/lib/bundledThemes.ts';
+import {themeStylesheet, themeRenderingMode} from '/src/lib/themeRuntime.ts';
+import '/src/styles/fonts.css';
+import '/src/styles/app.css';
+import '/src/styles/plasma.css';
+import '/src/styles/theme-api.css';
+const params = new URLSearchParams(location.search);
+const theme = allBuiltInThemes.find(t => t.id === params.get('theme')) ?? allBuiltInThemes.find(t => t.id === 'default');
+const mode = themeRenderingMode(theme, params.get('mode') === 'light' ? 'light' : 'dark');
+document.documentElement.dataset.theme = mode;
+const style = document.createElement('style');
+style.textContent = themeStylesheet(theme, mode, 'notebook');
+document.head.append(style);
+const h = React.createElement;
+const noop = () => {};
+const content = params.has('long') ? Array.from({length:80},(_,i)=>`Paragraph ${i+1}. This long note must remain scrollable.`).join('\n\n') : Array.from({length:7},(_,i)=>`- Short list item ${i+1}`).join('\n');
+createRoot(document.getElementById('root')).render(h('div', {className:'app-shell', 'data-plasma':theme.plasma?.enabled || undefined},
+  h('div',{className:'app-titlebar'},theme.name),
+  h('div',{className:`app-frame is-left-hidden is-outline-hidden theme-${mode} ${theme.plasma?.enabled ? 'theme-plasma' : 'theme-standard'}`, 'data-theme-region':'notebook', 'data-theme-api':theme.design ? '1' : undefined},
+    h('main',{className:'main-pane'},
+      h('div',{className:'topbar'},'Editor'),
+      h('section',{className:'note-surface'},
+        h('div',{className:'title-shell'},h('textarea',{className:'note-title-input',defaultValue:'Short note',rows:1,'aria-label':'Note title'})),
+        h(NotesEditor,{content,focusRequest:0,focusAtEndRequest:0,findRequest:0,historyKey:'overflow-check',notePath:'Check.md',restorePosition:null,editable:true,spellcheckEnabled:false,workspace:'',onChange:noop,onPendingChange:noop,onLoadError:console.error,onPositionChange:noop})
+      )
+    )
+  )
+));
+function measure() {
+ const surface = document.querySelector('.note-surface');
+ const pm = document.querySelector('.ProseMirror');
+ if (!surface || !pm) return;
+ const overflow = surface.scrollHeight - surface.clientHeight;
+ document.getElementById('results').textContent = JSON.stringify({theme:theme.name,viewport:innerHeight,available:surface.clientHeight,scrollHeight:surface.scrollHeight,overflow,pass:params.has('long') ? overflow > 0 : overflow <= 1});
+}
+await document.fonts.ready;
+new ResizeObserver(measure).observe(document.getElementById('root'));
+new MutationObserver(measure).observe(document.getElementById('root'),{childList:true,subtree:true});
+window.addEventListener('resize',measure);
+requestAnimationFrame(measure);
+</script>

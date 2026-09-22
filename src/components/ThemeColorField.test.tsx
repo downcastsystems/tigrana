@@ -2,7 +2,7 @@
 import { act, useState } from "react";
 import { createRoot } from "react-dom/client";
 import { Simulate } from "react-dom/test-utils";
-import { expect, it } from "vitest";
+import { expect, it, vi } from "vitest";
 import { ThemeColorField } from "./ThemeColorField";
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 
@@ -29,5 +29,16 @@ it("accepts pasted hex, expands shorthand on commit, and preserves the last vali
     expect(hex.value).toBe("#aabbcc");
     await act(async () => { swatch.value = "#8040cc"; Simulate.change(swatch); });
     expect(hex.value).toBe("#8040cc");
+  } finally { await act(async () => root.unmount()); }
+});
+
+it("does not turn an automatic color into an override just by focusing and leaving it", async () => {
+  const host = document.createElement("div"), root = createRoot(host), change = vi.fn(), reset = vi.fn();
+  try {
+    await act(async () => root.render(<ThemeColorField label="Selected text" name="Selected text" value="#ffffff" onChange={change} onReset={reset} />));
+    await act(async () => Simulate.blur(host.querySelector('input[type="text"]')!));
+    expect(change).not.toHaveBeenCalled();
+    await act(async () => host.querySelector('button')!.click());
+    expect(reset).toHaveBeenCalledOnce();
   } finally { await act(async () => root.unmount()); }
 });

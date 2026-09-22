@@ -1,0 +1,90 @@
+/* Temporary navigation overlays never take width away from the note. */
+.app-frame { position: relative; min-width: 0; }
+.app-frame.has-left-overlay > .left-panes,
+.app-frame.has-right-overlay > .right-sidebar {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  z-index: 40;
+  background: var(--surface);
+  box-shadow: 0 8px 32px #00000040;
+}
+.app-frame.has-left-overlay > .left-panes {
+  left: 0;
+  width: min(calc(var(--folder-pane-width) + var(--tigrana-panel-gap, 6px) + var(--notes-pane-width)), calc(100% - 48px));
+  grid-template-columns: minmax(0, var(--folder-pane-width)) var(--tigrana-panel-gap, 6px) minmax(0, var(--notes-pane-width));
+}
+.app-frame.has-left-overlay > .left-panes.is-single-col {
+  width: min(var(--notes-pane-width), calc(100% - 48px));
+  grid-template-columns: minmax(0, 1fr);
+}
+.app-frame.has-right-overlay > .right-sidebar {
+  right: 0;
+  width: min(var(--right-pane-width), calc(100% - 48px));
+}
+
+/* Narrow edge targets reveal collapsed panes without changing the grid. */
+.sidebar-hover-edge { position: absolute; top: 0; bottom: 0; width: var(--sidebar-hover-width, 28px); z-index: 35; pointer-events: none; }
+.sidebar-hover-edge.is-left { left: 0; }
+.sidebar-hover-edge::after { content: ""; position: absolute; top: 40%; height: 48px; width: 3px; border-radius: 3px; background: var(--text-muted); opacity: .2; }
+.sidebar-hover-edge.is-left::after { left: 3px; }
+/* The glow uses the same delay as the preview timer, without intercepting input. */
+.sidebar-hover-glow {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  width: 56px;
+  z-index: 36;
+  pointer-events: none;
+  color: var(--accent);
+  /* An elliptical source beyond the edge fades out before the element's bounds. */
+  background: radial-gradient(ellipse 72px 60% at var(--sidebar-glow-source) 50%, currentColor, transparent 75%);
+  /* Negative delay resumes the existing charge when proximity changes its speed. */
+  animation: sidebar-hover-charge var(--sidebar-hover-duration, 1000ms) linear both;
+  animation-delay: var(--sidebar-hover-offset, 0ms);
+}
+.sidebar-hover-glow.is-left { left: 0; transform-origin: left; --sidebar-glow-source: -16px; }
+.sidebar-hover-glow.is-right { right: 0; transform-origin: right; --sidebar-glow-source: calc(100% + 16px); }
+@keyframes sidebar-hover-charge {
+  from { opacity: .03; transform: scaleX(.2); }
+  to { opacity: .3; transform: scaleX(1); }
+}
+.app-frame.has-left-overlay > .left-panes { grid-template-rows: auto minmax(0, 1fr); }
+.sidebar-overlay-actions { grid-column: 1 / -1; display: flex; flex-shrink: 0; align-items: center; justify-content: flex-end; gap: 8px; min-height: 36px; padding: 4px 8px; color: var(--text); background: var(--surface-strong); border-bottom: 1px solid var(--border); }
+.sidebar-overlay-actions .toolbar-button { display: flex; align-items: center; gap: 6px; padding: 4px 8px; font: 13px Inter, sans-serif; }
+/* Put the pin action over the editor's left toggle, including the theme's inset. */
+.sidebar-overlay-actions.is-left {
+  justify-content: flex-start;
+  min-height: calc(var(--pane-header-height) + var(--tigrana-workspace-inset, 0px));
+  padding: var(--tigrana-workspace-inset, 0px) 14px 0 calc(14px + var(--tigrana-workspace-inset, 0px));
+}
+.sidebar-overlay-actions.is-left > .icon-button { margin-left: auto; }
+
+/* Transforms animate only the floating pane; the editor's grid never reflows. */
+.app-frame.has-left-overlay > .left-panes { --sidebar-slide-offset: -100%; }
+.app-frame.has-right-overlay > .right-sidebar { --sidebar-slide-offset: 100%; }
+.app-frame.has-left-overlay > .left-panes,
+.app-frame.has-right-overlay > .right-sidebar {
+  animation: sidebar-slide-in var(--sidebar-slide-duration, 180ms) cubic-bezier(.2, .8, .2, 1) both;
+}
+.app-frame.is-overlay-closing.has-left-overlay > .left-panes,
+.app-frame.is-overlay-closing.has-right-overlay > .right-sidebar {
+  animation-name: sidebar-slide-out;
+  animation-timing-function: cubic-bezier(.4, 0, 1, 1);
+  pointer-events: none;
+}
+@keyframes sidebar-slide-in {
+  from { transform: translateX(var(--sidebar-slide-offset)); }
+  to { transform: translateX(0); }
+}
+@keyframes sidebar-slide-out {
+  from { transform: translateX(0); }
+  to { transform: translateX(var(--sidebar-slide-offset)); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .sidebar-hover-glow { animation: none; opacity: .12; }
+  .app-frame.has-left-overlay > .left-panes,
+  .app-frame.has-right-overlay > .right-sidebar { animation: none; }
+}
+/* Offscreen transforms must not introduce a horizontal scrollbar. */
+.app-frame.has-left-overlay, .app-frame.has-right-overlay { overflow-x: clip; }

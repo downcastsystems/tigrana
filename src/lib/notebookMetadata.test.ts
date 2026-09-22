@@ -5,6 +5,8 @@ import {
   buildBookmarkViews,
   buildFolderTree,
   getNotebookName,
+  getFolderColors,
+  setFolderColor,
   mergeWorkspaceMetadataChanges,
   moveFolderInMetadata,
   moveNoteInMetadata,
@@ -382,5 +384,39 @@ describe("notebook metadata", () => {
     const folders = [folder("c", "Charlie"), folder("a", "Alpha"), folder("b", "Bravo")];
 
     expect(orderFolders(folders, "", metadata({ folderOrder: { "": ["b"] } })).map((entry) => entry.path)).toEqual(["b", "a", "c"]);
+  });
+});
+
+
+describe("folder colors per navigation style", () => {
+  it("keeps legacy colors in Sections and preserves shared icons", () => {
+    const original = metadata({ folderColors: { Projects: "#123456" }, folderIcons: { Projects: "lucide:Star" } });
+    expect(getFolderColors(original, "section-view")).toEqual({ Projects: "#123456" });
+    expect(getFolderColors(original, "single-pane")).toEqual({});
+    expect(getFolderColors(original, "dual-pane")).toEqual({});
+    let changed = setFolderColor(original, "single-pane", "Projects", "#abcdef");
+    changed = setFolderColor(changed, "dual-pane", "Projects", "#654321");
+    changed = setFolderColor(changed, "section-view", "Projects", "");
+    const reopened = JSON.parse(JSON.stringify(changed)) as WorkspaceMetadata;
+    expect(getFolderColors(reopened, "section-view")).toEqual({});
+    expect(getFolderColors(reopened, "single-pane")).toEqual({ Projects: "#abcdef" });
+    expect(getFolderColors(reopened, "dual-pane")).toEqual({ Projects: "#654321" });
+    expect(reopened.folderIcons).toEqual(original.folderIcons);
+    expect(getFolderColors(metadata(), "single-pane")).toEqual({});
+  });
+
+  it("repairs and removes colors in every style for a folder and its descendants", () => {
+    let current = metadata();
+    for (const style of ["section-view", "single-pane", "dual-pane"] as const) {
+      current = setFolderColor(current, style, "Projects", "#123456");
+      current = setFolderColor(current, style, "Projects/App", "#abcdef");
+      current = setFolderColor(current, style, "ProjectsOther", "#654321");
+    }
+    const moved = moveFolderInMetadata(current, "Projects", "Archive/Work", "", "Archive");
+    const removed = removeFolderFromMetadata(moved, "Archive/Work");
+    for (const style of ["section-view", "single-pane", "dual-pane"] as const) {
+      expect(getFolderColors(moved, style)).toEqual({ "Archive/Work": "#123456", "Archive/Work/App": "#abcdef", ProjectsOther: "#654321" });
+      expect(getFolderColors(removed, style)).toEqual({ ProjectsOther: "#654321" });
+    }
   });
 });

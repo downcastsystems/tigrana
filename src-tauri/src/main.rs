@@ -1,6 +1,7 @@
 use fs2::FileExt;
 mod assets;
 mod link_index;
+mod menu_selection;
 mod note_history;
 mod notebook_metadata;
 mod notebook_paths;
@@ -225,6 +226,7 @@ struct AppMenuState {
     #[serde(default = "default_true")]
     word_count_visible: bool,
     spellcheck_enabled: bool,
+    navigation_style: String,
     editor_width_mode: String,
     note_alignment: String,
     #[serde(default)]
@@ -244,6 +246,7 @@ impl Default for AppMenuState {
             outline_visible: true,
             word_count_visible: true,
             spellcheck_enabled: true,
+            navigation_style: "section-view".to_string(),
             editor_width_mode: "comfortable".to_string(),
             note_alignment: "left".to_string(),
             recent_notes: Vec::new(),
@@ -1049,6 +1052,12 @@ fn write_export_text_file(payload: WriteExportTextPayload) -> Result<(), String>
 }
 
 #[tauri::command]
+fn write_theme_package(path: String, contents: Vec<u8>) -> Result<(), String> {
+    if contents.len() > 8 * 1024 * 1024 { return Err("Theme package exceeds 8 MB".into()); }
+    fs::write(path, contents).map_err(|error| error.to_string())
+}
+
+#[tauri::command]
 fn print_current_webview(app: AppHandle) -> Result<(), String> {
     let Some(window) = active_menu_window(&app) else {
         return Err("No active window to print.".to_string());
@@ -1510,6 +1519,36 @@ fn build_app_menu(
         true,
         Some("CmdOrCtrl+0"),
     )?;
+    let navigation_dual_pane = CheckMenuItem::with_id(
+        handle,
+        "navigation_dual_pane",
+        "Dual Pane",
+        state.has_workspace,
+        state.navigation_style == "dual-pane",
+        None::<&str>,
+    )?;
+    let navigation_section_view = CheckMenuItem::with_id(
+        handle,
+        "navigation_section_view",
+        "Dual Pane with Sections",
+        state.has_workspace,
+        state.navigation_style == "section-view",
+        None::<&str>,
+    )?;
+    let navigation_single_pane = CheckMenuItem::with_id(
+        handle,
+        "navigation_single_pane",
+        "Single Pane",
+        state.has_workspace,
+        state.navigation_style == "single-pane",
+        None::<&str>,
+    )?;
+    let navigation_menu = Submenu::with_items(
+        handle,
+        "Navigation Style",
+        state.has_workspace,
+        &[&navigation_dual_pane, &navigation_section_view, &navigation_single_pane],
+    )?;
     let width_comfortable = CheckMenuItem::with_id(
         handle,
         "width_comfortable",
@@ -1838,6 +1877,7 @@ fn build_app_menu(
             &zoom_out,
             &zoom_reset,
             &PredefinedMenuItem::separator(handle)?,
+            &navigation_menu,
             &width_menu,
             &alignment_menu,
             &PredefinedMenuItem::separator(handle)?,
@@ -2119,8 +2159,46 @@ fn manage_notebooks_from_menu(app: &AppHandle) {
     }
 }
 
+fn collect_menu_checks(
+    items: Vec<tauri::menu::MenuItemKind<Wry>>,
+    checks: &mut HashMap<String, CheckMenuItem<Wry>>,
+) -> tauri::Result<()> {
+    for item in items {
+        if let Some(check) = item.as_check_menuitem() {
+            checks.insert(check.id().as_ref().to_string(), check.clone());
+        } else if let Some(submenu) = item.as_submenu() {
+            collect_menu_checks(submenu.items()?, checks)?;
+        }
+    }
+    Ok(())
+}
+
+fn sync_navigation_menu_selection(menu: &Menu<Wry>, command: &str) -> tauri::Result<()> {
+    let mut checks = HashMap::new();
+    collect_menu_checks(menu.items()?, &mut checks)?;
+    menu_selection::select_navigation_item(command, |id, checked| {
+        if let Some(item) = checks.get(id) {
+            item.set_checked(checked)?;
+        }
+        Ok(())
+    })
+}
+
 fn emit_menu_command(app: &AppHandle, command: &str) {
     if let Some(window) = active_menu_window(app) {
+        if menu_selection::NAVIGATION_ITEMS.contains(&command) {
+            // macOS uses the current app-wide menu, not a window's cached menu.
+            let menu = if cfg!(target_os = "macos") {
+                app.menu()
+            } else {
+                window.menu().or_else(|| app.menu())
+            };
+            if let Some(menu) = menu {
+                if let Err(error) = sync_navigation_menu_selection(&menu, command) {
+                    eprintln!("Could not synchronize navigation menu: {error}");
+                }
+            }
+        }
         dispatch_frontend_menu_action(
             &window,
             "tigrana-menu-command",
@@ -2259,6 +2337,9 @@ pub fn run() {
             "zoom_in" => emit_menu_command(app, "zoom_in"),
             "zoom_out" => emit_menu_command(app, "zoom_out"),
             "zoom_reset" => emit_menu_command(app, "zoom_reset"),
+            "navigation_dual_pane" => emit_menu_command(app, "navigation_dual_pane"),
+            "navigation_section_view" => emit_menu_command(app, "navigation_section_view"),
+            "navigation_single_pane" => emit_menu_command(app, "navigation_single_pane"),
             "width_comfortable" => emit_menu_command(app, "width_comfortable"),
             "width_narrow" => emit_menu_command(app, "width_narrow"),
             "width_full" => emit_menu_command(app, "width_full"),
@@ -2306,6 +2387,7 @@ pub fn run() {
         .invoke_handler(tauri::generate_handler![
             themes::list_themes,
             themes::save_theme,
+            themes::delete_theme,
             ensure_workspace,
             watch_workspace,
             list_folders,
@@ -2353,6 +2435,7 @@ pub fn run() {
             reveal_path,
             open_external,
             write_export_text_file,
+            write_theme_package,
             print_current_webview
         ])
         .run(tauri::generate_context!())

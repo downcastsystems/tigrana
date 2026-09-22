@@ -1,4 +1,4 @@
-import { useEffect, useId, useState } from "react";
+import { useEffect, useId, useState, type ReactNode } from "react";
 
 function normalizeHex(input: string): string | null {
   const hex = input.trim().replace(/^#/, "");
@@ -16,7 +16,13 @@ export function ThemeColorField({
   name,
   value,
   onChange,
+  cssHint,
+  onReset,
+  trailingControl,
 }: {
+  trailingControl?: ReactNode;
+  cssHint?: string;
+  onReset?: () => void;
   label: string;
   name: string;
   value: string;
@@ -28,11 +34,12 @@ export function ThemeColorField({
   function commit() {
     const color = normalizeHex(text);
     setText(color ?? value);
-    if (color) onChange(color);
+    if (color && color !== value) onChange(color);
   }
   return (
     <div className="theme-color-field">
-      <label htmlFor={id}>{label}</label>
+      <label htmlFor={id}>{label}{cssHint && <span className="theme-css-hint" title={cssHint} aria-label={cssHint}>Custom CSS</span>}</label>
+      {onReset && <button type="button" className="theme-color-reset" aria-label={`Use automatic ${name}`} onClick={onReset}>Automatic</button>}
       <div className="theme-color-inputs">
         <input
           type="color"
@@ -45,7 +52,7 @@ export function ThemeColorField({
         />
         <input
           id={id}
-          className="theme-hex-input"
+          className="settings-text-input theme-hex-input"
           type="text"
           aria-label={`${name} hex`}
           value={text}
@@ -73,6 +80,7 @@ export function ThemeColorField({
             }
           }}
         />
+        {trailingControl}
       </div>
     </div>
   );

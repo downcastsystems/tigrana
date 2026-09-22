@@ -584,6 +584,10 @@ describe("formatting bubble position", () => {
     const listeners = new Map<string, Set<() => void>>();
     let top = 120;
     let left = 240;
+    const bounds = vi.spyOn(HTMLElement.prototype, "getBoundingClientRect").mockReturnValue({
+      width: 400, height: 40, top: 0, left: 0, right: 400, bottom: 40,
+      x: 0, y: 0, toJSON: () => ({}),
+    });
     const editor = {
       state: { selection: TextSelection.create(doc, range.from, range.to) },
       isActive: () => false,
@@ -611,24 +615,41 @@ describe("formatting bubble position", () => {
     try {
       await act(async () => root.render(createElement(FormattingBubbleMenu, { editor })));
       await act(async () => vi.advanceTimersByTime(80));
-      const bubble = container.querySelector<HTMLElement>(".format-bubble");
-      expect(bubble?.style.top).toBe("120px");
-      expect(bubble?.style.left).toBe("240px");
+      const bubble = document.body.querySelector<HTMLElement>(".format-bubble");
+      expect(bubble?.parentElement).toBe(document.body);
+      expect(container.querySelector(".format-bubble")).toBeNull();
+      expect(Array.from(bubble!.querySelectorAll("button")).slice(0, 4).map(button => button.title))
+        .toEqual(["Bold", "Italic", "Underline", "Strikethrough"]);
+      expect(bubble?.style.top).toBe("72px");
+      expect(bubble?.style.left).toBe("40px");
 
       top = 80;
       left = 280;
       await act(async () => listeners.get("transaction")?.forEach((listener) => listener()));
 
-      expect(bubble?.style.top).toBe("120px");
-      expect(bubble?.style.left).toBe("240px");
+      expect(bubble?.style.top).toBe("72px");
+      expect(bubble?.style.left).toBe("40px");
 
       await act(async () => window.dispatchEvent(new Event("scroll")));
 
-      expect(bubble?.style.top).toBe("80px");
-      expect(bubble?.style.left).toBe("280px");
+      expect(bubble?.style.top).toBe("32px");
+      expect(bubble?.style.left).toBe("80px");
+
+      top = 10;
+      left = 5;
+      await act(async () => window.dispatchEvent(new Event("scroll")));
+      expect(bubble?.style.left).toBe("8px");
+      expect(bubble?.style.top).toBe("38px");
+
+      top = window.innerHeight + 100;
+      left = window.innerWidth + 100;
+      await act(async () => window.dispatchEvent(new Event("resize")));
+      expect(bubble?.style.left).toBe(`${window.innerWidth - 408}px`);
+      expect(bubble?.style.top).toBe(`${window.innerHeight - 48}px`);
     } finally {
       await act(async () => root.unmount());
       container.remove();
+      bounds.mockRestore();
       vi.useRealTimers();
     }
   });

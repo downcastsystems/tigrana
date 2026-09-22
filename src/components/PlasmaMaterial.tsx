@@ -4,10 +4,9 @@ import { PlasmaRenderer, type RendererSettings } from "@cruxgarden/plasma-ui";
 
 const paneSelector = ".folder-pane, .notes-pane, .unified-tree-pane, .main-pane, .right-sidebar";
 
-export default function PlasmaMaterial({ theme, accentColor, frost, backgroundBlur, layoutKey, preview = false }: { theme: "light" | "dark"; frost: number; backgroundBlur: number; accentColor: string; layoutKey: string; preview?: boolean }) {
+export default function PlasmaMaterial({ theme, accentColor, frost, backgroundBlur, backgroundImage, flow = 0, ambientDrops = false, layoutKey, surfaceScale = 1, preview = false }: { theme: "light" | "dark"; frost: number; flow?: number; ambientDrops?: boolean; backgroundBlur: number; backgroundImage?: string; accentColor: string; layoutKey: string; surfaceScale?: number; preview?: boolean }) {
   const hostRef = useRef<HTMLDivElement>(null);
   const rendererRef = useRef<PlasmaRenderer | null>(null);
-
   useEffect(() => {
     const host = hostRef.current;
     if (!host) return;
@@ -24,9 +23,18 @@ export default function PlasmaMaterial({ theme, accentColor, frost, backgroundBl
       opacity: 0.65,
       frost: 0.8,
       quality: 1,
+      freezeOnScroll: false,
+      shimmer: 0.5,
+      glow: 0.55,
+      wash: 1,
+      grain: 1,
+      backgroundBlur: 0,
       maxSurfaces: 4,
       pointerDrop: false,
+      pointerLightAtCursor: true,
       ambientDrops: false,
+      ambientBehindSurfaces: true,
+      ambientBounds: host.parentElement ?? undefined,
       // Keep borders locked to panel bounds during resizing and layout changes.
       animateSurfaces: false,
       reducedMotion: reducedMotion.matches,
@@ -35,11 +43,11 @@ export default function PlasmaMaterial({ theme, accentColor, frost, backgroundBl
       viscosity: 0.85,
       refraction: 0.7,
       dispersion: 0.4,
-      rim: 0.65,
-      rimColor: "iridescent",
+      rim: 0.25,
+      rimColor: "tint",
       rimWidth: 1,
-      highlight: 1,
-      edgeLine: 1,
+      highlight: 0.25,
+      edgeLine: 0.35,
       smoothness: 1,
       elevation: 0.2,
       background: null,
@@ -47,15 +55,7 @@ export default function PlasmaMaterial({ theme, accentColor, frost, backgroundBl
     const renderer = PlasmaRenderer.create(canvas, settings);
     rendererRef.current = renderer;
     if (!renderer) canvas.hidden = true;
-    const updateMotion = () => renderer?.configure({
-      ...renderer.settings,
-      reducedMotion: reducedMotion.matches,
-      flow: 0,
-      pointerDrop: false,
-    });
-    reducedMotion.addEventListener("change", updateMotion);
     return () => {
-      reducedMotion.removeEventListener("change", updateMotion);
       renderer?.destroy();
       rendererRef.current = null;
       canvas.remove();
@@ -71,28 +71,83 @@ export default function PlasmaMaterial({ theme, accentColor, frost, backgroundBl
       preview ? ".theme-preview-body > aside, .theme-preview-body > article" : paneSelector,
     ) ?? [];
     const handles = Array.from(panes, (pane) => renderer.register(pane, {
-      radius: 18,
+      radius: 18 * surfaceScale,
       lean: 0,
       fuse: false,
     }));
     return () => handles.forEach((handle) => handle.remove());
-  }, [theme, layoutKey, preview]);
+  }, [theme, layoutKey, preview, surfaceScale]);
+
+  useEffect(() => {
+    const renderer = rendererRef.current;
+    const host = hostRef.current;
+    if (!renderer || !host) return;
+    delete host.dataset.plasmaImageReady;
+    if (!backgroundImage) {
+      renderer.configure({ ...renderer.settings, background: null });
+      return;
+    }
+    // Keep the CSS landscape visible until the renderer can sample the image.
+    // Plasma samples background UVs from the top, but flips HTMLImageElement
+    // uploads. ImageBitmap ignores that WebGL unpack flip, so explicitly
+    // decoding upright keeps the glass image aligned with the CSS fallback.
+    const image = new Image();
+    let cancelled = false;
+    let bitmap: ImageBitmap | null = null;
+    image.onload = async () => {
+      if (cancelled || typeof createImageBitmap !== "function") return;
+      try {
+        const decoded = await createImageBitmap(image, { imageOrientation: "none" });
+        if (cancelled) { decoded.close(); return; }
+        bitmap = decoded;
+        renderer.configure({ ...renderer.settings, background: bitmap });
+        host.dataset.plasmaImageReady = "true";
+      } catch {
+        // Leave the upright CSS background visible if bitmap decoding fails.
+        bitmap?.close();
+        bitmap = null;
+      }
+    };
+    image.src = backgroundImage;
+    return () => {
+      cancelled = true;
+      image.onload = null;
+      bitmap?.close();
+      delete host.dataset.plasmaImageReady;
+    };
+  }, [theme, backgroundImage]);
 
   useEffect(() => {
     const renderer = rendererRef.current;
     if (!renderer) return;
+    const reducedMotion = matchMedia("(prefers-reduced-motion: reduce)");
     // Keep the procedural swirl, but use shades of the notebook's accent.
     // configure interpolates colors without recreating the canvas or renderer.
-    renderer.configure({
+    const configure = () => renderer.configure({
       ...renderer.settings,
       frost,
       backgroundBlur,
+      // At viscosity .85, Plasma's 0–1 range moves edges by at most 1.8px.
+      // Give the slider a visible ripple (up to 7.2px) without moving the DOM.
+      flow: reducedMotion.matches ? 0 : flow * 4,
+      reducedMotion: reducedMotion.matches,
+      ambientDrops: ambientDrops && !reducedMotion.matches,
+      pointerDrop: false,
+      ambientPointerPull: ambientDrops && !reducedMotion.matches,
+      // Low frost should also remove the milky brightening of clear glass.
+      wash: frost,
+      tint: theme === "dark" ? mixAccent(accentColor, 0, 0.86) : "#f1f7fa",
+      rimColor: accentColor,
       // Fade the material tint too, so clear glass is not hidden by solid color.
       opacity: frost * 0.8125,
       colors: [mixAccent(accentColor, 0, 0.65), accentColor, mixAccent(accentColor, 255, 0.25)],
     });
-  }, [accentColor, theme, frost, backgroundBlur]);
+    configure();
+    reducedMotion.addEventListener("change", configure);
+    return () => reducedMotion.removeEventListener("change", configure);
+  }, [accentColor, theme, frost, backgroundBlur, flow, ambientDrops]);
 
+  // Native bubbles are composed into the background before the panel pass.
   return <div className={preview ? "plasma-preview-background" : "plasma-background"} ref={hostRef} aria-hidden="true" />;
 }
 

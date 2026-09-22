@@ -1,3 +1,5 @@
+@layer tigrana-base, tigrana-plasma, tigrana-api;
+@layer tigrana-base {
 :root {
   font-family:
     Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
@@ -75,7 +77,7 @@ html[data-theme="dark"] *::-webkit-scrollbar-thumb:hover {
 
 body {
   margin: 0;
-  min-width: 900px;
+  min-width: 0;
   min-height: 620px;
   font-family: var(--app-font-family);
   font-size: var(--app-font-size);
@@ -445,17 +447,18 @@ html[data-tauri="true"][data-platform="mac"] .titlebar-traffic-padding {
 
 .app-frame {
   display: grid;
-  grid-template-columns: calc(var(--folder-pane-width, 292px) + 6px + var(--notes-pane-width, 268px)) 6px minmax(0, 1fr) 6px var(--right-pane-width, 300px);
+  padding: var(--tigrana-workspace-inset, 0px);
+  grid-template-columns: calc(var(--folder-pane-width, 292px) + var(--tigrana-panel-gap, 6px) + var(--notes-pane-width, 268px)) var(--tigrana-panel-gap, 6px) minmax(0, 1fr) var(--tigrana-panel-gap, 6px) var(--right-pane-width, 300px);
   flex: 1;
   min-height: 0;
 }
 
 .app-frame.is-left-hidden {
-  grid-template-columns: minmax(0, 1fr) 6px var(--right-pane-width, 300px);
+  grid-template-columns: minmax(0, 1fr) var(--tigrana-panel-gap, 6px) var(--right-pane-width, 300px);
 }
 
 .app-frame.is-outline-hidden {
-  grid-template-columns: calc(var(--folder-pane-width, 292px) + 6px + var(--notes-pane-width, 268px)) 6px minmax(0, 1fr);
+  grid-template-columns: calc(var(--folder-pane-width, 292px) + var(--tigrana-panel-gap, 6px) + var(--notes-pane-width, 268px)) var(--tigrana-panel-gap, 6px) minmax(0, 1fr);
 }
 
 .app-frame.is-left-hidden.is-outline-hidden {
@@ -463,15 +466,15 @@ html[data-tauri="true"][data-platform="mac"] .titlebar-traffic-padding {
 }
 
 .app-frame.is-single-col {
-  grid-template-columns: var(--notes-pane-width, 268px) 6px minmax(0, 1fr) 6px var(--right-pane-width, 300px);
+  grid-template-columns: var(--notes-pane-width, 268px) var(--tigrana-panel-gap, 6px) minmax(0, 1fr) var(--tigrana-panel-gap, 6px) var(--right-pane-width, 300px);
 }
 
 .app-frame.is-single-col.is-left-hidden {
-  grid-template-columns: minmax(0, 1fr) 6px var(--right-pane-width, 300px);
+  grid-template-columns: minmax(0, 1fr) var(--tigrana-panel-gap, 6px) var(--right-pane-width, 300px);
 }
 
 .app-frame.is-single-col.is-outline-hidden {
-  grid-template-columns: var(--notes-pane-width, 268px) 6px minmax(0, 1fr);
+  grid-template-columns: var(--notes-pane-width, 268px) var(--tigrana-panel-gap, 6px) minmax(0, 1fr);
 }
 
 .app-frame.is-single-col.is-left-hidden.is-outline-hidden {
@@ -482,7 +485,7 @@ html[data-tauri="true"][data-platform="mac"] .titlebar-traffic-padding {
   position: relative;
   z-index: 20;
   display: grid;
-  grid-template-columns: var(--folder-pane-width, 292px) 6px var(--notes-pane-width, 268px);
+  grid-template-columns: var(--folder-pane-width, 292px) var(--tigrana-panel-gap, 6px) var(--notes-pane-width, 268px);
   min-width: 0;
   min-height: 0;
   background: var(--surface);
@@ -804,6 +807,7 @@ body.is-dragging-bookmark * {
   min-height: 42px;
   padding: 0 14px;
   border-radius: inherit;
+  font-weight: 400;
 }
 
 body.is-dragging-section,
@@ -1750,6 +1754,11 @@ body.is-dragging-section * {
   cursor: pointer;
 }
 
+/* Keep the icon intact when indentation and long names squeeze a folder row. */
+.folder-select > :first-child {
+  flex-shrink: 0;
+}
+
 .custom-icon {
   display: inline-flex;
   align-items: center;
@@ -2678,7 +2687,8 @@ kbd {
   position: absolute;
   right: 18px;
   bottom: 12px;
-  z-index: 10;
+  /* Keep the badge above the scrolling content's fade overlays (z-index 12). */
+  z-index: 13;
   display: inline-flex;
   align-items: center;
   gap: 6px;
@@ -3091,7 +3101,7 @@ html[data-theme="dark"] .tab-list-separator {
 }
 
 .note-meta {
-  width: min(880px, calc(100% - 72px));
+  width: min(860px, calc(100% - 72px));
   margin: 26px auto -8px;
   color: #938a7f;
   font-size: 12px;
@@ -3106,7 +3116,8 @@ html[data-theme="dark"] .tab-list-separator {
 
 .title-shell {
   position: relative;
-  width: min(880px, calc(100% - 72px));
+  flex-shrink: 0;
+  width: min(860px, calc(100% - 72px));
   margin: 0 auto -4px;
   padding-bottom: 14px;
   border-bottom: 1px solid rgba(52, 48, 43, 0.12);
@@ -3197,10 +3208,13 @@ html[data-theme="dark"] .tab-list-separator {
 
 .editor-shell {
   position: relative;
+  display: flex;
+  flex: 1 0 auto;
+  flex-direction: column;
   --editor-bottom-breathing-room: clamp(160px, 32vh, 280px);
-  width: min(880px, calc(100% - 72px));
+  width: min(860px, calc(100% - 72px));
   margin: 0 auto;
-  padding: 28px 0 140px;
+  padding: 28px 0 0;
 }
 
 .editor-shell[data-editable="true"],
@@ -3327,7 +3341,7 @@ html[data-theme="dark"] .tab-list-separator {
 .raw-markdown-shell {
   display: flex;
   flex-direction: column;
-  width: min(880px, calc(100% - 72px));
+  width: min(860px, calc(100% - 72px));
   margin: 0 auto;
   padding: 24px 0 28px;
   flex: 1 1 auto;
@@ -3412,7 +3426,10 @@ html[data-theme="dark"] .tab-list-separator {
 }
 
 .editor-content {
-  min-height: 68vh;
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  min-height: 0;
 }
 
 .editor-content h1,
@@ -3426,11 +3443,16 @@ html[data-theme="dark"] .tab-list-separator {
 
 .ProseMirror {
   outline: none;
+  /* Keep emphasis visible when a theme bundles only a regular font face. */
+  font-synthesis: weight style;
   color: #22211f;
   font-family: var(--editor-font-family);
   font-size: var(--editor-font-size);
   line-height: 1.72;
-  min-height: 68vh;
+  /* Fill the actual panel, including inset themes, rather than the viewport.
+     Keep end-of-note breathing room here instead of padding both wrappers. */
+  flex: 1;
+  min-height: 0;
   padding-bottom: var(--editor-bottom-breathing-room);
 }
 
@@ -3874,7 +3896,7 @@ html[data-theme="dark"] .tab-list-separator {
   align-items: center;
   justify-content: flex-start;
   width: 22px;
-  height: 1.6em;
+  height: 1lh;
   margin: 0;
   padding: 0;
 }
@@ -4924,10 +4946,14 @@ html[data-theme="dark"] .table-column-handle.is-visible:hover {
   cursor: pointer;
 }
 
-.settings-nav-item:hover,
-.settings-nav-item.is-active {
+.settings-nav-item:hover:not(.is-active) {
   color: var(--accent-strong);
   background: var(--accent-soft);
+}
+
+.settings-nav-item.is-active {
+  color: var(--accent-contrast);
+  background: var(--accent);
 }
 
 .settings-content {
@@ -4937,7 +4963,7 @@ html[data-theme="dark"] .table-column-handle.is-visible:hover {
 
 .settings-content-header {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) 30px;
+  grid-template-columns: minmax(0, 1fr) auto;
   align-items: start;
   gap: 12px;
   margin-bottom: 22px;
@@ -5194,6 +5220,15 @@ html[data-theme="dark"] .settings-number-input::-webkit-outer-spin-button {
   cursor: pointer;
 }
 
+.settings-select:focus {
+  outline: 2px solid #0969da;
+  outline-offset: -2px;
+}
+
+html[data-theme="dark"] .settings-select:focus {
+  outline-color: #69aaff;
+}
+
 .settings-select:hover {
   background-color: white;
 }
@@ -5266,9 +5301,12 @@ html[data-theme="light"]:not([data-theme-preset="default"]) .accent-control inpu
 }
 
 html[data-theme="light"]:not([data-theme-preset="default"]) .toolbar-button:hover,
-html[data-theme="light"]:not([data-theme-preset="default"]) .segmented-button:hover,
-html[data-theme="light"]:not([data-theme-preset="default"]) .settings-select:hover {
+html[data-theme="light"]:not([data-theme-preset="default"]) .segmented-button:hover {
   background: var(--surface-muted);
+}
+
+html[data-theme="light"]:not([data-theme-preset="default"]) .settings-select:hover {
+  background-color: var(--surface-muted);
 }
 
 html[data-theme="light"]:not([data-theme-preset="default"]) .settings-sidebar,
@@ -5534,8 +5572,6 @@ html[data-theme="dark"] .section-view-folder-pane .folder-row.is-context-target:
   background: transparent;
 }
 
-html[data-theme="dark"] .settings-nav-item:hover,
-html[data-theme="dark"] .settings-nav-item.is-active,
 html[data-theme="dark"] .theme-option:hover,
 html[data-theme="dark"] .theme-option.is-active {
   color: var(--accent-strong);
@@ -5691,20 +5727,6 @@ html[data-theme="dark"] .ProseMirror pre {
 }
 
 @media (max-width: 980px) {
-  body {
-    min-width: 760px;
-  }
-
-  .app-frame {
-    grid-template-columns: minmax(0, 1fr);
-  }
-
-  .left-panes,
-  .right-sidebar,
-  .pane-resizer {
-    display: none;
-  }
-
   .editor-shell,
   .raw-markdown-shell,
   .title-shell {
@@ -6007,6 +6029,12 @@ html[data-accent-titlebar="true"] .app-shell .app-titlebar .note-tab.is-active {
   color: var(--accent-contrast);
 }
 
+/* Default's darker title bar distinguishes the solid accent tab without an outline. */
+html[data-theme-preset="default"][data-accent-titlebar="true"] .app-shell .app-titlebar .note-tab.is-active {
+  background: var(--accent);
+  border-color: transparent;
+}
+
 .app-shell .section-view-folder-pane .folder-row:is(.is-active, .is-context-target, :hover) .folder-select {
   color: var(--accent-contrast);
 }
@@ -6014,6 +6042,9 @@ html[data-accent-titlebar="true"] .app-shell .app-titlebar .note-tab.is-active {
 /* Theme editing is isolated from the active notebook until Save and use. */
 .theme-builder { padding-bottom: 20px; }
 .theme-actions { display: flex; flex-wrap: wrap; gap: 8px; margin: 14px 0; }
+.theme-picker-controls { display: flex; align-items: center; gap: 8px; min-width: 0; }
+.theme-picker-controls .settings-select { min-width: 0; width: 240px; max-width: 100%; }
+.theme-picker-controls .icon-button { flex-shrink: 0; }
 .theme-actions label { cursor: pointer; }
 .theme-editor { border-top: 1px solid var(--border); margin-top: 20px; padding-top: 12px; }
 .theme-preview { border: 1px solid; border-radius: 8px; overflow: hidden; margin: 12px 0; }
@@ -6031,6 +6062,9 @@ html[data-accent-titlebar="true"] .app-shell .app-titlebar .note-tab.is-active {
 .theme-preview h2 { font-size: 1.4em; margin: 0 0 16px; }
 .theme-preview p { margin: 12px 0; }
 .theme-color-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px 24px; margin: 20px 0; }
+.theme-color-group { min-width: 0; margin: 20px 0 24px; padding: 0; border: 0; }
+.theme-color-group > legend { padding: 0; font-size: 14px; font-weight: 600; }
+.theme-color-group > .theme-color-grid { margin: 12px 0 0; }
 .theme-color-field { display: flex; justify-content: space-between; align-items: center; gap: 10px; }
 .theme-color-grid input[type="color"] { width: 42px; height: 28px; border: 1px solid var(--border); background: transparent; border-radius: 4px; }
 .theme-font-grid { display: grid; gap: 12px; margin: 18px 0; }
@@ -6044,11 +6078,11 @@ html[data-accent-titlebar="true"] .app-shell .app-titlebar .note-tab.is-active {
 .settings-modal { width: min(820px, calc(100vw - 48px)); height: min(900px, calc(100dvh - 48px)); min-height: 0; grid-template-columns: 180px minmax(0, 1fr); }
 .settings-content { display: flex; flex-direction: column; overflow: hidden; }
 .settings-content-header { flex-shrink: 0; }
-.settings-scroll { min-height: 0; overflow: auto; scrollbar-gutter: stable; }
+.settings-scroll { min-height: 0; overflow: auto; scrollbar-gutter: stable; padding-right: 16px; }
 .settings-sidebar { min-height: 0; overflow-y: auto; }
 .theme-editor-controls > p, .theme-builder > p { font-size: 13px; color: var(--text-muted); }
 .theme-builder [role="alert"] { color: var(--text); }
-.settings-backdrop { align-items: center; padding: 24px; }
+.settings-backdrop { align-items: center; padding: 24px; background: transparent; backdrop-filter: none; }
 .settings-modal { grid-template-rows: minmax(0, 1fr); }
 .settings-content { min-height: 0; }
 
@@ -6079,8 +6113,6 @@ html[data-theme] .settings-backdrop .settings-sidebar {
 }
 .theme-preview-link { color: var(--link-color); text-decoration: underline; text-underline-offset: 2px; }
 .theme-editor { border-top: 0; margin-top: 0; padding-top: 0; }
-.settings-experimental { margin-top: 24px; }
-.settings-experimental > h3 { margin: 0; font-size: inherit; font-weight: 600; }
 
 .theme-color-inputs { display: flex; align-items: center; gap: 8px; flex-shrink: 0; }
 .theme-color-grid .theme-hex-input {
@@ -6094,7 +6126,7 @@ html[data-theme] .settings-backdrop .settings-sidebar {
   color: var(--text);
   font: 13px ui-monospace, SFMono-Regular, Menlo, monospace;
 }
-.theme-hex-input:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.theme-hex-input:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
 /* Keep editable fields distinct even when a theme uses similar surface colors. */
 html[data-theme] .settings-modal .theme-editor :is(.settings-text-input, .theme-hex-input, input[type="number"]) {
   color: var(--text);
@@ -6108,14 +6140,15 @@ html[data-theme] .settings-modal .theme-editor :is(.settings-text-input, .theme-
 html[data-theme] .settings-modal .theme-editor :is(.settings-text-input, .theme-hex-input, input[type="number"]):focus-visible {
   border-color: var(--text);
   outline: 2px solid color-mix(in srgb, var(--accent) 50%, var(--text) 50%);
-  outline-offset: 2px;
+  outline-offset: -2px;
 }
-.settings-appearance:has(.theme-editor) > .settings-experimental { display: none; }
+.settings-appearance:has(.theme-editor) > :is(.settings-navigation-style, .settings-reset-appearance) { display: none; }
 
-html[data-theme] .settings-modal .theme-actions .toolbar-button {
+/* Settings actions share one border treatment regardless of their layout container. */
+html[data-theme] .settings-modal .toolbar-button {
   border-color: color-mix(in srgb, var(--text) 40%, var(--surface-strong) 60%);
 }
-html[data-theme] .settings-modal .theme-actions .toolbar-button:hover:not(:disabled) {
+html[data-theme] .settings-modal .toolbar-button:hover:not(:disabled) {
   border-color: color-mix(in srgb, var(--text) 65%, var(--surface-strong) 35%);
 }
 
@@ -6147,7 +6180,7 @@ html[data-theme] .settings-modal .theme-actions .toolbar-button:hover:not(:disab
 .theme-editor-controls { width: 100%; }
 .theme-editor-controls, .theme-editor-preview { min-width: 0; }
 .theme-editor-preview { position: sticky; top: 0; }
-.theme-preview-heading { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.theme-preview-heading { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 3px; margin-bottom: 5px; }
 .theme-preview-heading h3 { margin: 0; font-size: 15px; }
 .theme-preview-heading .settings-select { width: 130px; min-width: 0; }
 .theme-editor-preview > .theme-preview { max-height: calc(100dvh - 220px); overflow: auto; }
@@ -6177,7 +6210,20 @@ html[data-theme] .settings-modal .theme-actions .toolbar-button:hover:not(:disab
 }
 
 /* The preview extends the compact settings window only while editing a theme. */
-.settings-window { display: flex; align-items: stretch; gap: 12px; max-width: 100%; }
+.settings-window {
+  display: flex;
+  align-items: stretch;
+  gap: 12px;
+  max-width: 100%;
+  /* Native select menus may substitute a system font but retain the inherited
+     size. Keep Settings readable without a theme's display-font compensation.
+     Preview regions supply their own font variables and remain fully themed. */
+  --app-font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  --app-font-size: 14px;
+  font-family: var(--app-font-family);
+  font-size: var(--app-font-size);
+  line-height: 1.5;
+}
 .settings-preview-host:empty { display: none; }
 .settings-preview-host:not(:empty) {
   width: clamp(340px, calc(100vw - 880px), 560px);
@@ -6193,3 +6239,209 @@ html[data-theme] .settings-modal .theme-actions .toolbar-button:hover:not(:disab
 }
 .settings-preview-host .theme-editor-preview { position: static; }
 .settings-preview-host .theme-preview { max-height: none; }
+.settings-appearance > .theme-builder:not(:has(.theme-editor)) { padding-bottom: 10px; }
+.settings-reset-appearance { margin-top: 14px; padding-top: 12px; border-top: 1px solid var(--border); }
+.settings-reset-appearance h3 { margin: 0; font-size: inherit; font-weight: 600; }
+.settings-reset-appearance p { margin: 8px 0 16px; color: var(--text-muted); line-height: 1.5; }
+html[data-theme] .settings-reset-appearance .toolbar-button { display: inline-flex; align-items: center; gap: 8px; border-color: color-mix(in srgb, var(--text) 40%, var(--surface-strong) 60%); }
+html[data-theme] .settings-reset-appearance .toolbar-button:hover { border-color: var(--text); }
+
+.theme-code { width: 100%; min-height: 300px; resize: vertical; padding: 12px; color: var(--text); background: var(--surface); border: 1px solid var(--border); font: 13px/1.6 ui-monospace, monospace; tab-size: 2; }
+/* Draw focus inside the field so the scrolling editor cannot clip its left edge. */
+.theme-code:focus { border-color: #0969da; outline: 2px solid #0969da; outline-offset: -2px; }
+html[data-theme="dark"] .theme-code:focus { border-color: #69aaff; outline-color: #69aaff; }
+.theme-design-controls { display: grid; gap: 12px; margin-block: 18px; }
+.theme-design-controls > label { display: grid; gap: 6px; }
+.theme-design-controls input:not([type="checkbox"]), .theme-design-controls textarea { width: 100%; min-width: 0; }
+.theme-mode-tabs { display: flex; gap: 20px; margin: 20px 0; border-bottom: 1px solid var(--border); }
+.theme-mode-tabs [role="tab"] { padding: 10px 0; margin-bottom: -1px; border: 0; border-bottom: 2px solid transparent; background: transparent; color: var(--text-muted); font: inherit; cursor: pointer; }
+.theme-mode-tabs [role="tab"]:hover { color: var(--text); }
+.theme-mode-tabs [aria-selected="true"] { color: var(--text); border-bottom-color: var(--text); font-weight: 600; }
+.theme-mode-tabs [role="tab"]:focus-visible { outline: 2px solid var(--text); outline-offset: 4px; border-radius: 2px; }
+.theme-css-reference { border: 1px solid color-mix(in srgb, var(--text) 35%, var(--surface-strong)); border-radius: 6px; padding: 12px; }
+.theme-css-reference summary { cursor: pointer; font-weight: 600; }
+.theme-css-reference h2 { margin: 24px 0 8px; font-size: 16px; }
+.theme-css-reference p, .theme-css-reference li, .theme-css-reference td { font-size: 13px; line-height: 1.6; }
+.theme-css-reference table { width: 100%; table-layout: fixed; border-collapse: collapse; }
+.theme-css-reference td { padding: 6px 0; vertical-align: top; border-bottom: 1px solid var(--border); }
+.theme-css-reference td:first-child { padding-right: 12px; }
+.theme-css-reference table[aria-label="Supported theme selectors"] td:first-child { width: 25%; }
+.theme-css-reference code { overflow-wrap: anywhere; font-size: 12px; }
+.theme-css-reference pre { white-space: pre-wrap; overflow-wrap: anywhere; padding: 12px; background: var(--surface); border-radius: 4px; user-select: text; }
+
+
+.theme-sharing-details > h3 { font-size: 1em; margin: 20px 0 12px; }
+.theme-sharing-details > label { display: grid; gap: 6px; margin: 12px 0; }
+
+/* Keep theme editing actions outside the scrolling controls. */
+.settings-scroll:has(.theme-editor) { display: flex; flex: 1; overflow: hidden; padding-right: 0; }
+.settings-appearance:has(.theme-editor) { display: flex; flex: 1; min-width: 0; min-height: 0; }
+.settings-appearance > .theme-builder:has(.theme-editor) { display: flex; flex-direction: column; flex: 1; min-width: 0; min-height: 0; }
+.settings-modal .theme-editor { flex: 1; min-height: 0; gap: 0; }
+.settings-modal .theme-editor-controls { flex: 1; min-height: 0; overflow-y: auto; overflow-x: hidden; scrollbar-gutter: stable; padding: 0 16px 16px 0; }
+.theme-editor-actions { flex-shrink: 0; margin: 0; padding: 16px 0 0; border-top: 1px solid var(--border); background: var(--surface-strong); }
+.theme-conflict > .theme-actions { align-items: flex-start; flex-direction: column; }
+.theme-conflict > .theme-actions .toolbar-button { flex-direction: column; align-items: flex-start; justify-content: center; gap: 4px; padding: 10px 12px; text-align: left; white-space: normal; }
+.theme-conflict > .theme-actions .toolbar-button small { font-size: 12px; line-height: 1.5; color: inherit; }
+html[data-theme] .theme-conflict .theme-actions .toolbar-button {
+  color: var(--text);
+  border-color: color-mix(in srgb, var(--text) 55%, var(--surface-strong) 45%);
+  background: color-mix(in srgb, var(--text) 6%, var(--surface-strong) 94%);
+}
+html[data-theme] .theme-conflict .theme-actions .toolbar-button:hover:not(:disabled) {
+  border-color: color-mix(in srgb, var(--text) 80%, var(--surface-strong) 20%);
+  background: color-mix(in srgb, var(--text) 12%, var(--surface-strong) 88%);
+}
+html[data-theme] .theme-conflict .theme-actions .toolbar-button:focus-visible {
+  outline: 2px solid var(--text);
+  outline-offset: 3px;
+}
+
+.theme-reference-page { --surface-strong: #ffffff; --surface: #f5f5f5; --text: #22211f; --text-muted: #64625f; --border: #d4d4d4; height: 100dvh; overflow-y: auto; padding: 28px; background: var(--surface-strong); color: var(--text); }
+html[data-theme="dark"] .theme-reference-page { --surface-strong: #292a2d; --surface: #202123; --text: #eeeae3; --text-muted: #b1aea8; --border: #505155; color-scheme: dark; }
+body:has(.theme-reference-page) { min-width: 0; min-height: 0; overflow: hidden; }
+.theme-reference-page { width: 100%; min-width: 0; overflow-x: hidden; overflow-wrap: anywhere; }
+.theme-reference-page .theme-css-reference { max-width: 900px; margin: 0 auto; border: 0; padding: 0; }
+.theme-reference-page h1 { margin: 0 0 12px; font-size: 24px; }
+.theme-reference-page .theme-reference-intro { color: var(--text-muted); font-size: 14px; margin: 0 0 24px; }
+.theme-design-controls > .theme-reference-link { justify-self: start; border-color: color-mix(in srgb, var(--text) 45%, var(--surface-strong)); }
+
+}
+
+@layer tigrana-base {
+.theme-verification { width: min(1160px, calc(100vw - 48px)); max-width: none; max-height: calc(100dvh - 48px); padding: 24px; border: 1px solid var(--border); border-radius: 10px; background: var(--surface-strong); color: var(--text); box-shadow: var(--shadow-modal-strong); }
+.theme-verification[open] { display: flex; flex-direction: column; gap: 16px; }
+.theme-verification::backdrop { background: rgb(0 0 0 / 55%); }
+.theme-verification header, .theme-verification footer { flex-shrink: 0; }
+.theme-verification h2, .theme-verification h3 { margin: 0 0 8px; }
+.theme-verification p { margin: 8px 0; }
+.theme-verification-previews { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 20px; min-height: 0; overflow-y: auto; }
+.theme-verification-previews > section { min-width: 0; }
+.theme-verification .toolbar-button { border-color: color-mix(in srgb, var(--text) 45%, var(--surface-strong)); }
+.theme-verification footer .theme-actions { margin: 0; }
+@media (max-width: 650px) { .theme-verification-previews { grid-template-columns: minmax(0, 1fr); } }
+}
+
+@layer tigrana-base {
+/* Keep focus rings inside controls, including the preview portaled beside Settings. */
+.settings-window { --settings-focus: #0969da; }
+html[data-theme="dark"] .settings-window { --settings-focus: #69aaff; }
+html[data-theme] .settings-window :is(.settings-select, .settings-text-input, .theme-hex-input, .theme-code, input[type="number"]):focus {
+  border-color: var(--settings-focus);
+  outline: 2px solid var(--settings-focus);
+  outline-offset: -2px;
+}
+html[data-theme] .theme-conflict .theme-actions .toolbar-button.is-recommended {
+  background: var(--accent);
+  color: var(--accent-contrast);
+  border: 2px solid color-mix(in srgb, var(--accent) 55%, var(--text));
+}
+html[data-theme] .theme-conflict .theme-actions .toolbar-button.is-recommended:hover:not(:disabled) {
+  background: color-mix(in srgb, var(--accent) 88%, var(--accent-contrast));
+  border-color: var(--text);
+}
+.theme-recommendation { font-weight: 700; }
+}
+
+.theme-advanced-surfaces {
+  margin: 24px 0;
+  padding-top: 16px;
+  border-top: 1px solid var(--border);
+}
+.theme-advanced-surfaces .setting-row { margin-top: 14px; gap: 16px; }
+.theme-advanced-surfaces output { font-variant-numeric: tabular-nums; margin-left: 8px; }
+.theme-advanced-surfaces select, .theme-advanced-surfaces input { max-width: 55%; min-width: 0; }
+
+.settings-window-actions { display: flex; align-items: center; gap: 16px; flex-shrink: 0; }
+.settings-window-actions .icon-button { width: 32px; height: 32px; flex-shrink: 0; }
+.settings-window.is-maximized {
+  width: calc(100vw - 32px);
+  height: calc(100dvh - 32px);
+  min-width: 0;
+}
+.settings-window.is-maximized .settings-modal {
+  flex: 1 1 0;
+  width: 0;
+  min-width: 0;
+  height: 100%;
+}
+.settings-window.is-maximized .settings-preview-host:not(:empty) {
+  flex: 0 0 42%;
+  width: auto;
+  height: 100%;
+}
+.theme-generated-css { height: 180px; min-height: 100px; opacity: 0.85; }
+.theme-css-hint { display: block; font-size: 11px; font-weight: 400; color: var(--text-muted); text-decoration: underline dotted; cursor: help; }
+.theme-delete-confirmation { width: min(520px, calc(100vw - 48px)); max-height: calc(100dvh - 48px); box-sizing: border-box; overflow-y: auto; padding: 24px; border: 1px solid var(--border); border-radius: 10px; background: var(--surface-strong); color: var(--text); box-shadow: var(--shadow-modal-strong); }
+.theme-delete-confirmation::backdrop { background: rgb(0 0 0 / 55%); }
+.theme-delete-confirmation h2 { margin: 0 0 16px; }
+.theme-delete-confirmation p { line-height: 1.5; }
+.theme-delete-confirmation .theme-actions { justify-content: flex-end; margin: 24px 0 0; }
+.theme-delete-confirmation .toolbar-button { border-color: color-mix(in srgb, var(--text) 45%, var(--surface-strong)); }
+
+.settings-appearance-divider { width: 100%; border: 0; border-top: 1px solid var(--border); margin: 12px 0; }
+/* Reserve space inside the scroller for the Theme background to extend past
+   the shared text edge without being clipped by overflow. */
+.settings-scroll:has(.settings-appearance):not(:has(.theme-editor)) { margin-left: -12px; padding-left: 12px; }
+.settings-theme-section { margin-inline: -12px; padding: 14px 12px; border-radius: 8px; background: rgb(0 0 0 / 4%); }
+html[data-theme="dark"] .settings-theme-section { background: rgb(0 0 0 / 16%); }
+.settings-theme-section > .setting-row { padding-top: 0; }
+.theme-color-presets { margin-top: 6px; }
+.settings-theme-section > .theme-actions:last-child { margin-bottom: 0; }
+.settings-quick-appearance { margin-top: 0; padding-top: 0; }
+.settings-quick-appearance h3 { margin: 0; font-size: inherit; font-weight: bolder; }
+.settings-quick-appearance .theme-color-field { margin: 16px 0 0; }
+.settings-quick-appearance .setting-row { padding: 12px 0; }
+.quick-appearance-control { display: flex; align-items: center; gap: 8px; min-width: 0; }
+.quick-appearance-reset-slot { display: inline-flex; flex: 0 0 28px; width: 28px; height: 28px; }
+.quick-appearance-reset.icon-button { width: 28px; height: 28px; }
+.quick-font-size-control { display: flex; align-items: center; gap: 12px; }
+.quick-font-size-control input { width: 140px; min-width: 0; }
+.quick-font-size-control output { min-width: 4ch; text-align: right; font-variant-numeric: tabular-nums; }
+
+.theme-recovery-notice { position: fixed; z-index: 20000; top: 60px; left: 20px; right: 20px; max-height: 35vh; overflow: auto; padding: 16px; color: #fff; background: #40252a; border: 1px solid #e49caa; border-radius: 8px; font: 14px/1.5 system-ui; }
+.theme-role-settings { margin: 20px 0; padding: 12px; border: 1px solid var(--border); border-radius: 8px; min-width: 0; }
+.theme-role-settings legend { font-weight: 650; }
+.theme-role-settings input[type="number"] { width: 120px; }
+.theme-role-settings textarea { width: 100%; min-height: 160px; }
+.theme-control-value { display: flex; align-items: center; gap: 8px; }
+.theme-control-value output { min-width: 3ch; }
+.theme-preview-options { display: flex; flex-wrap: wrap; gap: 12px; margin: 8px 0; align-items: center; }
+.theme-preview-options label { display: flex; gap: 6px; align-items: center; }
+.theme-health { margin: 18px 0; padding: 12px; border: 1px solid var(--border); border-radius: 8px; }
+.theme-health li { margin: 8px 0; }
+
+.theme-editor-preview.is-expanded, .settings-preview-host .theme-editor-preview.is-expanded { position: fixed; inset: 24px; z-index: 3; padding: 20px; overflow: auto; border: 1px solid var(--border); border-radius: 8px; background: var(--surface-strong); box-shadow: var(--shadow-modal-strong); }
+
+.theme-color-field { position: relative; }
+.theme-color-field:has(.theme-color-reset) { padding-bottom: 18px; }
+.theme-color-reset { position: absolute; bottom: 0; left: 0; padding: 0; border: 0; background: transparent; color: var(--text-muted); font: inherit; font-size: 12px; text-decoration: underline; cursor: pointer; }
+
+.theme-current-settings { margin: 12px 0 16px; }
+.theme-current-settings .settings-description { margin-bottom: 8px; }
+
+.theme-defaults-control { position: relative; }
+.theme-defaults-control > .toolbar-button { display: flex; align-items: center; gap: 6px; }
+.theme-defaults-menu { position: absolute; z-index: 20; top: calc(100% + 6px); left: 0; width: 285px; max-width: calc(100vw - 64px); overflow-y: auto; padding: 5px; border: 1px solid var(--border); border-radius: 8px; background: var(--surface-strong); color: var(--text); box-shadow: var(--shadow-modal-strong); }
+.theme-defaults-menu > button { display: block; width: 100%; padding: 10px 12px; border: 0; border-radius: 4px; background: transparent; color: inherit; text-align: left; font: 14px/1.4 Inter, sans-serif; cursor: pointer; }
+.theme-defaults-menu > button:hover, .theme-defaults-menu > button:focus-visible { background: var(--accent); color: var(--accent-contrast); outline: none; }
+
+.settings-quick-appearance {
+  margin-top: 18px;
+  padding-top: 16px;
+  border-top: 1px solid var(--border);
+}
+
+.theme-spacing-control { display: flex; align-items: center; gap: 12px; }
+.theme-spacing-control output { width: 7ch; flex: 0 0 7ch; text-align: right; font-variant-numeric: tabular-nums; }
+
+.theme-variants-editor { margin: 16px 0 24px; }
+.theme-variants-editor > label { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.theme-variants-editor .theme-actions { flex-wrap: wrap; margin-top: 12px; }
+.theme-variants-editor [role="group"] { margin-top: 14px; padding: 14px 0; border-top: 1px solid var(--border); }
+.theme-variants-editor [role="group"] label { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 12px; }
+.theme-variants-editor input { min-width: 0; padding: 8px; color: var(--text); background: var(--surface); border: 1px solid var(--border); border-radius: 6px; }
+.theme-variants-editor p { color: var(--text-muted); font-size: 13px; }
+.theme-variants-editor [role="group"] > .toolbar-button + .toolbar-button { margin-left: 10px; }
+
+.theme-variants-editor input.theme-variant-pending-name { border-color: #d94747; box-shadow: 0 0 0 1px #d94747; }

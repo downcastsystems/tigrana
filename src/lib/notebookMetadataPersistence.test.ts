@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 import type { NotePositionMetadata, WorkspaceMetadata } from "../types";
-import { replaceOrderedPath } from "./notebookMetadata";
+import { getFolderColors, setFolderColor, replaceOrderedPath } from "./notebookMetadata";
 import {
   type MetadataUpdater,
   NotebookMetadataPersistence,
@@ -8,6 +8,22 @@ import {
 import { defaultWorkspaceMetadata } from "./notebookStorage";
 
 describe("Notebook metadata persistence", () => {
+  it("replays a color edit over another window's style colors", async () => {
+    const stale = defaultWorkspaceMetadata();
+    let durable = { ...setFolderColor(stale, "dual-pane", "Projects", "#123456"), revision: 1 };
+    const persistence = new NotebookMetadataPersistence({
+      writeWorkspaceMetadata: async (_workspace, requested) => {
+        if (requested.revision !== durable.revision) return { applied: false, metadata: durable };
+        durable = { ...requested, revision: durable.revision + 1 };
+        return { applied: true, metadata: durable };
+      },
+    });
+    await persistence.mutate("/Notebook",
+      current => setFolderColor(current, "single-pane", "Projects", "#abcdef"), stale);
+    expect(getFolderColors(durable, "single-pane")).toEqual({ Projects: "#abcdef" });
+    expect(getFolderColors(durable, "dual-pane")).toEqual({ Projects: "#123456" });
+  });
+
   it("serializes metadata mutations and path mutations for each Notebook", async () => {
     let releaseFirstWrite!: () => void;
     const firstWrite = new Promise<void>((resolve) => { releaseFirstWrite = resolve; });
