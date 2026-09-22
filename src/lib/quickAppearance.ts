@@ -4,6 +4,7 @@ import type { ThemeDocument } from "./themes";
 import { readableThemeText } from "./themeRuntime";
 import { allBuiltInThemes } from "./bundledThemes";
 import { defaultThemeDesign } from "./themeDesign";
+import vt323Font from "./vt323Font.json";
 
 export function quickAppearanceStyles(quick: NotebookAppearance["quickAppearance"], colored: boolean, titlebarColor: string) {
   const palette: Record<string, string> = {};
@@ -23,14 +24,19 @@ export function quickAppearanceStyles(quick: NotebookAppearance["quickAppearance
 }
 
 // Reuse packaged font data and notices so this list follows the shipped themes.
-const packagedFonts = allBuiltInThemes.flatMap(theme => Object.entries(theme.design?.assets ?? {})
+const packagedFonts = [
+  // VT323 remains a quick font even though Quest now uses Geist Pixel.
+  { label: "VT323", value: "theme-font-vt323, monospace", token: "theme-font-vt323",
+    path: "assets/vt323.woff2", ...vt323Font },
+  ...allBuiltInThemes.flatMap(theme => Object.entries(theme.design?.assets ?? {})
   .filter(([, asset]) => asset.mime === "font/woff2")
   .map(([path, asset]) => {
     const token = `theme-font-${path.slice(7, -6)}`;
     const value = [theme.editorFontFamily, theme.appFontFamily].find(family => family.split(",")[0].trim() === token)
       ?? `${token}, sans-serif`;
     return { label: themeFontLabel(token), value, token, path, asset, license: theme.design!.license };
-  }))
+  })),
+]
   .filter((font, index, fonts) => fonts.findIndex(other => other.value === font.value) === index)
   .sort((a, b) => a.label.localeCompare(b.label));
 

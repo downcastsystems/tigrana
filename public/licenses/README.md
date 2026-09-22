@@ -7,7 +7,7 @@ Tigrana bundles these font families under the SIL Open Font License 1.1. The fon
 | [Inter](https://github.com/rsms/inter) | App interface and Settings | `@fontsource-variable/inter` 5.3.0, normal and italic WOFF2 subsets | [Inter-OFL.txt](Inter-OFL.txt) |
 | [IBM Plex Mono](https://github.com/IBM/plex) | Old Basement PC and Quick appearance | `@fontsource/ibm-plex-mono` 5.3.0, Latin regular WOFF2 | [IBM-Plex-Mono-OFL.txt](IBM-Plex-Mono-OFL.txt) |
 | [Solway](https://github.com/mashavp/Solway) | Twain and Quick appearance | `@fontsource/solway` 5.3.0, Latin regular WOFF2 | [Solway-OFL.txt](Solway-OFL.txt) |
-| [VT323](https://github.com/phoikoi/VT323) | Quick appearance | `@fontsource/vt323` 5.2.5, Latin regular WOFF2 | [VT323-OFL.txt](VT323-OFL.txt) |
+| [VT323](https://github.com/phoikoi/VT323) | Quick appearance | `@fontsource/vt323` 5.2.5, Latin regular WOFF2 in `src/lib/vt323Font.json` | [VT323-OFL.txt](VT323-OFL.txt), [package notice](VT323-Fontsource-LICENSE.txt) |
 
 | [Geist Pixel Square](https://github.com/vercel/geist-font) | Quest | Unmodified upstream WOFF2, commit `10dc7658f13c38a474cde201bb09a4617267545b` | [Geist-Pixel-OFL.txt](Geist-Pixel-OFL.txt) |
 

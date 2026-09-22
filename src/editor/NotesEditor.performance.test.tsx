@@ -129,14 +129,17 @@ describe("Note editor typing performance", () => {
     scrollIntoView.mockClear();
     const editorElement = container.querySelector<HTMLElement>(".ProseMirror");
 
-    for (let index = 0; index < 9; index += 1) {
+    const taskListIndex = Array.from(container.querySelectorAll('.slash-item strong'))
+      .findIndex(item => item.textContent === 'Task List');
+    expect(taskListIndex).toBeGreaterThan(0);
+    for (let index = 0; index < taskListIndex; index += 1) {
       await act(async () => {
         editorElement?.dispatchEvent(new KeyboardEvent("keydown", { bubbles: true, key: "ArrowDown" }));
       });
     }
 
     expect(container.querySelector(".slash-item.is-selected strong")?.textContent).toBe("Task List");
-    expect(scrollIntoView).toHaveBeenCalledTimes(9);
+    expect(scrollIntoView).toHaveBeenCalledTimes(taskListIndex);
     expect(scrollIntoView).toHaveBeenCalledWith({ block: "nearest" });
   });
 

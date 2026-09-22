@@ -54,7 +54,7 @@ describe('saving current appearance as a theme', () => {
     }
   });
   it('captures manual writing layout changes and detects departures from theme defaults', () => {
-    const source = allBuiltInThemes.find(t => t.id === 'builtin-typewriter')!;
+    const source = { ...defaultTheme, editorWidthMode: 'narrow' as const, noteAlignment: 'center' as const, wordCountVisible: true };
     const copy = captureCurrentThemeSettings(source, { ...settings, navigationStyle: source.navigationStyle!, rightSidebarOpen: false, editorWidthMode: 'full', noteAlignment: 'left', wordCountVisible: false });
     expect(copy.wordCountVisible).toBe(false);
     expect(copy.editorWidthMode).toBe('full');

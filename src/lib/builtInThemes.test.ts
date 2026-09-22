@@ -5,6 +5,7 @@ import { allBuiltInThemes, bundledThemes, classicThemes, builtInThemeDocuments, 
 import { parseTheme, themeAppearance, themesMatch } from './themes';
 import { themeStylesheet, readableThemeText, themeRenderingMode } from './themeRuntime';
 import { encodeThemePackage, decodeThemePackage } from './themePackage';
+import { applyQuickAppearanceFonts, quickEditorFonts } from './quickAppearance';
 
 function contrast(a: string, b: string) {
   const luminance = (hex: string) => {
@@ -66,7 +67,9 @@ describe('built-in theme catalog', () => {
       'assets/vt323.woff2': 'VT323',
       'assets/geist-pixel-square.woff2': 'Geist-Pixel',
     };
-    for (const theme of allBuiltInThemes) {
+    const quickFontThemes = quickEditorFonts.filter(font => font.value.startsWith('theme-font-'))
+      .map(font => applyQuickAppearanceFonts(allBuiltInThemes[0], { editorFontFamily: font.value }));
+    for (const theme of [...allBuiltInThemes, ...quickFontThemes]) {
       for (const [path, asset] of Object.entries(theme.design?.assets ?? {})) {
         if (!asset.mime.startsWith('font/')) continue;
         const name = reviewedFonts[path];
@@ -75,6 +78,9 @@ describe('built-in theme catalog', () => {
         expect(notice).toContain('Copyright');
         expect(notice).toContain('SIL OPEN FONT LICENSE Version 1.1');
         expect(theme.design?.license).toContain(notice);
+        if (name === 'VT323') {
+          expect(theme.design?.license).toContain(readFileSync('public/licenses/VT323-Fontsource-LICENSE.txt', 'utf8').trim());
+        }
       }
     }
     expect(readFileSync('public/licenses/Inter-OFL.txt', 'utf8')).toBe(
