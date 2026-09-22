@@ -60,7 +60,14 @@ describe('built-in theme catalog', () => {
     }
   });
 
-  it('ships reviewed redistribution notices for every bundled theme font', () => {
+  it.each([
+    { name: 'LF', ending: '\n' },
+    { name: 'CRLF', ending: '\r\n' },
+  ])('ships reviewed redistribution notices for every bundled theme font with $name files', ({ ending }) => {
+    const readNotice = (path: string) => readFileSync(path, 'utf8').replace(/\r?\n/g, ending);
+    // Git can convert text files to CRLF on Windows; JSON string escapes stay LF.
+    // Compare the complete notice while ignoring only that representation difference.
+    const normalizeLineEndings = (text: string) => text.replace(/\r\n/g, '\n');
     const reviewedFonts: Record<string, string> = {
       'assets/ibm-plex-mono.woff2': 'IBM-Plex-Mono',
       'assets/solway.woff2': 'Solway',
@@ -74,17 +81,17 @@ describe('built-in theme catalog', () => {
         if (!asset.mime.startsWith('font/')) continue;
         const name = reviewedFonts[path];
         expect(name, `Review redistribution rights for ${theme.name}: ${path}`).toBeDefined();
-        const notice = readFileSync(`public/licenses/${name}-OFL.txt`, 'utf8').trim();
+        const notice = normalizeLineEndings(readNotice(`public/licenses/${name}-OFL.txt`)).trim();
         expect(notice).toContain('Copyright');
         expect(notice).toContain('SIL OPEN FONT LICENSE Version 1.1');
-        expect(theme.design?.license).toContain(notice);
+        expect(normalizeLineEndings(theme.design!.license)).toContain(notice);
         if (name === 'VT323') {
-          expect(theme.design?.license).toContain(readFileSync('public/licenses/VT323-Fontsource-LICENSE.txt', 'utf8').trim());
+          expect(normalizeLineEndings(theme.design!.license)).toContain(normalizeLineEndings(readNotice('public/licenses/VT323-Fontsource-LICENSE.txt')).trim());
         }
       }
     }
-    expect(readFileSync('public/licenses/Inter-OFL.txt', 'utf8')).toBe(
-      readFileSync('node_modules/@fontsource-variable/inter/LICENSE', 'utf8'),
+    expect(normalizeLineEndings(readNotice('public/licenses/Inter-OFL.txt'))).toBe(
+      normalizeLineEndings(readFileSync('node_modules/@fontsource-variable/inter/LICENSE', 'utf8')),
     );
   });
   it('strictly validates every source package even when runtime recovery skips one', () => {
