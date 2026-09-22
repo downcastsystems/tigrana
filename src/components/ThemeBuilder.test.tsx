@@ -62,6 +62,41 @@ it.each(classicThemes)("does not ask to publish built-in $name after restoring i
   }
 });
 
+it.each(classicThemes)("keeps the built-in $name snapshot out of Saved", async (theme) => {
+  const host = document.createElement("div"), root = createRoot(host);
+  try {
+    await act(async () => root.render(<ThemeBuilder current={theme} seed={theme}
+      builtInThemes={classicThemes} onApply={vi.fn()} />));
+    const picker = host.querySelector<HTMLSelectElement>('[aria-label="Theme"]')!;
+    expect(picker.value).toBe(`builtin:${theme.id}`);
+    expect(picker.selectedOptions[0].parentElement?.getAttribute("label")).toBe("Built-in");
+    expect(picker.querySelector('optgroup[label="Saved"]')).toBeNull();
+    expect((await listThemes()).themes).toHaveLength(0);
+  } finally { await act(async () => root.unmount()); }
+});
+
+it("keeps an older Alucard snapshot built-in and a separately saved copy in Saved", async () => {
+  const latest = classicThemes.find(theme => theme.id === "dracula")!;
+  const old = { ...latest, design: { ...latest.design!, version: "0.9.0" } };
+  const copy = { ...latest, id: crypto.randomUUID() };
+  await saveTheme(copy, null);
+  const host = document.createElement("div"), root = createRoot(host), apply = vi.fn(), builtIn = vi.fn();
+  try {
+    await act(async () => root.render(<ThemeBuilder current={old} seed={old}
+      builtInThemes={classicThemes} onApply={apply} onBuiltInChange={builtIn} />));
+    const picker = host.querySelector<HTMLSelectElement>('[aria-label="Theme"]')!;
+    expect(picker.value).toBe("builtin:dracula");
+    const saved = picker.querySelectorAll('optgroup[label="Saved"] option');
+    expect(saved).toHaveLength(1);
+    expect((saved[0] as HTMLOptionElement).value).toBe(`saved:${copy.id}`);
+    await act(async () => { picker.value = `saved:${copy.id}`; picker.dispatchEvent(new Event("change", { bubbles: true })); });
+    expect(apply).toHaveBeenCalledWith(copy);
+    await act(async () => { picker.value = "builtin:dracula"; picker.dispatchEvent(new Event("change", { bubbles: true })); });
+    expect(builtIn).toHaveBeenCalledWith("dracula");
+    expect((await listThemes()).themes).toEqual([copy]);
+  } finally { await act(async () => root.unmount()); }
+});
+
 it("keeps draft edits local until save and lets the user cancel", async () => {
   const host = document.createElement("div"),
     root = createRoot(host),

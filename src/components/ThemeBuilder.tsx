@@ -317,6 +317,7 @@ export function ThemeBuilder({
   }
   // A notebook can retain an older built-in snapshot. Its origin does not
   // change just because a newer release has different contents.
+  const currentIsBuiltIn = !!current && allBuiltInThemes.some(theme => theme.id === current.id);
   const currentIsBundled = !!current && bundledThemes.some(theme => theme.id === current.id);
   const builtInOptions = [
     ...builtInThemes.map(theme => ({ ...theme, value: `builtin:${theme.id}` })),
@@ -324,7 +325,7 @@ export function ThemeBuilder({
   ].sort((a, b) => a.id === "default" ? -1 : b.id === "default" ? 1 : a.name.localeCompare(b.name));
   const savedOptions = [
     ...themes.filter(theme => theme.id !== current?.id),
-    ...(current && !currentIsBundled && !isDefault ? [current] : []),
+    ...(current && !currentIsBuiltIn && !isDefault ? [current] : []),
   ].sort((a, b) => (displayNames[a.id] ?? a.name).localeCompare(displayNames[b.id] ?? b.name));
   const update = (patch: Partial<ThemeDocument>) =>
     setDraft(draft ? { ...draft, ...patch } : null);
@@ -387,7 +388,7 @@ export function ThemeBuilder({
                 disabled={busy}
                 value={
                   isDefault ? (defaultModified ? "modified:default" : "builtin:default")
-                    : current ? `${currentIsBundled ? "bundled" : "saved"}:${current.id}` : `builtin:${builtInThemeId}`
+                    : current ? `${currentIsBundled ? "bundled" : currentIsBuiltIn ? "builtin" : "saved"}:${current.id}` : `builtin:${builtInThemeId}`
                 }
                 onChange={(e) => {
                   const value = e.target.value;

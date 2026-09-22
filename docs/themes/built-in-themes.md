@@ -109,3 +109,49 @@ Warm ivory paper and brown ink in light mode; charcoal paper, cream text, and a 
 Both the interface and editor use [Solway](https://github.com/mashavp/Solway), a proportional slab serif with a typewriter feel. The unmodified Latin regular WOFF2 from `@fontsource/solway` 5.3.0 is bundled for offline use, with Georgia/serif fallbacks for other glyphs. The full SIL Open Font License 1.1 and attribution travel with the theme. No American Typewriter font files are distributed.
 
 Editable source and the font live in `docs/themes/typewriter/`. Run `node docs/themes/build-example.mjs typewriter` to regenerate both the app document and `docs/themes/typewriter.tigrana-theme`. Validate with `npm run theme:check -- docs/themes/typewriter`.
+
+## Catppuccin and classic palette refresh
+
+Reviewed against the upstream palettes on 2026-09-21. These are Tigrana
+adaptations, with the existing editor, navigation, sidebar controls, and font
+choices. No new fonts or upstream application stylesheets are bundled.
+
+[Catppuccin](https://catppuccin.com/palette/) has one light flavor and three dark
+flavors. All four entries use Latte in light mode; their chosen accent carries
+across modes using that flavor's corresponding official color.
+
+| Theme | Light palette | Dark palette | Default accent |
+| --- | --- | --- | --- |
+| Catppuccin Latte | Latte | Frappé | Blue |
+| Catppuccin Frappé | Latte | Frappé | Green |
+| Catppuccin Macchiato | Latte | Macchiato | Peach |
+| Catppuccin Mocha | Latte | Mocha | Mauve |
+
+The dark bases retain the upstream progression from Frappé's softer slate to
+Macchiato's deeper blue-gray and Mocha's darkest charcoal. The old invented
+lavender and pink light palettes are replaced with Latte. Base, Mantle, Crust,
+Surface, and text roles follow the [Catppuccin style guide](https://github.com/catppuccin/catppuccin/blob/main/docs/style-guide.md).
+Links use each palette's blue. Selected-item foregrounds use a palette color
+where it meets 4.5:1 contrast, otherwise black or white. Marker highlights use
+the palette's yellow rather than generic fluorescent yellow.
+
+[Nord](https://www.nordtheme.com/docs/colors-and-palettes/) uses Polar Night for
+dark panels, Snow Storm for light panels and text, and Frost accents. Off-palette
+panel shades are replaced with Nord's own values. Its marker uses Aurora yellow.
+
+[Gruvbox](https://github.com/morhetz/gruvbox) retains medium-contrast warm paper
+and charcoal editor backgrounds, hard background shades for deeper surfaces,
+and yellow accents. Its previously invented raised/muted shades now use the
+[upstream palette](https://github.com/morhetz/gruvbox/blob/master/colors/gruvbox.vim).
+
+[Solarized](https://ethanschoonover.com/solarized/) uses its canonical base colors
+and blue accent in both modes. Dark editor text is base0 rather than cream;
+light editor text is base01 for reading contrast. Light interface labels use
+base02 to meet 4.5:1 on base2 sidebar backgrounds. Dark interface labels use base1.
+
+All seven adaptations define explicit menu and hover colors, a quieter text
+selection tint, and an opaque word-count badge using theme colors. They default
+to Plasma off, Comfortable Width, Dual pane with sections, Align center, and the
+right sidebar open. Existing theme IDs are unchanged; Latte adds
+`catppuccin-latte`. Version 1.1.0 snapshots export through the normal theme system.
+Existing saved copies are preserved; select the built-in to adopt these defaults.

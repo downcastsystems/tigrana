@@ -28,6 +28,37 @@ describe('built-in theme catalog', () => {
     }
   });
 
+  it('offers four Catppuccin flavors with official light and dark bases and distinct accents', () => {
+    const expected = [
+      ['catppuccin-latte', '#303446', '#8caaee', '#1e66f5'],
+      ['catppuccin-frappe', '#303446', '#a6d189', '#40a02b'],
+      ['catppuccin-macchiato', '#24273a', '#f5a97f', '#fe640b'],
+      ['catppuccin-mocha', '#1e1e2e', '#cba6f7', '#8839ef'],
+    ];
+    expect(classicThemes.filter(t => t.id.startsWith('catppuccin-'))).toHaveLength(4);
+    for (const [id, background, darkAccent, lightAccent] of expected) {
+      const theme = classicThemes.find(t => t.id === id)!;
+      expect(theme.light.background).toBe('#eff1f5');
+      expect(theme.light.surface).toBe('#e6e9ef');
+      expect(theme.light.editorText).toBe('#4c4f69');
+      expect(theme.light.accent).toBe(lightAccent);
+      expect(theme.dark.background).toBe(background);
+      expect(theme.dark.accent).toBe(darkAccent);
+    }
+  });
+  it('gives refreshed palette themes readable hover/menu states and themed highlights', () => {
+    const themes = classicThemes.filter(t => t.id.startsWith('catppuccin-') || ['nord', 'gruvbox', 'solarized'].includes(t.id));
+    for (const theme of themes) {
+      expect(theme.plasma?.enabled).toBe(false);
+      for (const mode of ['light', 'dark'] as const) {
+        const p = theme[mode];
+        expect(p.highlightBackground).not.toBe('#ffff00');
+        expect(contrast(p.menuSelectedText!, p.menuSelectedBackground!), `${theme.name} ${mode} menu`).toBeGreaterThanOrEqual(4.5);
+        expect(contrast(p.hoverText!, p.hoverBackground!), `${theme.name} ${mode} hover`).toBeGreaterThanOrEqual(4.5);
+      }
+    }
+  });
+
   it('ships reviewed redistribution notices for every bundled theme font', () => {
     const reviewedFonts: Record<string, string> = {
       'assets/ibm-plex-mono.woff2': 'IBM-Plex-Mono',
@@ -54,7 +85,7 @@ describe('built-in theme catalog', () => {
     for (const document of builtInThemeDocuments) expect(() => parseTheme(document)).not.toThrow();
   });
   it('retains legacy IDs and has unique names and IDs', () => {
-    expect(classicThemes.map(t => t.id)).toEqual(['default', 'atom', 'solarized', 'dracula', 'nord', 'gruvbox', 'catppuccin-frappe', 'catppuccin-macchiato', 'catppuccin-mocha']);
+    expect(classicThemes.map(t => t.id)).toEqual(['default', 'atom', 'solarized', 'dracula', 'nord', 'gruvbox', 'catppuccin-frappe', 'catppuccin-macchiato', 'catppuccin-mocha', 'catppuccin-latte']);
     expect(new Set(allBuiltInThemes.map(t => t.id)).size).toBe(allBuiltInThemes.length);
     expect(new Set(allBuiltInThemes.map(t => t.name)).size).toBe(allBuiltInThemes.length);
     expect(bundledThemes.map(t => t.name)).toEqual(['Minimal', 'Saratoga', 'Based', 'Starfall', 'Old Basement PC', 'Quest', 'Typewriter']);

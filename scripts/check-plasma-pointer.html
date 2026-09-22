@@ -16,7 +16,7 @@ r.colors=r.colorTarget.map(c=>[...c]);
 // Call the real renderer with frozen orbit time, and read its actual GPU silhouette.
 function sample(pull,x=884,amount=1){
  r.settings={...settings,ambientPointerPull:pull};
- Object.assign(r.mouse,{x,y:370,tx:x,ty:370,amt:amount,target:amount});
+ Object.assign(r.mouse,{x,y:400,tx:x,ty:400,amt:amount,target:amount});
  r.draw([]);
  // Read the ambient mask by drawing that pass once more (the panel pass clears it).
  r.draw([],true);
@@ -27,7 +27,7 @@ function sample(pull,x=884,amount=1){
  const threshold=r.floatOK ? 0.5 : 127;
  let right=0;
  for(let y=0;y<t.h;y++)for(let x=0;x<t.w;x++)if(pixels[(y*t.w+x)*4]>threshold)right=Math.max(right,(x+.5)*innerWidth/t.w);
- const px=Math.floor(x*t.w/innerWidth), py=Math.floor((innerHeight-370)*t.h/innerHeight);
+ const px=Math.floor(x*t.w/innerWidth), py=Math.floor((innerHeight-400)*t.h/innerHeight);
  return {right,cursorCovered:pixels[(py*t.w+px)*4]>threshold,error:gl.getError()};
 }
 const baseline=sample(false), near=sample(true), far=sample(true,1174), left=sample(true,884,0);
@@ -64,7 +64,7 @@ const rimPass=rimChecks.every(check=>check.brightness>0&&check.error<=2&&check.g
 document.querySelector('#result').textContent=JSON.stringify({bubble:{baseline,near,far,left,advance,passes:bubblePass},rim:rimChecks,passes:bubblePass&&rimPass},null,2);
 
 let enabled=true;
-function show(){r.settings={...settings,ambientPointerPull:enabled};Object.assign(r.mouse,{x:884,y:370,tx:884,ty:370,amt:1,target:1});r.draw([]);}
+function show(){r.settings={...settings,ambientPointerPull:enabled};Object.assign(r.mouse,{x:884,y:400,tx:884,ty:400,amt:1,target:1});r.draw([]);}
 document.querySelector('#compare').onclick=()=>{enabled=!enabled;document.querySelector('#compare').textContent=enabled?'Pull enabled':'Pull disabled';show();};
 show();
 

@@ -367,7 +367,7 @@ type FolderCreationTarget = Pick<NoteCreationTarget, "parentName" | "parentPath"
 type ColorScheme = "system" | "light" | "dark";
 type ThemePresetId =
   | "default" | "atom" | "solarized" | "dracula" | "nord" | "gruvbox"
-  | "catppuccin-frappe" | "catppuccin-macchiato" | "catppuccin-mocha";
+  | "catppuccin-latte" | "catppuccin-frappe" | "catppuccin-macchiato" | "catppuccin-mocha";
 type RightSidebarMode = "outline" | "frontmatter" | "properties" | "backlinks";
 type EditorCommand =
   | SortCommand
