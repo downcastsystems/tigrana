@@ -5258,8 +5258,8 @@ export default function App() {
         )}
         {noteOpen && wordCountVisible ? (
           <div className="note-status-bar">
-            <span>{noteStats.words} {noteStats.words === 1 ? "word" : "words"}</span>
-            <span>{noteStats.characters} {noteStats.characters === 1 ? "character" : "characters"}</span>
+            <span>{noteStats.words.toLocaleString()} {noteStats.words === 1 ? "word" : "words"}</span>
+            <span>{noteStats.characters.toLocaleString()} {noteStats.characters === 1 ? "character" : "characters"}</span>
           </div>
         ) : null}
       </main>

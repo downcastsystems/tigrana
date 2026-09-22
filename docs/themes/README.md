@@ -2,6 +2,8 @@
 
 **New here? Start with the [Theme creator guide](creator-guide.md)** for the visual workflow, theme controls, original snapshots, validation, and sharing.
 
+For a short first project, try [Your first custom theme](../../site/index.html), a five-minute Advanced CSS tutorial. [Preview and GitHub Pages setup](tutorial-site.md).
+
 For a complete illustrated example, see [Starfall](starfall-studio/README.md),
 including an importable package, original character art, and commented CSS for
 light, dark, and Plasma appearances.
