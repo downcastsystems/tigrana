@@ -89,3 +89,17 @@ it('preserves an imported font with a colliding filename', () => {
   expect(applyQuickAppearanceFonts(result, { editorFontFamily: solway.value })).toEqual(result);
   expect(() => parseTheme(result)).not.toThrow();
 });
+
+it('preserves spacing through portable theme export and ignores invalid notebook overrides', () => {
+  const source = exampleTheme();
+  const adjusted = applyQuickAppearanceFonts(source, { editorLineHeight: 1.85, editorLetterSpacing: 0.025 });
+  const restored = parseTheme(JSON.parse(JSON.stringify(adjusted)));
+  expect(themeVariables(restored, 'dark')['--tigrana-line-height']).toBe('1.85');
+  expect(themeVariables(restored, 'dark')['--tigrana-letter-spacing']).toBe('0.025em');
+  expect(source.editorLineHeight).toBeUndefined();
+  for (const value of [NaN, Infinity, -1, 3]) {
+    expect(applyQuickAppearanceFonts(source, { editorLineHeight: value, editorLetterSpacing: value })).toEqual(source);
+    expect(() => parseTheme({ ...source, editorLineHeight: value })).toThrow();
+    expect(() => parseTheme({ ...source, editorLetterSpacing: value })).toThrow();
+  }
+});

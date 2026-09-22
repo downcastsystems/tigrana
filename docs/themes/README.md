@@ -90,6 +90,7 @@ Supported variables:
 | `--tigrana-radius` | Component corner radius |
 | `--tigrana-spacing` | Unitless spacing multiplier |
 | `--tigrana-line-height` | Editor line height |
+| `--tigrana-letter-spacing` | Editor letter spacing in em |
 
 Stable component hooks for API 1:
 

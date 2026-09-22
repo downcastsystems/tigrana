@@ -188,25 +188,6 @@ export function ThemeDesignEditor({
               }
             />
           </label>
-          <label>
-            Line spacing
-            <input
-              type="range"
-              aria-label="Line spacing"
-              min={1.2}
-              max={2.2}
-              step={0.1}
-              value={design.metrics.lineHeight}
-              onChange={(e) =>
-                change({
-                  metrics: {
-                    ...design.metrics,
-                    lineHeight: Number(e.target.value),
-                  },
-                })
-              }
-            />
-          </label>
         </>
       )}
       <section className="theme-sharing-details" aria-label="Sharing details">

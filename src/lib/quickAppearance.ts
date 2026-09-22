@@ -49,7 +49,7 @@ export type QuickAppearanceField = keyof NonNullable<NotebookAppearance["quickAp
 export function quickAppearanceResetPatch(theme: ThemeDocument, quick: NotebookAppearance["quickAppearance"], field: QuickAppearanceField): Partial<NotebookAppearance> {
   return {
     quickAppearance: { ...quick, [field]: undefined },
-    ...(field === "accentColor" ? {
+    ...(field === "editorLineHeight" || field === "editorLetterSpacing" ? {} : field === "accentColor" ? {
       colors: { light: { accentColor: theme.light.accent }, dark: { accentColor: theme.dark.accent } },
     } : { [field]: theme[field] }),
   };
@@ -78,7 +78,12 @@ export function applyQuickAppearanceFonts(theme: ThemeDocument, quick: NotebookA
         : `${original.license}\n\nBundled ${packagedFont.label} font: original package notices follow.\n${packagedFont.license}`,
     };
   }
-  return { ...theme,
+  const spacing = Object.fromEntries(([['editorLineHeight', 1.2, 2.2], ['editorLetterSpacing', -0.03, 0.12]] as const)
+    .flatMap(([key, min, max]) => {
+      const value = quick?.[key];
+      return typeof value === 'number' && Number.isFinite(value) && value >= min && value <= max ? [[key, value]] : [];
+    }));
+  return { ...theme, ...spacing,
     ...(packagedFont ? { schemaVersion: 2, design } : {}),
     ...(family ? { editorFontFamily: family } : {}),
     ...(typeof size === "number" && Number.isFinite(size) && size >= 11 && size <= 28

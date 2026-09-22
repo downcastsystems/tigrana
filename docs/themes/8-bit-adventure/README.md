@@ -6,7 +6,7 @@ Defaults: Dual pane with sections, writing layout and right sidebar Keep current
 
 Editor body text starts at 22px. The note title and H1–H6 scale above the body size, with H6 at 1.1 times the body size.
 
-The background was generated for this theme, not extracted from the reference game. VT323 is distributed under the SIL Open Font License; see LICENSE. Theme styling and original artwork are supplied under CC0.
+The background was generated for this theme, not extracted from the reference game. Geist Pixel Square is distributed under the SIL Open Font License; see LICENSE. Theme styling and original artwork are supplied under CC0.
 
 Build the portable package with `node docs/themes/build-example.mjs 8-bit-adventure`.
 This also updates `src/themes/quest.json`. The internal ID remains

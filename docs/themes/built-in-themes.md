@@ -4,6 +4,16 @@ All built-ins are validated schema 2 documents using Theme API 1. `src/themes/cl
 
 Old notebook preset IDs remain supported. The app overlays their existing font and color preferences on the corresponding document at render time; opening a notebook does not rewrite its appearance metadata. Saved schema 1 themes remain supported and are upgraded to schema 2 when edited and saved. Imported CSS still goes through the same scoped CSS compiler. No Obsidian CSS is injected into the app.
 
+## Theme families and colors
+
+Appearance groups Classic’s Default, Atom One, Gruvbox, Nord, and Solarized palettes under one theme. Catppuccin groups Frappe, Latte, Macchiato, and Mocha. `src/lib/themeFamilies.ts` defines the grouping; each color keeps its existing durable preset ID. Notebook metadata remembers the most recently selected color in each family. Changing colors clears an accent override but retains typography, effects, and layout adjustments. Choosing a different theme resets quick appearance settings.
+
+Mode remains System, Light, or Dark. Catppuccin preserves its existing pairs: all light variants use Latte; the Latte choice uses Frappe in dark mode.
+
+Theme editing offers line height from 1.2 to 2.2 and letter spacing from -0.03em to 0.12em. Defaults use each theme’s existing line-height metric and normal letter spacing. Both values display two decimal places and are saved in portable `editorLineHeight` and `editorLetterSpacing` fields. Older notebook overrides remain readable. Navigation style lives in General settings.
+
+Twain was previously named Typewriter. Its source directory, package, and app JSON are named `twain`; the `builtin-typewriter` ID is retained for existing notebooks and shared snapshots.
+
 ## Adaptations
 
 Minimal is a Tigrana adaptation, not an official port or Obsidian plugin integration. Attribution and its upstream MIT license notice travel inside its exported sharing details.
@@ -16,9 +26,11 @@ Minimal, Saratoga, and Based default to standard UI and support Plasma when enab
 
 Typography, colors, and design metrics use the engine's editable values. Custom CSS refers to theme variables instead of repeating fixed colors. Obsidian-specific layouts, helper classes, alternate task syntax, plugins, and animation systems are not included.
 
-## Vampire
+## Plasma
 
-Defined in `src/themes/vampire.json`. Formerly named Alucard.
+Plasma groups four colors: Vampire (blood red), Ooze (moss green), Undertow (deep blue), and Witch's Brew (violet). All share Vampire’s fonts, layout, transparency, and animated glass defaults. All four retain dark palettes and lighting even in Light mode. Color selection is remembered per notebook.
+
+Vampire remains in `src/themes/vampire.json` with its legacy `dracula` ID. The additional portable color documents are in `src/themes/plasma.json`. Vampire was formerly named Alucard.
 
 Dark blood-red Plasma glass with warm charcoal panels in both color schemes.
 For now, light mode uses the same palette and glass lighting as dark mode. Deep red selections and highlights use white text. Red rim
@@ -98,17 +110,17 @@ Plasma rims use the effective accent color, including notebook quick-accent over
 
 ## Quest
 
-Retro adventure menus: pixel lettering, green and gold panel frames, an original generated woodland map, near-black dark mode, and parchment light mode. It bundles VT323 and its font license, plus the background image. Defaults to Dual pane with sections and Plasma off; sidebar visibility keeps its current value. Editable source and assets live in `docs/themes/8-bit-adventure/`.
+Retro adventure menus: pixel lettering, green and gold panel frames, an original generated woodland map, near-black dark mode, and parchment light mode. It bundles Geist Pixel Square and its SIL OFL 1.1 license, with 15px interface and 17px editor defaults, plus the background image. Defaults to Dual pane with sections and Plasma off; sidebar visibility keeps its current value. Editable source and assets live in `docs/themes/8-bit-adventure/`.
 
-## Typewriter
+## Twain
 
-Word count starts on when Typewriter is selected. It can be turned off afterward in View or General settings.
+Word count starts on when Twain is selected. It can be turned off afterward in View or General settings.
 
 Warm ivory paper and brown ink in light mode; charcoal paper, cream text, and a muted tan accent in dark mode. Thin panel borders, small corner radii, and regular-weight serif titles keep the writing area quiet. Defaults to Dual pane with sections and Plasma off; writing layout and sidebar visibility keep their current values. Manual layout changes remain available and persist with the notebook.
 
 Both the interface and editor use [Solway](https://github.com/mashavp/Solway), a proportional slab serif with a typewriter feel. The unmodified Latin regular WOFF2 from `@fontsource/solway` 5.3.0 is bundled for offline use, with Georgia/serif fallbacks for other glyphs. The full SIL Open Font License 1.1 and attribution travel with the theme. No American Typewriter font files are distributed.
 
-Editable source and the font live in `docs/themes/typewriter/`. Run `node docs/themes/build-example.mjs typewriter` to regenerate both the app document and `docs/themes/typewriter.tigrana-theme`. Validate with `npm run theme:check -- docs/themes/typewriter`.
+Editable source and the font live in `docs/themes/twain/`. Run `node docs/themes/build-example.mjs twain` to regenerate both the app document and `docs/themes/twain.tigrana-theme`. Validate with `npm run theme:check -- docs/themes/twain`.
 
 ## Catppuccin and classic palette refresh
 

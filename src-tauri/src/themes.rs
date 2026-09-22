@@ -147,6 +147,13 @@ fn normalize_theme_inner(theme: &Value, allow_base: bool) -> Result<Value, Strin
         }
         clean.insert(key.into(), Value::from(text.trim()));
     }
+    for (key, min, max) in [("editorLineHeight", 1.2, 2.2), ("editorLetterSpacing", -0.03, 0.12)] {
+        if let Some(value) = theme.get(key) {
+            let n = value.as_f64().ok_or_else(|| format!("Invalid {key}"))?;
+            if !n.is_finite() || !(min..=max).contains(&n) { return Err(format!("Invalid {key}")); }
+            clean.insert(key.into(), number_value(n));
+        }
+    }
     for key in ["appFontSize", "editorFontSize"] {
         let size = theme[key].as_f64().ok_or("Invalid font size")?;
         if !(11.0..=28.0).contains(&size) {
@@ -457,6 +464,21 @@ fn save_in_dir(dir: &Path, theme: Value, expected: Option<Value>) -> Result<(), 
 mod tests {
     use super::*;
     use serde_json::json;
+    #[test]
+    fn spacing_settings_survive_native_normalization() {
+        let mut theme: Value = serde_json::from_str(include_str!("../../src/themes/vampire.json")).unwrap();
+        theme["editorLineHeight"] = json!(1.85);
+        theme["editorLetterSpacing"] = json!(0.025);
+        let clean = normalize_theme(&theme).unwrap();
+        assert_eq!(clean["editorLineHeight"], json!(1.85));
+        assert_eq!(clean["editorLetterSpacing"], json!(0.025));
+        for (key, value) in [("editorLineHeight", json!(0)), ("editorLineHeight", json!(2.3)), ("editorLetterSpacing", json!(-0.04)), ("editorLetterSpacing", json!("0.1em"))] {
+            let mut invalid = theme.clone();
+            invalid[key] = value;
+            assert!(normalize_theme(&invalid).is_err());
+        }
+    }
+
     #[test]
     fn saved_theme_keeps_layout_settings_and_original_snapshot() {
         let original: Value = serde_json::from_str(include_str!("../../src/themes/vampire.json")).unwrap();

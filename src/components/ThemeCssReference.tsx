@@ -23,6 +23,7 @@ const variables = [
   ["--tigrana-border", "Borders"],
   ["--tigrana-radius", "Corner radius, e.g. 8px"],
   ["--tigrana-spacing", "Spacing multiplier, e.g. 1 or 0.9"],
+  ["--tigrana-letter-spacing", "Editor letter spacing, e.g. 0.01em"],
   ["--tigrana-line-height", "Editor line spacing, e.g. 1.6"],
 ];
 const selectors = [

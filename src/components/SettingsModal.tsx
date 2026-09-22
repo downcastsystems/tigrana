@@ -11,13 +11,17 @@ export default function SettingsModal(props: {
   onSectionChange?: (section: SettingsSection) => void;
   navigationStyle: NavigationStyle;
   onNavigationStyleChange: (value: NavigationStyle) => void;
+  editorWidthMode: "comfortable" | "narrow" | "full";
+  onEditorWidthModeChange: (value: "comfortable" | "narrow" | "full") => void;
+  noteAlignment: "left" | "center";
+  onNoteAlignmentChange: (value: "left" | "center") => void;
   spellcheckEnabled: boolean;
   onSpellcheckEnabledChange: (value: boolean) => void;
   wordCountVisible: boolean;
   onWordCountVisibleChange: (value: boolean) => void;
   onClose: () => void;
   onResetTheme?: () => void;
-  themeContent: ReactNode | ((navigationControls: ReactNode) => ReactNode);
+  themeContent: ReactNode;
 }) {
   const [maximized, setMaximized] = useState(false);
   const [section, setSection] = useState<SettingsSection>(props.initialSection ?? "general");
@@ -71,8 +75,8 @@ export default function SettingsModal(props: {
                   <h2>{section === "appearance" ? "Appearance" : "General"}</h2>
                   <p>
                     {section === "appearance"
-                      ? "Customize navigation, themes, and visual effects."
-                      : "Editing and word count preferences."}
+                      ? "Customize themes, colors, and typography."
+                      : "Navigation, editing, and word count preferences."}
                   </p>
                 </div>
                 <div className="settings-window-actions">
@@ -98,13 +102,11 @@ export default function SettingsModal(props: {
               <div className="settings-scroll" key={section}>
                 {section === "appearance" ? (
                   <div className="settings-appearance">
-                    {typeof props.themeContent === "function"
-                      ? props.themeContent(navigationControls)
-                      : <>{props.themeContent}{navigationControls}</>}
+                    {props.themeContent}
                     {props.onResetTheme ? (
                       <section className="settings-reset-appearance" aria-label="Default appearance">
                         <h3>Default appearance</h3>
-                        <p>Restore the Default theme’s colors, fonts, effects, and layout, including sidebars and word count.</p>
+                        <p>Restore Classic with Default colors, fonts, effects, and layout, including sidebars and word count.</p>
                         <button className="toolbar-button" onClick={props.onResetTheme}>
                           <RotateCcw size={16} aria-hidden="true" />
                           Restore default appearance
@@ -115,6 +117,25 @@ export default function SettingsModal(props: {
                 ) : null}
                 {section === "general" ? (
                   <div>
+                    {navigationControls}
+                    <hr className="settings-appearance-divider" />
+                    <label className="setting-row">
+                      Editor width
+                      <select className="settings-select" aria-label="Editor width" value={props.editorWidthMode}
+                        onChange={event => props.onEditorWidthModeChange(event.target.value as "comfortable" | "narrow" | "full")}>
+                        <option value="comfortable">Comfortable Width</option>
+                        <option value="narrow">Narrow Width</option>
+                        <option value="full">Full Width</option>
+                      </select>
+                    </label>
+                    <label className="setting-row">
+                      Note alignment
+                      <select className="settings-select" aria-label="Note alignment" value={props.noteAlignment}
+                        onChange={event => props.onNoteAlignmentChange(event.target.value as "left" | "center")}>
+                        <option value="left">Align left</option>
+                        <option value="center">Align center</option>
+                      </select>
+                    </label>
                     <label className="setting-row">
                       Check spelling while typing
                       <input

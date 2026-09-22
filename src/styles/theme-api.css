@@ -4,7 +4,7 @@
 [data-theme-region][data-theme-api="1"] {
   color: var(--tigrana-text, var(--text));
 }
-[data-theme-region][data-theme-api="1"] .ProseMirror { line-height: var(--tigrana-line-height); color: var(--tigrana-editor-text, var(--text)); }
+[data-theme-region][data-theme-api="1"] :is(.ProseMirror, .raw-markdown-input) { letter-spacing: var(--tigrana-letter-spacing, 0em); font-kerning: normal; line-height: var(--tigrana-line-height); color: var(--tigrana-editor-text, var(--text)); }
 [data-theme-region][data-theme-api="1"] .ProseMirror a { color: var(--link-color); }
 [data-theme-region][data-theme-api="1"] :is(.folder-row, .folder-select, .note-card, .note-row, .unified-folder-row, .unified-folder-name, .unified-note-row, .bookmark-item, .note-tab) { color: var(--tigrana-text); }
 [data-theme-region][data-theme-api="1"] :is(.folder-row, .note-card, .note-row, .unified-folder-row, .unified-note-row, .note-tab):is(.is-active, .is-context-target) { color: var(--tigrana-selected-text); }

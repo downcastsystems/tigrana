@@ -1,3 +1,4 @@
+import { themeFamilies, themeFamily, rememberedThemeColor } from "../lib/themeFamilies";
 import { ThemeDefaultsMenu } from "./ThemeDefaultsMenu";
 import type { ThemeDefaultsScope } from "../lib/themeDefaults";
 import { hasCurrentThemeChanges } from "../lib/currentThemeSettings";
@@ -221,10 +222,11 @@ export function ThemeBuilder({
   onUseThemeDefaults,
   onRestoreDefault,
   quickAppearanceControls,
-  navigationControls,
   builtInThemes = [],
   builtInThemeId = "default",
   onBuiltInChange,
+  onColorChange,
+  themeColorPreferences,
   colorScheme = "system",
   onColorSchemeChange,
 }: {
@@ -235,10 +237,11 @@ export function ThemeBuilder({
   onUseThemeDefaults?: (theme: ThemeDocument, scope: ThemeDefaultsScope) => void;
   onRestoreDefault?: () => void;
   quickAppearanceControls?: React.ReactNode;
-  navigationControls?: React.ReactNode;
   builtInThemes?: { id: string; name: string }[];
   builtInThemeId?: string;
   onBuiltInChange?: (id: string) => void;
+  onColorChange?: (id: string) => void;
+  themeColorPreferences?: Record<string, string>;
   colorScheme?: "system" | "light" | "dark";
   onColorSchemeChange?: (scheme: "system" | "light" | "dark") => void;
 }) {
@@ -319,8 +322,11 @@ export function ThemeBuilder({
   // change just because a newer release has different contents.
   const currentIsBuiltIn = !!current && allBuiltInThemes.some(theme => theme.id === current.id);
   const currentIsBundled = !!current && bundledThemes.some(theme => theme.id === current.id);
+  const selectedFamily = themeFamily(sourceTheme.id);
   const builtInOptions = [
-    ...builtInThemes.map(theme => ({ ...theme, value: `builtin:${theme.id}` })),
+    ...themeFamilies.filter(family => builtInThemes.some(theme => family.colors.some(color => color.id === theme.id)))
+      .map(family => ({ id: family.colors[0].id, name: family.name, value: `builtin:${family.colors[0].id}` })),
+    ...builtInThemes.filter(theme => !themeFamily(theme.id)).map(theme => ({ ...theme, value: `builtin:${theme.id}` })),
     ...bundledThemes.map(theme => ({ ...theme, value: `bundled:${theme.id}` })),
   ].sort((a, b) => a.id === "default" ? -1 : b.id === "default" ? 1 : a.name.localeCompare(b.name));
   const savedOptions = [
@@ -348,12 +354,12 @@ export function ThemeBuilder({
         <>
           <div className="setting-row">
             <span>
-              <strong>Color scheme</strong>
+              <strong>Mode</strong>
               <small>Use light, dark, or follow this computer.</small>
             </span>
             <select
               className="settings-select"
-              aria-label="Color scheme"
+              aria-label="Mode"
               value={colorScheme}
               onChange={(e) =>
                 onColorSchemeChange?.(
@@ -367,14 +373,6 @@ export function ThemeBuilder({
             </select>
           </div>
           <hr className="settings-appearance-divider" />
-          {navigationControls && <>
-            {navigationControls}
-            <hr className="settings-appearance-divider" />
-          </>}
-          {quickAppearanceControls && <>
-            {quickAppearanceControls}
-            <hr className="settings-appearance-divider" />
-          </>}
           <section className="settings-theme-section" aria-label="Theme selection and management">
           <div className="setting-row">
             <span>
@@ -388,7 +386,7 @@ export function ThemeBuilder({
                 disabled={busy}
                 value={
                   isDefault ? (defaultModified ? "modified:default" : "builtin:default")
-                    : current ? `${currentIsBundled ? "bundled" : currentIsBuiltIn ? "builtin" : "saved"}:${current.id}` : `builtin:${builtInThemeId}`
+                    : selectedFamily ? `builtin:${selectedFamily.colors[0].id}` : current ? `${currentIsBundled ? "bundled" : currentIsBuiltIn ? "builtin" : "saved"}:${current.id}` : `builtin:${builtInThemeId}`
                 }
                 onChange={(e) => {
                   const value = e.target.value;
@@ -397,8 +395,11 @@ export function ThemeBuilder({
                   if (value === "builtin:default" && defaultModified && onRestoreDefault) {
                     onRestoreDefault();
                     setLastPickedThemeId(null);
-                  } else if (value.startsWith("builtin:"))
-                    onBuiltInChange?.(value.slice(8));
+                  } else if (value.startsWith("builtin:")) {
+                    const id = value.slice(8);
+                    const family = themeFamily(id);
+                    onBuiltInChange?.(family ? rememberedThemeColor(family.id, themeColorPreferences) ?? id : id);
+                  }
                   else if (value.startsWith("bundled:")) {
                     const theme = bundledThemes.find((t) => `bundled:${t.id}` === value);
                     if (theme) onApply(theme);
@@ -415,7 +416,7 @@ export function ThemeBuilder({
                     </option>
                   ))}
                 </optgroup>
-                {defaultModified && <optgroup label="This notebook"><option value="modified:default">Default (modified)</option></optgroup>}
+                {defaultModified && <optgroup label="This notebook"><option value="modified:default">Classic (modified)</option></optgroup>}
                 {savedOptions.length ? (
                   <optgroup label="Saved">
                     {savedOptions.map((t) => (
@@ -428,10 +429,19 @@ export function ThemeBuilder({
               </select>
             </div>
           </div>
+          {selectedFamily && <div className="setting-row theme-color-presets">
+            <span><strong>Colors</strong><small>Keep this theme’s styling and change its palette.</small></span>
+            <select className="settings-select" aria-label="Colors" value={sourceTheme.id} disabled={busy}
+              onChange={event => (onColorChange ?? onBuiltInChange)?.(event.target.value)}>
+              {selectedFamily.colors.map(color => <option key={color.id} value={color.id}>{color.name}</option>)}
+            </select>
+          </div>}
+          {selectedFamily?.id === 'catppuccin' && <p className="settings-description">Light mode uses Latte. In dark mode, Latte uses Frappe; the other colors use their named dark palette.</p>}
+          {quickAppearanceControls}
           {themes.some(t => displayNames[t.id] !== t.name) && <p className="settings-description">Some older themes share a name. Numbered labels distinguish them here; editing and saving one gives it a unique name.</p>}
           {(settingsModified || (onUseThemeDefaults && layoutDiffers)) && <div className="theme-current-settings">
             <p className="settings-description" role="status">{defaultModified
-              ? "Default (modified) applies only to this notebook. The built-in Default theme is unchanged."
+              ? "Your changes apply only to this notebook. Classic’s default colors and fonts are unchanged."
               : onUseThemeDefaults && layoutDiffers
               ? lastPickedThemeId === sourceTheme.id
                 ? `${sourceTheme.name} applied. Your navigation and panels were kept.`
@@ -635,6 +645,7 @@ export function ThemeBuilder({
                 <label className="setting-row">
                   Default navigation style
                   <select
+                    className="settings-select"
                     value={draft.navigationStyle ?? ""}
                     onChange={(event) => update({ navigationStyle: event.target.value === "dual-pane" ? "dual-pane" : event.target.value === "single-pane" ? "single-pane" : event.target.value === "section-view" ? "section-view" : undefined })}
                   >
@@ -647,7 +658,7 @@ export function ThemeBuilder({
                 <p className="settings-description">Applied when you choose Use theme default layout options or Use all theme defaults. Switching themes keeps your current navigation.</p>
                 <label className="setting-row">
                   Default right sidebar
-                  <select value={draft.rightSidebarOpen === undefined ? "" : draft.rightSidebarOpen ? "open" : "closed"}
+                  <select className="settings-select" value={draft.rightSidebarOpen === undefined ? "" : draft.rightSidebarOpen ? "open" : "closed"}
                     onChange={event => update({ rightSidebarOpen: event.target.value === "" ? undefined : event.target.value === "open" })}>
                     <option value="">Keep current</option>
                     <option value="open">Open</option>

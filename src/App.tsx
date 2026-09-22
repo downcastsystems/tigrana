@@ -1,3 +1,4 @@
+import { themeFamily } from "./lib/themeFamilies";
 import { themeDefaultsPatch, type ThemeDefaultsScope } from "./lib/themeDefaults";
 import { sidebarHoverEdgeWidth } from "./lib/useSidebarOverlay";
 import { sidebarSlideDuration } from "./lib/useSidebarOverlayMotion";
@@ -14,7 +15,7 @@ import { ThemeStyles } from "./components/ThemeStyles";
 import "./styles/theme-api.css";
 import SettingsModal, { type SettingsSection } from "./components/SettingsModal";
 import { ThemeBuilder, ThemeReconciliation } from "./components/ThemeBuilder";
-import { defaultPlasmaSettings, readTheme, themeAppearance, type ThemeDocument } from "./lib/themes";
+import { readTheme, themeAppearance, type ThemeDocument } from "./lib/themes";
 import PlasmaTheme from "./components/PlasmaTheme";
 import { isSortCommand, type SortCommand } from "./editor/sortLines";
 import { ReleaseNotice } from "./components/ReleaseNotice";
@@ -369,7 +370,8 @@ type FolderCreationTarget = Pick<NoteCreationTarget, "parentName" | "parentPath"
 type ColorScheme = "system" | "light" | "dark";
 type ThemePresetId =
   | "default" | "atom" | "solarized" | "dracula" | "nord" | "gruvbox"
-  | "catppuccin-latte" | "catppuccin-frappe" | "catppuccin-macchiato" | "catppuccin-mocha";
+  | "catppuccin-latte" | "catppuccin-frappe" | "catppuccin-macchiato" | "catppuccin-mocha"
+  | "plasma-ooze" | "plasma-undertow" | "plasma-witches-brew";
 type RightSidebarMode = "outline" | "frontmatter" | "properties" | "backlinks";
 type EditorCommand =
   | SortCommand
@@ -858,7 +860,7 @@ export default function App() {
     const palette = (mode: "light" | "dark") => {
       const colors = themeColors[mode];
       const accent = quickAppearance?.accentColor || colors.accentColor || base[mode].accent;
-      return { ...base[mode], accent, selectedText: readableThemeText(accent),
+      return { ...base[mode], accent, selectedText: accent === base[mode].accent ? base[mode].selectedText : readableThemeText(accent),
         titlebar: colors.titlebarUseAccent !== false
           ? (base.id === "default" ? "#001428" : accent)
           : colors.titlebarColor || base[mode].titlebar };
@@ -1942,6 +1944,7 @@ export default function App() {
       ...themeDefaultsPatch(defaultTheme, "all"),
       customTheme: null,
       themePresetId: "default",
+      themeColorPreferences: { ...metadata.appearance?.themeColorPreferences, classic: "default" },
       accentColor: null,
       // Full appearance recovery is independent of themes that keep the current layout.
       editorWidthMode: "comfortable",
@@ -1952,6 +1955,22 @@ export default function App() {
     focusRestoreRef.current = null;
     setPaneOverlay(null);
     setLeftVisible(true);
+  }
+
+  function selectThemeColor(id: string, colorsOnly: boolean) {
+    const theme = classicThemes.find(theme => theme.id === id);
+    if (!theme) return;
+    const family = themeFamily(id);
+    updateNotebookAppearance({
+      ...themeAppearance(theme), customTheme: null, themePresetId: id,
+      navigationStyle, rightSidebarOpen: preferredOutlineVisible,
+      ...(colorsOnly ? {
+        editorWidthMode, noteAlignment, wordCountVisible, plasma: metadata.appearance?.plasma,
+        appFontFamily, appFontSize, editorFontFamily, editorFontSize, accentTitlebar: savedAccentTitlebar,
+      } : {}),
+      quickAppearance: colorsOnly ? { ...quickAppearance, accentColor: undefined } : null,
+      themeColorPreferences: { ...metadata.appearance?.themeColorPreferences, ...(family ? { [family.id]: id } : {}) },
+    });
   }
 
   function applyCustomTheme(theme: ThemeDocument) {
@@ -4735,6 +4754,17 @@ export default function App() {
           }}
           onSelect={(tabId) => void activateTab(tabId)}
         />
+        <button
+          className="icon-button chrome-interactive"
+          type="button"
+          title="Settings"
+          aria-label="Settings"
+          aria-haspopup="dialog"
+          onMouseDown={stopChromeMouseDown}
+          onClick={() => setSettingsOpen(true)}
+        >
+          <Settings size={15} aria-hidden="true" />
+        </button>
         <TabListDropdown
           tabs={visibleTabs}
           activeTabId={activeTabId}
@@ -5544,6 +5574,10 @@ export default function App() {
           <SettingsModal
             initialSection={settingsSection}
             onSectionChange={setSettingsSection}
+            editorWidthMode={editorWidthMode}
+            onEditorWidthModeChange={value => updateNotebookAppearance({ editorWidthMode: value })}
+            noteAlignment={noteAlignment}
+            onNoteAlignmentChange={value => updateNotebookAppearance({ noteAlignment: value })}
             navigationStyle={navigationStyle}
             onNavigationStyleChange={(style) => updateNotebookAppearance({ navigationStyle: style })}
             spellcheckEnabled={spellcheckEnabled}
@@ -5552,16 +5586,18 @@ export default function App() {
             onWordCountVisibleChange={(wordCountVisible) => updateNotebookAppearance({ wordCountVisible })}
             onResetTheme={resetThemeAppearance}
             onClose={() => setSettingsOpen(false)}
-            themeContent={(navigationControls) => <>
+            themeContent={<>
               {metadata.appearance?.customTheme && !customTheme ? <p role="alert">This notebook contains an invalid or unsupported theme. Choose a theme to replace it.</p> : null}
-              <ThemeBuilder navigationControls={navigationControls} key={workspace} current={customTheme} seed={themeSeed()} onApply={applyCustomTheme} onUseThemeDefaults={useThemeDefaults} onRestoreDefault={resetThemeAppearance}
+              <ThemeBuilder key={workspace} current={customTheme} seed={themeSeed()} onApply={applyCustomTheme} onUseThemeDefaults={useThemeDefaults} onRestoreDefault={resetThemeAppearance}
                 onSaved={() => setSettingsOpen(false)}
                 quickAppearanceControls={<QuickAppearanceControls theme={quickAppearanceTheme} mode={resolvedTheme} quick={quickAppearance}
                   current={{ accentColor: effectiveAccentColor, editorFontFamily: renderedTheme.editorFontFamily, editorFontSize: renderedTheme.editorFontSize }}
                   onChange={patch => updateNotebookAppearance({ quickAppearance: { ...quickAppearance, ...patch } })}
                   onReset={field => updateNotebookAppearance(quickAppearanceResetPatch(quickAppearanceTheme, quickAppearance, field))} />}
                 builtInThemes={themePresets} builtInThemeId={themePresetId}
-                onBuiltInChange={(id) => updateNotebookAppearance({ navigationStyle, rightSidebarOpen: preferredOutlineVisible, quickAppearance: null, accentTitlebar: false, customTheme: null, themePresetId: id, colors: defaultNotebookThemeColors(), plasma: { ...defaultPlasmaSettings, ...classicThemes.find(theme => theme.id === id)?.plasma }, appFontFamily: defaultAppFontFamily, appFontSize: defaultAppFontSize, editorFontFamily: defaultEditorFontFamily, editorFontSize: defaultEditorFontSize })}
+                themeColorPreferences={metadata.appearance?.themeColorPreferences}
+                onColorChange={id => selectThemeColor(id, true)}
+                onBuiltInChange={id => selectThemeColor(id, false)}
                 colorScheme={colorScheme} onColorSchemeChange={(scheme) => updateNotebookAppearance({ colorScheme: scheme })} />
             </>}
           />

@@ -16,13 +16,13 @@ function contrast(a: string, b: string) {
   return (values[0] + .05) / (values[1] + .05);
 }
 describe('built-in theme catalog', () => {
-  it('keeps Vampire identical in light and dark mode, including Plasma lighting', () => {
-    const vampire = classicThemes.find(theme => theme.id === 'dracula')!;
+  it.each(['dracula', 'plasma-ooze', 'plasma-undertow', 'plasma-witches-brew'])('keeps %s identical in light and dark mode, including Plasma lighting', (id) => {
+    const vampire = classicThemes.find(theme => theme.id === id)!;
     expect(vampire.light).toEqual(vampire.dark);
     expect(themeStylesheet(vampire, 'light', 'notebook')).toBe(themeStylesheet(vampire, 'dark', 'notebook'));
     expect(themeRenderingMode(vampire, 'light')).toBe('dark');
     expect(themeRenderingMode(vampire, 'dark')).toBe('dark');
-    for (const theme of allBuiltInThemes.filter(theme => theme.id !== 'dracula')) {
+    for (const theme of allBuiltInThemes.filter(theme => theme.id !== 'dracula' && !theme.id.startsWith('plasma-'))) {
       expect(themeRenderingMode(theme, 'light')).toBe('light');
       expect(themeRenderingMode(theme, 'dark')).toBe('dark');
     }
@@ -64,6 +64,7 @@ describe('built-in theme catalog', () => {
       'assets/ibm-plex-mono.woff2': 'IBM-Plex-Mono',
       'assets/solway.woff2': 'Solway',
       'assets/vt323.woff2': 'VT323',
+      'assets/geist-pixel-square.woff2': 'Geist-Pixel',
     };
     for (const theme of allBuiltInThemes) {
       for (const [path, asset] of Object.entries(theme.design?.assets ?? {})) {
@@ -85,10 +86,10 @@ describe('built-in theme catalog', () => {
     for (const document of builtInThemeDocuments) expect(() => parseTheme(document)).not.toThrow();
   });
   it('retains legacy IDs and has unique names and IDs', () => {
-    expect(classicThemes.map(t => t.id)).toEqual(['default', 'atom', 'solarized', 'nord', 'gruvbox', 'catppuccin-frappe', 'catppuccin-macchiato', 'catppuccin-mocha', 'catppuccin-latte', 'dracula']);
+    expect(classicThemes.map(t => t.id)).toEqual(['default', 'atom', 'solarized', 'nord', 'gruvbox', 'catppuccin-frappe', 'catppuccin-macchiato', 'catppuccin-mocha', 'catppuccin-latte', 'dracula', 'plasma-ooze', 'plasma-undertow', 'plasma-witches-brew']);
     expect(new Set(allBuiltInThemes.map(t => t.id)).size).toBe(allBuiltInThemes.length);
     expect(new Set(allBuiltInThemes.map(t => t.name)).size).toBe(allBuiltInThemes.length);
-    expect(bundledThemes.map(t => t.name)).toEqual(['Minimal', 'Saratoga', 'Based', 'Starfall', 'Old Basement PC', 'Quest', 'Typewriter']);
+    expect(bundledThemes.map(t => t.name)).toEqual(['Minimal', 'Saratoga', 'Based', 'Starfall', 'Old Basement PC', 'Quest', 'Twain']);
   });
   for (const theme of allBuiltInThemes) {
     it(`${theme.name} validates, exports, and renders in both modes`, () => {
@@ -124,6 +125,7 @@ describe('built-in theme catalog', () => {
   }
   it.each([
     ['builtin-old-basement-pc', 'ibm-plex-mono', 'monospace'],
+    ['builtin-8-bit-adventure', 'geist-pixel-square', 'monospace'],
     ['builtin-typewriter', 'solway', 'Georgia, serif'],
   ])('%s resolves packaged fonts in both preview and notebook without external requests', (id, font, fallback) => {
     const theme = bundledThemes.find(t => t.id === id)!;

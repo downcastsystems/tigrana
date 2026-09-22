@@ -1,5 +1,5 @@
-import { useEffect, useMemo, useRef, useState } from "react";
-import { defaultPlasmaSettings, type ThemeDocument } from "../lib/themes";
+import { useEffect, useRef } from "react";
+import { type ThemeDocument } from "../lib/themes";
 import { ThemeWorkbenchPreview } from "./ThemeWorkbenchPreview";
 
 export function ThemeVerificationDialog({ theme, busy, error, onConfirm, onCancel }: {
@@ -10,11 +10,6 @@ export function ThemeVerificationDialog({ theme, busy, error, onConfirm, onCance
   onCancel: () => void;
 }) {
   const dialog = useRef<HTMLDialogElement>(null);
-  const [plasma, setPlasma] = useState(theme.plasma?.enabled ?? false);
-  const preview = useMemo(() => ({
-    ...theme,
-    plasma: { ...(theme.plasma ?? defaultPlasmaSettings), enabled: plasma },
-  }), [theme, plasma]);
   useEffect(() => {
     const element = dialog.current!;
     element.showModal();
@@ -34,18 +29,12 @@ export function ThemeVerificationDialog({ theme, busy, error, onConfirm, onCance
       <header>
         <h2 id="theme-verification-title">Verify your theme</h2>
         <p>Check light and dark mode before saving.</p>
-        <label>
-          <input type="checkbox" checked={plasma} disabled={theme.design?.supportsPlasma === false || busy}
-            onChange={(event) => setPlasma(event.target.checked)} />
-          Plasma preview
-        </label>
-        <p className="settings-description">This toggle only changes these previews, not your theme’s saved Plasma setting.</p>
       </header>
       <div className="theme-verification-previews">
         {(["light", "dark"] as const).map((mode) => (
           <section key={mode} aria-label={`${mode === "light" ? "Light" : "Dark"} mode preview`}>
             <h3>{mode === "light" ? "Light mode" : "Dark mode"}</h3>
-            <ThemeWorkbenchPreview theme={preview} mode={mode} />
+            <ThemeWorkbenchPreview theme={theme} mode={mode} />
           </section>
         ))}
       </div>

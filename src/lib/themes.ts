@@ -58,6 +58,8 @@ export function parsePlasma(value: unknown): PlasmaSettings {
   };
 }
 export type ThemeDocument = {
+  editorLineHeight?: number;
+  editorLetterSpacing?: number;
   typography?: ThemeTypography;
   controls?: ThemeControl[];
   baseThemeSnapshot?: ThemeDocument;
@@ -140,7 +142,14 @@ export function parseTheme(value: unknown, allowBase = true): ThemeDocument {
     throw new Error("Invalid note alignment setting.");
   if (v.navigationStyle !== undefined && v.navigationStyle !== "dual-pane" && v.navigationStyle !== "single-pane" && v.navigationStyle !== "section-view")
     throw new Error("Invalid navigation style.");
+  for (const [key, min, max] of [["editorLineHeight", 1.2, 2.2], ["editorLetterSpacing", -0.03, 0.12]] as const) {
+    const n = v[key];
+    if (n !== undefined && (typeof n !== "number" || !Number.isFinite(n) || n < min || n > max))
+      throw new Error(`Invalid ${key}.`);
+  }
   const clean: ThemeDocument = {
+    ...(v.editorLineHeight === undefined ? {} : { editorLineHeight: v.editorLineHeight as number }),
+    ...(v.editorLetterSpacing === undefined ? {} : { editorLetterSpacing: v.editorLetterSpacing as number }),
     ...(v.typography === undefined ? {} : { typography: parseTypography(v.typography) }),
     ...(v.controls === undefined ? {} : { controls: parseControls(v.controls) }),
     ...(base ? { baseThemeSnapshot: base } : {}),

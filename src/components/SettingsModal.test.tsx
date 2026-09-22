@@ -46,6 +46,10 @@ it.each(["Create theme", "Edit theme"])(
       await act(async () =>
         root.render(
           <SettingsModal
+            editorWidthMode="comfortable"
+            onEditorWidthModeChange={vi.fn()}
+            noteAlignment="center"
+            onNoteAlignmentChange={vi.fn()}
             navigationStyle="section-view"
             onNavigationStyleChange={vi.fn()}
             wordCountVisible
@@ -60,18 +64,18 @@ it.each(["Create theme", "Edit theme"])(
           />,
         ),
       );
-      expect(host.querySelector('[aria-label="Navigation style"]')).toBeNull();
+      expect(host.querySelector('[aria-label="Navigation style"]')).not.toBeNull();
       expect(host.textContent).not.toContain("Restore default appearance");
       const generalLabels = [...host.querySelectorAll(".setting-row")];
       expect(generalLabels.map((label) => label.textContent?.trim())).toEqual([
-        "Check spelling while typing", "Show word count",
+        "Navigation styleDual paneDual pane with sections (recommended)Single pane", "Editor widthComfortable WidthNarrow WidthFull Width", "Note alignmentAlign leftAlign center", "Check spelling while typing", "Show word count",
       ]);
-      const wordCount = generalLabels[1].querySelector<HTMLInputElement>("input")!;
+      const wordCount = generalLabels[4].querySelector<HTMLInputElement>("input")!;
       expect(wordCount.checked).toBe(true);
       await act(async () => wordCount.click());
       expect(changeWordCount).toHaveBeenCalledWith(false);
       await click("Appearance");
-      expect(host.querySelector('[aria-label="Navigation style"]')).not.toBeNull();
+      expect(host.querySelector('[aria-label="Navigation style"]')).toBeNull();
       expect(host.textContent).not.toContain("Show word count");
       await click("Restore default appearance");
       expect(resetAppearance).toHaveBeenCalledOnce();

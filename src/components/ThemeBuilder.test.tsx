@@ -1,3 +1,4 @@
+import { themeFamily } from "../lib/themeFamilies";
 import { bundledThemes, classicThemes } from "../lib/bundledThemes";
 // @vitest-environment jsdom
 import { webcrypto } from "node:crypto";
@@ -68,7 +69,8 @@ it.each(classicThemes)("keeps the built-in $name snapshot out of Saved", async (
     await act(async () => root.render(<ThemeBuilder current={theme} seed={theme}
       builtInThemes={classicThemes} onApply={vi.fn()} />));
     const picker = host.querySelector<HTMLSelectElement>('[aria-label="Theme"]')!;
-    expect(picker.value).toBe(`builtin:${theme.id}`);
+    expect(picker.value).toBe(`builtin:${themeFamily(theme.id)?.colors[0].id ?? theme.id}`);
+    if (themeFamily(theme.id)) expect(host.querySelector<HTMLSelectElement>('[aria-label="Colors"]')?.value).toBe(theme.id);
     expect(picker.selectedOptions[0].parentElement?.getAttribute("label")).toBe("Built-in");
     expect(picker.querySelector('optgroup[label="Saved"]')).toBeNull();
     expect((await listThemes()).themes).toHaveLength(0);
@@ -606,11 +608,11 @@ it("keeps an older built-in under Built-in without saving it to the library", as
     expect(host.querySelector('optgroup[label="Saved"]')).toBeNull();
     expect((await listThemes()).themes).toHaveLength(0);
     await act(async () => button(host, "Edit theme").click());
-    expect(host.querySelector<HTMLInputElement>('[aria-label="Theme name"]')!.value).toBe("Typewriter copy");
+    expect(host.querySelector<HTMLInputElement>('[aria-label="Theme name"]')!.value).toBe("Twain copy");
   } finally { await act(async () => root.unmount()); }
 });
 
-it("edits Typewriter writing defaults and reflects them in the preview", async () => {
+it("edits Twain writing defaults and reflects them in the preview", async () => {
   const theme = bundledThemes.find(theme => theme.id === "builtin-typewriter")!;
   const host = document.createElement("div"), root = createRoot(host);
   try {
@@ -633,7 +635,7 @@ it("edits Typewriter writing defaults and reflects them in the preview", async (
   } finally { await act(async () => root.unmount()); }
 });
 
-it("recognizes Typewriter after native storage reorders its JSON fields", async () => {
+it("recognizes Twain after native storage reorders its JSON fields", async () => {
   const latest = bundledThemes.find(theme => theme.id === "builtin-typewriter")!;
   const stored = JSON.parse(JSON.stringify(latest, (_key, value) =>
     value && typeof value === "object" && !Array.isArray(value)
@@ -677,8 +679,8 @@ it.each([false, true])("labels local Default changes without replacing the built
       builtInThemes={[{ id: 'default', name: 'Default' }]} onApply={vi.fn()} onRestoreDefault={restore} />));
     const picker = host.querySelector<HTMLSelectElement>('[aria-label="Theme"]')!;
     expect(picker.value).toBe('modified:default');
-    expect(picker.querySelector('option[value="builtin:default"]')?.textContent).toBe('Default');
-    expect(picker.querySelector('option[value="modified:default"]')?.textContent).toBe('Default (modified)');
+    expect(picker.querySelector('option[value="builtin:default"]')?.textContent).toBe('Classic');
+    expect(picker.querySelector('option[value="modified:default"]')?.textContent).toBe('Classic (modified)');
     expect(picker.querySelector('option[value="saved:default"]')).toBeNull();
     expect(button(host, 'Edit theme')).toBeUndefined();
     expect(button(host, 'Return to Default')).toBeUndefined();
@@ -876,7 +878,7 @@ it("alphabetizes built-in and saved themes, keeping Default first", async () => 
     await act(async () => root.render(<ThemeBuilder current={current} seed={current} builtInThemes={builtIns} onApply={apply} />));
     const picker = host.querySelector<HTMLSelectElement>('select[aria-label="Theme"]')!;
     const builtInNames = [...picker.querySelectorAll('optgroup[label="Built-in"] option')].map(option => option.textContent!);
-    expect(builtInNames).toEqual(['Default', ...['Nord', 'Atom', ...bundledThemes.map(theme => theme.name)].sort((a, b) => a.localeCompare(b))]);
+    expect(builtInNames).toEqual(['Classic', ...bundledThemes.map(theme => theme.name).sort((a, b) => a.localeCompare(b))]);
     expect(builtInNames).toContain('Quest');
     expect(builtInNames).not.toContain('Adventure Quest');
     expect([...picker.querySelectorAll('optgroup[label="Saved"] option')].map(option => option.textContent)).toEqual(['Alpha', 'Middle', 'Zulu']);
@@ -884,5 +886,29 @@ it("alphabetizes built-in and saved themes, keeping Default first", async () => 
     await act(async () => { picker.value = 'bundled:builtin-8-bit-adventure'; picker.dispatchEvent(new Event('change', { bubbles: true })); });
     expect(apply).toHaveBeenCalledWith(expect.objectContaining({ id: 'builtin-8-bit-adventure', name: 'Quest' }));
     expect(builtIns.map(theme => theme.name)).toEqual(['Nord', 'Default', 'Atom']);
+  } finally { await act(async () => root.unmount()); }
+});
+
+it('groups palettes and remembers the selected color when returning to a family', async () => {
+  const host = document.createElement('div'), root = createRoot(host);
+  const choose = vi.fn(), colorChange = vi.fn();
+  const theme = classicThemes.find(theme => theme.id === 'catppuccin-mocha')!;
+  try {
+    await act(async () => root.render(<ThemeBuilder current={theme} seed={theme} onApply={vi.fn()}
+      builtInThemes={classicThemes} themeColorPreferences={{ classic: 'nord' }}
+      onBuiltInChange={choose} onColorChange={colorChange} />));
+    const picker = host.querySelector<HTMLSelectElement>('[aria-label="Theme"]')!;
+    const labels = [...picker.options].map(option => option.textContent);
+    expect(labels).toContain('Classic');
+    expect(labels).toContain('Catppuccin');
+    expect(labels).not.toContain('Nord');
+    const colors = host.querySelector<HTMLSelectElement>('[aria-label="Colors"]')!;
+    expect([...colors.options].map(option => option.textContent)).toEqual(['Frappe', 'Latte', 'Macchiato', 'Mocha']);
+    expect(colors.value).toBe('catppuccin-mocha');
+    await act(async () => { colors.value = 'catppuccin-latte'; colors.dispatchEvent(new Event('change', { bubbles: true })); });
+    expect(colorChange).toHaveBeenCalledWith('catppuccin-latte');
+    expect(choose).not.toHaveBeenCalled();
+    await act(async () => { picker.value = 'builtin:default'; picker.dispatchEvent(new Event('change', { bubbles: true })); });
+    expect(choose).toHaveBeenCalledWith('nord');
   } finally { await act(async () => root.unmount()); }
 });

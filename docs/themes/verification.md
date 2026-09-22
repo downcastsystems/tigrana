@@ -47,9 +47,9 @@ Gallery hosting and personal CSS snippets remain outside this foundation phase.
 
 ## Font emphasis — September 20, 2026
 
-- Reproduced Typewriter's invisible bold and italic in the browser demo. Cmd+B and Cmd+I created the correct marks, but inherited `font-synthesis: none` prevented its regular-only font from displaying them.
+- Reproduced Twain's invisible bold and italic in the browser demo. Cmd+B and Cmd+I created the correct marks, but inherited `font-synthesis: none` prevented its regular-only font from displaying them.
 - Enabled weight/style synthesis for note content. Verified visible bold, italic, combined emphasis, strike, code and highlighting with production CSS and packaged fonts across all 16 built-in themes in both modes.
-- Checked Typewriter's keyboard commands, saved Markdown and theme editor preview. UI font synthesis remains unchanged.
+- Checked Twain's keyboard commands, saved Markdown and theme editor preview. UI font synthesis remains unchanged.
 - Markdown/editor tests: 71 passed. Built-in theme tests: 21 passed. Lint and production build passed, with the existing bundle-size warning. This rendering check used the browser; native Windows rendering was not tested.
 
 ## Authoring hardening — September 20, 2026
@@ -59,3 +59,13 @@ Gallery hosting and personal CSS snippets remain outside this foundation phase.
 - Browser inspection covered Adventure Quest light/dark and menu/compact-title states, actual Old Basement PC menus/status, Starfall Plasma/artwork control, and Default-derived preview. The live editor now resolves packaged fonts exactly as the preview does.
 - `npm run theme:check` validated the source starter, starter export, Starfall and Adventure Quest packages; an invalid schema exited with failure. The starter's secondary text was adjusted to clear the contrast check.
 - Windows native execution was not tested. Palette checks do not measure contrast after custom CSS, image compositing or Plasma effects. The usual Vite large-chunk warning and non-failing Tiptap task-list diagnostic remain.
+
+## Theme families and writing spacing, 2026-09-22
+
+- Classic groups Default, Atom One, Gruvbox, Nord, and Solarized. Catppuccin groups Frappe, Latte, Macchiato, and Mocha. Verified existing preset selection, color memory, typography preservation, reload, and full appearance reset.
+- Renamed Typewriter's display name, source directory, app document, and package to Twain. Retained `builtin-typewriter` as its durable identity.
+- Navigation style is in General. Line-height and letter-spacing sliders use theme defaults, save to notebook metadata, and can be captured in exported themes. Both TypeScript and native validation reject out-of-range values.
+- Passed 230 focused tests across 15 files, all five native theme tests, lint, frontend build, and macOS app bundle build. After the final selection-color correction, the affected 97 component and app tests passed again. The standard Vite large-chunk warning remains.
+- `npm run theme:check -- docs/themes/twain` passed package round-trip and light/dark CSS compilation.
+- Browser QA checked General and Appearance, Classic and Catppuccin selection, light/dark presentation, and Twain's font and sliders. At 18px font size, Twain's 1.76 line-height produced 31.68px lines and 0.005em letter spacing produced 0.09px spacing.
+- Two additional tests fail identically on the untouched starting revision, reproduced in a separate temporary checkout. `src/editor/NotesEditor.performance.test.tsx`, “keeps the keyboard-selected slash command in view”: expected `Task List`, received `Numbered List`. `src/lib/currentThemeSettings.test.ts`, “captures manual writing layout changes and detects departures from theme defaults”: expected `true`, received `false`. These existing failures were left unchanged.

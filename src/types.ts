@@ -60,7 +60,8 @@ export type NotebookAppearance = {
   noteAlignment?: "left" | "center";
   rightSidebarOpen?: boolean;
   wordCountVisible?: boolean;
-  quickAppearance?: { accentColor?: string; editorFontFamily?: string; editorFontSize?: number } | null;
+  themeColorPreferences?: Record<string, string>;
+  quickAppearance?: { accentColor?: string; editorFontFamily?: string; editorFontSize?: number; editorLineHeight?: number; editorLetterSpacing?: number } | null;
   acknowledgedThemeDifference?: ThemeDifferenceAcknowledgement;
   plasma?: import("./lib/themes").PlasmaSettings;
   customTheme?: import("./lib/themes").ThemeDocument | null;

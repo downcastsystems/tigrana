@@ -16,9 +16,9 @@ writeFileSync(output, zipSync(files));
 console.log(fileURLToPath(output));
 
 // Ship the same portable document in the app, with no runtime file requests.
-if (['starfall-studio', '8-bit-adventure', 'typewriter'].includes(name)) {
+if (['starfall-studio', '8-bit-adventure', 'twain'].includes(name)) {
   const theme = JSON.parse(files['theme.json'].toString());
-  theme.id = `builtin-${name}`;
+  theme.id = name === "twain" ? "builtin-typewriter" : `builtin-${name}`; // Keep existing notebook identities.
   theme.design.css = files['theme.css'].toString();
   theme.design.license = files.LICENSE.toString();
   theme.design.assets = Object.fromEntries(Object.entries(files)
