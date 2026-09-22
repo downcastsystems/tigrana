@@ -47,7 +47,7 @@ describe('built-in theme catalog', () => {
     }
   });
   it('gives refreshed palette themes readable hover/menu states and themed highlights', () => {
-    const themes = classicThemes.filter(t => t.id.startsWith('catppuccin-') || ['nord', 'gruvbox', 'solarized'].includes(t.id));
+    const themes = classicThemes.filter(t => t.id.startsWith('catppuccin-') || ['nord', 'gruvbox', 'solarized', 'atom', 'everforest'].includes(t.id));
     for (const theme of themes) {
       expect(theme.plasma?.enabled).toBe(false);
       for (const mode of ['light', 'dark'] as const) {
@@ -86,7 +86,7 @@ describe('built-in theme catalog', () => {
     for (const document of builtInThemeDocuments) expect(() => parseTheme(document)).not.toThrow();
   });
   it('retains legacy IDs and has unique names and IDs', () => {
-    expect(classicThemes.map(t => t.id)).toEqual(['default', 'atom', 'solarized', 'nord', 'gruvbox', 'catppuccin-frappe', 'catppuccin-macchiato', 'catppuccin-mocha', 'catppuccin-latte', 'dracula', 'plasma-ooze', 'plasma-undertow', 'plasma-witches-brew']);
+    expect(classicThemes.map(t => t.id)).toEqual(['default', 'atom', 'solarized', 'nord', 'gruvbox', 'everforest', 'catppuccin-frappe', 'catppuccin-macchiato', 'catppuccin-mocha', 'catppuccin-latte', 'dracula', 'plasma-ooze', 'plasma-undertow', 'plasma-witches-brew']);
     expect(new Set(allBuiltInThemes.map(t => t.id)).size).toBe(allBuiltInThemes.length);
     expect(new Set(allBuiltInThemes.map(t => t.name)).size).toBe(allBuiltInThemes.length);
     expect(bundledThemes.map(t => t.name)).toEqual(['Minimal', 'Saratoga', 'Based', 'Starfall', 'Old Basement PC', 'Quest', 'Twain']);

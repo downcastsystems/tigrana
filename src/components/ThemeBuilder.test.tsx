@@ -508,9 +508,9 @@ it("remembers keeping a notebook-only theme and notices when an app-wide copy ap
 });
 
 
-it("reviews both modes before saving and returns to the untouched draft on cancel", async () => {
+it.each([false, true])("reviews both modes with theme Plasma enabled=%s and preserves the draft", async (enabled) => {
   const host = document.createElement("div"), root = createRoot(host), apply = vi.fn(), saved = vi.fn();
-  const seed = { ...exampleTheme(), plasma: { enabled: false, frost: 60, backgroundBlur: 12 } };
+  const seed = { ...exampleTheme(), plasma: { enabled, frost: 60, backgroundBlur: 12 } };
   try {
     await act(async () => root.render(<ThemeBuilder current={null} seed={seed} onApply={apply} onSaved={saved} />));
     await act(async () => button(host, "Create theme").click());
@@ -523,9 +523,9 @@ it("reviews both modes before saving and returns to the untouched draft on cance
     expect(apply).not.toHaveBeenCalled();
     expect(saved).not.toHaveBeenCalled();
     expect((await listThemes()).themes).toHaveLength(0);
-    await act(async () => dialog.querySelector<HTMLInputElement>('input[type="checkbox"]')!.click());
+    expect(dialog.textContent).not.toContain("Plasma preview");
     for (const preview of dialog.querySelectorAll(".theme-workbench-preview")) {
-      expect(preview.shadowRoot!.querySelector('[data-testid="plasma-renderer"]')).not.toBeNull();
+      expect(Boolean(preview.shadowRoot!.querySelector('[data-testid="plasma-renderer"]'))).toBe(enabled);
     }
     await act(async () => button(host, "Back to editing").click());
     expect(host.querySelector("dialog")).toBeNull();
@@ -533,7 +533,7 @@ it("reviews both modes before saving and returns to the untouched draft on cance
     expect(apply).not.toHaveBeenCalled();
     expect(saved).not.toHaveBeenCalled();
     await act(async () => button(host, "Save and use").click());
-    expect(host.querySelector<HTMLInputElement>('dialog input[type="checkbox"]')!.checked).toBe(false);
+    expect(host.querySelector("dialog")!.textContent).not.toContain("Plasma preview");
     await act(async () => button(host, "Confirm and save").click());
     expect(apply).toHaveBeenCalledOnce();
     expect(saved).toHaveBeenCalledOnce();

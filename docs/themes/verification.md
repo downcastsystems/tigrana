@@ -62,7 +62,7 @@ Gallery hosting and personal CSS snippets remain outside this foundation phase.
 
 ## Theme families and writing spacing, 2026-09-22
 
-- Classic groups Default, Atom One, Gruvbox, Nord, and Solarized. Catppuccin groups Frappe, Latte, Macchiato, and Mocha. Verified existing preset selection, color memory, typography preservation, reload, and full appearance reset.
+- Classic groups Default, Atom, Gruvbox, Nord, and Solarized. Catppuccin groups Frappe, Latte, Macchiato, and Mocha. Verified existing preset selection, color memory, typography preservation, reload, and full appearance reset.
 - Renamed Typewriter's display name, source directory, app document, and package to Twain. Retained `builtin-typewriter` as its durable identity.
 - Navigation style is in General. Line-height and letter-spacing sliders use theme defaults, save to notebook metadata, and can be captured in exported themes. Both TypeScript and native validation reject out-of-range values.
 - Passed 230 focused tests across 15 files, all five native theme tests, lint, frontend build, and macOS app bundle build. After the final selection-color correction, the affected 97 component and app tests passed again. The standard Vite large-chunk warning remains.

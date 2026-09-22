@@ -6,7 +6,7 @@ Old notebook preset IDs remain supported. The app overlays their existing font a
 
 ## Theme families and colors
 
-Appearance groups Classic’s Default, Atom One, Gruvbox, Nord, and Solarized palettes under one theme. Catppuccin groups Frappe, Latte, Macchiato, and Mocha. `src/lib/themeFamilies.ts` defines the grouping; each color keeps its existing durable preset ID. Notebook metadata remembers the most recently selected color in each family. Changing colors clears an accent override but retains typography, effects, and layout adjustments. Choosing a different theme resets quick appearance settings.
+Appearance groups Classic’s Default, Atom, Everforest, Gruvbox, Nord, and Solarized palettes under one theme. Catppuccin groups Frappe, Latte, Macchiato, and Mocha. `src/lib/themeFamilies.ts` defines the grouping; each color keeps its existing durable preset ID. Notebook metadata remembers the most recently selected color in each family. Changing colors clears an accent override but retains typography, effects, and layout adjustments. Choosing a different theme resets quick appearance settings.
 
 Mode remains System, Light, or Dark. Catppuccin preserves its existing pairs: all light variants use Latte; the Latte choice uses Frappe in dark mode.
 
@@ -147,23 +147,15 @@ Links use each palette's blue. Selected-item foregrounds use a palette color
 where it meets 4.5:1 contrast, otherwise black or white. Marker highlights use
 the palette's yellow rather than generic fluorescent yellow.
 
-[Nord](https://www.nordtheme.com/docs/colors-and-palettes/) uses Polar Night for
-dark panels, Snow Storm for light panels and text, and Frost accents. Off-palette
-panel shades are replaced with Nord's own values. Its marker uses Aurora yellow.
+Classic's Atom, Gruvbox, Nord, Solarized, and Everforest colors follow the
+[AnuPpuccin reference previews](https://github.com/AnubisNekhet/AnuPpuccin/tree/main/assets/colorschemes).
+Nord uses the `nord-darker` dark variant and `nord-light` light variant. The others
+use their named light and dark previews. Editor backgrounds use Base, sidebars
+use Mantle, and text uses Text. The accents match the previews: orange for
+Gruvbox and Solarized, cyan for Nord, blue for Atom, and coral for Everforest.
+Yellow marker highlights and explicit menu/hover foregrounds retain readable contrast.
 
-[Gruvbox](https://github.com/morhetz/gruvbox) retains medium-contrast warm paper
-and charcoal editor backgrounds, hard background shades for deeper surfaces,
-and yellow accents. Its previously invented raised/muted shades now use the
-[upstream palette](https://github.com/morhetz/gruvbox/blob/master/colors/gruvbox.vim).
-
-[Solarized](https://ethanschoonover.com/solarized/) uses its canonical base colors
-and blue accent in both modes. Dark editor text is base0 rather than cream;
-light editor text is base01 for reading contrast. Light interface labels use
-base02 to meet 4.5:1 on base2 sidebar backgrounds. Dark interface labels use base1.
-
-All seven adaptations define explicit menu and hover colors, a quieter text
-selection tint, and an opaque word-count badge using theme colors. They default
-to Plasma off and Dual pane with sections. Editor width, alignment, word count,
-and right-sidebar visibility keep their current values. Existing theme IDs are unchanged; Latte adds
-`catppuccin-latte`. Version 1.1.0 snapshots export through the normal theme system.
-Existing saved copies are preserved; select the built-in to adopt these defaults.
+These are color adaptations on Tigrana's Classic layout, with no AnuPpuccin
+stylesheet code or artwork included. Classic typography, spacing, and geometry
+remain unchanged. Existing saved copies are preserved; reselect the built-in
+color to adopt the updated palette. Everforest uses the new durable ID `everforest`.

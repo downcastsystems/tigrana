@@ -369,7 +369,7 @@ type FolderCreationTarget = Pick<NoteCreationTarget, "parentName" | "parentPath"
 
 type ColorScheme = "system" | "light" | "dark";
 type ThemePresetId =
-  | "default" | "atom" | "solarized" | "dracula" | "nord" | "gruvbox"
+  | "default" | "atom" | "solarized" | "dracula" | "nord" | "gruvbox" | "everforest"
   | "catppuccin-latte" | "catppuccin-frappe" | "catppuccin-macchiato" | "catppuccin-mocha"
   | "plasma-ooze" | "plasma-undertow" | "plasma-witches-brew";
 type RightSidebarMode = "outline" | "frontmatter" | "properties" | "backlinks";

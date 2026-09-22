@@ -5,8 +5,8 @@ export const themeFamilies = [
     { id: 'plasma-undertow', name: 'Undertow' }, { id: 'plasma-witches-brew', name: "Witch's Brew" },
   ] },
   { id: 'classic', name: 'Classic', colors: [
-    { id: 'default', name: 'Default' }, { id: 'atom', name: 'Atom One' },
-    { id: 'gruvbox', name: 'Gruvbox' }, { id: 'nord', name: 'Nord' }, { id: 'solarized', name: 'Solarized' },
+    { id: 'default', name: 'Default' }, { id: 'atom', name: 'Atom' },
+    { id: 'everforest', name: 'Everforest' }, { id: 'gruvbox', name: 'Gruvbox' }, { id: 'nord', name: 'Nord' }, { id: 'solarized', name: 'Solarized' },
   ] },
   { id: 'catppuccin', name: 'Catppuccin', colors: [
     { id: 'catppuccin-frappe', name: 'Frappe' }, { id: 'catppuccin-latte', name: 'Latte' },
