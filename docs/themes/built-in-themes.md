@@ -10,7 +10,7 @@ Minimal is a Tigrana adaptation, not an official port or Obsidian plugin integra
 
 | Theme | Source inspected | Tigrana choices |
 | --- | --- | --- |
-| Minimal | [kepano/obsidian-minimal](https://github.com/kepano/obsidian-minimal), 9.1.0 | Neutral white/charcoal surfaces, muted blue-gray accent, bundled Inter font, tighter corners and spacing, restrained heading weight. Accent is adjusted for readable selections. |
+| Minimal | [kepano/obsidian-minimal](https://github.com/kepano/obsidian-minimal), 9.1.0 | Neutral white/charcoal surfaces, muted blue-gray accent, system interface and editor fonts (San Francisco on macOS), tighter corners and spacing, restrained heading weight. Accent is adjusted for readable selections. |
 
 Minimal, Saratoga, and Based default to standard UI and support Plasma when enabled. Starfall and Vampire default to Plasma. Selecting another theme restores that theme's defaults and clears quick appearance overrides. Note rows retain rounded corners; section rows stay rectangular.
 

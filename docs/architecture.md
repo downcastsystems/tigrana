@@ -286,3 +286,12 @@ are layered beneath creator CSS. Settings suspends live creator styles. The
 workbench uses a separate ShadowRoot and the production stylesheets; it does not
 instantiate or mutate the user's editor. `ThemeStyles` only recompiles when the
 theme or color scheme changes. Editor transaction behavior is unchanged.
+
+
+Folder colors are stored per Notebook in
+`folderColorsByNavigationStyle[style][folderPath]`, independently for
+`single-pane`, `dual-pane`, and `section-view`. A missing Sections map reads
+legacy `folderColors`; the other styles start without custom colors. An
+explicit empty map preserves a reset without reviving legacy colors. Folder
+moves and renames repair paths in every style, and deletion removes them.
+Folder icons remain shared in `folderIcons`.

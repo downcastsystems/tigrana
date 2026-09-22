@@ -127,6 +127,8 @@ import {
   buildBookmarkViews,
   buildFolderTree,
   getNotebookName,
+  getFolderColors,
+  setFolderColor,
   orderFolders,
   orderNotes,
   placeNoteInOrder,
@@ -318,7 +320,7 @@ type RecentNotebook = {
 
 type PropertyDialogState =
   | { kind: "rename-folder"; path: string; value: string; name: string }
-  | { kind: "folder-color"; path: string; value: string; name: string; subject?: "folder" | "section" };
+  | { kind: "folder-color"; path: string; value: string; name: string; subject?: "folder" | "section"; navigationStyle: NavigationStyle; previewColor?: string };
 
 type IconBrowserState =
   | { kind: "folder"; path: string; value: string; name: string; onReset?: () => void }
@@ -566,6 +568,19 @@ export default function App() {
   const [folderDialogParent, setFolderDialogParent] = useState<string | null>(null);
   const [folderName, setFolderName] = useState("");
   const [propertyDialog, setPropertyDialog] = useState<PropertyDialogState | null>(null);
+  // Preview stays local to navigation; only Save updates Notebook metadata.
+  const navigationMetadata = useMemo(() => {
+    const folderColors = getFolderColors(metadata, navigationStyle);
+    const preview = propertyDialog?.kind === "folder-color" &&
+      propertyDialog.navigationStyle === navigationStyle ? propertyDialog : null;
+    const color = preview?.previewColor?.trim();
+    return {
+      ...metadata,
+      folderColors: preview && color && /^#(?:[0-9a-f]{3,4}|[0-9a-f]{6}|[0-9a-f]{8})$/i.test(color)
+        ? { ...folderColors, [preview.path]: color }
+        : folderColors,
+    };
+  }, [metadata, navigationStyle, propertyDialog]);
   const [iconBrowser, setIconBrowser] = useState<IconBrowserState | null>(null);
   const [moveDialog, setMoveDialog] = useState<{ kind: "note" | "folder"; path: string } | null>(null);
   const [emojiPickerOpen, setEmojiPickerOpen] = useState(false);
@@ -3910,8 +3925,8 @@ export default function App() {
     const value =
       kind === "rename-folder"
         ? folder?.name ?? ""
-        : metadata.folderColors[path] ?? effectiveAccentColor;
-    setPropertyDialog({ kind, path, value, name, ...(kind === "folder-color" ? { subject } : {}) } as PropertyDialogState);
+        : getFolderColors(metadata, navigationStyle)[path] ?? effectiveAccentColor;
+    setPropertyDialog({ kind, path, value, name, ...(kind === "folder-color" ? { subject, navigationStyle } : {}) } as PropertyDialogState);
     setContextMenu(null);
     setAppError(null);
   }
@@ -3922,8 +3937,8 @@ export default function App() {
     setContextMenu(null);
   }
 
-  function resetFolderColor(path: string) {
-    updateMetadata((current) => setMetadataValue(current, "folderColors", path, ""));
+  function resetFolderColor(path: string, style: NavigationStyle) {
+    updateMetadata((current) => setFolderColor(current, style, path, ""));
     setPropertyDialog(null);
     setContextMenu(null);
   }
@@ -3970,7 +3985,7 @@ export default function App() {
       if (propertyDialog.kind === "rename-folder") {
         await notebookPathMutations.renameFolder(propertyDialog.path, propertyDialog.value);
       } else if (propertyDialog.kind === "folder-color") {
-        updateMetadata((current) => setMetadataValue(current, "folderColors", propertyDialog.path, propertyDialog.value.trim()));
+        updateMetadata((current) => setFolderColor(current, propertyDialog.navigationStyle, propertyDialog.path, propertyDialog.value.trim()));
       }
       if (!isWorkspaceActive(operationWorkspace)) return;
       setPropertyDialog(null);
@@ -4756,7 +4771,7 @@ export default function App() {
               folderOrderingMode="alphabetical"
               folders={folders}
               menuOpen={appMenuOpen}
-              metadata={metadata}
+              metadata={navigationMetadata}
               notes={notes}
               recentNotebooks={recentNotebooks}
               rootPath=""
@@ -4803,7 +4818,7 @@ export default function App() {
                 draggingItem={draggingItem}
                 dropTargetFolder={dropTargetFolder}
                 folders={folderTree[0]?.children ?? []}
-                metadata={metadata}
+                metadata={navigationMetadata}
                 selectedFolder={selectedSection}
                 workspace={workspace}
                 menuOpen={appMenuOpen}
@@ -4836,7 +4851,7 @@ export default function App() {
                 folderDropIntent={folderDropIntent}
                 folderOrderingMode="custom"
                 folders={folders}
-                metadata={metadata}
+                metadata={navigationMetadata}
                 notes={notes}
                 rootPath={selectedSection}
                 hiddenFolderParentPath={selectedSection === "" ? "" : undefined}
@@ -4869,7 +4884,7 @@ export default function App() {
                 draggingItem={draggingItem}
                 dropTargetFolder={dropTargetFolder}
                 folders={folderTree}
-                metadata={metadata}
+                metadata={navigationMetadata}
                 menuOpen={appMenuOpen}
                 recentNotebooks={recentNotebooks}
                 selectedFolder={selectedFolder}
@@ -5598,9 +5613,11 @@ export default function App() {
         <PropertyDialog
           state={propertyDialog}
           appError={appError}
-          onChange={(value) => setPropertyDialog({ ...propertyDialog, value } as PropertyDialogState)}
+          onChange={(value) => setPropertyDialog(propertyDialog.kind === "folder-color"
+            ? { ...propertyDialog, value, previewColor: value }
+            : { ...propertyDialog, value })}
           onClose={() => setPropertyDialog(null)}
-          onReset={propertyDialog.kind === "folder-color" ? () => resetFolderColor(propertyDialog.path) : undefined}
+          onReset={propertyDialog.kind === "folder-color" ? () => resetFolderColor(propertyDialog.path, propertyDialog.navigationStyle) : undefined}
           onSubmit={() => void submitPropertyDialog()}
         />
       ) : null}

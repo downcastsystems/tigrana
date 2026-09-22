@@ -192,6 +192,97 @@ describe("Note navigation persistence", () => {
     containers.splice(0).forEach((container) => container.remove());
   });
 
+  it.each(["single-pane", "dual-pane", "section-view"] as const)("renders only %s folder colors", async (style) => {
+    demoPersistence.set("tigrana-meta:/demo/Tigrana", JSON.stringify({
+      revision: 0,
+      appearance: { navigationStyle: style },
+      folderColors: { Ideas: "#111111" },
+      folderColorsByNavigationStyle: {
+        "single-pane": { Ideas: "#222222" },
+        "dual-pane": { Ideas: "#333333" },
+        "section-view": { Ideas: "#444444" },
+      },
+      folderIcons: { Ideas: "lucide:Star" },
+    }));
+    const container = document.createElement("div");
+    document.body.appendChild(container);
+    containers.push(container);
+    const root = createRoot(container);
+    try {
+      await act(async () => { root.render(<App />); });
+      await settle();
+      const row = container.querySelector<HTMLElement>('[data-folder-path="Ideas"]')!;
+      expect(row).not.toBeNull();
+      if (style === "section-view") {
+        expect(row.style.getPropertyValue("--section-color")).toBe("#444444");
+      } else {
+        const label = row.querySelector<HTMLElement>(style === "single-pane" ? ".unified-folder-name" : ".folder-select")!;
+        expect(label.style.color).toBe(style === "single-pane" ? "rgb(34, 34, 34)" : "rgb(51, 51, 51)");
+      }
+      expect(row.querySelector(".lucide-star")).not.toBeNull();
+    } finally {
+      await act(async () => root.unmount());
+    }
+  });
+
+  it.each(["single-pane", "dual-pane", "section-view"] as const)("previews %s colors until saved or dismissed", async (style) => {
+    demoPersistence.set("tigrana-meta:/demo/Tigrana", JSON.stringify({
+      revision: 0, appearance: { navigationStyle: style },
+      folderColorsByNavigationStyle: { [style]: { Ideas: "#123456" } },
+    }));
+    const container = document.createElement("div");
+    document.body.appendChild(container);
+    containers.push(container);
+    const root = createRoot(container);
+    const row = () => container.querySelector<HTMLElement>('[data-folder-path="Ideas"]')!;
+    const color = () => style === "section-view"
+      ? row().style.getPropertyValue("--section-color")
+      : row().querySelector<HTMLElement>(style === "single-pane" ? ".unified-folder-name" : ".folder-select")!.style.color;
+    const saved = () => JSON.parse(demoPersistence.get("tigrana-meta:/demo/Tigrana")!).folderColorsByNavigationStyle[style].Ideas;
+    const open = async () => {
+      await act(async () => row().dispatchEvent(new MouseEvent("contextmenu", { bubbles: true, clientX: 30, clientY: 80 })));
+      await act(async () => {
+        [...container.querySelectorAll<HTMLButtonElement>(".context-menu button")]
+          .find(button => button.textContent === (style === "section-view" ? "Change Section Color" : "Change Folder Color"))!.click();
+      });
+    };
+    try {
+      await act(async () => { root.render(<App />); });
+      await settle();
+      const original = color();
+      for (const dismiss of ["Cancel", "Close", "backdrop", "Save"]) {
+        await open();
+        expect(color()).toBe(original);
+        await act(async () => setReactInputValue(container.querySelector<HTMLInputElement>("#property-value")!, "#b51a00"));
+        expect(color()).toBe(style === "section-view" ? "#b51a00" : "rgb(181, 26, 0)");
+        expect(saved()).toBe("#123456");
+        // The text field previews too; incomplete hex input falls back to the saved color.
+        await act(async () => setReactInputValue(container.querySelector<HTMLInputElement>(".color-text")!, "#"));
+        expect(color()).toBe(original);
+        await act(async () => setReactInputValue(container.querySelector<HTMLInputElement>(".color-text")!, "#b51a00"));
+        expect(color()).toBe(style === "section-view" ? "#b51a00" : "rgb(181, 26, 0)");
+        await act(async () => {
+          if (dismiss === "backdrop") {
+            container.querySelector(".dialog-backdrop")!.dispatchEvent(new MouseEvent("mousedown", { bubbles: true }));
+          } else if (dismiss === "Close") {
+            container.querySelector<HTMLButtonElement>('.dialog button[title="Close"]')!.click();
+          } else {
+            [...container.querySelectorAll<HTMLButtonElement>(".dialog button")]
+              .find(button => button.textContent === dismiss)!.click();
+          }
+        });
+        await settle();
+        expect(container.querySelector("#property-value")).toBeNull();
+        expect(saved()).toBe(dismiss === "Save" ? "#b51a00" : "#123456");
+        expect(color()).toBe(dismiss === "Save"
+          ? style === "section-view" ? "#b51a00" : "rgb(181, 26, 0)"
+          : original);
+      }
+    } finally {
+      await act(async () => root.unmount());
+    }
+  });
+
   it("remembers the settings panel across closes for the current session", async () => {
     const container = document.createElement("div");
     document.body.appendChild(container);

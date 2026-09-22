@@ -120,7 +120,9 @@ export type WorkspaceMetadata = {
   noteOrder: Record<string, string[]>;
   pinnedNotes: Record<string, boolean>;
   folderIcons: Record<string, string>;
+  /** Legacy colors, used only by section-view until it has its own map. */
   folderColors: Record<string, string>;
+  folderColorsByNavigationStyle?: Partial<Record<NavigationStyle, Record<string, string>>>;
   noteIcons: Record<string, string>;
   notePositions: Record<string, NotePositionMetadata>;
   noteCreatedAt?: Record<string, number>;
