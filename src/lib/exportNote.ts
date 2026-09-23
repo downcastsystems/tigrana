@@ -1,3 +1,4 @@
+import { renderMath } from "./math";
 import { markdownToHtml } from "./markdown";
 
 export function noteExportFileStem(title: string) {
@@ -16,6 +17,10 @@ export async function buildNoteExportHtml(
   const imageSources = await collectResolvedImageSources(markdown, options.resolveImageSrc);
   const body = markdownToHtml(markdown, {
     resolveImageSrc: (src) => imageSources.get(src) ?? src,
+    renderEquation: (latex, block) => {
+      try { return renderMath(latex, block, "mathml"); }
+      catch { return escapeHtml(latex); }
+    },
   });
   return `<!doctype html>
 <html>

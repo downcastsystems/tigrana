@@ -50,7 +50,7 @@ function choice(group: string, label: string) {
 
 it("keeps the formatting bar open while the palette owns focus and applies colors to the original range", async () => {
   await setup(); await open();
-  expect(document.activeElement).toBe(choice("Text color", "Automatic"));
+  expect(document.activeElement).toBe(choice("Text color", "Theme default"));
   expect(editor.state.selection.from).toBe(1);
   expect(editor.state.selection.to).toBe(9);
   await click(choice("Text color", "Red"));
@@ -92,14 +92,14 @@ it("exposes persistent controls at the caret and resets only future typing", asy
   });
   await click(document.querySelector<HTMLButtonElement>('button[aria-label="Text and highlight colors"]')!);
   await click(choice("Text color", "Red"));
-  expect(document.querySelectorAll('.editor-color-controls button')).toHaveLength(1);
+  expect(document.querySelectorAll('.editor-color-controls button[aria-haspopup]')).toHaveLength(1);
   const beforeTyping = renders;
   await act(async () => { editor.view.dispatch(editor.state.tr.insertText(" red")); });
   await act(async () => { editor.view.dispatch(editor.state.tr.insertText(" again")); });
   expect(renders).toBe(beforeTyping);
   expect(document.querySelector('.editor-color-controls button')?.classList.contains("is-active")).toBe(true);
   await open();
-  await click(choice("Text color", "Automatic"));
+  await click(choice("Text color", "Theme default"));
   await act(async () => { editor.view.dispatch(editor.state.tr.insertText(" plain")); });
   expect(document.querySelector('.editor-color-controls button')?.classList.contains("is-active")).toBe(false);
   const nodes = editor.state.doc.firstChild!.content.content;
@@ -129,4 +129,18 @@ it("clears the highlight indicator on Enter and disables controls for read-only 
     root.render(<EditorColorControls editor={editor} disabled />);
   });
   expect([...document.querySelectorAll<HTMLButtonElement>('.editor-color-controls button')].every(button => button.disabled)).toBe(true);
+});
+
+it("disables color controls and closes the palette when title editing disables colors", async () => {
+  await setup();
+  await act(async () => root.render(<EditorColorControls editor={editor} />));
+  await open();
+  await act(async () => root.render(<EditorColorControls editor={editor} disabled />));
+  expect(mount.querySelector<HTMLButtonElement>('button')!.disabled).toBe(true);
+  expect(document.querySelector('.inline-color-palette')).toBeNull();
+  await act(async () => root.render(<EditorColorControls editor={editor} />));
+  expect(mount.querySelector<HTMLButtonElement>('button')!.disabled).toBe(false);
+  expect(document.querySelector('.inline-color-palette')).toBeNull();
+  await open(); await click(choice("Text color", "Red"));
+  expect(editor.getAttributes("textColor").color).toBe("#a83232");
 });

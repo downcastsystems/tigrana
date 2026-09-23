@@ -16,3 +16,11 @@ These files are copied into `dist/licenses/` by the frontend build and included 
 Names such as Georgia, Menlo, Consolas, Segoe UI, and system-ui in CSS are fallbacks to fonts already installed on the user's computer. Tigrana does not redistribute those font files or American Typewriter.
 
 Before adding or replacing a bundled font, review its redistribution terms, retain its original notices, and update this inventory and the build's font-license check. User-imported themes are not covered by this inventory; their creators must have redistribution rights for included assets.
+
+KaTeX's equation fonts (AMS, Caligraphic, Fraktur, Main, Math, SansSerif,
+Script, Size1–Size4, and Typewriter) ship with `katex` 0.18.9 under the
+[SIL Open Font License 1.1](KaTeX-Fonts-OFL.txt). The notices were extracted
+from the bundled TTF name tables, retaining every reserved font name and
+copyright notice. The renderer uses the separate [MIT license](KaTeX-MIT.txt).
+Source: https://github.com/KaTeX/KaTeX/tree/v0.18.9/fonts. They are app assets,
+not embedded theme fonts, and are used only for rendered equations.

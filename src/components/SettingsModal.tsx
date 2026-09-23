@@ -129,8 +129,8 @@ export default function SettingsModal(props: {
                       </select>
                     </label>
                     <label className="setting-row">
-                      Note alignment
-                      <select className="settings-select" aria-label="Note alignment" value={props.noteAlignment}
+                      Editor Alignment
+                      <select className="settings-select" aria-label="Editor Alignment" value={props.noteAlignment}
                         onChange={event => props.onNoteAlignmentChange(event.target.value as "left" | "center")}>
                         <option value="left">Align left</option>
                         <option value="center">Align center</option>

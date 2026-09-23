@@ -169,9 +169,9 @@ Text colors and colored highlights use portable inline spans, for example
 Edit menu share nine named choices from `src/lib/inlineColors.json`. The saved
 hex values identify those choices; editor-only CSS variables supply readable
 light/dark shades without rewriting the Note on a theme change. Other accepted
-literal colors keep their exact value. Automatic text color and No highlight
+literal colors keep their exact value. Theme default text color and No highlight
 remove their respective marks and span wrappers. The persistent toolbar has one color icon opening the combined text and highlight
-palette. Automatic and No highlight independently reset each color. With a selection, actions format that range; at the cursor, they
+palette. Theme default text color and No highlight independently reset each color. With a selection, actions format that range; at the cursor, they
 set or clear formatting for subsequent typing without changing earlier text.
 Text color continues through Enter; highlights end on Enter and soft line breaks.
 Other marks retain their existing behavior. Legacy `==text==` highlights
@@ -312,3 +312,14 @@ legacy `folderColors`; the other styles start without custom colors. An
 explicit empty map preserves a reset without reviving legacy colors. Folder
 moves and renames repair paths in every style, and deletion removes them.
 Folder icons remain shared in `folderIcons`.
+
+### Equations
+
+Inline and block equation atoms retain LaTeX source in a `latex` attribute.
+Markdown uses `$...$` and standalone `$$` fences; parsing protects formulas from
+inline formatting and leaves code/currency literal. KaTeX renders only the
+changed equation node, with trusted HTML disabled and expansion limits.
+Ordinary typing does not rerender existing equations or publish dialog state.
+The equation dialog previews examples and inserts/updates a single transaction;
+Note replacement dismisses it to avoid applying stale ranges. HTML export emits
+MathML without remote dependencies. See [the equation guide](equations.md).

@@ -619,7 +619,7 @@ it("edits Twain writing defaults and reflects them in the preview", async () => 
     await act(async () => root.render(<ThemeBuilder current={theme} seed={theme} onApply={vi.fn()} />));
     await act(async () => button(host, "Edit theme").click());
     const width = [...host.querySelectorAll('label')].find(label => label.textContent?.includes('Default editor width'))!.querySelector('select')!;
-    const alignment = [...host.querySelectorAll('label')].find(label => label.textContent?.includes('Default note alignment'))!.querySelector('select')!;
+    const alignment = [...host.querySelectorAll('label')].find(label => label.textContent?.includes('Default Editor Alignment'))!.querySelector('select')!;
     expect(width.value).toBe('');
     expect(alignment.value).toBe('');
     const preview = host.querySelector('[aria-label="dark full theme preview"]')!.shadowRoot!;

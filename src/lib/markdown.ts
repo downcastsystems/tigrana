@@ -16,6 +16,7 @@ const escapeHtml = (value: string) =>
 
 type MarkdownOptions = {
   resolveImageSrc?: (src: string) => string;
+  renderEquation?: (latex: string, block: boolean) => string;
 };
 
 // Internal marker used to represent a hard line break (Shift+Enter) inside a
@@ -33,6 +34,17 @@ const inlineMarkdownToHtml = (value: string, options: MarkdownOptions = {}) => {
   while (html.includes(codeToken)) codeToken += "\u0000";
   html = html.replace(/`([^`]+)`/g, (_match, code: string) => {
     const index = codeSpans.push(`<code>${code}</code>`) - 1;
+    return `${codeToken}${index}${codeToken}`;
+  });
+  // Protect TeX before emphasis, links and other inline Markdown can rewrite it.
+  // Delimiter whitespace and following digits distinguish common currency text.
+  html = html.replace(/(?<![\\$])\$(?![\s$])((?:\\.|[^$\\\n])+?)(?<!\s)\$(?![\d$])/g, (match, latex: string, offset: number, sourceHtml: string) => {
+    // Dollar signs in link/image destinations are part of the URL.
+    const prefix = sourceHtml.slice(0, offset);
+    if (prefix.lastIndexOf("](") > prefix.lastIndexOf(")")) return match;
+    const source = latex.replace(/&quot;/g, '"').replace(/&lt;/g, "<").replace(/&gt;/g, ">").replace(/&amp;/g, "&");
+    const rendered = options.renderEquation?.(source, false) ?? latex;
+    const index = codeSpans.push(`<span data-type="inlineMath" data-latex="${latex}">${rendered}</span>`) - 1;
     return `${codeToken}${index}${codeToken}`;
   });
   // Markdown has no underline delimiter. Accept only the bare HTML pair we emit,
@@ -224,6 +236,7 @@ export function markdownToHtml(markdown: string, options: MarkdownOptions = {}) 
     const trimmed = raw.trim();
     if (!trimmed) return true;
     if (trimmed.startsWith("```")) return true;
+    if (trimmed.startsWith("$$")) return true;
     if (isTableRow(raw)) return true;
     if (/^(#{1,6})\s+/.test(trimmed)) return true;
     if (/^---+$/.test(trimmed)) return true;
@@ -302,6 +315,22 @@ export function markdownToHtml(markdown: string, options: MarkdownOptions = {}) 
       codeFence = openingFence;
       i += 1;
       continue;
+    }
+
+    if (line.trim().startsWith("$$")) {
+      const trimmed = line.trim();
+      const single = trimmed.length > 4 && trimmed.endsWith("$$");
+      let end = i + 1;
+      if (trimmed === "$$") {
+        while (end < lines.length && lines[end].trim() !== "$$") end++;
+      }
+      if (single || (trimmed === "$$" && end < lines.length)) {
+        closeList(); closeTable(); flushBlankParagraphs();
+        const latex = single ? trimmed.slice(2, -2).trim() : lines.slice(i + 1, end).join("\n");
+        html.push(`<div data-type="blockMath" data-latex="${escapeHtml(latex)}">${options.renderEquation?.(latex, true) ?? escapeHtml(latex)}</div>`);
+        i = single ? i + 1 : end + 1;
+        continue;
+      }
     }
 
     if (startsHtmlTable(line)) {
@@ -486,6 +515,10 @@ function inlineHtmlToMarkdown(element: Element): string {
       value += HARD_BREAK_PLACEHOLDER;
       return;
     }
+    if (node.getAttribute("data-type") === "inlineMath") {
+      value += `$${node.getAttribute("data-latex") ?? ""}$`;
+      return;
+    }
     if (tag === "span" && node.getAttribute("data-type") === "emoji") {
       const name = node.getAttribute("data-name");
       value += name ? `:${name}:` : node.textContent ?? "";
@@ -562,7 +595,9 @@ export function htmlToMarkdown(html: string) {
   blocks.forEach((block, index) => {
     const tag = block.tagName.toLowerCase();
 
-    if (/^h[1-6]$/.test(tag)) {
+    if (block.getAttribute("data-type") === "blockMath") {
+      markdown.push(`$$\n${block.getAttribute("data-latex") ?? ""}\n$$`);
+    } else if (/^h[1-6]$/.test(tag)) {
       const level = Number(tag.slice(1));
       markdown.push(`${"#".repeat(level)} ${inlineHtmlToMarkdown(block)}`);
     } else if (tag === "p") {
@@ -594,7 +629,7 @@ export function htmlToMarkdown(html: string) {
       markdown.push("---");
     } else if (tag === "ul" || tag === "ol") {
       markdown.push(serializeList(block, 0));
-    } else if (tag === "table" && block.getAttribute("data-tigrana-table") === "true") {
+    } else if (tag === "table" && (block.getAttribute("data-tigrana-table") === "true" || block.querySelector('[data-type="inlineMath"], [data-type="blockMath"]'))) {
       markdown.push(serializeTigranaHtmlTable(block));
     } else if (tag === "table") {
       // Handle both standard <thead>/<tbody> and TipTap's tbody-only structure

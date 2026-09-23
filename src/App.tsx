@@ -1,3 +1,4 @@
+import { EditorOptionsSubmenu } from "./components/EditorOptionsSubmenu";
 import { isInlineColorCommand, type InlineColorCommand } from "./lib/inlineColors";
 import { resolveThemeVariant } from "./lib/themes";
 import { themeFamily } from "./lib/themeFamilies";
@@ -45,12 +46,14 @@ import {
   Folder,
   FolderOpen,
   History,
+  Image as ImageIcon,
   LayoutList,
   Link2,
   Lock,
   Mic,
   MoveRight,
   Palette,
+  Paintbrush,
   PanelLeftClose,
   PanelLeftOpen,
   PanelRightClose,
@@ -60,6 +63,7 @@ import {
   Plus,
   RotateCcw,
   Search,
+  Sigma,
   Settings,
   Square,
   Trash2,
@@ -378,6 +382,7 @@ type RightSidebarMode = "outline" | "frontmatter" | "properties" | "backlinks";
 type EditorCommand =
   | InlineColorCommand
   | SortCommand
+  | "equation"
   | "bold"
   | "italic"
   | "strike"
@@ -526,6 +531,8 @@ export default function App() {
   const [frontmatterError, setFrontmatterError] = useState<string | null>(null);
   const [activeNoteAccess, setActiveNoteAccess] = useState<ActiveNoteAccess>("editable");
   const [noteLockMessage, setNoteLockMessage] = useState<string | null>(null);
+  const [contentsActive, setContentsActive] = useState(false);
+  const [titleFocused, setTitleFocused] = useState(false);
   const [hasEditorSelection, setHasEditorSelection] = useState(false);
   const [selectedEditorText, setSelectedEditorText] = useState("");
   const [editorRestorePosition, setEditorRestorePosition] = useState<NotePositionMetadata | null>(null);
@@ -1261,6 +1268,23 @@ export default function App() {
   }, [applyAppZoomCommand]);
 
   useEffect(() => {
+    const trackContents = (event: Event) => {
+      const target = event.target;
+      if (!(target instanceof Element)) return;
+      // Editor menus and pane toggles retain the last editing target.
+      if (target.closest(".note-view-menu, .outline-toggle, .sidebar-toggle")) return;
+      setContentsActive(!!target.closest(".ProseMirror"));
+    };
+    document.addEventListener("focusin", trackContents);
+    document.addEventListener("mousedown", trackContents, true);
+    return () => {
+      document.removeEventListener("focusin", trackContents);
+      document.removeEventListener("mousedown", trackContents, true);
+    };
+  }, []);
+  useEffect(() => { setContentsActive(!!document.activeElement?.closest(".ProseMirror")); }, [activePath]);
+
+  useEffect(() => {
     if (!isTauri()) return;
     const label = getCurrentWindow().label;
     const state: AppMenuState = {
@@ -1268,6 +1292,8 @@ export default function App() {
       hasOpenNote,
       activeNoteEditable,
       hasEditorSelection,
+      titleFocused,
+      contentsActive,
       hasUnsavedChanges,
       rawMarkdownVisible: rawMarkdownVisible || Boolean(frontmatterError),
       leftVisible,
@@ -1288,6 +1314,8 @@ export default function App() {
   }, [
     activeNoteEditable,
     hasEditorSelection,
+    titleFocused,
+    contentsActive,
     navigationStyle,
     editorWidthMode,
     frontmatterError,
@@ -1992,6 +2020,7 @@ export default function App() {
   }
 
   function requestEditorCommand(command: EditorCommand, payload: Partial<EditorCommandRequest> = {}) {
+    if (isInlineColorCommand(command) && (titleFocused || document.activeElement === titleInputRef.current)) return;
     setEditorCommandRequest({ id: Date.now() + Math.random(), command, ...payload });
   }
 
@@ -2192,6 +2221,9 @@ export default function App() {
         break;
       case "align_center":
         updateNotebookAppearance({ noteAlignment: "center" });
+        break;
+      case "format_equation":
+        if (contentsActive && activeNoteEditable && !rawMarkdownVisible && !frontmatterError) requestEditorCommand("equation");
         break;
       case "format_image":
         void requestImage().then((pick) => {
@@ -5003,7 +5035,16 @@ export default function App() {
               >
                 <Search size={17} />
               </button>
-              <div className="editor-color-toolbar-slot" ref={setColorToolbarElement} />
+              <div className="editor-color-toolbar-slot" ref={setColorToolbarElement}>
+                {rawMarkdownVisible || frontmatterError ? (
+                  <div className="editor-color-controls" role="group" aria-label="Text formatting">
+                    <button type="button" className="icon-button" disabled
+                      title="Text and highlight colors" aria-label="Text and highlight colors" aria-haspopup="menu" aria-expanded={false}>
+                      <Paintbrush size={17} />
+                    </button>
+                  </div>
+                ) : null}
+              </div>
               <button
                 className={`icon-button ${focusModeActive ? "is-active" : ""}`}
                 type="button"
@@ -5013,16 +5054,6 @@ export default function App() {
                 onClick={toggleEditorFocusMode}
               >
                 <Focus size={17} />
-              </button>
-              <button
-                className={`icon-button ${rawMarkdownVisible || frontmatterError ? "is-active" : ""}`}
-                type="button"
-                title={rawMarkdownVisible ? "Show rich editor" : "Show raw Markdown"}
-                aria-label={rawMarkdownVisible ? "Show rich editor" : "Show raw Markdown"}
-                aria-pressed={rawMarkdownVisible || Boolean(frontmatterError)}
-                onClick={toggleRawMarkdownMode}
-              >
-                <FileCode2 size={17} />
               </button>
               <div className="note-view-control note-view-menu">
                 <button
@@ -5041,6 +5072,19 @@ export default function App() {
                 </button>
                 {widthMenuOpen ? (
                   <div className="note-view-dropdown" role="menu" aria-label="Editor options">
+                    <EditorOptionsSubmenu label="Insert" disabled={!contentsActive || !activeNoteEditable || rawMarkdownVisible || Boolean(frontmatterError)}>
+                      <button type="button" role="menuitem"
+                        onMouseDown={event => event.preventDefault()}
+                        onClick={() => { void handleMenuCommand("format_image"); setWidthMenuOpen(false); }}>
+                        <span><strong>Image</strong></span><ImageIcon size={16} />
+                      </button>
+                      <button type="button" role="menuitem"
+                        onMouseDown={event => event.preventDefault()}
+                        onClick={() => { requestEditorCommand("equation"); setWidthMenuOpen(false); }}>
+                        <span><strong>Equation</strong></span><Sigma size={16} />
+                      </button>
+                    </EditorOptionsSubmenu>
+                    <div className="note-view-menu-divider" />
                     <button
                       type="button"
                       className={focusModeActive ? "is-active" : ""}
@@ -5094,7 +5138,7 @@ export default function App() {
                       </button>
                     ))}
                     <div className="note-view-menu-divider" />
-                    <div className="note-view-menu-label">Alignment</div>
+                    <EditorOptionsSubmenu label="Editor Alignment">
                     {(["left", "center"] as const).map((alignment) => (
                       <button
                         key={alignment}
@@ -5102,14 +5146,15 @@ export default function App() {
                         className={alignment === noteAlignment ? "is-active" : ""}
                         role="menuitemradio"
                         aria-checked={alignment === noteAlignment}
-                        onClick={() => updateNotebookAppearance({ noteAlignment: alignment })}
+                        onClick={() => { updateNotebookAppearance({ noteAlignment: alignment }); setWidthMenuOpen(false); }}
                       >
                         <span>
-                          <strong>{alignment === "left" ? "Align left" : "Align center"}</strong>
+                          <strong>{alignment === "left" ? "Left" : "Center"}</strong>
                         </span>
                         {alignment === noteAlignment ? <Check size={15} /> : null}
                       </button>
                     ))}
+                    </EditorOptionsSubmenu>
                   </div>
                 ) : null}
               </div>
@@ -5133,6 +5178,7 @@ export default function App() {
               <textarea
                 ref={titleInputRef}
                 className="note-title-input"
+                onFocus={() => setTitleFocused(true)}
                 value={titleDraft}
                 disabled={!activeNoteEditable}
                 onChange={(event) => {
@@ -5141,6 +5187,7 @@ export default function App() {
                   setTitleDraft(event.target.value);
                 }}
                 onBlur={() => {
+                  setTitleFocused(false);
                   disarmUndoableNewNote(activePath);
                   if (titleEscapeUndoInFlightRef.current) return;
                   if (titleCommitInFlightRef.current) return;
@@ -5272,6 +5319,7 @@ export default function App() {
               <EditorErrorBoundary resetKey={activePath ?? "pending-note"} onError={handleNoteLoadError}>
                 <NotesEditor
                   colorToolbarElement={colorToolbarElement}
+                  colorsDisabled={titleFocused}
                   content={draft}
                   focusRequest={editorFocusRequest}
                   focusAtEndRequest={editorFocusAtEndRequest}

@@ -125,13 +125,17 @@ vi.mock("./editor/NotesEditor", () => ({
     content,
     notePath,
     onChange,
+    colorsDisabled,
   }: {
     content: string;
+    colorsDisabled?: boolean;
     notePath: string | null;
     onChange: (markdown: string, sourceNotePath: string | null) => void;
   }) => (
     <textarea
+      className="ProseMirror"
       aria-label="Test note body"
+      data-colors-disabled={colorsDisabled}
       value={content}
       onChange={(event) => onChange(event.target.value, notePath)}
     />
@@ -314,6 +318,74 @@ describe("Note navigation persistence", () => {
     }
   });
 
+  it("disables body colors while the title is focused and restores them in the body", async () => {
+    const container = document.createElement("div");
+    document.body.appendChild(container); containers.push(container);
+    const root = createRoot(container);
+    try {
+      await act(async () => { root.render(<App />); await new Promise(resolve => window.setTimeout(resolve, 50)); });
+      const title = container.querySelector<HTMLTextAreaElement>('[aria-label="Note title"]')!;
+      const body = container.querySelector<HTMLTextAreaElement>('[aria-label="Test note body"]')!;
+      await act(async () => title.focus());
+      expect(body.dataset.colorsDisabled).toBe("true");
+      await act(async () => body.focus());
+      expect(body.dataset.colorsDisabled).toBe("false");
+      await act(async () => title.focus());
+      expect(body.dataset.colorsDisabled).toBe("true");
+    } finally { await act(async () => root.unmount()); }
+  });
+
+  it("enables Insert only from note contents and opens the shared image dialog", async () => {
+    const container = document.createElement("div"); document.body.appendChild(container); containers.push(container);
+    const root = createRoot(container);
+    try {
+      await act(async () => { root.render(<App />); await new Promise(resolve => window.setTimeout(resolve, 50)); });
+      const title = container.querySelector<HTMLTextAreaElement>('[aria-label="Note title"]')!;
+      const body = container.querySelector<HTMLTextAreaElement>('[aria-label="Test note body"]')!;
+      await act(async () => title.focus());
+      await act(async () => container.querySelector<HTMLButtonElement>('[aria-label="Editor options"]')!.click());
+      const insert = [...container.querySelectorAll<HTMLButtonElement>('[role="menuitem"]')].find(button => button.textContent === "Insert")!;
+      expect(insert.disabled).toBe(true);
+      await act(async () => body.focus());
+      expect(insert.disabled).toBe(false);
+      await act(async () => insert.focus());
+      expect(insert.disabled).toBe(false);
+      await act(async () => insert.click());
+      const options = [...container.querySelectorAll<HTMLButtonElement>('[role="menu"][aria-label="Insert"] button')];
+      expect(options.map(button => button.textContent)).toEqual(["Image", "Equation"]);
+      await act(async () => options[0].click());
+      expect([...document.querySelectorAll('h2')].some(heading => heading.textContent === "Insert image")).toBe(true);
+    } finally { await act(async () => root.unmount()); }
+  });
+
+  it("preserves Insert availability through outline toggles without enabling it from the title", async () => {
+    const container = document.createElement("div"); document.body.appendChild(container); containers.push(container);
+    const root = createRoot(container);
+    try {
+      await act(async () => { root.render(<App />); await new Promise(resolve => window.setTimeout(resolve, 50)); });
+      const body = container.querySelector<HTMLTextAreaElement>('[aria-label="Test note body"]')!;
+      const title = container.querySelector<HTMLTextAreaElement>('[aria-label="Note title"]')!;
+      const toggle = async () => {
+        await act(async () => {
+          const button = container.querySelector<HTMLButtonElement>('.outline-toggle')!;
+          button.dispatchEvent(new MouseEvent('mousedown', { bubbles: true }));
+          button.focus(); button.click();
+        });
+      };
+      const openInsert = async () => {
+        await act(async () => container.querySelector<HTMLButtonElement>('[aria-label="Editor options"]')!.click());
+        return [...container.querySelectorAll<HTMLButtonElement>('[role="menuitem"]')].find(button => button.textContent === 'Insert')!;
+      };
+      await act(async () => body.focus());
+      await toggle(); await toggle();
+      expect((await openInsert()).disabled).toBe(false);
+      await act(async () => container.querySelector<HTMLButtonElement>('[aria-label="Editor options"]')!.click());
+      await act(async () => title.focus());
+      await toggle(); await toggle();
+      expect((await openInsert()).disabled).toBe(true);
+    } finally { await act(async () => root.unmount()); }
+  });
+
   it("keeps writing layout and word count through Twain selection, reload, and reselection", async () => {
     localStorage.setItem("tigrana-word-count-visible", "false");
     const container = document.createElement("div");
@@ -341,7 +413,9 @@ describe("Note navigation persistence", () => {
       expect(container.querySelector(".note-status-bar")).toBeNull();
       await act(async () => container.querySelector<HTMLButtonElement>('[aria-label="Close settings"]')!.click());
       await act(async () => container.querySelector<HTMLButtonElement>('[aria-label="Editor options"]')!.click());
-      for (const text of ["Full Width", "Align left"]) {
+      await act(async () => { Array.from(container.querySelectorAll<HTMLButtonElement>('[role="menuitemradio"]')).find(b => b.textContent?.includes("Full Width"))!.click(); });
+      await act(async () => { Array.from(container.querySelectorAll<HTMLButtonElement>('[role="menuitem"]')).find(b => b.textContent === "Editor Alignment")!.click(); });
+      for (const text of ["Left"]) {
         await act(async () => { Array.from(container.querySelectorAll<HTMLButtonElement>('[role="menuitemradio"]')).find(b => b.textContent?.includes(text))!.click(); });
       }
       await waitFor(() => {
@@ -1794,9 +1868,10 @@ describe("Note navigation persistence", () => {
     const editorOptions = container.querySelector<HTMLButtonElement>('button[title="Editor options"]');
     const rightToggle = container.querySelector<HTMLButtonElement>(".outline-toggle");
 
-    expect(findButton?.nextElementSibling).toBe(focusButton);
-    expect(focusButton?.nextElementSibling).toBe(markdownButton);
-    expect(markdownButton?.nextElementSibling?.contains(editorOptions ?? null)).toBe(true);
+    expect(findButton?.nextElementSibling).toBe(container.querySelector(".editor-color-toolbar-slot"));
+    expect(findButton?.nextElementSibling?.nextElementSibling).toBe(focusButton);
+    expect(markdownButton).toBeNull();
+    expect(focusButton?.nextElementSibling?.contains(editorOptions ?? null)).toBe(true);
     expect(focusButton?.getAttribute("aria-pressed")).toBe("false");
 
     await act(async () => editorOptions?.click());
@@ -1838,7 +1913,7 @@ describe("Note navigation persistence", () => {
     await act(async () => root.unmount());
   });
 
-  it("offers raw Markdown in both the editor toolbar and editor options", async () => {
+  it("offers raw Markdown in editor options without a toolbar button", async () => {
     demoPersistence.set("tigrana-demo-v5", JSON.stringify({
       folders: [],
       notes: {
@@ -1857,12 +1932,18 @@ describe("Note navigation persistence", () => {
 
     const markdownButton = container.querySelector<HTMLButtonElement>('button[aria-label="Show raw Markdown"]');
     const editorOptions = container.querySelector<HTMLButtonElement>('button[title="Editor options"]');
-    expect(markdownButton?.getAttribute("aria-pressed")).toBe("false");
-
-    await act(async () => markdownButton?.click());
+    expect(markdownButton).toBeNull();
+    await act(async () => editorOptions?.click());
+    const showMarkdown = Array.from(container.querySelectorAll<HTMLButtonElement>('[role="menuitemcheckbox"]'))
+      .find(button => button.textContent?.includes("Show raw Markdown"))!;
+    expect(showMarkdown.getAttribute("aria-checked")).toBe("false");
+    await act(async () => showMarkdown.click());
     expect(container.querySelector('textarea[aria-label="Raw Markdown"]')).not.toBeNull();
-    expect(markdownButton?.getAttribute("aria-label")).toBe("Show rich editor");
-    expect(markdownButton?.getAttribute("aria-pressed")).toBe("true");
+    expect(container.querySelector('button[aria-label="Show rich editor"]')).toBeNull();
+    const colorButton = container.querySelector<HTMLButtonElement>('.editor-color-toolbar-slot button');
+    expect(colorButton?.getAttribute("aria-label")).toBe("Text and highlight colors");
+    expect(colorButton?.disabled).toBe(true);
+    expect(container.querySelector('.editor-color-toolbar-slot')?.nextElementSibling?.getAttribute('aria-label')).toBe('Enter focus mode');
 
     await act(async () => editorOptions?.click());
     const markdownMenuItem = Array.from(container.querySelectorAll<HTMLButtonElement>('[role="menuitemcheckbox"]'))
@@ -1873,8 +1954,7 @@ describe("Note navigation persistence", () => {
 
     expect(container.querySelector('textarea[aria-label="Raw Markdown"]')).toBeNull();
     expect(container.querySelector('textarea[aria-label="Test note body"]')).not.toBeNull();
-    expect(markdownButton?.getAttribute("aria-label")).toBe("Show raw Markdown");
-    expect(markdownButton?.getAttribute("aria-pressed")).toBe("false");
+    expect(container.querySelector('button[aria-label="Show raw Markdown"]')).toBeNull();
 
     await act(async () => root.unmount());
   });

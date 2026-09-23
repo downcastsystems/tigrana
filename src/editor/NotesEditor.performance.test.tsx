@@ -85,6 +85,36 @@ describe("Note editor typing performance", () => {
     expect(onChange).not.toHaveBeenCalled();
   });
 
+  it("previews resize locally and persists the final equation size in the full editor", async () => {
+    vi.useFakeTimers();
+    const container = document.createElement("div"); document.body.appendChild(container);
+    const root = createRoot(container); mounted.push({ container, root });
+    let handle: EditorPersistenceHandle | null = null;
+    await act(async () => root.render(<NotesEditor content={"$$\nx^2\n$$"} editable findRequest={0}
+      focusAtEndRequest={0} focusRequest={0} historyKey="math" notePath="Math.md"
+      onChange={() => undefined} onLoadError={error => { throw error; }}
+      onPendingChange={() => undefined} onPositionChange={() => undefined}
+      onPersistenceReady={next => { handle = next; }} restorePosition={null} spellcheckEnabled workspace="/Notebook" />));
+    await act(async () => { await vi.advanceTimersByTimeAsync(80); });
+    vi.mocked(htmlToMarkdown).mockClear();
+    const grip = container.querySelector('.equation-resize-handle')!;
+    const pointer = (target: EventTarget, type: string, x: number) => {
+      const event = new MouseEvent(type, { bubbles: true, cancelable: true, button: 0, clientX: x });
+      Object.defineProperty(event, "pointerId", { value: 1 }); target.dispatchEvent(event);
+    };
+    await act(async () => {
+      pointer(grip, 'pointerdown', 200);
+      for (const x of [180, 160, 140, 120, 104]) pointer(document, 'pointermove', x);
+    });
+    expect(htmlToMarkdown).not.toHaveBeenCalled();
+    expect(handle!.capture()).toBeNull();
+    await act(async () => pointer(document, 'pointerup', 104));
+    let markdown: string | undefined;
+    await act(async () => { markdown = handle!.capture()?.markdown; });
+    expect(markdown).toContain(String.raw`{\scriptsize x^2 }`);
+    expect(htmlToMarkdown).toHaveBeenCalledTimes(1);
+  });
+
   it("keeps the keyboard-selected slash command in view", async () => {
     const container = document.createElement("div");
     document.body.appendChild(container);

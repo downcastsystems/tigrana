@@ -1,3 +1,7 @@
+import { writeRichClipboard } from "../lib/richClipboard";
+import { EquationContextMenu } from "./EquationContextMenu";
+import { BlockMath, InlineMath, requestEquation } from "./mathNodes";
+import { EquationDialog } from "./EquationDialog";
 import { isSortCommand, sortSelectedLines, type SortCommand } from "./sortLines";
 import { closeHistory } from "@tiptap/pm/history";
 import { CodeBlockLowlight } from "@tiptap/extension-code-block-lowlight";
@@ -26,7 +30,7 @@ import {
   CheckSquare,
   Code,
   Copy,
-  Eraser,
+  RemoveFormatting,
   Heading1,
   Heading2,
   Heading3,
@@ -42,6 +46,7 @@ import {
   Quote,
   Search,
   Scissors,
+  Sigma,
   Strikethrough,
   Underline,
   Trash2,
@@ -63,6 +68,7 @@ const { readAssetDataUrl, saveAsset, saveClipboardImageAsset } = notebookStorage
 
 type NotesEditorProps = {
   colorToolbarElement?: HTMLElement | null;
+  colorsDisabled?: boolean;
   content: string;
   commandRequest?: EditorCommandRequest | null;
   focusRequest: number;
@@ -103,6 +109,7 @@ export type PendingEditorChange = {
 export type EditorCommand =
   | InlineColorCommand
   | SortCommand
+  | "equation"
   | "bold"
   | "italic"
   | "strike"
@@ -2459,7 +2466,7 @@ const MarkdownImage = Image.extend({
   },
 });
 
-export function NotesEditor({ colorToolbarElement, content, commandRequest, focusRequest, focusAtEndRequest, findRequest, historyKey, reloadRequest, notePath, restorePosition, editable, spellcheckEnabled, workspace, onChange, onPendingChange, onPersistenceReady, onLoadError, onPositionChange, onInternalLinkClick, onRequestEmoji, onRequestLink, onRequestImage }: NotesEditorProps) {
+export function NotesEditor({ colorsDisabled = false, colorToolbarElement, content, commandRequest, focusRequest, focusAtEndRequest, findRequest, historyKey, reloadRequest, notePath, restorePosition, editable, spellcheckEnabled, workspace, onChange, onPendingChange, onPersistenceReady, onLoadError, onPositionChange, onInternalLinkClick, onRequestEmoji, onRequestLink, onRequestImage }: NotesEditorProps) {
   const [slash, setSlash] = useState<SlashState | null>(null);
   const [findOpen, setFindOpen] = useState(false);
   const [replaceOpen, setReplaceOpen] = useState(false);
@@ -2552,6 +2559,8 @@ export function NotesEditor({ colorToolbarElement, content, commandRequest, focu
       CodeBlockWithControls.configure({ lowlight }),
       TextColor,
       ColorHighlight,
+      InlineMath,
+      BlockMath,
       EmojiText,
       SearchHighlight,
       EmSpaceIndent,
@@ -3047,6 +3056,10 @@ export function NotesEditor({ colorToolbarElement, content, commandRequest, focu
 
   const applyEditorCommand = useCallback((request: EditorCommandRequest) => {
     if (!editor) return;
+    if (request.command === "equation") {
+      requestEquation(editor);
+      return;
+    }
     if (isInlineColorCommand(request.command)) {
       applyInlineColor(editor, request.command);
       return;
@@ -3225,7 +3238,9 @@ export function NotesEditor({ colorToolbarElement, content, commandRequest, focu
         }
       }}
     >
-      {editor && colorToolbarElement ? createPortal(<EditorColorControls editor={editor} disabled={!editable} />, colorToolbarElement) : null}
+      {editor && colorToolbarElement ? createPortal(<EditorColorControls editor={editor} disabled={!editable || colorsDisabled} />, colorToolbarElement) : null}
+      {editor ? <EquationContextMenu editor={editor} disabled={!editable} /> : null}
+      {editor ? <EquationDialog editor={editor} disabled={!editable} /> : null}
       {editor ? <FormattingBubbleMenu editor={editor} onRequestLink={onRequestLink} /> : null}
       {findOpen ? (
         <div className={replaceOpen ? "note-find-bar has-replace" : "note-find-bar"}>
@@ -3587,7 +3602,8 @@ export function FormattingBubbleMenu({
     { label: "Strikethrough", icon: Strikethrough, active: editor.isActive("strike"), run: () => editor.chain().focus().toggleStrike().run() },
     { label: "Code", icon: Code, active: editor.isActive("code"), run: () => editor.chain().focus().toggleCode().run() },
     { label: "Link", icon: LinkIcon, active: editor.isActive("link"), run: setLink },
-    { label: "Clear formatting", icon: Eraser, active: false, run: () => editor.chain().focus().unsetAllMarks().clearNodes().run() },
+    { label: "Insert equation", icon: Sigma, active: false, run: () => requestEquation(editor, { block: false }) },
+    { label: "Clear formatting", icon: RemoveFormatting, active: false, run: () => editor.chain().focus().unsetAllMarks().clearNodes().run() },
     { label: "H1", icon: Heading1, active: editor.isActive("heading", { level: 1 }), run: () => editor.chain().focus().toggleHeading({ level: 1 }).run() },
     { label: "H2", icon: Heading2, active: editor.isActive("heading", { level: 2 }), run: () => editor.chain().focus().toggleHeading({ level: 2 }).run() },
     { label: "H3", icon: Heading3, active: editor.isActive("heading", { level: 3 }), run: () => editor.chain().focus().toggleHeading({ level: 3 }).run() },
@@ -4335,18 +4351,6 @@ function normalizeTableClipboardHtml(html: string) {
   return container.innerHTML;
 }
 
-async function writeRichClipboard(html: string, plainText: string) {
-  if (navigator.clipboard.write && typeof ClipboardItem !== "undefined") {
-    await navigator.clipboard.write([
-      new ClipboardItem({
-        "text/html": new Blob([html], { type: "text/html" }),
-        "text/plain": new Blob([plainText], { type: "text/plain" }),
-      }),
-    ]);
-    return;
-  }
-  await navigator.clipboard.writeText(plainText);
-}
 
 export function isInternalNotebookHref(href: string) {
   if (!href) return false;
