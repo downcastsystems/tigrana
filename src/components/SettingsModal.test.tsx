@@ -81,7 +81,7 @@ it.each(["Create theme", "Edit theme"])(
       expect(resetAppearance).toHaveBeenCalledOnce();
       expect(host.textContent).not.toContain("Plasma glass panes");
       await click(action);
-      expect(host.textContent).toContain("Plasma UI by default");
+      expect(host.textContent).toContain("Enable Plasma UI");
       expect(host.querySelector('[aria-label="Theme name"]')).not.toBeNull();
       expect(
         host.querySelector(".settings-preview-host .theme-workbench-preview"),

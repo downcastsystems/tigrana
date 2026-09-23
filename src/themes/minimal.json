@@ -6,7 +6,7 @@
   "appFontFamily": "system-ui, -apple-system, BlinkMacSystemFont, \"Segoe UI\", sans-serif",
   "editorFontFamily": "system-ui, -apple-system, BlinkMacSystemFont, \"Segoe UI\", sans-serif",
   "appFontSize": 14,
-  "editorFontSize": 17,
+  "editorFontSize": 16,
   "accentTitlebar": false,
   "plasma": {
     "enabled": false,

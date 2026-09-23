@@ -73,7 +73,7 @@ export function ThemeSurfacesEditor({ theme, mode, change }: {
             })
           }
         />
-        Plasma UI by default
+        Enable Plasma UI
       </label>
       <p className="settings-description">
         These settings belong to this theme and apply when you select it. Preview both light and dark modes before saving.
