@@ -59,6 +59,8 @@ describe("Note editor typing performance", () => {
     "```typescript\nconst code =  1;\n  // keep indentation\n```",
     "> Quoted text\n\n---\n\n![alt](image.png)",
     "# Heading\n\nText with :smile: and `inline code`.",
+    '<span style="color: #a83232">Colored **text**</span> and <span style="background-color: #dcecdf">highlight</span>.',
+
   ])("does not rewrite unchanged rich content at a save boundary: %s", async (content) => {
     vi.useFakeTimers();
     const container = document.createElement("div");
@@ -564,13 +566,17 @@ describe("Note editor typing performance", () => {
     expect(container.querySelector(".ProseMirror")?.textContent).toBe("Note B");
   });
 
-  it("keeps long-Note typing to one deferred parent update per burst", async () => {
+  it.each([false, true])("keeps long-Note typing to one deferred parent update per burst, with colors: %s", async (colored) => {
     vi.useFakeTimers();
     const container = document.createElement("div");
     document.body.appendChild(container);
     const root = createRoot(container);
     mounted.push({ container, root });
-    const longNote = Array.from({ length: 5_000 }, (_, index) => `word${index}`).join(" ");
+    const plain = Array.from({ length: 5_000 }, (_, index) => `word${index}`).join(" ");
+    const format = (text: string) => colored ? `<span style="color: #a83232">${text}</span>` : text;
+    const longNote = format(plain);
+    const colorToolbarElement = document.createElement("div");
+    container.append(colorToolbarElement);
     let parentRenderCount = 0;
     const committedMarkdown: string[] = [];
 
@@ -585,6 +591,7 @@ describe("Note editor typing performance", () => {
           findRequest={0}
           focusAtEndRequest={0}
           focusRequest={0}
+          colorToolbarElement={colorToolbarElement}
           historyKey="long-note-id"
           notePath="Long.md"
           onChange={(markdown) => {
@@ -610,7 +617,11 @@ describe("Note editor typing performance", () => {
 
     for (const suffix of [" a", " ab", " abc"]) {
       await act(async () => {
-        if (paragraph) paragraph.textContent = `${longNote}${suffix}`;
+        if (paragraph) {
+          // Simulate browser typing inside the active color span.
+          if (colored) paragraph.innerHTML = format(plain + suffix);
+          else paragraph.textContent = `${plain}${suffix}`;
+        }
         paragraph?.dispatchEvent(new InputEvent("input", {
           bubbles: true,
           data: suffix.at(-1) ?? null,
@@ -628,7 +639,7 @@ describe("Note editor typing performance", () => {
     });
 
     expect(committedMarkdown).toHaveLength(1);
-    expect(committedMarkdown[0]).toBe(`${longNote} abc\n`);
+    expect(committedMarkdown[0]).toBe(`${format(plain + " abc")}\n`);
     expect(parentRenderCount).toBe(2);
     expect(container.querySelector(".ProseMirror")).toBe(editorElement);
   });

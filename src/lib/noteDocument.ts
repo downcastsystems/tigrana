@@ -1,3 +1,4 @@
+import { stripInlineColorSpans } from "./inlineColors";
 import { replaceEmojiShortcodes } from "./emoji";
 import { closesMarkdownCodeFence, readMarkdownCodeFence, type MarkdownCodeFence } from "./markdownCodeFence";
 import { measureNoteText, type NoteTextStats } from "./noteTextStats";
@@ -216,7 +217,7 @@ function readFrontmatterFields(frontmatter: string): FrontmatterField[] {
 }
 
 function previewBody(body: string) {
-  return body
+  return stripInlineColorSpans(body)
     .replace(/<\/?u>/gi, "")
     .replace(/\r\n/g, "\n")
     .split("\n")
@@ -254,7 +255,7 @@ export function extractNoteOutline(title: string, body: string): NoteOutlineEntr
 }
 
 function inlineMarkdownToPlainText(value: string) {
-  return replaceEmojiShortcodes(value)
+  return replaceEmojiShortcodes(stripInlineColorSpans(value))
     .replace(/<\/?u>/gi, "")
     .replace(/!\[([^\]]*)]\([^)]*\)/g, "$1")
     .replace(/\[([^\]]+)]\([^)]*\)/g, "$1")

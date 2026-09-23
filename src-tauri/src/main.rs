@@ -1837,6 +1837,35 @@ fn build_app_menu(
     let sort_lines = Submenu::with_items(
         handle, "Sort Lines", can_sort, &[&sort_az, &sort_za, &sort_az_case, &sort_za_case],
     )?;
+    // Share labels and ordering with the editor's palette.
+    #[derive(serde::Deserialize)]
+    struct InlineColorEntry {
+        id: String,
+        label: String,
+    }
+    let colors: Vec<InlineColorEntry> =
+        serde_json::from_str(include_str!("../../src/lib/inlineColors.json"))?;
+    let text_colors = Submenu::new(handle, "Text Color", rich_editable_note)?;
+    text_colors.append(&MenuItem::with_id(
+        handle, "format_textColor_default", "Automatic", rich_editable_note, None::<&str>,
+    )?)?;
+    let highlight_colors = Submenu::new(handle, "Highlight Color", rich_editable_note)?;
+    highlight_colors.append(&MenuItem::with_id(
+        handle, "format_highlightColor_none", "No Highlight", rich_editable_note, None::<&str>,
+    )?)?;
+    highlight_colors.append(&MenuItem::with_id(
+        handle, "format_highlightColor_default", "Theme Default", rich_editable_note, None::<&str>,
+    )?)?;
+    for color in colors {
+        text_colors.append(&MenuItem::with_id(
+            handle, format!("format_textColor_{}", color.id), &color.label,
+            rich_editable_note, None::<&str>,
+        )?)?;
+        highlight_colors.append(&MenuItem::with_id(
+            handle, format!("format_highlightColor_{}", color.id), &color.label,
+            rich_editable_note, None::<&str>,
+        )?)?;
+    }
     let edit_menu = Submenu::with_items(
         handle,
         "Edit",
@@ -1851,6 +1880,8 @@ fn build_app_menu(
             &PredefinedMenuItem::select_all(handle, None)?,
             &PredefinedMenuItem::separator(handle)?,
             &sort_lines,
+            &text_colors,
+            &highlight_colors,
             &PredefinedMenuItem::separator(handle)?,
             &find_note,
             &find_next,
@@ -2350,6 +2381,9 @@ pub fn run() {
             "format_strike" => emit_menu_command(app, "format_strike"),
             "format_code" => emit_menu_command(app, "format_code"),
             "format_highlight" => emit_menu_command(app, "format_highlight"),
+            id if id.starts_with("format_textColor_") || id.starts_with("format_highlightColor_") => {
+                emit_menu_command(app, id)
+            }
             "format_link" => emit_menu_command(app, "format_link"),
             "format_clear" => emit_menu_command(app, "format_clear"),
             "format_paragraph" => emit_menu_command(app, "format_paragraph"),

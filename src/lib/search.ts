@@ -1,3 +1,4 @@
+import { stripInlineColorSpans } from "./inlineColors";
 import Fuse from "fuse.js";
 import type { NoteEntry, NotePositionMetadata, SearchResult } from "../types";
 
@@ -143,7 +144,7 @@ function sortResults(results: SearchResult[], sort: SearchSort) {
 }
 
 function noteBody(markdown: string) {
-  const normalized = markdown.replace(/\r\n/g, "\n");
+  const normalized = stripInlineColorSpans(markdown.replace(/\r\n/g, "\n"));
   if (!normalized.startsWith("---\n")) return normalized;
   const closingIndex = normalized.indexOf("\n---", 4);
   if (closingIndex === -1) return normalized;

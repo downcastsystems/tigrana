@@ -1,3 +1,4 @@
+import { isInlineColorCommand, type InlineColorCommand } from "./lib/inlineColors";
 import { resolveThemeVariant } from "./lib/themes";
 import { themeFamily } from "./lib/themeFamilies";
 import { themeDefaultsPatch, type ThemeDefaultsScope } from "./lib/themeDefaults";
@@ -375,6 +376,7 @@ type ThemePresetId =
   | "plasma-ooze" | "plasma-undertow" | "plasma-witches-brew";
 type RightSidebarMode = "outline" | "frontmatter" | "properties" | "backlinks";
 type EditorCommand =
+  | InlineColorCommand
   | SortCommand
   | "bold"
   | "italic"
@@ -483,6 +485,7 @@ const themePresets = classicThemes.map(theme => ({
 
 export default function App() {
   const initialOpenTargetRef = useRef(readInitialOpenTarget());
+  const [colorToolbarElement, setColorToolbarElement] = useState<HTMLDivElement | null>(null);
   const [workspace, setWorkspace] = useState(() => readInitialWorkspace());
   const [colorScheme, setColorScheme] = useState<ColorScheme>(() => readStoredColorScheme());
   const [prefersDark, setPrefersDark] = useState(() => window.matchMedia?.("(prefers-color-scheme: dark)").matches ?? false);
@@ -5000,6 +5003,7 @@ export default function App() {
               >
                 <Search size={17} />
               </button>
+              <div className="editor-color-toolbar-slot" ref={setColorToolbarElement} />
               <button
                 className={`icon-button ${focusModeActive ? "is-active" : ""}`}
                 type="button"
@@ -5267,6 +5271,7 @@ export default function App() {
             ) : (
               <EditorErrorBoundary resetKey={activePath ?? "pending-note"} onError={handleNoteLoadError}>
                 <NotesEditor
+                  colorToolbarElement={colorToolbarElement}
                   content={draft}
                   focusRequest={editorFocusRequest}
                   focusAtEndRequest={editorFocusAtEndRequest}
@@ -9576,6 +9581,8 @@ function countPlainTextMatches(text: string, query: string) {
 }
 
 function menuFormatCommandToEditorCommand(command: string): EditorCommand | null {
+  const colorCommand = command.replace(/^format_/, "");
+  if (isInlineColorCommand(colorCommand)) return colorCommand;
   const map: Record<string, EditorCommand> = {
     format_bold: "bold",
     format_italic: "italic",

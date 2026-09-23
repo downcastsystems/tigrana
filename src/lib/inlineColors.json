@@ -1,0 +1,11 @@
+[
+  { "id": "gray", "label": "Gray", "text": { "light": "#565650", "dark": "#c7c7bf" }, "highlight": { "light": "#e9e9e5", "dark": "#383834" } },
+  { "id": "brown", "label": "Brown", "text": { "light": "#805139", "dark": "#e3b394" }, "highlight": { "light": "#f0e3d8", "dark": "#45352c" } },
+  { "id": "orange", "label": "Orange", "text": { "light": "#985000", "dark": "#ffc078" }, "highlight": { "light": "#f9e7d2", "dark": "#49351f" } },
+  { "id": "yellow", "label": "Yellow", "text": { "light": "#786000", "dark": "#ebd477" }, "highlight": { "light": "#f7edc3", "dark": "#423b20" } },
+  { "id": "green", "label": "Green", "text": { "light": "#276343", "dark": "#9ed6ad" }, "highlight": { "light": "#dcecdf", "dark": "#283d30" } },
+  { "id": "blue", "label": "Blue", "text": { "light": "#245d91", "dark": "#a0caff" }, "highlight": { "light": "#dfebf8", "dark": "#29394d" } },
+  { "id": "purple", "label": "Purple", "text": { "light": "#704198", "dark": "#d2b4f2" }, "highlight": { "light": "#ede3f5", "dark": "#3b304b" } },
+  { "id": "pink", "label": "Pink", "text": { "light": "#953f70", "dark": "#f0aed2" }, "highlight": { "light": "#f5e0ed", "dark": "#482e3e" } },
+  { "id": "red", "label": "Red", "text": { "light": "#a83232", "dark": "#ffaaa3" }, "highlight": { "light": "#f7e0dc", "dark": "#4b302d" } }
+]

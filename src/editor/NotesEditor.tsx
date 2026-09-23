@@ -2,7 +2,9 @@ import { isSortCommand, sortSelectedLines, type SortCommand } from "./sortLines"
 import { closeHistory } from "@tiptap/pm/history";
 import { CodeBlockLowlight } from "@tiptap/extension-code-block-lowlight";
 import { Extension, InputRule, PasteRule } from "@tiptap/core";
-import { Highlight } from "@tiptap/extension-highlight";
+import { ColorHighlight, TextColor, applyInlineColor } from "./inlineColorMarks";
+import { isInlineColorCommand, type InlineColorCommand } from "../lib/inlineColors";
+import { EditorColorControls, InlineColorPicker } from "./InlineColorPicker";
 import { Image } from "@tiptap/extension-image";
 import { TaskItem, TaskList } from "@tiptap/extension-list";
 import { Table, TableCell, TableHeader, TableRow } from "@tiptap/extension-table";
@@ -31,7 +33,6 @@ import {
   Heading4,
   Heading5,
   Heading6,
-  Highlighter,
   Italic,
   Link as LinkIcon,
   List,
@@ -48,7 +49,7 @@ import {
 } from "lucide-react";
 import { common, createLowlight } from "lowlight";
 import { createPortal } from "react-dom";
-import { type CSSProperties, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { Fragment, type CSSProperties, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { ensureParagraphAfterCurrentTable, filterSlashCommands, markCurrentTableAsTigranaHtml } from "./slashCommands";
 import { createDeferredCommit, type DeferredCommit } from "../lib/deferredCommit";
 import { emojiShortcodeToText } from "../lib/emoji";
@@ -61,6 +62,7 @@ import type { NotePositionMetadata } from "../types";
 const { readAssetDataUrl, saveAsset, saveClipboardImageAsset } = notebookStorage;
 
 type NotesEditorProps = {
+  colorToolbarElement?: HTMLElement | null;
   content: string;
   commandRequest?: EditorCommandRequest | null;
   focusRequest: number;
@@ -99,6 +101,7 @@ export type PendingEditorChange = {
 };
 
 export type EditorCommand =
+  | InlineColorCommand
   | SortCommand
   | "bold"
   | "italic"
@@ -2456,7 +2459,7 @@ const MarkdownImage = Image.extend({
   },
 });
 
-export function NotesEditor({ content, commandRequest, focusRequest, focusAtEndRequest, findRequest, historyKey, reloadRequest, notePath, restorePosition, editable, spellcheckEnabled, workspace, onChange, onPendingChange, onPersistenceReady, onLoadError, onPositionChange, onInternalLinkClick, onRequestEmoji, onRequestLink, onRequestImage }: NotesEditorProps) {
+export function NotesEditor({ colorToolbarElement, content, commandRequest, focusRequest, focusAtEndRequest, findRequest, historyKey, reloadRequest, notePath, restorePosition, editable, spellcheckEnabled, workspace, onChange, onPendingChange, onPersistenceReady, onLoadError, onPositionChange, onInternalLinkClick, onRequestEmoji, onRequestLink, onRequestImage }: NotesEditorProps) {
   const [slash, setSlash] = useState<SlashState | null>(null);
   const [findOpen, setFindOpen] = useState(false);
   const [replaceOpen, setReplaceOpen] = useState(false);
@@ -2547,7 +2550,8 @@ export function NotesEditor({ content, commandRequest, focusRequest, focusAtEndR
         },
       }),
       CodeBlockWithControls.configure({ lowlight }),
-      Highlight,
+      TextColor,
+      ColorHighlight,
       EmojiText,
       SearchHighlight,
       EmSpaceIndent,
@@ -3043,6 +3047,10 @@ export function NotesEditor({ content, commandRequest, focusRequest, focusAtEndR
 
   const applyEditorCommand = useCallback((request: EditorCommandRequest) => {
     if (!editor) return;
+    if (isInlineColorCommand(request.command)) {
+      applyInlineColor(editor, request.command);
+      return;
+    }
     if (isSortCommand(request.command)) {
       if (!editor.isEditable) return;
       const tr = sortSelectedLines(editor.state, request.command);
@@ -3194,7 +3202,7 @@ export function NotesEditor({ content, commandRequest, focusRequest, focusAtEndR
       onMouseDown={(e) => {
         if (!editor || e.button !== 0) return;
         if ((e.target as HTMLElement | null)?.closest(".note-find-bar")) return;
-        if ((e.target as HTMLElement | null)?.closest(".format-bubble")) return;
+        if ((e.target as HTMLElement | null)?.closest(".format-bubble, .editor-color-controls")) return;
         const pm = editor.view.dom;
         if (pm.contains(e.target as Node)) return;
         e.preventDefault();
@@ -3217,6 +3225,7 @@ export function NotesEditor({ content, commandRequest, focusRequest, focusAtEndR
         }
       }}
     >
+      {editor && colorToolbarElement ? createPortal(<EditorColorControls editor={editor} disabled={!editable} />, colorToolbarElement) : null}
       {editor ? <FormattingBubbleMenu editor={editor} onRequestLink={onRequestLink} /> : null}
       {findOpen ? (
         <div className={replaceOpen ? "note-find-bar has-replace" : "note-find-bar"}>
@@ -3498,7 +3507,7 @@ export function FormattingBubbleMenu({
       sync();
     };
     const isFromBubble = (event: MouseEvent) =>
-      (event.target as HTMLElement | null)?.closest(".format-bubble") != null;
+      (event.target as HTMLElement | null)?.closest(".format-bubble, .editor-color-controls") != null;
     const handleMouseDown = (event: MouseEvent) => {
       if (event.button !== 0 || mouse) return;
       // Clicks on the bubble itself are button presses, not new selections —
@@ -3577,7 +3586,6 @@ export function FormattingBubbleMenu({
     { label: "Underline", icon: Underline, active: editor.isActive("underline"), run: () => editor.chain().focus().toggleUnderline().run() },
     { label: "Strikethrough", icon: Strikethrough, active: editor.isActive("strike"), run: () => editor.chain().focus().toggleStrike().run() },
     { label: "Code", icon: Code, active: editor.isActive("code"), run: () => editor.chain().focus().toggleCode().run() },
-    { label: "Highlight", icon: Highlighter, active: editor.isActive("highlight"), run: () => editor.chain().focus().toggleHighlight().run() },
     { label: "Link", icon: LinkIcon, active: editor.isActive("link"), run: setLink },
     { label: "Clear formatting", icon: Eraser, active: false, run: () => editor.chain().focus().unsetAllMarks().clearNodes().run() },
     { label: "H1", icon: Heading1, active: editor.isActive("heading", { level: 1 }), run: () => editor.chain().focus().toggleHeading({ level: 1 }).run() },
@@ -3604,7 +3612,7 @@ export function FormattingBubbleMenu({
     if (document.querySelector(".table-context-menu")) return false;
     if (isTableChromeTarget(activeElement)) return false;
     if (editor.isActive("image")) return false;
-    return isFormattingSelection(selection) && editor.isEditable && editor.isFocused;
+    return isFormattingSelection(selection) && editor.isEditable && (editor.isFocused || !!activeElement?.closest(".format-bubble, .editor-color-controls"));
   })();
 
   const visible = eligible && !suppressed && pendingShow;
@@ -3679,18 +3687,20 @@ export function FormattingBubbleMenu({
       {buttons.map((button) => {
         const Icon = button.icon;
         return (
-          <button
-            className={button.active ? "is-active" : ""}
-            key={button.label}
-            type="button"
-            title={button.label}
-            onMouseDown={(event) => {
-              event.preventDefault();
-              button.run();
-            }}
-          >
-            <Icon size={15} />
-          </button>
+          <Fragment key={button.label}>
+            {button.label === "Clear formatting" && <InlineColorPicker editor={editor} />}
+            <button
+              className={button.active ? "is-active" : ""}
+              type="button"
+              title={button.label}
+              onMouseDown={(event) => {
+                event.preventDefault();
+                button.run();
+              }}
+            >
+              <Icon size={15} />
+            </button>
+          </Fragment>
         );
       })}
     </div>,

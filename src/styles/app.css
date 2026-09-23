@@ -6445,3 +6445,55 @@ html[data-theme="dark"] .settings-theme-section { background: rgb(0 0 0 / 16%); 
 .theme-variants-editor [role="group"] > .toolbar-button + .toolbar-button { margin-left: 10px; }
 
 .theme-variants-editor input.theme-variant-pending-name { border-color: #d94747; box-shadow: 0 0 0 1px #d94747; }
+
+/* A short named palette keeps text and highlight choices easy to scan. */
+.format-bubble.inline-color-palette {
+  position: fixed;
+  z-index: 56;
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  align-items: start;
+  gap: 12px;
+  width: 340px;
+  max-width: calc(100vw - 16px);
+  max-height: calc(100vh - 16px);
+  overflow-y: auto;
+  padding: 10px;
+  color: var(--text);
+  background: var(--surface);
+}
+.inline-color-heading {
+  padding: 4px 6px 8px;
+  color: var(--text-muted);
+  font-size: 12px;
+  font-weight: 600;
+}
+.format-bubble.inline-color-palette button {
+  width: 100%;
+  height: 30px;
+  justify-content: flex-start;
+  gap: 7px;
+  padding: 3px 6px;
+  color: inherit;
+  font-size: 12px;
+  white-space: nowrap;
+}
+.inline-color-palette button > svg { margin-left: auto; flex-shrink: 0; }
+.inline-color-palette button:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
+.inline-color-swatch {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: 0 0 22px;
+  height: 22px;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  font: 600 14px/1 system-ui, sans-serif;
+}
+
+.editor-color-controls {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+.editor-color-toolbar-slot:empty { display: none; }

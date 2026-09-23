@@ -591,9 +591,11 @@ describe("formatting bubble position", () => {
     const editor = {
       state: { selection: TextSelection.create(doc, range.from, range.to) },
       isActive: () => false,
+      getAttributes: () => ({}),
       isEditable: true,
       isFocused: true,
       view: {
+        dom: document.createElement("div"),
         coordsAtPos: (position: number) => ({
           top,
           bottom: top + 20,

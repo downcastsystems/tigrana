@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { recentNotes, searchNotes } from "./search";
+import { recentNotes, searchNotes, noteSearchPreview } from "./search";
 import type { NoteEntry } from "../types";
 
 const notes: NoteEntry[] = [
@@ -60,4 +60,13 @@ describe("notebook search", () => {
     expect(fallback.fallback).toBe(true);
     expect(fallback.results[0].path).toBe("Journal/Today.md");
   });
+});
+
+it("searches across color boundaries and keeps color markup out of results", () => {
+  const colored = new Map([[notes[0].path, 'The launch <span style="color: #a83232">checklist</span> is ready.']]);
+  const result = searchNotes([notes[0]], colored, "launch checklist");
+  expect(result).toHaveLength(1);
+  expect(result[0].snippet).toBe("The launch checklist is ready.");
+  expect(noteSearchPreview(colored.get(notes[0].path)!)).toBe("The launch checklist is ready.");
+  expect(recentNotes([notes[0]], colored, {}).results[0].snippet).toBe("The launch checklist is ready.");
 });

@@ -163,6 +163,23 @@ Strikethrough. Cmd+U on macOS or Ctrl+U on Windows toggles underline. Bare `<u>`
 pairs round-trip in paragraphs, headings, lists and tables; code examples remain
 literal. Markdown readers that disable HTML may not display underlining.
 
+Text colors and colored highlights use portable inline spans, for example
+`<span style="color: #a83232">text</span>` and
+`<span style="background-color: #dcecdf">text</span>`. The formatting bar and
+Edit menu share nine named choices from `src/lib/inlineColors.json`. The saved
+hex values identify those choices; editor-only CSS variables supply readable
+light/dark shades without rewriting the Note on a theme change. Other accepted
+literal colors keep their exact value. Automatic text color and No highlight
+remove their respective marks and span wrappers. The persistent toolbar has one color icon opening the combined text and highlight
+palette. Automatic and No highlight independently reset each color. With a selection, actions format that range; at the cursor, they
+set or clear formatting for subsequent typing without changing earlier text.
+Text color continues through Enter; highlights end on Enter and soft line breaks.
+Other marks retain their existing behavior. Legacy `==text==` highlights
+continue to use the theme's default highlight colors and keyboard shortcut.
+Only balanced spans containing approved literal color declarations are decoded
+from Markdown; arbitrary HTML attributes and CSS stay escaped. Runtime color
+attributes and variables are removed from saved Markdown and rich HTML tables.
+
 Derived Note values are lazy. Sidebar previews are memoized by Note content,
 whole-Note text statistics run off the main thread, and outline extraction is
 deferred until typing is idle. Markdown serialization is also deferred, but

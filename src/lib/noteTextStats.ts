@@ -1,3 +1,5 @@
+import { stripInlineColorSpans } from "./inlineColors";
+
 export type NoteTextStats = {
   words: number;
   characters: number;
@@ -14,7 +16,7 @@ export type NoteTextStatsResponse = {
 };
 
 export function measureNoteText(text: string): NoteTextStats {
-  const plain = text
+  const plain = stripInlineColorSpans(text)
     .replace(/<\/?u>/gi, "")
     .replace(/!\[[^\]]*]\([^)]*\)/g, "")
     .replace(/\[([^\]]+)]\([^)]*\)/g, "$1")

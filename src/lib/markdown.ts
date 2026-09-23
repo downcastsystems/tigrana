@@ -1,4 +1,5 @@
 import { replaceEmojiShortcodes } from "./emoji";
+import { inlineColorValue, restoreInlineColorSpans } from "./inlineColors";
 import {
   closesMarkdownCodeFence,
   markdownCodeFenceDelimiter,
@@ -37,6 +38,7 @@ const inlineMarkdownToHtml = (value: string, options: MarkdownOptions = {}) => {
   // Markdown has no underline delimiter. Accept only the bare HTML pair we emit,
   // keeping arbitrary tags and attributes escaped.
   html = html.replace(/&lt;u&gt;([\s\S]*?)&lt;\/u&gt;/gi, "<u>$1</u>");
+  html = restoreInlineColorSpans(html);
   html = html.replace(/!\[([^\]]*)\]\(([^)]+)\)/g, (_match, alt: string, src: string) => {
     const resolvedSrc = options.resolveImageSrc?.(src) ?? src;
     return `<img src="${escapeHtml(resolvedSrc)}" alt="${escapeHtml(alt)}" data-markdown-src="${escapeHtml(src)}" />`;
@@ -495,7 +497,12 @@ function inlineHtmlToMarkdown(element: Element): string {
     else if (tag === "em" || tag === "i") value += `*${content}*`;
     else if (tag === "u") value += `<u>${content}</u>`;
     else if (tag === "s" || tag === "strike" || tag === "del") value += `~~${content}~~`;
-    else if (tag === "mark") value += `==${content}==`;
+    else if (tag === "span" || tag === "mark") {
+      const color = inlineColorValue(node, "text");
+      const background = inlineColorValue(node, "highlight");
+      const styles = [color && `color: ${color}`, background && `background-color: ${background}`].filter(Boolean);
+      value += styles.length ? `<span style="${styles.join("; ")}">${content}</span>` : tag === "mark" ? `==${content}==` : content;
+    }
     else if (tag === "code") value += `\`${content}\``;
     else if (tag === "a") value += `[${content}](${node.getAttribute("href") ?? ""})`;
     else if (tag === "img") value += imageElementToMarkdown(node);
@@ -676,6 +683,16 @@ function getTigranaTableWidths(table: Element, columnCount: number) {
 
 function serializeTableCellHtml(cell: Element) {
   const clone = cell.cloneNode(true) as Element;
+  // Runtime palette variables never belong in portable HTML-table content.
+  clone.querySelectorAll("[data-text-color], [data-highlight-color]").forEach(element => {
+    const color = inlineColorValue(element, "text");
+    const background = inlineColorValue(element, "highlight");
+    const styles = [color && `color: ${color}`, background && `background-color: ${background}`].filter(Boolean);
+    element.removeAttribute("data-text-color");
+    element.removeAttribute("data-highlight-color");
+    if (styles.length) element.setAttribute("style", styles.join("; "));
+    else element.removeAttribute("style");
+  });
   clone.querySelectorAll("[data-node-view-wrapper], [data-node-view-content], [data-node-view-content-react]").forEach((element) => {
     element.removeAttribute("data-node-view-wrapper");
     element.removeAttribute("data-node-view-content");
