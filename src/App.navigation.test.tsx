@@ -614,6 +614,7 @@ describe("Note navigation persistence", () => {
   });
 
   it("saves a shared theme with the notebook and restores its palette, typography, and Plasma settings after reload", async () => {
+    const defaultTheme = classicThemes.find(theme => theme.id === 'default')!;
     const theme = { ...exampleTheme(), rightSidebarOpen: false, schemaVersion: 2 as const, design: { ...defaultThemeDesign, css: ".ProseMirror h1 { color: red; }" }, plasma: { enabled: true, frost: 60, backgroundBlur: 12 } };
     await saveTheme(theme, null);
     const container = document.createElement("div");
@@ -703,10 +704,10 @@ describe("Note navigation persistence", () => {
       expect(document.documentElement.style.getPropertyValue("--app-font-family")).toContain("Inter, ui-sans-serif");
       expect(document.documentElement.style.getPropertyValue("--editor-font-family")).toContain("Inter, ui-sans-serif");
       expect(document.documentElement.style.getPropertyValue("--app-font-size")).toBe("14px");
-      expect(document.documentElement.style.getPropertyValue("--editor-font-size")).toBe("17px");
+      expect(document.documentElement.style.getPropertyValue("--editor-font-size")).toBe(`${defaultTheme.editorFontSize}px`);
       expect(container.querySelector<HTMLSelectElement>('[aria-label="Quick editor font"]')!.value).toBe("");
-      expect(container.querySelector<HTMLInputElement>('[aria-label="Quick editor font size"]')!.value).toBe("17");
-      await waitFor(() => JSON.parse(demoPersistence.get("tigrana-meta:/demo/Tigrana") ?? "{}").appearance?.editorFontSize === 17);
+      expect(container.querySelector<HTMLInputElement>('[aria-label="Quick editor font size"]')!.value).toBe(String(defaultTheme.editorFontSize));
+      await waitFor(() => JSON.parse(demoPersistence.get("tigrana-meta:/demo/Tigrana") ?? "{}").appearance?.editorFontSize === defaultTheme.editorFontSize);
       expect(JSON.parse(demoPersistence.get("tigrana-meta:/demo/Tigrana")!).appearance.editorFontFamily).toContain("Inter, ui-sans-serif");
 
       expect(container.querySelector<HTMLElement>(".app-frame")!.style.getPropertyValue("--tigrana-accent")).toBe("");
@@ -755,7 +756,7 @@ describe("Note navigation persistence", () => {
       expect(container.querySelector<HTMLSelectElement>('[aria-label="Theme"]')!.value).toBe('builtin:default');
       expect(container.querySelector('option[value="modified:default"]')).toBeNull();
       await waitFor(() => JSON.parse(demoPersistence.get('tigrana-meta:/demo/Tigrana')!).appearance.customTheme === null);
-      expect(document.documentElement.style.getPropertyValue('--editor-font-size')).toBe('17px');
+      expect(document.documentElement.style.getPropertyValue('--editor-font-size')).toBe(`${original.editorFontSize}px`);
       await act(async () => container.querySelector<HTMLButtonElement>('[aria-label="Close settings"]')!.click());
       await settle();
       expect(container.querySelector('.theme-conflict')).toBeNull();
