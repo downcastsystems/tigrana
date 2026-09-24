@@ -4415,6 +4415,23 @@ html[data-theme="dark"] .table-column-handle.is-visible:hover {
   box-shadow: var(--shadow-modal);
 }
 
+.format-bubble-toolbar {
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 4px;
+}
+
+.format-bubble-row {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  flex-shrink: 0;
+}
+
+.format-bubble-row > button {
+  flex-shrink: 0;
+}
+
 .format-bubble button {
   display: inline-flex;
   align-items: center;

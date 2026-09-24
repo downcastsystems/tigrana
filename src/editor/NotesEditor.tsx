@@ -3610,25 +3610,35 @@ export function FormattingBubbleMenu({
     });
   };
 
-  const buttons = [
-    { label: "Bold", icon: Bold, active: editor.isActive("bold"), run: () => editor.chain().focus().toggleBold().run() },
-    { label: "Italic", icon: Italic, active: editor.isActive("italic"), run: () => editor.chain().focus().toggleItalic().run() },
-    { label: "Underline", icon: Underline, active: editor.isActive("underline"), run: () => editor.chain().focus().toggleUnderline().run() },
-    { label: "Strikethrough", icon: Strikethrough, active: editor.isActive("strike"), run: () => editor.chain().focus().toggleStrike().run() },
-    { label: "Code", icon: Code, active: editor.isActive("code"), run: () => editor.chain().focus().toggleCode().run() },
-    { label: "Link", icon: LinkIcon, active: editor.isActive("link"), run: setLink },
-    { label: "Insert equation", icon: Sigma, active: false, run: () => requestEquation(editor, { block: false }) },
-    { label: "Clear formatting", icon: RemoveFormatting, active: false, run: () => editor.chain().focus().unsetAllMarks().clearNodes().run() },
-    { label: "H1", icon: Heading1, active: editor.isActive("heading", { level: 1 }), run: () => editor.chain().focus().toggleHeading({ level: 1 }).run() },
-    { label: "H2", icon: Heading2, active: editor.isActive("heading", { level: 2 }), run: () => editor.chain().focus().toggleHeading({ level: 2 }).run() },
-    { label: "H3", icon: Heading3, active: editor.isActive("heading", { level: 3 }), run: () => editor.chain().focus().toggleHeading({ level: 3 }).run() },
-    { label: "H4", icon: Heading4, active: editor.isActive("heading", { level: 4 }), run: () => editor.chain().focus().toggleHeading({ level: 4 }).run() },
-    { label: "H5", icon: Heading5, active: editor.isActive("heading", { level: 5 }), run: () => editor.chain().focus().toggleHeading({ level: 5 }).run() },
-    { label: "H6", icon: Heading6, active: editor.isActive("heading", { level: 6 }), run: () => editor.chain().focus().toggleHeading({ level: 6 }).run() },
-    { label: "Bullets", icon: List, active: editor.isActive("bulletList"), run: () => editor.chain().focus().toggleBulletList().run() },
-    { label: "Numbers", icon: ListOrdered, active: editor.isActive("orderedList"), run: () => editor.chain().focus().toggleOrderedList().run() },
-    { label: "Tasks", icon: CheckSquare, active: editor.isActive("taskList"), run: () => editor.chain().focus().toggleTaskList().run() },
-    { label: "Quote", icon: Quote, active: editor.isActive("blockquote"), run: () => editor.chain().focus().toggleBlockquote().run() },
+  const buttonRows = [
+    {
+      label: "Text formatting",
+      buttons: [
+        { label: "Bold", icon: Bold, active: editor.isActive("bold"), run: () => editor.chain().focus().toggleBold().run() },
+        { label: "Italic", icon: Italic, active: editor.isActive("italic"), run: () => editor.chain().focus().toggleItalic().run() },
+        { label: "Underline", icon: Underline, active: editor.isActive("underline"), run: () => editor.chain().focus().toggleUnderline().run() },
+        { label: "Strikethrough", icon: Strikethrough, active: editor.isActive("strike"), run: () => editor.chain().focus().toggleStrike().run() },
+        { label: "Code", icon: Code, active: editor.isActive("code"), run: () => editor.chain().focus().toggleCode().run() },
+        { label: "Link", icon: LinkIcon, active: editor.isActive("link"), run: setLink },
+        { label: "Insert equation", icon: Sigma, active: false, run: () => requestEquation(editor, { block: false }) },
+        { label: "Clear formatting", icon: RemoveFormatting, active: false, run: () => editor.chain().focus().unsetAllMarks().clearNodes().run() },
+      ],
+    },
+    {
+      label: "Block formatting",
+      buttons: [
+        { label: "H1", icon: Heading1, active: editor.isActive("heading", { level: 1 }), run: () => editor.chain().focus().toggleHeading({ level: 1 }).run() },
+        { label: "H2", icon: Heading2, active: editor.isActive("heading", { level: 2 }), run: () => editor.chain().focus().toggleHeading({ level: 2 }).run() },
+        { label: "H3", icon: Heading3, active: editor.isActive("heading", { level: 3 }), run: () => editor.chain().focus().toggleHeading({ level: 3 }).run() },
+        { label: "H4", icon: Heading4, active: editor.isActive("heading", { level: 4 }), run: () => editor.chain().focus().toggleHeading({ level: 4 }).run() },
+        { label: "H5", icon: Heading5, active: editor.isActive("heading", { level: 5 }), run: () => editor.chain().focus().toggleHeading({ level: 5 }).run() },
+        { label: "H6", icon: Heading6, active: editor.isActive("heading", { level: 6 }), run: () => editor.chain().focus().toggleHeading({ level: 6 }).run() },
+        { label: "Bullets", icon: List, active: editor.isActive("bulletList"), run: () => editor.chain().focus().toggleBulletList().run() },
+        { label: "Numbers", icon: ListOrdered, active: editor.isActive("orderedList"), run: () => editor.chain().focus().toggleOrderedList().run() },
+        { label: "Tasks", icon: CheckSquare, active: editor.isActive("taskList"), run: () => editor.chain().focus().toggleTaskList().run() },
+        { label: "Quote", icon: Quote, active: editor.isActive("blockquote"), run: () => editor.chain().focus().toggleBlockquote().run() },
+      ],
+    },
   ];
 
   const eligible = (() => {
@@ -3703,7 +3713,7 @@ export function FormattingBubbleMenu({
   return createPortal(
     <div
       ref={bubbleRef}
-      className="format-bubble"
+      className="format-bubble format-bubble-toolbar"
       style={{
         position: "fixed",
         top: position.top,
@@ -3715,25 +3725,29 @@ export function FormattingBubbleMenu({
       }}
       onMouseDown={(event) => event.preventDefault()}
     >
-      {buttons.map((button) => {
-        const Icon = button.icon;
-        return (
-          <Fragment key={button.label}>
-            {button.label === "Clear formatting" && <InlineColorPicker editor={editor} />}
-            <button
-              className={button.active ? "is-active" : ""}
-              type="button"
-              title={button.label}
-              onMouseDown={(event) => {
-                event.preventDefault();
-                button.run();
-              }}
-            >
-              <Icon size={15} />
-            </button>
-          </Fragment>
-        );
-      })}
+      {buttonRows.map((row) => (
+        <div className="format-bubble-row" role="group" aria-label={row.label} key={row.label}>
+          {row.buttons.map((button) => {
+            const Icon = button.icon;
+            return (
+              <Fragment key={button.label}>
+                {button.label === "Clear formatting" && <InlineColorPicker editor={editor} />}
+                <button
+                  className={button.active ? "is-active" : ""}
+                  type="button"
+                  title={button.label}
+                  onMouseDown={(event) => {
+                    event.preventDefault();
+                    button.run();
+                  }}
+                >
+                  <Icon size={15} />
+                </button>
+              </Fragment>
+            );
+          })}
+        </div>
+      ))}
     </div>,
     document.body,
   );
