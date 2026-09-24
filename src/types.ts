@@ -116,6 +116,8 @@ export type NotebookSnapshot = {
 };
 
 export type WorkspaceMetadata = {
+  newNoteWritingStyle?: import("./lib/writingStyle").NewNoteWritingStyle;
+  lastWritingStyle?: import("./lib/writingStyle").WritingStyle;
   revision: number;
   folderOrder: Record<string, string[]>;
   noteOrder: Record<string, string[]>;

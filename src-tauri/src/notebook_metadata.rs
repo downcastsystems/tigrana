@@ -49,6 +49,10 @@ pub struct WorkspaceMetadata {
     pub welcome_note_added: bool,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub appearance: Option<Value>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub new_note_writing_style: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub last_writing_style: Option<String>,
 }
 
 impl Default for WorkspaceMetadata {
@@ -69,6 +73,8 @@ impl Default for WorkspaceMetadata {
             expanded_folders: Map::new(),
             welcome_note_added: false,
             appearance: None,
+            new_note_writing_style: None,
+            last_writing_style: None,
         }
     }
 }
@@ -338,6 +344,33 @@ mod tests {
     impl Drop for TestNotebook {
         fn drop(&mut self) {
             let _ = fs::remove_dir_all(&self.0);
+        }
+    }
+
+    #[test]
+    fn writing_style_preferences_survive_native_storage_and_conflicts() {
+        let notebook = TestNotebook::new();
+        for preference in ["last-used", "notes", "story"] {
+            let current = read_workspace_metadata(&notebook.0).unwrap();
+            let incoming: WorkspaceMetadata = serde_json::from_value(json!({
+                "revision": current.revision,
+                "newNoteWritingStyle": preference,
+                "lastWritingStyle": "story"
+            }))
+            .unwrap();
+            let saved = compare_and_swap_workspace_metadata(&notebook.0, &incoming).unwrap();
+            assert!(saved.applied);
+            let conflict = compare_and_swap_workspace_metadata(&notebook.0, &incoming).unwrap();
+            assert!(!conflict.applied);
+            for metadata in [
+                saved.metadata,
+                conflict.metadata,
+                read_workspace_metadata(&notebook.0).unwrap(),
+            ] {
+                let output = serde_json::to_value(metadata).unwrap();
+                assert_eq!(output["newNoteWritingStyle"], preference);
+                assert_eq!(output["lastWritingStyle"], "story");
+            }
         }
     }
 

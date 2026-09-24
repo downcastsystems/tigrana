@@ -1,3 +1,5 @@
+import { StoryParagraphs, handleStoryParagraphKey, setParagraphIndent } from "./storyParagraphs";
+import type { WritingStyle } from "../lib/writingStyle";
 import { writeRichClipboard } from "../lib/richClipboard";
 import { EquationContextMenu } from "./EquationContextMenu";
 import { BlockMath, InlineMath, requestEquation } from "./mathNodes";
@@ -68,6 +70,7 @@ const { readAssetDataUrl, saveAsset, saveClipboardImageAsset } = notebookStorage
 
 type NotesEditorProps = {
   colorToolbarElement?: HTMLElement | null;
+  writingStyle?: WritingStyle;
   colorsDisabled?: boolean;
   content: string;
   commandRequest?: EditorCommandRequest | null;
@@ -117,6 +120,9 @@ export type EditorCommand =
   | "highlight"
   | "link"
   | "clear"
+  | "paragraphAuto"
+  | "paragraphIndent"
+  | "paragraphNoIndent"
   | "paragraph"
   | "h1"
   | "h2"
@@ -2466,7 +2472,9 @@ const MarkdownImage = Image.extend({
   },
 });
 
-export function NotesEditor({ colorsDisabled = false, colorToolbarElement, content, commandRequest, focusRequest, focusAtEndRequest, findRequest, historyKey, reloadRequest, notePath, restorePosition, editable, spellcheckEnabled, workspace, onChange, onPendingChange, onPersistenceReady, onLoadError, onPositionChange, onInternalLinkClick, onRequestEmoji, onRequestLink, onRequestImage }: NotesEditorProps) {
+export function NotesEditor({ writingStyle = "notes", colorsDisabled = false, colorToolbarElement, content, commandRequest, focusRequest, focusAtEndRequest, findRequest, historyKey, reloadRequest, notePath, restorePosition, editable, spellcheckEnabled, workspace, onChange, onPendingChange, onPersistenceReady, onLoadError, onPositionChange, onInternalLinkClick, onRequestEmoji, onRequestLink, onRequestImage }: NotesEditorProps) {
+  const writingStyleRef = useRef(writingStyle);
+  writingStyleRef.current = writingStyle;
   const [slash, setSlash] = useState<SlashState | null>(null);
   const [findOpen, setFindOpen] = useState(false);
   const [replaceOpen, setReplaceOpen] = useState(false);
@@ -2556,6 +2564,7 @@ export function NotesEditor({ colorsDisabled = false, colorToolbarElement, conte
             !href || !/^\s*(javascript|data|vbscript|file|about):/i.test(href),
         },
       }),
+      StoryParagraphs,
       CodeBlockWithControls.configure({ lowlight }),
       TextColor,
       ColorHighlight,
@@ -2680,6 +2689,7 @@ export function NotesEditor({ colorsDisabled = false, colorToolbarElement, conte
           if (handleOutermostListItemBackspace(_view, event)) return true;
           if (handleSlashKeyDown(event)) return true;
           const currentEditor = editorRef.current;
+          if (currentEditor && handleStoryParagraphKey(currentEditor, event, writingStyleRef.current)) return true;
           if (currentEditor && handleEditorTabKeyDown(currentEditor, event)) return true;
           return false;
         },
@@ -3124,6 +3134,11 @@ export function NotesEditor({ colorsDisabled = false, colorToolbarElement, conte
         break;
       case "clear":
         chain.unsetAllMarks().clearNodes().run();
+        break;
+      case "paragraphAuto":
+      case "paragraphIndent":
+      case "paragraphNoIndent":
+        setParagraphIndent(editor, request.command === "paragraphAuto" ? null : request.command === "paragraphIndent" ? "indent" : "none");
         break;
       case "paragraph":
         chain.setParagraph().run();

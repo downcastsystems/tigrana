@@ -1,3 +1,4 @@
+import { stripParagraphIndentMarkers } from "./writingStyle";
 import { stripInlineColorSpans } from "./inlineColors";
 import { replaceEmojiShortcodes } from "./emoji";
 import { closesMarkdownCodeFence, readMarkdownCodeFence, type MarkdownCodeFence } from "./markdownCodeFence";
@@ -217,7 +218,7 @@ function readFrontmatterFields(frontmatter: string): FrontmatterField[] {
 }
 
 function previewBody(body: string) {
-  return stripInlineColorSpans(body)
+  return stripInlineColorSpans(stripParagraphIndentMarkers(body))
     .replace(/<\/?u>/gi, "")
     .replace(/\r\n/g, "\n")
     .split("\n")

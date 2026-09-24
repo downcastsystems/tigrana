@@ -1,3 +1,4 @@
+import { readParagraphIndentMarker } from "./writingStyle";
 import { replaceEmojiShortcodes } from "./emoji";
 import { inlineColorValue, restoreInlineColorSpans } from "./inlineColors";
 import {
@@ -307,6 +308,18 @@ export function markdownToHtml(markdown: string, options: MarkdownOptions = {}) 
       continue;
     }
 
+    const paragraphIndent = readParagraphIndentMarker(line);
+    const nextLine = lines[i + 1] ?? "";
+    if (paragraphIndent && (!nextLine.trim() || !startsNewBlock(nextLine) && !readMarkdownCodeFence(nextLine) && !readParagraphIndentMarker(nextLine))) {
+      closeList();
+      closeTable();
+      flushBlankParagraphs();
+      const gathered = gatherParagraphContinuation(i + 1, nextLine);
+      html.push(`<p data-story-indent="${paragraphIndent}">${inlineMarkdownToHtml(paragraphIndentToEditor(gathered.content), options)}</p>`);
+      i = gathered.lastIndex + 1;
+      continue;
+    }
+
     const openingFence = readMarkdownCodeFence(line);
     if (openingFence) {
       closeList();
@@ -602,16 +615,19 @@ export function htmlToMarkdown(html: string) {
       markdown.push(`${"#".repeat(level)} ${inlineHtmlToMarkdown(block)}`);
     } else if (tag === "p") {
       const inline = inlineHtmlToMarkdown(block);
-      if (!inline.trim() && isCodeBlockNeighbor(blocks, index)) {
+      const storyIndent = block.getAttribute("data-story-indent");
+      const hasIndentOverride = storyIndent === "indent" || storyIndent === "none";
+      if (!hasIndentOverride && !inline.trim() && isCodeBlockNeighbor(blocks, index)) {
         return;
       }
-      if (!inline.trim() && isTableLandingParagraph(blocks, index)) {
+      if (!hasIndentOverride && !inline.trim() && isTableLandingParagraph(blocks, index)) {
         return;
       }
       const segments = inline.split(HARD_BREAK_PLACEHOLDER).map(paragraphIndentToMarkdown);
       const lastIndex = segments.length - 1;
       const joined = segments.map((segment, idx) => (idx < lastIndex ? `${segment}  ` : segment)).join("\n");
-      markdown.push(joined);
+      const marker = hasIndentOverride ? `<!-- tigrana:paragraph ${storyIndent} -->\n` : "";
+      markdown.push(marker + joined);
     } else if (tag === "img") {
       markdown.push(imageElementToMarkdown(block));
     } else if (tag === "blockquote") {
@@ -653,7 +669,7 @@ export function htmlToMarkdown(html: string) {
     }
   });
 
-  return `${normalizeMarkdownImageLines(joinMarkdownBlocks(markdown)).trim()}\n`;
+  return `${normalizeMarkdownImageLines(joinMarkdownBlocks(markdown)).trimEnd()}\n`;
 }
 
 function serializeTigranaHtmlTable(table: Element) {

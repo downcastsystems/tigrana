@@ -413,8 +413,16 @@ describe("Note navigation persistence", () => {
       expect(container.querySelector(".note-status-bar")).toBeNull();
       await act(async () => container.querySelector<HTMLButtonElement>('[aria-label="Close settings"]')!.click());
       await act(async () => container.querySelector<HTMLButtonElement>('[aria-label="Editor options"]')!.click());
+      const widthMenu = [...container.querySelectorAll<HTMLButtonElement>('[role="menuitem"]')].find(button => button.querySelector("strong")?.textContent === "Editor Width")!;
+      expect(widthMenu.querySelector("small")?.textContent).toBe("Comfortable Width");
+      expect(container.querySelector('[role="menu"][aria-label="Editor Width"]')).toBeNull();
+      await act(async () => widthMenu.click());
+      const widthChoices = [...container.querySelectorAll<HTMLButtonElement>('[role="menu"][aria-label="Editor Width"] button')];
+      expect(widthChoices.map(button => button.textContent)).toEqual([
+        "Comfortable WidthDefault", "Narrow WidthBest for writing stories", "Full WidthUse all available editor space",
+      ]);
       await act(async () => { Array.from(container.querySelectorAll<HTMLButtonElement>('[role="menuitemradio"]')).find(b => b.textContent?.includes("Full Width"))!.click(); });
-      await act(async () => { Array.from(container.querySelectorAll<HTMLButtonElement>('[role="menuitem"]')).find(b => b.textContent === "Editor Alignment")!.click(); });
+      await act(async () => { Array.from(container.querySelectorAll<HTMLButtonElement>('[role="menuitem"]')).find(b => b.querySelector("strong")?.textContent === "Editor Alignment")!.click(); });
       for (const text of ["Left"]) {
         await act(async () => { Array.from(container.querySelectorAll<HTMLButtonElement>('[role="menuitemradio"]')).find(b => b.textContent?.includes(text))!.click(); });
       }
@@ -1684,6 +1692,45 @@ describe("Note navigation persistence", () => {
     }
   });
 
+  it.each([
+    { preference: "last-used", source: "story", expected: "story" },
+    { preference: "last-used", source: "notes", expected: "notes" },
+    { preference: "notes", source: "story", expected: "notes" },
+    { preference: "story", source: "notes", expected: "story" },
+  ])("remembers the new-note style setting and creates a note with it: %j", async ({ preference, source, expected }) => {
+    const otherNotebookMetadata = JSON.stringify({ revision: 0, newNoteWritingStyle: "story", lastWritingStyle: "story" });
+    demoPersistence.set("tigrana-meta:/demo/Stories", otherNotebookMetadata);
+    const original = `---\ntigrana_writing_style: ${source}\n---\n\nExisting text.`;
+    demoPersistence.set("tigrana-demo-v5", JSON.stringify({ folders: [], notes: { "Welcome.md": original } }));
+    const container = document.createElement("div"); document.body.appendChild(container); containers.push(container);
+    let root = createRoot(container);
+    try {
+      await act(async () => root.render(<App />));
+      await waitFor(() => Boolean(container.querySelector(".note-surface")));
+      await act(async () => window.dispatchEvent(new KeyboardEvent("keydown", { key: ",", metaKey: true })));
+      const setting = container.querySelector<HTMLSelectElement>('[aria-label="New Note Writing Style"]')!;
+      expect(setting.value).toBe("last-used");
+      expect(setting.options[0].textContent).toBe(`Last used writing style (${source === "story" ? "Story" : "Notes"})`);
+      await act(async () => { setting.value = preference; setting.dispatchEvent(new Event("change", { bubbles: true })); });
+      await waitFor(() => JSON.parse(demoPersistence.get("tigrana-meta:/demo/Tigrana")!).newNoteWritingStyle === preference);
+      await act(async () => root.unmount());
+      root = createRoot(container);
+      await act(async () => root.render(<App />));
+      await waitFor(() => Boolean(container.querySelector(".note-surface")));
+      await act(async () => window.dispatchEvent(new KeyboardEvent("keydown", { key: ",", metaKey: true })));
+      expect(container.querySelector<HTMLSelectElement>('[aria-label="New Note Writing Style"]')!.value).toBe(preference);
+      await act(async () => container.querySelector<HTMLButtonElement>('[aria-label="Close settings"]')!.click());
+      await act(async () => container.querySelector<HTMLButtonElement>(".pane-create-button")!.click());
+      await act(async () => container.querySelector<HTMLButtonElement>(".pane-create-menu button")!.click());
+      await waitFor(() => container.querySelector<HTMLTextAreaElement>('[aria-label="Note title"]')?.value === "Untitled");
+      const store = JSON.parse(demoPersistence.get("tigrana-demo-v5")!);
+      expect(store.notes["Untitled.md"]).toContain(`tigrana_writing_style: ${expected}`);
+      expect(store.notes["Welcome.md"]).toBe(original);
+      expect(demoPersistence.get("tigrana-meta:/demo/Stories")).toBe(otherNotebookMetadata);
+      expect(container.querySelector(".note-surface")?.classList.contains(`writing-style-${expected}`)).toBe(true);
+    } finally { await act(async () => root.unmount()); }
+  });
+
   it("persists a blank new note as an Untitled placeholder", async () => {
     const container = document.createElement("div");
     document.body.appendChild(container);
@@ -1710,7 +1757,7 @@ describe("Note navigation persistence", () => {
     const store = JSON.parse(demoPersistence.get("tigrana-demo-v5") ?? "{}") as {
       notes?: Record<string, string>;
     };
-    expect(store.notes).toHaveProperty("Untitled.md", "");
+    expect(store.notes?.["Untitled.md"]).toContain("tigrana_writing_style: notes");
 
     await act(async () => root.unmount());
   });
@@ -1911,6 +1958,98 @@ describe("Note navigation persistence", () => {
     expect(focusButton?.getAttribute("aria-pressed")).toBe("false");
 
     await act(async () => root.unmount());
+  });
+
+  it.each(["n", ","])("dismisses editor options when shortcut %s opens another context", async (key) => {
+    demoPersistence.set("tigrana-demo-v5", JSON.stringify({ folders: [], notes: { "Welcome.md": "Text." } }));
+    const container = document.createElement("div");
+    document.body.appendChild(container); containers.push(container);
+    const root = createRoot(container);
+    try {
+      await act(async () => root.render(<App />));
+      await waitFor(() => Boolean(container.querySelector(".note-surface")));
+      await act(async () => container.querySelector<HTMLButtonElement>('button[aria-label="Editor options"]')!.click());
+      expect(container.querySelector('[role="menu"][aria-label="Editor options"]')).not.toBeNull();
+      await act(async () => window.dispatchEvent(new KeyboardEvent("keydown", { key, metaKey: true })));
+      await waitFor(() => key === "n"
+        ? Boolean(JSON.parse(demoPersistence.get("tigrana-demo-v5") ?? "{}").notes?.["Untitled.md"])
+        : Boolean(container.querySelector('[aria-label="Close settings"]')));
+      expect(container.querySelector('[role="menu"][aria-label="Editor options"]')).toBeNull();
+      if (key === ",") {
+        await act(async () => container.querySelector<HTMLButtonElement>('[aria-label="Close settings"]')!.click());
+        expect(container.querySelector('[role="menu"][aria-label="Editor options"]')).toBeNull();
+      }
+    } finally { await act(async () => root.unmount()); }
+  });
+
+  it("uses Story for a new note after changing the current note to Story", async () => {
+    demoPersistence.set("tigrana-demo-v5", JSON.stringify({ folders: [], notes: {
+      "Welcome.md": "Opening paragraph.",
+    } }));
+    const container = document.createElement("div");
+    document.body.appendChild(container); containers.push(container);
+    const root = createRoot(container);
+    try {
+      await act(async () => root.render(<App />));
+      await waitFor(() => Boolean(container.querySelector(".note-surface")));
+      await act(async () => container.querySelector<HTMLButtonElement>('[aria-label="Editor options"]')!.click());
+      const styleMenu = [...container.querySelectorAll<HTMLButtonElement>('[role="menuitem"]')].find(button => button.querySelector("strong")?.textContent === "Writing Style")!;
+      await act(async () => styleMenu.click());
+      const story = [...container.querySelectorAll<HTMLButtonElement>('[role="menuitemradio"]')].find(button => button.textContent?.startsWith("Story"))!;
+      await act(async () => story.click());
+      await act(async () => container.querySelector<HTMLButtonElement>('[aria-label="Editor options"]')!.click());
+      await waitFor(() => JSON.parse(demoPersistence.get("tigrana-demo-v5")!).notes["Welcome.md"].includes("tigrana_writing_style: story"));
+      await act(async () => container.querySelector<HTMLButtonElement>(".pane-create-button")!.click());
+      await act(async () => container.querySelector<HTMLButtonElement>(".pane-create-menu button")!.click());
+      await waitFor(() => container.querySelector<HTMLTextAreaElement>('[aria-label="Note title"]')?.value === "Untitled");
+      expect(container.querySelector(".note-surface")!.classList.contains("writing-style-story")).toBe(true);
+      expect(JSON.parse(demoPersistence.get("tigrana-demo-v5")!).notes["Untitled.md"]).toContain("tigrana_writing_style: story");
+      await waitFor(() => JSON.parse(demoPersistence.get("tigrana-meta:/demo/Tigrana") ?? "{}").lastWritingStyle === "story");
+      await act(async () => window.dispatchEvent(new KeyboardEvent("keydown", { key: ",", metaKey: true })));
+      expect(container.querySelector<HTMLSelectElement>('[aria-label="New Note Writing Style"]')!.options[0].textContent).toBe("Last used writing style (Story)");
+    } finally { await act(async () => root.unmount()); }
+  });
+
+  it("saves writing style per document and restores it after navigation and reload", async () => {
+    demoPersistence.set("tigrana-demo-v5", JSON.stringify({ folders: [], notes: {
+      "Welcome.md": "Opening paragraph.\n\nSecond paragraph.",
+      "Other.md": "Other note.",
+    } }));
+    const container = document.createElement("div");
+    document.body.appendChild(container); containers.push(container);
+    let root = createRoot(container);
+    const surface = () => container.querySelector(".note-surface")!;
+    try {
+      await act(async () => root.render(<App />));
+      await waitFor(() => Boolean(surface()));
+      const body = container.querySelector<HTMLTextAreaElement>('[aria-label="Test note body"]')!;
+      await act(async () => setReactTextareaValue(body, "Freshly edited prose."));
+      await act(async () => container.querySelector<HTMLButtonElement>('[aria-label="Editor options"]')!.click());
+      const styleMenu = [...container.querySelectorAll<HTMLButtonElement>('[role="menuitem"]')].find(button => button.querySelector("strong")?.textContent === "Writing Style")!;
+      expect(styleMenu.querySelector("small")?.textContent).toBe("Notes");
+      expect(container.querySelector('[role="menu"][aria-label="Writing Style"]')).toBeNull();
+      await act(async () => styleMenu.click());
+      expect([...container.querySelectorAll('[aria-label="Writing Style"] small')].map(el => el.textContent)).toEqual([
+        "Space between paragraphs", "Indented paragraphs, no extra spacing",
+      ]);
+      const story = [...container.querySelectorAll<HTMLButtonElement>('[role="menuitemradio"]')].find(button => button.textContent?.startsWith("Story"))!;
+      await act(async () => story.click());
+      expect(styleMenu.querySelector("small")?.textContent).toBe("Story");
+      expect(surface().classList.contains("writing-style-story")).toBe(true);
+      expect(surface().classList.contains("is-comfortable-width")).toBe(true);
+      await waitFor(() => JSON.parse(demoPersistence.get("tigrana-demo-v5")!).notes["Welcome.md"].includes("tigrana_writing_style: story"));
+      expect(JSON.parse(demoPersistence.get("tigrana-demo-v5")!).notes["Welcome.md"]).toContain("Freshly edited prose.");
+      await act(async () => container.querySelector<HTMLButtonElement>('[aria-label="Editor options"]')!.click());
+      await act(async () => container.querySelector<HTMLButtonElement>('button[data-note-path="Other.md"]')!.click());
+      await waitFor(() => surface().classList.contains("writing-style-notes"));
+      await act(async () => container.querySelector<HTMLButtonElement>('button[data-note-path="Welcome.md"]')!.click());
+      await waitFor(() => surface().classList.contains("writing-style-story"));
+      await act(async () => root.unmount());
+      root = createRoot(container);
+      await act(async () => root.render(<App />));
+      await waitFor(() => surface()?.classList.contains("writing-style-story") ?? false);
+      expect(container.querySelector<HTMLTextAreaElement>('[aria-label="Test note body"]')!.value).toBe("Freshly edited prose.");
+    } finally { await act(async () => root.unmount()); }
   });
 
   it("offers raw Markdown in editor options without a toolbar button", async () => {

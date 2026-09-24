@@ -323,3 +323,45 @@ Ordinary typing does not rerender existing equations or publish dialog state.
 The equation dialog previews examples and inserts/updates a single transaction;
 Note replacement dismisses it to avoid applying stale ranges. HTML export emits
 MathML without remote dependencies. See [the equation guide](equations.md).
+
+### Notes and Story writing styles
+
+Each document defaults to Notes. The editor options menu can set
+`tigrana_writing_style: story` or `notes` in its YAML frontmatter. This travels
+with the Markdown file and uses the existing active-note save queue. Width,
+font, and line height remain independent appearance settings.
+
+Settings → General → New Note Writing Style chooses Last used writing style
+(the default), Notes, or Story. Opening a valid note or changing its writing
+style remembers that style. The preference and last-used style belong to the notebook and are stored in
+`.tigrana/metadata.json`, using the existing revision-checked metadata updates. New-note
+creation resolves the preference before asynchronous work and passes the style
+as initial Markdown content, so the placeholder has its style on its first
+storage write. Existing notes and duplicates keep their own saved style.
+
+Story uses first-line indentation for consecutive top-level prose paragraphs
+and no extra paragraph margins. Opening paragraphs and paragraphs after a
+heading, divider, or other block start flush left. Lists, quotes, code, and
+tables keep their own rules. Enter creates a paragraph; Shift+Enter creates a
+hard line break. An empty paragraph does not automatically create a scene break.
+Use a divider for an explicit scene break.
+
+Writing Style, Editor Width, and Editor Alignment are grouped at the bottom of
+the editor options menu, with the current choice beneath each label. Manual
+indentation works the same in both styles: each Tab adds indentation, and each
+Shift+Tab removes one level, without a fixed limit. Backspace first removes an
+active first-line indent, then performs its normal action on the next press. Overrides belong to one paragraph;
+Enter resets the new paragraph to Automatic, including splits in the middle.
+
+An explicit override is a ProseMirror paragraph attribute, serialized immediately
+before the paragraph as `<!-- tigrana:paragraph indent -->` or
+`<!-- tigrana:paragraph none -->`. Automatic paragraphs have no marker. These
+HTML comments keep the prose readable in other Markdown tools, which may ignore
+the layout. They avoid fragile paragraph-number metadata. Overrides remain stored
+when switching to Notes but only affect Story layout. HTML export and printing
+use the same Story rules. Plain Markdown export preserves the portable source.
+
+Story handling stays local to the editor transaction; typing uses the existing
+deferred serialization path. Regression coverage lives in
+`storyParagraphs.test.ts`, `writingStyle.test.ts`, and the NotesEditor performance
+tests, which exercise both styles for short and long typing bursts.

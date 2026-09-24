@@ -3409,6 +3409,9 @@ html[data-theme="dark"] .tab-list-separator {
 }
 
 .raw-markdown-input {
+  /* Source syntax must remain literal: Inter's contextual alternates turn --> into an arrow. */
+  font-variant-ligatures: none;
+  font-feature-settings: "calt" 0, "liga" 0, "clig" 0, "dlig" 0, "hlig" 0;
   display: block;
   width: 100%;
   height: 100%;
@@ -6553,7 +6556,17 @@ html[data-theme="dark"] .settings-theme-section { background: rgb(0 0 0 / 16%); 
 .editor-options-submenu-panel.note-view-dropdown {
   top: 0;
   right: calc(100% + 8px);
-  width: 180px;
+  width: 300px;
+  max-width: calc(100vw - 32px);
+}
+.editor-options-submenu-panel strong,
+.editor-options-submenu-panel small,
+.editor-options-submenu > button strong,
+.editor-options-submenu > button small {
+  overflow: visible;
+  text-overflow: clip;
+  white-space: normal;
+  overflow-wrap: anywhere;
 }
 .editor-options-submenu::before {
   content: "";
@@ -6606,3 +6619,15 @@ html[data-theme="dark"] .settings-theme-section { background: rgb(0 0 0 / 16%); 
 .ProseMirror[contenteditable="false"] .equation-resize-handle { display: none; }
 
 .inline-color-divider { border-top: 1px solid var(--border); margin: 5px 6px; }
+
+/* Story layout only affects ordinary top-level paragraphs. */
+.writing-style-story .ProseMirror > p { margin-top: 0; margin-bottom: 0; text-indent: 0; }
+.writing-style-story .ProseMirror > p + p {
+  margin-top: 0;
+  margin-bottom: 0;
+  text-indent: 1.5em;
+}
+.writing-style-story .ProseMirror > p[data-story-indent="indent"] { text-indent: 1.5em; }
+.writing-style-story .ProseMirror > p[data-story-indent="none"] { text-indent: 0; }
+
+.setting-description { display: block; margin-top: 4px; color: var(--text-muted); font-size: 12px; }

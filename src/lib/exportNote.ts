@@ -1,3 +1,4 @@
+import { storyParagraphCss, type WritingStyle } from "./writingStyle";
 import { renderMath } from "./math";
 import { markdownToHtml } from "./markdown";
 
@@ -12,7 +13,7 @@ export function noteExportFileStem(title: string) {
 export async function buildNoteExportHtml(
   title: string,
   markdown: string,
-  options: { resolveImageSrc?: (src: string) => string | Promise<string> } = {},
+  options: { writingStyle?: WritingStyle; resolveImageSrc?: (src: string) => string | Promise<string> } = {},
 ) {
   const imageSources = await collectResolvedImageSources(markdown, options.resolveImageSrc);
   const body = markdownToHtml(markdown, {
@@ -87,6 +88,7 @@ export async function buildNoteExportHtml(
     table { border-collapse: collapse; width: 100%; margin: 1em 0; }
     th, td { border: 1px solid #d0d7de; padding: 0.45em 0.6em; }
     mark { background: #fff2a8; }
+    ${options.writingStyle === "story" ? storyParagraphCss("main") : ""}
     @media print {
       body { margin: 0; max-width: none; padding: 0; }
     }

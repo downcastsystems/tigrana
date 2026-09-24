@@ -1,3 +1,4 @@
+import { readWritingStyle, setWritingStyle } from "./lib/writingStyle";
 import { EditorOptionsSubmenu } from "./components/EditorOptionsSubmenu";
 import { isInlineColorCommand, type InlineColorCommand } from "./lib/inlineColors";
 import { resolveThemeVariant } from "./lib/themes";
@@ -262,7 +263,7 @@ type NoteAlignment = "left" | "center";
 const editorWidthOptions: { value: EditorWidthMode; label: string; hint?: string }[] = [
   { value: "comfortable", label: "Comfortable Width", hint: "Default" },
   { value: "narrow", label: "Narrow Width", hint: "Best for writing stories" },
-  { value: "full", label: "Full Width" },
+  { value: "full", label: "Full Width", hint: "Use all available editor space" },
 ];
 
 class EditorErrorBoundary extends Component<
@@ -390,6 +391,9 @@ type EditorCommand =
   | "highlight"
   | "link"
   | "clear"
+  | "paragraphAuto"
+  | "paragraphIndent"
+  | "paragraphNoIndent"
   | "paragraph"
   | "h1"
   | "h2"
@@ -797,6 +801,10 @@ export default function App() {
     () => createNoteDocument({ title: titleDraft, body: draft, frontmatter: frontmatterDraft }),
     [draft, frontmatterDraft, titleDraft],
   );
+  const writingStyle = readWritingStyle(frontmatterDraft);
+  const newNoteWritingStyle = metadata.newNoteWritingStyle === "notes" || metadata.newNoteWritingStyle === "story" ? metadata.newNoteWritingStyle : "last-used";
+  const lastWritingStyle = metadata.lastWritingStyle === "story" ? "story" : "notes";
+  const writingStyleNoteLoading = activeNoteLifecycle.isLoading;
   const activeNoteHistoryKey = activePath
     ? activeNoteIdentityRef.current || linkIndex?.pathToId[activePath] || activePath
     : null;
@@ -1528,11 +1536,11 @@ export default function App() {
   useEffect(() => {
     const onClick = (event: MouseEvent) => {
       const target = event.target as Element | null;
+      if (!target?.closest(".note-view-menu")) setWidthMenuOpen(false);
       // Don't dismiss when clicking inside a context menu, app menu, or any
       // dialog — those popovers handle their own lifecycle.
       if (target?.closest(".context-menu, .app-menu, .note-view-menu, .dialog, .dialog-backdrop")) return;
       setAppMenuOpen(false);
-      setWidthMenuOpen(false);
       setContextMenu(null);
       setTabContextMenu(null);
     };
@@ -1541,6 +1549,10 @@ export default function App() {
     window.addEventListener("click", onClick, true);
     return () => window.removeEventListener("click", onClick, true);
   }, []);
+
+  useEffect(() => {
+    setWidthMenuOpen(false);
+  }, [activePath, workspace, settingsOpen]);
 
   const refreshWorkspace = useCallback(async (nextWorkspace = workspace) => {
     if (!nextWorkspace) {
@@ -1639,6 +1651,7 @@ export default function App() {
   }, []);
 
   const beginNoteNavigation = useCallback((path: string | null = null) => {
+    setWidthMenuOpen(false);
     armedTitleFocusRequestRef.current = 0;
     titleCommitInFlightRef.current = false;
     return activeNoteLifecycle.beginNavigation(path);
@@ -1870,6 +1883,15 @@ export default function App() {
     return next;
   }, [acceptPersistedMetadata, workspace]);
 
+  const rememberWritingStyle = useCallback((style: "notes" | "story") => {
+    if (!metadataLoaded || metadataRef.current.lastWritingStyle === style) return;
+    updateMetadata(current => ({ ...current, lastWritingStyle: style }));
+  }, [metadataLoaded, updateMetadata]);
+
+  useEffect(() => {
+    if (activePath && !writingStyleNoteLoading && !frontmatterError) rememberWritingStyle(writingStyle);
+  }, [activePath, writingStyleNoteLoading, frontmatterError, writingStyle, rememberWritingStyle]);
+
   const notebookPathMutations = useMemo(() => createNotebookPathMutations({
     activePath,
     getActivePath: () => activeDraftStateRef.current.activePath,
@@ -2051,7 +2073,9 @@ export default function App() {
         await exportTextFile(`${stem}.md`, markdown, [{ name: "Markdown", extensions: ["md"] }]);
         return;
       }
-      const html = await buildNoteExportHtml(titleDraft, readNoteDocument(markdown, titleDraft).body, {
+      const document = readNoteDocument(markdown, titleDraft);
+      const html = await buildNoteExportHtml(titleDraft, document.body, {
+        writingStyle: readWritingStyle(document.frontmatter),
         resolveImageSrc: async (src) => {
           if (!workspace) return src;
           if (/^(https?:|data:|blob:)/i.test(src)) return src;
@@ -2068,7 +2092,9 @@ export default function App() {
     if (!noteOpen) return;
     try {
       const markdown = (await persistDraft()) ?? currentMarkdownSnapshot();
-      const html = await buildNoteExportHtml(titleDraft, readNoteDocument(markdown, titleDraft).body, {
+      const document = readNoteDocument(markdown, titleDraft);
+      const html = await buildNoteExportHtml(titleDraft, document.body, {
+        writingStyle: readWritingStyle(document.frontmatter),
         resolveImageSrc: async (src) => {
           if (!workspace) return src;
           if (/^(https?:|data:|blob:)/i.test(src)) return src;
@@ -3207,6 +3233,7 @@ export default function App() {
       setAppError("Open a notes folder before creating a note.");
       return;
     }
+    const initialContent = createNoteDocument({ title: "", body: "", frontmatter: setWritingStyle("", newNoteWritingStyle === "last-used" ? lastWritingStyle : newNoteWritingStyle) }).markdown;
     const operationWorkspace = workspace;
     const followsActivePath = Boolean(afterPath && afterPath === activeDraftStateRef.current.activePath);
     let placementTargetPath = afterPath;
@@ -3249,7 +3276,7 @@ export default function App() {
         const title = nextUntitledNoteTitle(usedTitles);
         usedTitles.add(title);
         try {
-          note = await createNote(operationWorkspace, parentPath, title);
+          note = await createNote(operationWorkspace, parentPath, title, initialContent);
           if (!navigationIsCurrent()) {
             await reconcileCreatedNote(note);
             return;
@@ -4083,6 +4110,7 @@ export default function App() {
     const revisedDocument = readNoteDocument(markdown, titleDraft);
     setRawMarkdownText(markdown);
     setDraft(normalizeMarkdownImageLines(revisedDocument.body));
+    if (!revisedDocument.frontmatterError) rememberWritingStyle(readWritingStyle(revisedDocument.frontmatter));
     setFrontmatterDraft(revisedDocument.frontmatter);
     setFrontmatterError(revisedDocument.frontmatterError);
     if (revisedDocument.frontmatterError) setAppError(revisedDocument.frontmatterError);
@@ -4091,6 +4119,7 @@ export default function App() {
 
   function handleFrontmatterChange(frontmatter: string) {
     const revisedDocument = reviseNoteDocument(noteDocument, { frontmatter });
+    if (!revisedDocument.frontmatterError) rememberWritingStyle(readWritingStyle(revisedDocument.frontmatter));
     setFrontmatterDraft(revisedDocument.frontmatter);
     setRawMarkdownText(revisedDocument.markdown);
     setFrontmatterError(revisedDocument.frontmatterError);
@@ -5118,7 +5147,25 @@ export default function App() {
                       <FileCode2 size={16} />
                     </button>
                     <div className="note-view-menu-divider" />
-                    <div className="note-view-menu-label">Editor width</div>
+                    <EditorOptionsSubmenu label="Writing Style" value={writingStyle === "story" ? "Story" : "Notes"} disabled={!activeNoteEditable || Boolean(frontmatterError)}>
+                    {(["notes", "story"] as const).map(style => (
+                      <button key={style} type="button" role="menuitemradio"
+                        aria-checked={writingStyle === style} className={writingStyle === style ? "is-active" : ""}
+                        disabled={!activeNoteEditable || Boolean(frontmatterError)}
+                        onClick={() => {
+                          const body = flushPendingEditorBody() ?? draft;
+                          const frontmatter = setWritingStyle(frontmatterDraft, style);
+                          rememberWritingStyle(style);
+                          setFrontmatterDraft(frontmatter);
+                          setRawMarkdownText(createNoteDocument({ title: titleDraft, body, frontmatter }).markdown);
+                        }}>
+                        <span><strong>{style === "notes" ? "Notes" : "Story"}</strong>
+                          <small>{style === "notes" ? "Space between paragraphs" : "Indented paragraphs, no extra spacing"}</small></span>
+                        {writingStyle === style ? <Check size={15} /> : null}
+                      </button>
+                    ))}
+                    </EditorOptionsSubmenu>
+                    <EditorOptionsSubmenu label="Editor Width" value={editorWidthOptions.find(option => option.value === editorWidthMode)?.label}>
                     {editorWidthOptions.map((option) => (
                       <button
                         key={option.value}
@@ -5137,8 +5184,8 @@ export default function App() {
                         {option.value === editorWidthMode ? <Check size={15} /> : null}
                       </button>
                     ))}
-                    <div className="note-view-menu-divider" />
-                    <EditorOptionsSubmenu label="Editor Alignment">
+                    </EditorOptionsSubmenu>
+                    <EditorOptionsSubmenu label="Editor Alignment" value={noteAlignment === "left" ? "Left" : "Center"}>
                     {(["left", "center"] as const).map((alignment) => (
                       <button
                         key={alignment}
@@ -5164,7 +5211,7 @@ export default function App() {
 
         {noteOpen ? (
           <section
-            className={`note-surface is-${editorWidthMode}-width is-${noteAlignment}-aligned${!rawMarkdownVisible && !frontmatterError && noteScrollFades.top ? " has-scroll-above" : ""}${!rawMarkdownVisible && !frontmatterError && noteScrollFades.bottom ? " has-scroll-below" : ""}`}
+            className={`note-surface writing-style-${writingStyle} is-${editorWidthMode}-width is-${noteAlignment}-aligned${!rawMarkdownVisible && !frontmatterError && noteScrollFades.top ? " has-scroll-above" : ""}${!rawMarkdownVisible && !frontmatterError && noteScrollFades.bottom ? " has-scroll-below" : ""}`}
             ref={noteSurfaceRef}
             onScroll={handleNoteSurfaceScroll}
             onMouseDown={(event) => {
@@ -5318,6 +5365,7 @@ export default function App() {
             ) : (
               <EditorErrorBoundary resetKey={activePath ?? "pending-note"} onError={handleNoteLoadError}>
                 <NotesEditor
+                  writingStyle={writingStyle}
                   colorToolbarElement={colorToolbarElement}
                   colorsDisabled={titleFocused}
                   content={draft}
@@ -5626,6 +5674,9 @@ export default function App() {
       <ThemeStyles theme={renderedTheme} mode={resolvedTheme} onReset={resetThemeAppearance} />
       {settingsOpen ? (
           <SettingsModal
+            newNoteWritingStyle={newNoteWritingStyle}
+            lastWritingStyle={lastWritingStyle}
+            onNewNoteWritingStyleChange={value => updateMetadata(current => ({ ...current, newNoteWritingStyle: value }))}
             initialSection={settingsSection}
             onSectionChange={setSettingsSection}
             editorWidthMode={editorWidthMode}
