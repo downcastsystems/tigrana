@@ -3672,6 +3672,7 @@ name = "tigrana"
 version = "1.0.14"
 dependencies = [
  "base64 0.22.1",
+ "block2",
  "filetime",
  "fs2",
  "notify",

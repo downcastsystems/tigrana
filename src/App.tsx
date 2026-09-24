@@ -754,6 +754,7 @@ export default function App() {
     requestCreateNoteInContext: () => void;
     toggleRawMarkdown: () => void;
     toggleSidebar: () => void;
+    toggleRightSidebar: () => void;
   }>({
     addEmptyTab: () => {},
     chooseWorkspace: () => {},
@@ -762,6 +763,7 @@ export default function App() {
     requestCreateNoteInContext: () => {},
     toggleRawMarkdown: () => {},
     toggleSidebar: () => {},
+    toggleRightSidebar: () => {},
   });
 
   const activeNote = notes.find((note) => note.path === activePath) ?? null;
@@ -3124,7 +3126,22 @@ export default function App() {
     requestCreateNoteInContext: () => void requestCreateNoteInCurrentContext(),
     toggleRawMarkdown: toggleRawMarkdownMode,
     toggleSidebar: toggleLeftSidebar,
+    toggleRightSidebar,
   };
+
+  useEffect(() => {
+    // Handle this app shortcut before editor key handlers see it. A plain slash
+    // still reaches the editor for typing and slash commands.
+    const onShortcutCapture = (event: KeyboardEvent) => {
+      if (userPathMutationRef.current || event.isComposing || event.defaultPrevented) return;
+      if (!(event.metaKey || event.ctrlKey) || event.shiftKey || event.altKey || event.key !== "/") return;
+      event.preventDefault();
+      event.stopPropagation();
+      keyboardActionsRef.current.toggleRightSidebar();
+    };
+    window.addEventListener("keydown", onShortcutCapture, true);
+    return () => window.removeEventListener("keydown", onShortcutCapture, true);
+  }, []);
 
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
@@ -4765,6 +4782,11 @@ export default function App() {
     });
   }
 
+  const leftLabel = responsivePanes.overlay === "left" && responsivePanes.canDockLeft
+    ? "Keep left sidebar open" : leftVisible ? "Hide left sidebar" : "Show left sidebar";
+  const rightLabel = responsivePanes.overlay === "right" && responsivePanes.canDockRight
+    ? "Keep right sidebar open" : outlineVisible ? "Hide right sidebar" : "Show right sidebar";
+
   // Window drag handling — macOS WebKit's `-webkit-app-region: drag` is unreliable
   // when the window is focused, so we explicitly call Tauri's `startDragging()`
   // on mousedown over the titlebar. Interactive elements opt out via the
@@ -4800,6 +4822,19 @@ export default function App() {
         onDoubleClick={handleChromeDoubleClick}
       >
         <span className="titlebar-traffic-padding" data-tauri-drag-region="" />
+        <button
+          data-sidebar-peek="left"
+          className="icon-button sidebar-toggle titlebar-icon-button chrome-interactive"
+          type="button"
+          title={leftLabel}
+          aria-label={leftLabel}
+          aria-controls="left-navigation-panes"
+          aria-expanded={leftVisible}
+          onMouseDown={stopChromeMouseDown}
+          onClick={toggleLeftSidebar}
+        >
+          {leftVisible ? <PanelLeftClose size={17} /> : <PanelLeftOpen size={17} />}
+        </button>
         <TabHistoryControls
           canGoBack={canNavigateBack}
           canGoForward={canNavigateForward}
@@ -4819,8 +4854,16 @@ export default function App() {
           }}
           onSelect={(tabId) => void activateTab(tabId)}
         />
+        <ReleaseNotice />
+        <TabListDropdown
+          tabs={visibleTabs}
+          activeTabId={activeTabId}
+          onSelect={(tabId) => void activateTab(tabId)}
+          onClose={(tabId) => void closeTab(tabId)}
+          onCloseAll={() => void closeAllTabs()}
+        />
         <button
-          className="icon-button chrome-interactive"
+          className="icon-button titlebar-icon-button chrome-interactive"
           type="button"
           title="Settings"
           aria-label="Settings"
@@ -4830,14 +4873,19 @@ export default function App() {
         >
           <Settings size={15} aria-hidden="true" />
         </button>
-        <TabListDropdown
-          tabs={visibleTabs}
-          activeTabId={activeTabId}
-          onSelect={(tabId) => void activateTab(tabId)}
-          onClose={(tabId) => void closeTab(tabId)}
-          onCloseAll={() => void closeAllTabs()}
-        />
-        <ReleaseNotice />
+        <button
+          data-sidebar-peek="right"
+          className="icon-button outline-toggle titlebar-icon-button chrome-interactive"
+          type="button"
+          title={rightLabel}
+          aria-label={rightLabel}
+          aria-controls="right-note-sidebar"
+          aria-expanded={outlineVisible}
+          onMouseDown={stopChromeMouseDown}
+          onClick={toggleRightSidebar}
+        >
+          {outlineVisible ? <PanelRightClose size={17} /> : <PanelRightOpen size={17} />}
+        </button>
       </header>
 
       <div ref={responsivePanes.frameRef} onPointerDownCapture={(event) => {
@@ -5034,15 +5082,9 @@ export default function App() {
       <main className="main-pane">
         <EditorTopbar
           animateTitle={dockedTitleState.animate}
-          leftVisible={leftVisible}
-          outlineVisible={outlineVisible}
-          leftPreview={responsivePanes.overlay === "left" && responsivePanes.canDockLeft}
-          rightPreview={responsivePanes.overlay === "right" && responsivePanes.canDockRight}
           title={titleDraft}
           titleVisible={dockedTitleState.visible}
           onTitleClick={() => noteSurfaceRef.current?.scrollTo({ top: 0, behavior: "smooth" })}
-          onToggleLeft={toggleLeftSidebar}
-          onToggleOutline={toggleRightSidebar}
         >
           {noteOpen ? (
             <>
@@ -7311,7 +7353,7 @@ function NoteTabs({
       {hasOverflow ? (
         <div className="tab-overflow-wrap chrome-interactive" ref={overflowWrapRef}>
           <button
-            className="note-tab-more chrome-interactive"
+            className="note-tab-more titlebar-icon-button chrome-interactive"
             type="button"
             title={`${overflowTabs.length} more tab${overflowTabs.length === 1 ? "" : "s"}`}
             onMouseDown={stopChromeMouseDown}
@@ -7368,7 +7410,7 @@ function NoteTabs({
         </div>
       ) : null}
       <button
-        className="note-tab-add chrome-interactive"
+        className="note-tab-add titlebar-icon-button chrome-interactive"
         type="button"
         title="New empty tab"
         onMouseDown={stopChromeMouseDown}
@@ -7409,7 +7451,7 @@ function TabListDropdown({
   return (
     <div className="tab-overflow-wrap chrome-interactive" ref={wrapRef}>
       <button
-        className="icon-button chrome-interactive"
+        className="icon-button titlebar-icon-button chrome-interactive"
         type="button"
         title="Open tabs"
         aria-haspopup="menu"
@@ -7505,46 +7547,19 @@ function EmptyNoteSurface({
 
 export function EditorTopbar({
   animateTitle = false,
-  leftPreview = false,
-  rightPreview = false,
   children,
-  leftVisible,
-  outlineVisible,
   title = "",
   titleVisible = false,
   onTitleClick,
-  onToggleLeft,
-  onToggleOutline,
 }: {
   animateTitle?: boolean;
-  leftPreview?: boolean;
-  rightPreview?: boolean;
   children?: ReactNode;
-  leftVisible: boolean;
-  outlineVisible: boolean;
   title?: string;
   titleVisible?: boolean;
   onTitleClick?: () => void;
-  onToggleLeft: () => void;
-  onToggleOutline: () => void;
 }) {
-  const leftLabel = leftPreview ? "Keep left sidebar open" : leftVisible ? "Hide left sidebar" : "Show left sidebar";
-  const rightLabel = rightPreview ? "Keep right sidebar open" : outlineVisible ? "Hide right sidebar" : "Show right sidebar";
-
   return (
     <header className="topbar">
-      <button
-        data-sidebar-peek="left"
-        className="icon-button sidebar-toggle"
-        type="button"
-        title={leftLabel}
-        aria-label={leftLabel}
-        aria-controls="left-navigation-panes"
-        aria-expanded={leftVisible}
-        onClick={onToggleLeft}
-      >
-        {leftVisible ? <PanelLeftClose size={17} /> : <PanelLeftOpen size={17} />}
-      </button>
       <button
         type="button"
         className={`topbar-note-title${titleVisible ? " is-visible" : ""}${animateTitle ? " is-animated" : ""}`}
@@ -7557,18 +7572,6 @@ export function EditorTopbar({
       </button>
       <div className="topbar-actions">
         {children}
-        <button
-          data-sidebar-peek="right"
-          className="icon-button outline-toggle"
-          type="button"
-          title={rightLabel}
-          aria-label={rightLabel}
-          aria-controls="right-note-sidebar"
-          aria-expanded={outlineVisible}
-          onClick={onToggleOutline}
-        >
-          {outlineVisible ? <PanelRightClose size={17} /> : <PanelRightOpen size={17} />}
-        </button>
       </div>
     </header>
   );

@@ -2,6 +2,8 @@ use fs2::FileExt;
 mod assets;
 mod link_index;
 mod menu_selection;
+#[cfg(target_os = "macos")]
+mod macos_shortcuts;
 mod note_history;
 mod notebook_metadata;
 mod notebook_paths;
@@ -1487,10 +1489,10 @@ fn build_app_menu(
     let toggle_outline = CheckMenuItem::with_id(
         handle,
         "toggle_outline",
-        "Show Outline",
+        "Show Right Sidebar",
         has_open_note,
         state.outline_visible,
-        None::<&str>,
+        Some("CmdOrCtrl+/"),
     )?;
     let toggle_focus = CheckMenuItem::with_id(
         handle,
@@ -2319,6 +2321,12 @@ pub fn run() {
         .plugin(tauri_plugin_fs::init())
         .plugin(tauri_plugin_shell::init())
         .menu(|handle| build_app_menu(handle, &[], &AppMenuState::default()))
+        .setup(|app| {
+            #[cfg(target_os = "macos")]
+            macos_shortcuts::install(app.handle())?;
+            remove_macos_system_dictation_menu_item(app.handle());
+            Ok(())
+        })
         .on_window_event(|window, event| {
             let app = window.app_handle();
             match event {

@@ -62,7 +62,9 @@ export function useSidebarOverlay(frameRef: RefObject<HTMLDivElement>, docked: P
       if (event.pointerType === "touch" || event.buttons) return;
       const target = event.target instanceof Element ? event.target : null;
       const insideFrame = !!target && frameRef.current?.contains(target);
-      const peekTarget = insideFrame ? target?.closest<HTMLElement>('[data-sidebar-peek]') : null;
+      const insideTitlebar = !!target && !!frameRef.current?.closest(".app-shell")
+        ?.querySelector(".app-titlebar")?.contains(target);
+      const peekTarget = insideFrame || insideTitlebar ? target?.closest<HTMLElement>('[data-sidebar-peek]') : null;
       let side = peekTarget?.dataset.sidebarPeek as Overlay;
       let source: Hover["source"] = peekTarget?.hasAttribute('data-sidebar-peek-edge') ? "edge" : "button";
       const bounds = insideFrame && !overlay && !docked.leftVisible && (!side || source === "edge")
@@ -107,7 +109,7 @@ export function useSidebarOverlay(frameRef: RefObject<HTMLDivElement>, docked: P
       }
       cancelHover();
       if (!hoverPreview.current) return;
-      if (insideFrame && (target?.closest(paneSelector) || side === overlay)
+      if ((insideFrame || insideTitlebar) && (target?.closest(paneSelector) || side === overlay)
         || target?.closest('.context-menu, .app-menu, [role="menu"], [role="dialog"]')) {
         clearTimeout(closeTimer.current);
         closeTimer.current = undefined;

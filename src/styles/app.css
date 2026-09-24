@@ -173,6 +173,16 @@ button:disabled {
   app-region: drag;
 }
 
+/* Fade only the glyph so theme colors, hover backgrounds, and hit areas stay intact. */
+.app-titlebar .titlebar-icon-button > svg {
+  opacity: 0.65;
+}
+
+.app-titlebar .titlebar-icon-button:hover > svg,
+.app-titlebar .titlebar-icon-button:focus-visible > svg {
+  opacity: 1;
+}
+
 .tab-history-controls {
   display: flex;
   align-items: center;

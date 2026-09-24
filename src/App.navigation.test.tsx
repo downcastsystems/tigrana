@@ -1762,6 +1762,39 @@ describe("Note navigation persistence", () => {
     await act(async () => root.unmount());
   });
 
+  it.each(["metaKey", "ctrlKey"])("consumes %s + slash before the focused editor handles it", async (modifier) => {
+    const container = document.createElement("div");
+    document.body.appendChild(container);
+    containers.push(container);
+    const root = createRoot(container);
+    try {
+      await act(async () => root.render(<App />));
+      await waitFor(() => Boolean(container.querySelector(".note-title-input")));
+      const frame = container.querySelector<HTMLElement>(".app-frame")!;
+      await act(async () => triggerElementResize(frame, 1600));
+      const toggle = container.querySelector<HTMLButtonElement>(".outline-toggle")!;
+      const initiallyExpanded = toggle.getAttribute("aria-expanded");
+      const editor = container.querySelector<HTMLTextAreaElement>(".ProseMirror")!;
+      const editorKeyDown = vi.fn();
+      editor.addEventListener("keydown", editorKeyDown);
+      await act(async () => editor.focus());
+      for (const expected of [initiallyExpanded === "true" ? "false" : "true", initiallyExpanded]) {
+        const event = new KeyboardEvent("keydown", { key: "/", [modifier]: true, bubbles: true, cancelable: true });
+        await act(async () => { editor.dispatchEvent(event); });
+        expect(event.defaultPrevented).toBe(true);
+        expect(editorKeyDown).not.toHaveBeenCalled();
+        expect(toggle.getAttribute("aria-expanded")).toBe(expected);
+      }
+      const slash = new KeyboardEvent("keydown", { key: "/", bubbles: true, cancelable: true });
+      await act(async () => { editor.dispatchEvent(slash); });
+      expect(slash.defaultPrevented).toBe(false);
+      expect(editorKeyDown).toHaveBeenCalledOnce();
+      expect(toggle.getAttribute("aria-expanded")).toBe(initiallyExpanded);
+    } finally {
+      await act(async () => root.unmount());
+    }
+  });
+
   it("previews collapsed sidebars without docking and pins them only on request", async () => {
     const container = document.createElement("div"); document.body.appendChild(container); containers.push(container);
     const root = createRoot(container);
