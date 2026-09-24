@@ -1621,35 +1621,37 @@ describe("Note navigation persistence", () => {
     containers.push(container);
     const root = createRoot(container);
 
-    await act(async () => {
-      root.render(<App />);
-    });
-    await settle();
-    await act(async () => {
-      await new Promise((resolve) => window.setTimeout(resolve, 50));
-    });
+    try {
+      await act(async () => {
+        root.render(<App />);
+      });
+      await settle();
+      await act(async () => {
+        await new Promise((resolve) => window.setTimeout(resolve, 50));
+      });
 
-    const title = container.querySelector<HTMLTextAreaElement>('textarea[aria-label="Note title"]');
-    const body = container.querySelector<HTMLTextAreaElement>('textarea[aria-label="Test note body"]');
-    expect(title?.value).toBe("Welcome");
-    expect(body).not.toBeNull();
+      const title = container.querySelector<HTMLTextAreaElement>('textarea[aria-label="Note title"]');
+      const body = container.querySelector<HTMLTextAreaElement>('textarea[aria-label="Test note body"]');
+      expect(title?.value).toBe("Welcome");
+      expect(body).not.toBeNull();
 
-    await act(async () => {
-      if (title) setReactTextareaValue(title, "QA:Invalid title");
-      if (body) setReactTextareaValue(body, "UNSAVED-BODY-SENTINEL");
-    });
+      await act(async () => {
+        if (title) setReactTextareaValue(title, "QA:Invalid title");
+        if (body) setReactTextareaValue(body, "UNSAVED-BODY-SENTINEL");
+      });
 
-    const other = container.querySelector<HTMLButtonElement>('button[data-note-path="Other.md"]');
-    expect(other).not.toBeNull();
-    await act(async () => {
-      other?.click();
-    });
-    await settle();
+      const other = container.querySelector<HTMLButtonElement>('button[data-note-path="Other.md"]');
+      expect(other).not.toBeNull();
+      await act(async () => {
+        other?.click();
+      });
+      await settle();
 
-    expect(title?.value).toBe("QA:Invalid title");
-    expect(body?.value).toBe("UNSAVED-BODY-SENTINEL");
-
-    await act(async () => root.unmount());
+      expect(title?.value).toBe("QA:Invalid title");
+      expect(body?.value).toBe("UNSAVED-BODY-SENTINEL");
+    } finally {
+      await act(async () => root.unmount());
+    }
   });
 
   it.each(["builtin:default", "bundled:builtin-typewriter"])("selects a new note title from the context menu in %s", async (themeId) => {
