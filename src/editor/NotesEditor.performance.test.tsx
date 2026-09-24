@@ -31,7 +31,7 @@ vi.mock("../lib/markdown", async (importOriginal) => {
 import type { EditorPersistenceHandle } from "./NotesEditor";
 
 const { NotesEditor } = await import("./NotesEditor");
-const { htmlToMarkdown } = await import("../lib/markdown");
+const { htmlToMarkdown, markdownToHtml } = await import("../lib/markdown");
 
 function setReactInputValue(input: HTMLInputElement, value: string) {
   const setter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")?.set;
@@ -83,6 +83,36 @@ describe("Note editor typing performance", () => {
       expect(handle!.capture()).toBeNull();
     });
     expect(onChange).not.toHaveBeenCalled();
+  });
+
+  it("previews resize locally and persists the final equation size in the full editor", async () => {
+    vi.useFakeTimers();
+    const container = document.createElement("div"); document.body.appendChild(container);
+    const root = createRoot(container); mounted.push({ container, root });
+    let handle: EditorPersistenceHandle | null = null;
+    await act(async () => root.render(<NotesEditor content={"$$\nx^2\n$$"} editable findRequest={0}
+      focusAtEndRequest={0} focusRequest={0} historyKey="math" notePath="Math.md"
+      onChange={() => undefined} onLoadError={error => { throw error; }}
+      onPendingChange={() => undefined} onPositionChange={() => undefined}
+      onPersistenceReady={next => { handle = next; }} restorePosition={null} spellcheckEnabled workspace="/Notebook" />));
+    await act(async () => { await vi.advanceTimersByTimeAsync(80); });
+    vi.mocked(htmlToMarkdown).mockClear();
+    const grip = container.querySelector('.equation-resize-handle')!;
+    const pointer = (target: EventTarget, type: string, x: number) => {
+      const event = new MouseEvent(type, { bubbles: true, cancelable: true, button: 0, clientX: x });
+      Object.defineProperty(event, "pointerId", { value: 1 }); target.dispatchEvent(event);
+    };
+    await act(async () => {
+      pointer(grip, 'pointerdown', 200);
+      for (const x of [180, 160, 140, 120, 104]) pointer(document, 'pointermove', x);
+    });
+    expect(htmlToMarkdown).not.toHaveBeenCalled();
+    expect(handle!.capture()).toBeNull();
+    await act(async () => pointer(document, 'pointerup', 104));
+    let markdown: string | undefined;
+    await act(async () => { markdown = handle!.capture()?.markdown; });
+    expect(markdown).toContain(String.raw`{\scriptsize x^2 }`);
+    expect(htmlToMarkdown).toHaveBeenCalledTimes(1);
   });
 
   it("keeps the keyboard-selected slash command in view", async () => {
@@ -417,7 +447,7 @@ describe("Note editor typing performance", () => {
     }
   });
 
-  it("coalesces a typing burst without recreating the editor or rerendering its parent per edit", async () => {
+  it.each(["notes", "story"] as const)("coalesces a %s typing burst without recreating the editor or rerendering its parent per edit", async (writingStyle) => {
     vi.useFakeTimers();
     const container = document.createElement("div");
     document.body.appendChild(container);
@@ -432,6 +462,7 @@ describe("Note editor typing performance", () => {
       parentRenderCount += 1;
       return (
         <NotesEditor
+          writingStyle={writingStyle}
           content={content}
           commandRequest={null}
           editable
@@ -497,6 +528,59 @@ describe("Note editor typing performance", () => {
       }));
     });
     expect(container.querySelector(".ProseMirror")?.textContent).toBe("Start");
+  });
+
+  it.each(["notes", "story"] as const)("allows ten manual indents and removes them one at a time in %s", async writingStyle => {
+    vi.useFakeTimers();
+    const container = document.createElement("div"); document.body.appendChild(container);
+    const root = createRoot(container); mounted.push({ container, root });
+    const onChange = vi.fn();
+    await act(async () => root.render(
+      <NotesEditor content="Opening" writingStyle={writingStyle} editable findRequest={0}
+        focusAtEndRequest={0} focusRequest={0} historyKey="tabs" notePath="Tabs.md"
+        onChange={onChange} onLoadError={error => { throw error; }} onPendingChange={() => undefined}
+        onPositionChange={() => undefined} restorePosition={null} spellcheckEnabled workspace="/Notebook" />
+    ));
+    const element = container.querySelector(".ProseMirror")!;
+    const tab = async (shiftKey = false) => act(async () => {
+      element.dispatchEvent(new KeyboardEvent("keydown", { key: "Tab", shiftKey, bubbles: true, cancelable: true }));
+    });
+    for (let i = 0; i < 10; i++) await tab();
+    expect(element.textContent).toBe("\u2003".repeat(10) + "Opening");
+    await act(async () => { await vi.advanceTimersByTimeAsync(80); });
+    expect(onChange).toHaveBeenLastCalledWith(" ".repeat(40) + "Opening\n", "Tabs.md");
+    expect(markdownToHtml(onChange.mock.lastCall![0])).toContain("\u2003".repeat(10) + "Opening");
+    for (let i = 9; i >= 0; i--) {
+      await tab(true);
+      expect(element.textContent).toBe("\u2003".repeat(i) + "Opening");
+    }
+    expect(element.querySelector("p")?.hasAttribute("data-story-indent")).toBe(false);
+  });
+
+  it("switches writing styles without reloading the document or losing a pending paragraph override", async () => {
+    vi.useFakeTimers();
+    const container = document.createElement("div"); document.body.appendChild(container);
+    const root = createRoot(container); mounted.push({ container, root });
+    const onChange = vi.fn();
+    const render = (writingStyle: "notes" | "story", commandRequest: { id: number; command: "paragraphIndent" } | null) => (
+      <NotesEditor content="Opening" writingStyle={writingStyle} commandRequest={commandRequest} editable findRequest={0}
+        focusAtEndRequest={0} focusRequest={0} historyKey="story-id" notePath="Story.md"
+        onChange={onChange} onLoadError={error => { throw error; }} onPendingChange={() => undefined}
+        onPositionChange={() => undefined} restorePosition={null} spellcheckEnabled workspace="/Notebook" />
+    );
+    await act(async () => root.render(render("story", null)));
+    const editorElement = container.querySelector(".ProseMirror");
+    const command = { id: 1, command: "paragraphIndent" as const };
+    await act(async () => root.render(render("story", command)));
+    expect(editorElement?.querySelector("p")?.getAttribute("data-story-indent")).toBe("indent");
+    await act(async () => root.render(render("notes", command)));
+    expect(container.querySelector(".ProseMirror")).toBe(editorElement);
+    expect(editorElement?.querySelector("p")?.getAttribute("data-story-indent")).toBe("indent");
+    expect(onChange).not.toHaveBeenCalled();
+    await act(async () => { await vi.advanceTimersByTimeAsync(80); });
+    expect(onChange).toHaveBeenCalledTimes(1);
+    expect(onChange).toHaveBeenCalledWith("<!-- tigrana:paragraph indent -->\nOpening\n", "Story.md");
+    expect(htmlToMarkdown).toHaveBeenCalledTimes(1);
   });
 
   it("cancels a pending update from the previous Note without recreating the editor", async () => {
@@ -566,7 +650,7 @@ describe("Note editor typing performance", () => {
     expect(container.querySelector(".ProseMirror")?.textContent).toBe("Note B");
   });
 
-  it.each([false, true])("keeps long-Note typing to one deferred parent update per burst, with colors: %s", async (colored) => {
+  it.each([{ colored: false, writingStyle: "notes" }, { colored: true, writingStyle: "notes" }, { colored: false, writingStyle: "story" }, { colored: true, writingStyle: "story" }] as const)("keeps long-Note typing to one deferred parent update per burst: %j", async ({ colored, writingStyle }) => {
     vi.useFakeTimers();
     const container = document.createElement("div");
     document.body.appendChild(container);
@@ -585,6 +669,7 @@ describe("Note editor typing performance", () => {
       parentRenderCount += 1;
       return (
         <NotesEditor
+          writingStyle={writingStyle}
           content={content}
           commandRequest={null}
           editable

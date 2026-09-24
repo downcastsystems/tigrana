@@ -90,6 +90,13 @@ describe('built-in theme catalog', () => {
         }
       }
     }
+    expect(normalizeLineEndings(readNotice('public/licenses/KaTeX-MIT.txt'))).toBe(normalizeLineEndings(readFileSync('node_modules/katex/LICENSE', 'utf8')));
+    expect(readNotice('public/licenses/KaTeX-MIT.txt')).toContain('Permission is hereby granted');
+    const equationFonts = readNotice('public/licenses/KaTeX-Fonts-OFL.txt');
+    expect(equationFonts).toContain('SIL OPEN FONT LICENSE Version 1.1');
+    for (const family of ['AMS', 'Caligraphic', 'Fraktur', 'Main', 'Math', 'SansSerif', 'Script', 'Size1', 'Size2', 'Size3', 'Size4', 'Typewriter']) {
+      expect(equationFonts).toContain(`KaTeX_${family}`);
+    }
     expect(normalizeLineEndings(readNotice('public/licenses/Inter-OFL.txt'))).toBe(
       normalizeLineEndings(readFileSync('node_modules/@fontsource-variable/inter/LICENSE', 'utf8')),
     );

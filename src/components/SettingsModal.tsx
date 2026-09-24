@@ -1,3 +1,4 @@
+import type { NewNoteWritingStyle, WritingStyle } from "../lib/writingStyle";
 import { ThemePreviewHostContext } from "./ThemePreviewHost";
 import type { ReactNode } from "react";
 import { useState } from "react";
@@ -7,6 +8,9 @@ import type { NavigationStyle } from "../types";
 export type SettingsSection = "general" | "appearance";
 
 export default function SettingsModal(props: {
+  newNoteWritingStyle: NewNoteWritingStyle;
+  lastWritingStyle: WritingStyle;
+  onNewNoteWritingStyleChange: (value: NewNoteWritingStyle) => void;
   initialSection?: SettingsSection;
   onSectionChange?: (section: SettingsSection) => void;
   navigationStyle: NavigationStyle;
@@ -129,11 +133,20 @@ export default function SettingsModal(props: {
                       </select>
                     </label>
                     <label className="setting-row">
-                      Note alignment
-                      <select className="settings-select" aria-label="Note alignment" value={props.noteAlignment}
+                      Editor Alignment
+                      <select className="settings-select" aria-label="Editor Alignment" value={props.noteAlignment}
                         onChange={event => props.onNoteAlignmentChange(event.target.value as "left" | "center")}>
                         <option value="left">Align left</option>
                         <option value="center">Align center</option>
+                      </select>
+                    </label>
+                    <label className="setting-row">
+                      <span>New Note Writing Style<small className="setting-description">For this notebook</small></span>
+                      <select className="settings-select" aria-label="New Note Writing Style" value={props.newNoteWritingStyle}
+                        onChange={event => props.onNewNoteWritingStyleChange(event.target.value as NewNoteWritingStyle)}>
+                        <option value="last-used">Last used writing style ({props.lastWritingStyle === "story" ? "Story" : "Notes"})</option>
+                        <option value="notes">Notes</option>
+                        <option value="story">Story</option>
                       </select>
                     </label>
                     <label className="setting-row">

@@ -3409,6 +3409,9 @@ html[data-theme="dark"] .tab-list-separator {
 }
 
 .raw-markdown-input {
+  /* Source syntax must remain literal: Inter's contextual alternates turn --> into an arrow. */
+  font-variant-ligatures: none;
+  font-feature-settings: "calt" 0, "liga" 0, "clig" 0, "dlig" 0, "hlig" 0;
   display: block;
   width: 100%;
   height: 100%;
@@ -6497,3 +6500,134 @@ html[data-theme="dark"] .settings-theme-section { background: rgb(0 0 0 / 16%); 
   gap: 4px;
 }
 .editor-color-toolbar-slot:empty { display: none; }
+
+.note-equation { cursor: pointer; }
+.note-equation.is-inline { display: inline-block; vertical-align: baseline; }
+.note-equation.is-block { padding: 12px 4px; overflow-x: auto; }
+.note-equation:hover, .note-equation:focus-visible { outline: 1px solid var(--accent); outline-offset: 3px; border-radius: 3px; }
+.note-equation.is-invalid { font-family: monospace; }
+.ProseMirror .note-equation,
+.ProseMirror .note-equation * { -webkit-user-select: none; user-select: none; }
+/* WebKit may still paint the DOM range used for a ProseMirror node selection. */
+.ProseMirror .note-equation::selection,
+.ProseMirror .note-equation *::selection { background: transparent !important; color: inherit !important; }
+.ProseMirror .note-equation.ProseMirror-selectednode {
+  background: color-mix(in srgb, var(--accent) 22%, transparent);
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+  border-radius: 3px;
+}
+.equation-backdrop { z-index: 100; }
+.equation-dialog {
+  width: min(680px, calc(100vw - 32px));
+  min-height: min(640px, calc(100vh - 48px));
+  max-height: calc(100vh - 48px);
+  display: flex;
+  flex-direction: column;
+  overflow: auto;
+  padding: 24px;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: var(--surface);
+  color: var(--text);
+  box-shadow: 0 16px 60px #0004;
+}
+.equation-dialog h2 { margin: 0 0 12px; font-size: 20px; }
+.equation-dialog > * { flex-shrink: 0; }
+.equation-dialog .equation-preview { flex-grow: 1; }
+.equation-dialog-header { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 12px; }
+.equation-dialog-header h2 { margin: 0; }
+.equation-dialog .equation-dialog-close { padding: 5px; border: 0; background: transparent; }
+.equation-dialog p { font-size: 13px; color: var(--text-muted); line-height: 1.5; }
+.equation-dialog label { display: grid; gap: 6px; margin: 14px 0; font-size: 13px; }
+.equation-dialog textarea, .equation-dialog button {
+  color: var(--text); background: var(--background); border: 1px solid var(--border); border-radius: 6px; padding: 8px 10px;
+}
+.equation-dialog textarea { resize: vertical; min-height: 84px; font: 14px/1.5 ui-monospace, monospace; }
+.equation-examples { display: flex; flex-wrap: wrap; gap: 6px; }
+.equation-examples button { font-size: 12px; }
+.equation-preview { margin: 18px 0; padding: 18px 8px; min-height: 65px; overflow: auto; text-align: center; }
+.equation-actions { display: flex; justify-content: flex-end; gap: 8px; }
+.equation-dialog button:disabled { opacity: .5; }
+.equation-dialog button:not(:disabled):hover { border-color: var(--accent); }
+.equation-backdrop { align-items: center; padding-top: 0; }
+
+.editor-options-submenu { position: relative; }
+.editor-options-submenu-panel.note-view-dropdown {
+  top: 0;
+  right: calc(100% + 8px);
+  width: 300px;
+  max-width: calc(100vw - 32px);
+}
+.editor-options-submenu-panel strong,
+.editor-options-submenu-panel small,
+.editor-options-submenu > button strong,
+.editor-options-submenu > button small {
+  overflow: visible;
+  text-overflow: clip;
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
+.editor-options-submenu::before {
+  content: "";
+  position: absolute;
+  right: 100%;
+  top: 0;
+  width: 8px;
+  height: 100%;
+}
+.note-view-dropdown button:disabled { opacity: .45; cursor: default; }
+.note-view-dropdown button:disabled:hover { color: inherit; background: transparent; }
+.equation-context-menu { z-index: 100; }
+.equation-context-menu button:disabled { opacity: .45; cursor: default; }
+.equation-context-menu p { max-width: 230px; padding: 4px 8px; font-size: 12px; color: var(--text-muted); }
+.equation-dialog-header-actions { display: flex; gap: 6px; }
+.equation-dialog.is-maximized { width: calc(100vw - 48px); height: calc(100vh - 48px); display: flex; flex-direction: column; }
+.equation-dialog.is-maximized > * { flex-shrink: 0; }
+.equation-dialog.is-maximized textarea { height: clamp(140px, 28vh, 360px); }
+.equation-dialog.is-maximized .equation-preview { flex: 1 1 150px; min-height: 100px; margin: 8px 0; padding: 8px; }
+.equation-dialog.is-maximized > p, .equation-dialog.is-maximized > label { margin: 8px 0; }
+.equation-examples > button { display: inline-flex; align-items: center; gap: 5px; }
+.equation-examples-menu.note-view-dropdown { position: fixed; z-index: 110; width: 230px; }
+.equation-examples-menu .editor-options-submenu-panel { width: 240px; }
+.equation-examples-menu strong { white-space: normal; }
+@media (max-width: 520px) {
+  .equation-examples-menu .editor-options-submenu-panel { right: 0; top: 100%; }
+}
+
+.equation-layout-options { display: flex; flex-wrap: wrap; gap: 0 16px; }
+.equation-layout-options > label { flex: 1 1 160px; min-width: 0; }
+.equation-dialog.is-maximized .equation-layout-options > label { margin: 8px 0; }
+
+.note-equation.is-block { position: relative; text-align: center; }
+.equation-render-frame { position: relative; display: inline-block; }
+.equation-resize-handle {
+  position: absolute; right: 4px; bottom: 4px; width: 22px; height: 22px;
+  padding: 0; border: 0; border-radius: 3px;
+  background: transparent; color: var(--accent); cursor: nwse-resize;
+  touch-action: none; opacity: 0;
+}
+.equation-resize-handle::after {
+  content: ""; position: absolute; right: 3px; bottom: 3px; width: 14px; height: 14px;
+  background: repeating-linear-gradient(135deg, transparent 0 3px, currentColor 3px 5px, transparent 5px 7px);
+  clip-path: polygon(100% 0, 100% 100%, 0 100%);
+}
+.note-equation:hover .equation-resize-handle,
+.note-equation:focus-within .equation-resize-handle,
+.note-equation.ProseMirror-selectednode .equation-resize-handle,
+.note-equation.is-resizing .equation-resize-handle { opacity: 1; }
+.ProseMirror[contenteditable="false"] .equation-resize-handle { display: none; }
+
+.inline-color-divider { border-top: 1px solid var(--border); margin: 5px 6px; }
+
+/* Story layout only affects ordinary top-level paragraphs. */
+.writing-style-story .ProseMirror > p { margin-top: 0; margin-bottom: 0; text-indent: 0; }
+.writing-style-story .ProseMirror > p + p {
+  margin-top: 0;
+  margin-bottom: 0;
+  text-indent: 1.5em;
+}
+.writing-style-story .ProseMirror > p[data-story-indent="indent"] { text-indent: 1.5em; }
+.writing-style-story .ProseMirror > p[data-story-indent="none"] { text-indent: 0; }
+
+.setting-description { display: block; margin-top: 4px; color: var(--text-muted); font-size: 12px; }

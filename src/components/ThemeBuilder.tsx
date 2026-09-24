@@ -701,7 +701,7 @@ export function ThemeBuilder({
                   </select>
                 </label>
                 <label className="setting-row">
-                  Default note alignment
+                  Default Editor Alignment
                   <select className="settings-select" value={draft.noteAlignment ?? ""}
                     onChange={event => update({ noteAlignment: (event.target.value || undefined) as ThemeDocument["noteAlignment"] })}>
                     <option value="">Keep current</option>

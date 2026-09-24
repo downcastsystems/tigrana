@@ -1,3 +1,5 @@
+import { readWritingStyle, setWritingStyle } from "./lib/writingStyle";
+import { EditorOptionsSubmenu } from "./components/EditorOptionsSubmenu";
 import { isInlineColorCommand, type InlineColorCommand } from "./lib/inlineColors";
 import { resolveThemeVariant } from "./lib/themes";
 import { themeFamily } from "./lib/themeFamilies";
@@ -45,12 +47,14 @@ import {
   Folder,
   FolderOpen,
   History,
+  Image as ImageIcon,
   LayoutList,
   Link2,
   Lock,
   Mic,
   MoveRight,
   Palette,
+  Paintbrush,
   PanelLeftClose,
   PanelLeftOpen,
   PanelRightClose,
@@ -60,6 +64,7 @@ import {
   Plus,
   RotateCcw,
   Search,
+  Sigma,
   Settings,
   Square,
   Trash2,
@@ -258,7 +263,7 @@ type NoteAlignment = "left" | "center";
 const editorWidthOptions: { value: EditorWidthMode; label: string; hint?: string }[] = [
   { value: "comfortable", label: "Comfortable Width", hint: "Default" },
   { value: "narrow", label: "Narrow Width", hint: "Best for writing stories" },
-  { value: "full", label: "Full Width" },
+  { value: "full", label: "Full Width", hint: "Use all available editor space" },
 ];
 
 class EditorErrorBoundary extends Component<
@@ -378,6 +383,7 @@ type RightSidebarMode = "outline" | "frontmatter" | "properties" | "backlinks";
 type EditorCommand =
   | InlineColorCommand
   | SortCommand
+  | "equation"
   | "bold"
   | "italic"
   | "strike"
@@ -385,6 +391,9 @@ type EditorCommand =
   | "highlight"
   | "link"
   | "clear"
+  | "paragraphAuto"
+  | "paragraphIndent"
+  | "paragraphNoIndent"
   | "paragraph"
   | "h1"
   | "h2"
@@ -526,6 +535,8 @@ export default function App() {
   const [frontmatterError, setFrontmatterError] = useState<string | null>(null);
   const [activeNoteAccess, setActiveNoteAccess] = useState<ActiveNoteAccess>("editable");
   const [noteLockMessage, setNoteLockMessage] = useState<string | null>(null);
+  const [contentsActive, setContentsActive] = useState(false);
+  const [titleFocused, setTitleFocused] = useState(false);
   const [hasEditorSelection, setHasEditorSelection] = useState(false);
   const [selectedEditorText, setSelectedEditorText] = useState("");
   const [editorRestorePosition, setEditorRestorePosition] = useState<NotePositionMetadata | null>(null);
@@ -790,6 +801,10 @@ export default function App() {
     () => createNoteDocument({ title: titleDraft, body: draft, frontmatter: frontmatterDraft }),
     [draft, frontmatterDraft, titleDraft],
   );
+  const writingStyle = readWritingStyle(frontmatterDraft);
+  const newNoteWritingStyle = metadata.newNoteWritingStyle === "notes" || metadata.newNoteWritingStyle === "story" ? metadata.newNoteWritingStyle : "last-used";
+  const lastWritingStyle = metadata.lastWritingStyle === "story" ? "story" : "notes";
+  const writingStyleNoteLoading = activeNoteLifecycle.isLoading;
   const activeNoteHistoryKey = activePath
     ? activeNoteIdentityRef.current || linkIndex?.pathToId[activePath] || activePath
     : null;
@@ -1261,6 +1276,23 @@ export default function App() {
   }, [applyAppZoomCommand]);
 
   useEffect(() => {
+    const trackContents = (event: Event) => {
+      const target = event.target;
+      if (!(target instanceof Element)) return;
+      // Editor menus and pane toggles retain the last editing target.
+      if (target.closest(".note-view-menu, .outline-toggle, .sidebar-toggle")) return;
+      setContentsActive(!!target.closest(".ProseMirror"));
+    };
+    document.addEventListener("focusin", trackContents);
+    document.addEventListener("mousedown", trackContents, true);
+    return () => {
+      document.removeEventListener("focusin", trackContents);
+      document.removeEventListener("mousedown", trackContents, true);
+    };
+  }, []);
+  useEffect(() => { setContentsActive(!!document.activeElement?.closest(".ProseMirror")); }, [activePath]);
+
+  useEffect(() => {
     if (!isTauri()) return;
     const label = getCurrentWindow().label;
     const state: AppMenuState = {
@@ -1268,6 +1300,8 @@ export default function App() {
       hasOpenNote,
       activeNoteEditable,
       hasEditorSelection,
+      titleFocused,
+      contentsActive,
       hasUnsavedChanges,
       rawMarkdownVisible: rawMarkdownVisible || Boolean(frontmatterError),
       leftVisible,
@@ -1288,6 +1322,8 @@ export default function App() {
   }, [
     activeNoteEditable,
     hasEditorSelection,
+    titleFocused,
+    contentsActive,
     navigationStyle,
     editorWidthMode,
     frontmatterError,
@@ -1500,11 +1536,11 @@ export default function App() {
   useEffect(() => {
     const onClick = (event: MouseEvent) => {
       const target = event.target as Element | null;
+      if (!target?.closest(".note-view-menu")) setWidthMenuOpen(false);
       // Don't dismiss when clicking inside a context menu, app menu, or any
       // dialog — those popovers handle their own lifecycle.
       if (target?.closest(".context-menu, .app-menu, .note-view-menu, .dialog, .dialog-backdrop")) return;
       setAppMenuOpen(false);
-      setWidthMenuOpen(false);
       setContextMenu(null);
       setTabContextMenu(null);
     };
@@ -1513,6 +1549,10 @@ export default function App() {
     window.addEventListener("click", onClick, true);
     return () => window.removeEventListener("click", onClick, true);
   }, []);
+
+  useEffect(() => {
+    setWidthMenuOpen(false);
+  }, [activePath, workspace, settingsOpen]);
 
   const refreshWorkspace = useCallback(async (nextWorkspace = workspace) => {
     if (!nextWorkspace) {
@@ -1611,6 +1651,7 @@ export default function App() {
   }, []);
 
   const beginNoteNavigation = useCallback((path: string | null = null) => {
+    setWidthMenuOpen(false);
     armedTitleFocusRequestRef.current = 0;
     titleCommitInFlightRef.current = false;
     return activeNoteLifecycle.beginNavigation(path);
@@ -1842,6 +1883,15 @@ export default function App() {
     return next;
   }, [acceptPersistedMetadata, workspace]);
 
+  const rememberWritingStyle = useCallback((style: "notes" | "story") => {
+    if (!metadataLoaded || metadataRef.current.lastWritingStyle === style) return;
+    updateMetadata(current => ({ ...current, lastWritingStyle: style }));
+  }, [metadataLoaded, updateMetadata]);
+
+  useEffect(() => {
+    if (activePath && !writingStyleNoteLoading && !frontmatterError) rememberWritingStyle(writingStyle);
+  }, [activePath, writingStyleNoteLoading, frontmatterError, writingStyle, rememberWritingStyle]);
+
   const notebookPathMutations = useMemo(() => createNotebookPathMutations({
     activePath,
     getActivePath: () => activeDraftStateRef.current.activePath,
@@ -1992,6 +2042,7 @@ export default function App() {
   }
 
   function requestEditorCommand(command: EditorCommand, payload: Partial<EditorCommandRequest> = {}) {
+    if (isInlineColorCommand(command) && (titleFocused || document.activeElement === titleInputRef.current)) return;
     setEditorCommandRequest({ id: Date.now() + Math.random(), command, ...payload });
   }
 
@@ -2022,7 +2073,9 @@ export default function App() {
         await exportTextFile(`${stem}.md`, markdown, [{ name: "Markdown", extensions: ["md"] }]);
         return;
       }
-      const html = await buildNoteExportHtml(titleDraft, readNoteDocument(markdown, titleDraft).body, {
+      const document = readNoteDocument(markdown, titleDraft);
+      const html = await buildNoteExportHtml(titleDraft, document.body, {
+        writingStyle: readWritingStyle(document.frontmatter),
         resolveImageSrc: async (src) => {
           if (!workspace) return src;
           if (/^(https?:|data:|blob:)/i.test(src)) return src;
@@ -2039,7 +2092,9 @@ export default function App() {
     if (!noteOpen) return;
     try {
       const markdown = (await persistDraft()) ?? currentMarkdownSnapshot();
-      const html = await buildNoteExportHtml(titleDraft, readNoteDocument(markdown, titleDraft).body, {
+      const document = readNoteDocument(markdown, titleDraft);
+      const html = await buildNoteExportHtml(titleDraft, document.body, {
+        writingStyle: readWritingStyle(document.frontmatter),
         resolveImageSrc: async (src) => {
           if (!workspace) return src;
           if (/^(https?:|data:|blob:)/i.test(src)) return src;
@@ -2192,6 +2247,9 @@ export default function App() {
         break;
       case "align_center":
         updateNotebookAppearance({ noteAlignment: "center" });
+        break;
+      case "format_equation":
+        if (contentsActive && activeNoteEditable && !rawMarkdownVisible && !frontmatterError) requestEditorCommand("equation");
         break;
       case "format_image":
         void requestImage().then((pick) => {
@@ -3175,6 +3233,7 @@ export default function App() {
       setAppError("Open a notes folder before creating a note.");
       return;
     }
+    const initialContent = createNoteDocument({ title: "", body: "", frontmatter: setWritingStyle("", newNoteWritingStyle === "last-used" ? lastWritingStyle : newNoteWritingStyle) }).markdown;
     const operationWorkspace = workspace;
     const followsActivePath = Boolean(afterPath && afterPath === activeDraftStateRef.current.activePath);
     let placementTargetPath = afterPath;
@@ -3217,7 +3276,7 @@ export default function App() {
         const title = nextUntitledNoteTitle(usedTitles);
         usedTitles.add(title);
         try {
-          note = await createNote(operationWorkspace, parentPath, title);
+          note = await createNote(operationWorkspace, parentPath, title, initialContent);
           if (!navigationIsCurrent()) {
             await reconcileCreatedNote(note);
             return;
@@ -4051,6 +4110,7 @@ export default function App() {
     const revisedDocument = readNoteDocument(markdown, titleDraft);
     setRawMarkdownText(markdown);
     setDraft(normalizeMarkdownImageLines(revisedDocument.body));
+    if (!revisedDocument.frontmatterError) rememberWritingStyle(readWritingStyle(revisedDocument.frontmatter));
     setFrontmatterDraft(revisedDocument.frontmatter);
     setFrontmatterError(revisedDocument.frontmatterError);
     if (revisedDocument.frontmatterError) setAppError(revisedDocument.frontmatterError);
@@ -4059,6 +4119,7 @@ export default function App() {
 
   function handleFrontmatterChange(frontmatter: string) {
     const revisedDocument = reviseNoteDocument(noteDocument, { frontmatter });
+    if (!revisedDocument.frontmatterError) rememberWritingStyle(readWritingStyle(revisedDocument.frontmatter));
     setFrontmatterDraft(revisedDocument.frontmatter);
     setRawMarkdownText(revisedDocument.markdown);
     setFrontmatterError(revisedDocument.frontmatterError);
@@ -5003,7 +5064,16 @@ export default function App() {
               >
                 <Search size={17} />
               </button>
-              <div className="editor-color-toolbar-slot" ref={setColorToolbarElement} />
+              <div className="editor-color-toolbar-slot" ref={setColorToolbarElement}>
+                {rawMarkdownVisible || frontmatterError ? (
+                  <div className="editor-color-controls" role="group" aria-label="Text formatting">
+                    <button type="button" className="icon-button" disabled
+                      title="Text and highlight colors" aria-label="Text and highlight colors" aria-haspopup="menu" aria-expanded={false}>
+                      <Paintbrush size={17} />
+                    </button>
+                  </div>
+                ) : null}
+              </div>
               <button
                 className={`icon-button ${focusModeActive ? "is-active" : ""}`}
                 type="button"
@@ -5013,16 +5083,6 @@ export default function App() {
                 onClick={toggleEditorFocusMode}
               >
                 <Focus size={17} />
-              </button>
-              <button
-                className={`icon-button ${rawMarkdownVisible || frontmatterError ? "is-active" : ""}`}
-                type="button"
-                title={rawMarkdownVisible ? "Show rich editor" : "Show raw Markdown"}
-                aria-label={rawMarkdownVisible ? "Show rich editor" : "Show raw Markdown"}
-                aria-pressed={rawMarkdownVisible || Boolean(frontmatterError)}
-                onClick={toggleRawMarkdownMode}
-              >
-                <FileCode2 size={17} />
               </button>
               <div className="note-view-control note-view-menu">
                 <button
@@ -5041,6 +5101,19 @@ export default function App() {
                 </button>
                 {widthMenuOpen ? (
                   <div className="note-view-dropdown" role="menu" aria-label="Editor options">
+                    <EditorOptionsSubmenu label="Insert" disabled={!contentsActive || !activeNoteEditable || rawMarkdownVisible || Boolean(frontmatterError)}>
+                      <button type="button" role="menuitem"
+                        onMouseDown={event => event.preventDefault()}
+                        onClick={() => { void handleMenuCommand("format_image"); setWidthMenuOpen(false); }}>
+                        <span><strong>Image</strong></span><ImageIcon size={16} />
+                      </button>
+                      <button type="button" role="menuitem"
+                        onMouseDown={event => event.preventDefault()}
+                        onClick={() => { requestEditorCommand("equation"); setWidthMenuOpen(false); }}>
+                        <span><strong>Equation</strong></span><Sigma size={16} />
+                      </button>
+                    </EditorOptionsSubmenu>
+                    <div className="note-view-menu-divider" />
                     <button
                       type="button"
                       className={focusModeActive ? "is-active" : ""}
@@ -5074,7 +5147,25 @@ export default function App() {
                       <FileCode2 size={16} />
                     </button>
                     <div className="note-view-menu-divider" />
-                    <div className="note-view-menu-label">Editor width</div>
+                    <EditorOptionsSubmenu label="Writing Style" value={writingStyle === "story" ? "Story" : "Notes"} disabled={!activeNoteEditable || Boolean(frontmatterError)}>
+                    {(["notes", "story"] as const).map(style => (
+                      <button key={style} type="button" role="menuitemradio"
+                        aria-checked={writingStyle === style} className={writingStyle === style ? "is-active" : ""}
+                        disabled={!activeNoteEditable || Boolean(frontmatterError)}
+                        onClick={() => {
+                          const body = flushPendingEditorBody() ?? draft;
+                          const frontmatter = setWritingStyle(frontmatterDraft, style);
+                          rememberWritingStyle(style);
+                          setFrontmatterDraft(frontmatter);
+                          setRawMarkdownText(createNoteDocument({ title: titleDraft, body, frontmatter }).markdown);
+                        }}>
+                        <span><strong>{style === "notes" ? "Notes" : "Story"}</strong>
+                          <small>{style === "notes" ? "Space between paragraphs" : "Indented paragraphs, no extra spacing"}</small></span>
+                        {writingStyle === style ? <Check size={15} /> : null}
+                      </button>
+                    ))}
+                    </EditorOptionsSubmenu>
+                    <EditorOptionsSubmenu label="Editor Width" value={editorWidthOptions.find(option => option.value === editorWidthMode)?.label}>
                     {editorWidthOptions.map((option) => (
                       <button
                         key={option.value}
@@ -5093,8 +5184,8 @@ export default function App() {
                         {option.value === editorWidthMode ? <Check size={15} /> : null}
                       </button>
                     ))}
-                    <div className="note-view-menu-divider" />
-                    <div className="note-view-menu-label">Alignment</div>
+                    </EditorOptionsSubmenu>
+                    <EditorOptionsSubmenu label="Editor Alignment" value={noteAlignment === "left" ? "Left" : "Center"}>
                     {(["left", "center"] as const).map((alignment) => (
                       <button
                         key={alignment}
@@ -5102,14 +5193,15 @@ export default function App() {
                         className={alignment === noteAlignment ? "is-active" : ""}
                         role="menuitemradio"
                         aria-checked={alignment === noteAlignment}
-                        onClick={() => updateNotebookAppearance({ noteAlignment: alignment })}
+                        onClick={() => { updateNotebookAppearance({ noteAlignment: alignment }); setWidthMenuOpen(false); }}
                       >
                         <span>
-                          <strong>{alignment === "left" ? "Align left" : "Align center"}</strong>
+                          <strong>{alignment === "left" ? "Left" : "Center"}</strong>
                         </span>
                         {alignment === noteAlignment ? <Check size={15} /> : null}
                       </button>
                     ))}
+                    </EditorOptionsSubmenu>
                   </div>
                 ) : null}
               </div>
@@ -5119,7 +5211,7 @@ export default function App() {
 
         {noteOpen ? (
           <section
-            className={`note-surface is-${editorWidthMode}-width is-${noteAlignment}-aligned${!rawMarkdownVisible && !frontmatterError && noteScrollFades.top ? " has-scroll-above" : ""}${!rawMarkdownVisible && !frontmatterError && noteScrollFades.bottom ? " has-scroll-below" : ""}`}
+            className={`note-surface writing-style-${writingStyle} is-${editorWidthMode}-width is-${noteAlignment}-aligned${!rawMarkdownVisible && !frontmatterError && noteScrollFades.top ? " has-scroll-above" : ""}${!rawMarkdownVisible && !frontmatterError && noteScrollFades.bottom ? " has-scroll-below" : ""}`}
             ref={noteSurfaceRef}
             onScroll={handleNoteSurfaceScroll}
             onMouseDown={(event) => {
@@ -5133,6 +5225,7 @@ export default function App() {
               <textarea
                 ref={titleInputRef}
                 className="note-title-input"
+                onFocus={() => setTitleFocused(true)}
                 value={titleDraft}
                 disabled={!activeNoteEditable}
                 onChange={(event) => {
@@ -5141,6 +5234,7 @@ export default function App() {
                   setTitleDraft(event.target.value);
                 }}
                 onBlur={() => {
+                  setTitleFocused(false);
                   disarmUndoableNewNote(activePath);
                   if (titleEscapeUndoInFlightRef.current) return;
                   if (titleCommitInFlightRef.current) return;
@@ -5271,7 +5365,9 @@ export default function App() {
             ) : (
               <EditorErrorBoundary resetKey={activePath ?? "pending-note"} onError={handleNoteLoadError}>
                 <NotesEditor
+                  writingStyle={writingStyle}
                   colorToolbarElement={colorToolbarElement}
+                  colorsDisabled={titleFocused}
                   content={draft}
                   focusRequest={editorFocusRequest}
                   focusAtEndRequest={editorFocusAtEndRequest}
@@ -5578,6 +5674,9 @@ export default function App() {
       <ThemeStyles theme={renderedTheme} mode={resolvedTheme} onReset={resetThemeAppearance} />
       {settingsOpen ? (
           <SettingsModal
+            newNoteWritingStyle={newNoteWritingStyle}
+            lastWritingStyle={lastWritingStyle}
+            onNewNoteWritingStyleChange={value => updateMetadata(current => ({ ...current, newNoteWritingStyle: value }))}
             initialSection={settingsSection}
             onSectionChange={setSettingsSection}
             editorWidthMode={editorWidthMode}

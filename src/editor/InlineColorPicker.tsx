@@ -69,7 +69,10 @@ export function InlineColorPicker({ editor, toolbar = false, disabled = false }:
     panel.querySelector<HTMLButtonElement>("button")?.focus({ preventScroll: true });
   }, [open]);
 
+  useEffect(() => { if (disabled) setOpen(false); }, [disabled]);
+
   const choose = (command: InlineColorCommand) => {
+    if (disabled) return;
     applyInlineColor(editor, command);
     setOpen(false);
   };
@@ -107,16 +110,17 @@ export function InlineColorPicker({ editor, toolbar = false, disabled = false }:
       }}>
       <div role="group" aria-label="Text color">
         <div className="inline-color-heading">Text color</div>
-        {option("textColor_default", "Automatic", !textColor)}
+        {option("textColor_default", "Theme default", !textColor)}
         {inlineColors.map(color => option(`textColor_${color.id}`, color.label, textColor === color.text.light, color.text[mode]))}
       </div>
       <div role="group" aria-label="Highlight color">
         <div className="inline-color-heading">Highlight</div>
-        {option("highlightColor_none", "No highlight", !highlighted)}
         {option("highlightColor_default", "Theme default", highlighted && !highlightColor,
           editorStyles.getPropertyValue("--tigrana-highlight-text") || "#292722",
           editorStyles.getPropertyValue("--tigrana-highlight-background") || "#e6d68d")}
         {inlineColors.map(color => option(`highlightColor_${color.id}`, color.label, highlighted && highlightColor === color.highlight.light, mode === "dark" ? "#eeeae2" : "#292722", color.highlight[mode]))}
+        <div className="inline-color-divider" role="separator" />
+        {option("highlightColor_none", "No highlight", !highlighted)}
       </div>
     </div>, document.body)}
   </>;

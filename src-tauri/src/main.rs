@@ -219,6 +219,10 @@ struct AppMenuState {
     active_note_editable: bool,
     #[serde(default)]
     has_editor_selection: bool,
+    #[serde(default)]
+    title_focused: bool,
+    #[serde(default)]
+    contents_active: bool,
     has_unsaved_changes: bool,
     raw_markdown_visible: bool,
     left_visible: bool,
@@ -240,6 +244,8 @@ impl Default for AppMenuState {
             has_open_note: false,
             active_note_editable: false,
             has_editor_selection: false,
+            title_focused: false,
+            contents_active: false,
             has_unsaved_changes: false,
             raw_markdown_visible: false,
             left_visible: true,
@@ -1597,7 +1603,7 @@ fn build_app_menu(
     )?;
     let alignment_menu = Submenu::with_items(
         handle,
-        "Note Alignment",
+        "Editor Alignment",
         has_open_note,
         &[&align_left, &align_center],
     )?;
@@ -1757,6 +1763,14 @@ fn build_app_menu(
         None::<&str>,
     )?;
 
+    let format_equation = MenuItem::with_id(
+        handle,
+        "format_equation",
+        "Equation...",
+        rich_editable_note && state.contents_active,
+        None::<&str>,
+    )?;
+
     let open_notebooks = Submenu::new(handle, "Open Notebooks", true)?;
     if notebook_windows.is_empty() {
         let empty = MenuItem::with_id(
@@ -1845,27 +1859,29 @@ fn build_app_menu(
     }
     let colors: Vec<InlineColorEntry> =
         serde_json::from_str(include_str!("../../src/lib/inlineColors.json"))?;
-    let text_colors = Submenu::new(handle, "Text Color", rich_editable_note)?;
+    let colors_enabled = rich_editable_note && !state.title_focused;
+    let text_colors = Submenu::new(handle, "Text Color", colors_enabled)?;
     text_colors.append(&MenuItem::with_id(
-        handle, "format_textColor_default", "Automatic", rich_editable_note, None::<&str>,
+        handle, "format_textColor_default", "Theme Default", colors_enabled, None::<&str>,
     )?)?;
-    let highlight_colors = Submenu::new(handle, "Highlight Color", rich_editable_note)?;
+    let highlight_colors = Submenu::new(handle, "Highlight Color", colors_enabled)?;
     highlight_colors.append(&MenuItem::with_id(
-        handle, "format_highlightColor_none", "No Highlight", rich_editable_note, None::<&str>,
-    )?)?;
-    highlight_colors.append(&MenuItem::with_id(
-        handle, "format_highlightColor_default", "Theme Default", rich_editable_note, None::<&str>,
+        handle, "format_highlightColor_default", "Theme Default", colors_enabled, None::<&str>,
     )?)?;
     for color in colors {
         text_colors.append(&MenuItem::with_id(
             handle, format!("format_textColor_{}", color.id), &color.label,
-            rich_editable_note, None::<&str>,
+            colors_enabled, None::<&str>,
         )?)?;
         highlight_colors.append(&MenuItem::with_id(
             handle, format!("format_highlightColor_{}", color.id), &color.label,
-            rich_editable_note, None::<&str>,
+            colors_enabled, None::<&str>,
         )?)?;
     }
+    highlight_colors.append(&PredefinedMenuItem::separator(handle)?)?;
+    highlight_colors.append(&MenuItem::with_id(
+        handle, "format_highlightColor_none", "No Highlight", colors_enabled, None::<&str>,
+    )?)?;
     let edit_menu = Submenu::with_items(
         handle,
         "Edit",
@@ -1945,6 +1961,7 @@ fn build_app_menu(
             &PredefinedMenuItem::separator(handle)?,
             &format_table,
             &format_image,
+            &format_equation,
         ],
     )?;
     let window_menu = Submenu::with_items(
@@ -2401,6 +2418,7 @@ pub fn run() {
             "format_divider" => emit_menu_command(app, "format_divider"),
             "format_table" => emit_menu_command(app, "format_table"),
             "format_image" => emit_menu_command(app, "format_image"),
+            "format_equation" => emit_menu_command(app, "format_equation"),
             "request_quit" => {
                 let labels: Vec<String> = app.webview_windows().keys().cloned().collect();
                 for label in labels {

@@ -125,13 +125,17 @@ vi.mock("./editor/NotesEditor", () => ({
     content,
     notePath,
     onChange,
+    colorsDisabled,
   }: {
     content: string;
+    colorsDisabled?: boolean;
     notePath: string | null;
     onChange: (markdown: string, sourceNotePath: string | null) => void;
   }) => (
     <textarea
+      className="ProseMirror"
       aria-label="Test note body"
+      data-colors-disabled={colorsDisabled}
       value={content}
       onChange={(event) => onChange(event.target.value, notePath)}
     />
@@ -314,6 +318,74 @@ describe("Note navigation persistence", () => {
     }
   });
 
+  it("disables body colors while the title is focused and restores them in the body", async () => {
+    const container = document.createElement("div");
+    document.body.appendChild(container); containers.push(container);
+    const root = createRoot(container);
+    try {
+      await act(async () => { root.render(<App />); await new Promise(resolve => window.setTimeout(resolve, 50)); });
+      const title = container.querySelector<HTMLTextAreaElement>('[aria-label="Note title"]')!;
+      const body = container.querySelector<HTMLTextAreaElement>('[aria-label="Test note body"]')!;
+      await act(async () => title.focus());
+      expect(body.dataset.colorsDisabled).toBe("true");
+      await act(async () => body.focus());
+      expect(body.dataset.colorsDisabled).toBe("false");
+      await act(async () => title.focus());
+      expect(body.dataset.colorsDisabled).toBe("true");
+    } finally { await act(async () => root.unmount()); }
+  });
+
+  it("enables Insert only from note contents and opens the shared image dialog", async () => {
+    const container = document.createElement("div"); document.body.appendChild(container); containers.push(container);
+    const root = createRoot(container);
+    try {
+      await act(async () => { root.render(<App />); await new Promise(resolve => window.setTimeout(resolve, 50)); });
+      const title = container.querySelector<HTMLTextAreaElement>('[aria-label="Note title"]')!;
+      const body = container.querySelector<HTMLTextAreaElement>('[aria-label="Test note body"]')!;
+      await act(async () => title.focus());
+      await act(async () => container.querySelector<HTMLButtonElement>('[aria-label="Editor options"]')!.click());
+      const insert = [...container.querySelectorAll<HTMLButtonElement>('[role="menuitem"]')].find(button => button.textContent === "Insert")!;
+      expect(insert.disabled).toBe(true);
+      await act(async () => body.focus());
+      expect(insert.disabled).toBe(false);
+      await act(async () => insert.focus());
+      expect(insert.disabled).toBe(false);
+      await act(async () => insert.click());
+      const options = [...container.querySelectorAll<HTMLButtonElement>('[role="menu"][aria-label="Insert"] button')];
+      expect(options.map(button => button.textContent)).toEqual(["Image", "Equation"]);
+      await act(async () => options[0].click());
+      expect([...document.querySelectorAll('h2')].some(heading => heading.textContent === "Insert image")).toBe(true);
+    } finally { await act(async () => root.unmount()); }
+  });
+
+  it("preserves Insert availability through outline toggles without enabling it from the title", async () => {
+    const container = document.createElement("div"); document.body.appendChild(container); containers.push(container);
+    const root = createRoot(container);
+    try {
+      await act(async () => { root.render(<App />); await new Promise(resolve => window.setTimeout(resolve, 50)); });
+      const body = container.querySelector<HTMLTextAreaElement>('[aria-label="Test note body"]')!;
+      const title = container.querySelector<HTMLTextAreaElement>('[aria-label="Note title"]')!;
+      const toggle = async () => {
+        await act(async () => {
+          const button = container.querySelector<HTMLButtonElement>('.outline-toggle')!;
+          button.dispatchEvent(new MouseEvent('mousedown', { bubbles: true }));
+          button.focus(); button.click();
+        });
+      };
+      const openInsert = async () => {
+        await act(async () => container.querySelector<HTMLButtonElement>('[aria-label="Editor options"]')!.click());
+        return [...container.querySelectorAll<HTMLButtonElement>('[role="menuitem"]')].find(button => button.textContent === 'Insert')!;
+      };
+      await act(async () => body.focus());
+      await toggle(); await toggle();
+      expect((await openInsert()).disabled).toBe(false);
+      await act(async () => container.querySelector<HTMLButtonElement>('[aria-label="Editor options"]')!.click());
+      await act(async () => title.focus());
+      await toggle(); await toggle();
+      expect((await openInsert()).disabled).toBe(true);
+    } finally { await act(async () => root.unmount()); }
+  });
+
   it("keeps writing layout and word count through Twain selection, reload, and reselection", async () => {
     localStorage.setItem("tigrana-word-count-visible", "false");
     const container = document.createElement("div");
@@ -341,7 +413,17 @@ describe("Note navigation persistence", () => {
       expect(container.querySelector(".note-status-bar")).toBeNull();
       await act(async () => container.querySelector<HTMLButtonElement>('[aria-label="Close settings"]')!.click());
       await act(async () => container.querySelector<HTMLButtonElement>('[aria-label="Editor options"]')!.click());
-      for (const text of ["Full Width", "Align left"]) {
+      const widthMenu = [...container.querySelectorAll<HTMLButtonElement>('[role="menuitem"]')].find(button => button.querySelector("strong")?.textContent === "Editor Width")!;
+      expect(widthMenu.querySelector("small")?.textContent).toBe("Comfortable Width");
+      expect(container.querySelector('[role="menu"][aria-label="Editor Width"]')).toBeNull();
+      await act(async () => widthMenu.click());
+      const widthChoices = [...container.querySelectorAll<HTMLButtonElement>('[role="menu"][aria-label="Editor Width"] button')];
+      expect(widthChoices.map(button => button.textContent)).toEqual([
+        "Comfortable WidthDefault", "Narrow WidthBest for writing stories", "Full WidthUse all available editor space",
+      ]);
+      await act(async () => { Array.from(container.querySelectorAll<HTMLButtonElement>('[role="menuitemradio"]')).find(b => b.textContent?.includes("Full Width"))!.click(); });
+      await act(async () => { Array.from(container.querySelectorAll<HTMLButtonElement>('[role="menuitem"]')).find(b => b.querySelector("strong")?.textContent === "Editor Alignment")!.click(); });
+      for (const text of ["Left"]) {
         await act(async () => { Array.from(container.querySelectorAll<HTMLButtonElement>('[role="menuitemradio"]')).find(b => b.textContent?.includes(text))!.click(); });
       }
       await waitFor(() => {
@@ -1610,6 +1692,45 @@ describe("Note navigation persistence", () => {
     }
   });
 
+  it.each([
+    { preference: "last-used", source: "story", expected: "story" },
+    { preference: "last-used", source: "notes", expected: "notes" },
+    { preference: "notes", source: "story", expected: "notes" },
+    { preference: "story", source: "notes", expected: "story" },
+  ])("remembers the new-note style setting and creates a note with it: %j", async ({ preference, source, expected }) => {
+    const otherNotebookMetadata = JSON.stringify({ revision: 0, newNoteWritingStyle: "story", lastWritingStyle: "story" });
+    demoPersistence.set("tigrana-meta:/demo/Stories", otherNotebookMetadata);
+    const original = `---\ntigrana_writing_style: ${source}\n---\n\nExisting text.`;
+    demoPersistence.set("tigrana-demo-v5", JSON.stringify({ folders: [], notes: { "Welcome.md": original } }));
+    const container = document.createElement("div"); document.body.appendChild(container); containers.push(container);
+    let root = createRoot(container);
+    try {
+      await act(async () => root.render(<App />));
+      await waitFor(() => Boolean(container.querySelector(".note-surface")));
+      await act(async () => window.dispatchEvent(new KeyboardEvent("keydown", { key: ",", metaKey: true })));
+      const setting = container.querySelector<HTMLSelectElement>('[aria-label="New Note Writing Style"]')!;
+      expect(setting.value).toBe("last-used");
+      expect(setting.options[0].textContent).toBe(`Last used writing style (${source === "story" ? "Story" : "Notes"})`);
+      await act(async () => { setting.value = preference; setting.dispatchEvent(new Event("change", { bubbles: true })); });
+      await waitFor(() => JSON.parse(demoPersistence.get("tigrana-meta:/demo/Tigrana")!).newNoteWritingStyle === preference);
+      await act(async () => root.unmount());
+      root = createRoot(container);
+      await act(async () => root.render(<App />));
+      await waitFor(() => Boolean(container.querySelector(".note-surface")));
+      await act(async () => window.dispatchEvent(new KeyboardEvent("keydown", { key: ",", metaKey: true })));
+      expect(container.querySelector<HTMLSelectElement>('[aria-label="New Note Writing Style"]')!.value).toBe(preference);
+      await act(async () => container.querySelector<HTMLButtonElement>('[aria-label="Close settings"]')!.click());
+      await act(async () => container.querySelector<HTMLButtonElement>(".pane-create-button")!.click());
+      await act(async () => container.querySelector<HTMLButtonElement>(".pane-create-menu button")!.click());
+      await waitFor(() => container.querySelector<HTMLTextAreaElement>('[aria-label="Note title"]')?.value === "Untitled");
+      const store = JSON.parse(demoPersistence.get("tigrana-demo-v5")!);
+      expect(store.notes["Untitled.md"]).toContain(`tigrana_writing_style: ${expected}`);
+      expect(store.notes["Welcome.md"]).toBe(original);
+      expect(demoPersistence.get("tigrana-meta:/demo/Stories")).toBe(otherNotebookMetadata);
+      expect(container.querySelector(".note-surface")?.classList.contains(`writing-style-${expected}`)).toBe(true);
+    } finally { await act(async () => root.unmount()); }
+  });
+
   it("persists a blank new note as an Untitled placeholder", async () => {
     const container = document.createElement("div");
     document.body.appendChild(container);
@@ -1636,7 +1757,7 @@ describe("Note navigation persistence", () => {
     const store = JSON.parse(demoPersistence.get("tigrana-demo-v5") ?? "{}") as {
       notes?: Record<string, string>;
     };
-    expect(store.notes).toHaveProperty("Untitled.md", "");
+    expect(store.notes?.["Untitled.md"]).toContain("tigrana_writing_style: notes");
 
     await act(async () => root.unmount());
   });
@@ -1794,9 +1915,10 @@ describe("Note navigation persistence", () => {
     const editorOptions = container.querySelector<HTMLButtonElement>('button[title="Editor options"]');
     const rightToggle = container.querySelector<HTMLButtonElement>(".outline-toggle");
 
-    expect(findButton?.nextElementSibling).toBe(focusButton);
-    expect(focusButton?.nextElementSibling).toBe(markdownButton);
-    expect(markdownButton?.nextElementSibling?.contains(editorOptions ?? null)).toBe(true);
+    expect(findButton?.nextElementSibling).toBe(container.querySelector(".editor-color-toolbar-slot"));
+    expect(findButton?.nextElementSibling?.nextElementSibling).toBe(focusButton);
+    expect(markdownButton).toBeNull();
+    expect(focusButton?.nextElementSibling?.contains(editorOptions ?? null)).toBe(true);
     expect(focusButton?.getAttribute("aria-pressed")).toBe("false");
 
     await act(async () => editorOptions?.click());
@@ -1838,7 +1960,99 @@ describe("Note navigation persistence", () => {
     await act(async () => root.unmount());
   });
 
-  it("offers raw Markdown in both the editor toolbar and editor options", async () => {
+  it.each(["n", ","])("dismisses editor options when shortcut %s opens another context", async (key) => {
+    demoPersistence.set("tigrana-demo-v5", JSON.stringify({ folders: [], notes: { "Welcome.md": "Text." } }));
+    const container = document.createElement("div");
+    document.body.appendChild(container); containers.push(container);
+    const root = createRoot(container);
+    try {
+      await act(async () => root.render(<App />));
+      await waitFor(() => Boolean(container.querySelector(".note-surface")));
+      await act(async () => container.querySelector<HTMLButtonElement>('button[aria-label="Editor options"]')!.click());
+      expect(container.querySelector('[role="menu"][aria-label="Editor options"]')).not.toBeNull();
+      await act(async () => window.dispatchEvent(new KeyboardEvent("keydown", { key, metaKey: true })));
+      await waitFor(() => key === "n"
+        ? Boolean(JSON.parse(demoPersistence.get("tigrana-demo-v5") ?? "{}").notes?.["Untitled.md"])
+        : Boolean(container.querySelector('[aria-label="Close settings"]')));
+      expect(container.querySelector('[role="menu"][aria-label="Editor options"]')).toBeNull();
+      if (key === ",") {
+        await act(async () => container.querySelector<HTMLButtonElement>('[aria-label="Close settings"]')!.click());
+        expect(container.querySelector('[role="menu"][aria-label="Editor options"]')).toBeNull();
+      }
+    } finally { await act(async () => root.unmount()); }
+  });
+
+  it("uses Story for a new note after changing the current note to Story", async () => {
+    demoPersistence.set("tigrana-demo-v5", JSON.stringify({ folders: [], notes: {
+      "Welcome.md": "Opening paragraph.",
+    } }));
+    const container = document.createElement("div");
+    document.body.appendChild(container); containers.push(container);
+    const root = createRoot(container);
+    try {
+      await act(async () => root.render(<App />));
+      await waitFor(() => Boolean(container.querySelector(".note-surface")));
+      await act(async () => container.querySelector<HTMLButtonElement>('[aria-label="Editor options"]')!.click());
+      const styleMenu = [...container.querySelectorAll<HTMLButtonElement>('[role="menuitem"]')].find(button => button.querySelector("strong")?.textContent === "Writing Style")!;
+      await act(async () => styleMenu.click());
+      const story = [...container.querySelectorAll<HTMLButtonElement>('[role="menuitemradio"]')].find(button => button.textContent?.startsWith("Story"))!;
+      await act(async () => story.click());
+      await act(async () => container.querySelector<HTMLButtonElement>('[aria-label="Editor options"]')!.click());
+      await waitFor(() => JSON.parse(demoPersistence.get("tigrana-demo-v5")!).notes["Welcome.md"].includes("tigrana_writing_style: story"));
+      await act(async () => container.querySelector<HTMLButtonElement>(".pane-create-button")!.click());
+      await act(async () => container.querySelector<HTMLButtonElement>(".pane-create-menu button")!.click());
+      await waitFor(() => container.querySelector<HTMLTextAreaElement>('[aria-label="Note title"]')?.value === "Untitled");
+      expect(container.querySelector(".note-surface")!.classList.contains("writing-style-story")).toBe(true);
+      expect(JSON.parse(demoPersistence.get("tigrana-demo-v5")!).notes["Untitled.md"]).toContain("tigrana_writing_style: story");
+      await waitFor(() => JSON.parse(demoPersistence.get("tigrana-meta:/demo/Tigrana") ?? "{}").lastWritingStyle === "story");
+      await act(async () => window.dispatchEvent(new KeyboardEvent("keydown", { key: ",", metaKey: true })));
+      expect(container.querySelector<HTMLSelectElement>('[aria-label="New Note Writing Style"]')!.options[0].textContent).toBe("Last used writing style (Story)");
+    } finally { await act(async () => root.unmount()); }
+  });
+
+  it("saves writing style per document and restores it after navigation and reload", async () => {
+    demoPersistence.set("tigrana-demo-v5", JSON.stringify({ folders: [], notes: {
+      "Welcome.md": "Opening paragraph.\n\nSecond paragraph.",
+      "Other.md": "Other note.",
+    } }));
+    const container = document.createElement("div");
+    document.body.appendChild(container); containers.push(container);
+    let root = createRoot(container);
+    const surface = () => container.querySelector(".note-surface")!;
+    try {
+      await act(async () => root.render(<App />));
+      await waitFor(() => Boolean(surface()));
+      const body = container.querySelector<HTMLTextAreaElement>('[aria-label="Test note body"]')!;
+      await act(async () => setReactTextareaValue(body, "Freshly edited prose."));
+      await act(async () => container.querySelector<HTMLButtonElement>('[aria-label="Editor options"]')!.click());
+      const styleMenu = [...container.querySelectorAll<HTMLButtonElement>('[role="menuitem"]')].find(button => button.querySelector("strong")?.textContent === "Writing Style")!;
+      expect(styleMenu.querySelector("small")?.textContent).toBe("Notes");
+      expect(container.querySelector('[role="menu"][aria-label="Writing Style"]')).toBeNull();
+      await act(async () => styleMenu.click());
+      expect([...container.querySelectorAll('[aria-label="Writing Style"] small')].map(el => el.textContent)).toEqual([
+        "Space between paragraphs", "Indented paragraphs, no extra spacing",
+      ]);
+      const story = [...container.querySelectorAll<HTMLButtonElement>('[role="menuitemradio"]')].find(button => button.textContent?.startsWith("Story"))!;
+      await act(async () => story.click());
+      expect(styleMenu.querySelector("small")?.textContent).toBe("Story");
+      expect(surface().classList.contains("writing-style-story")).toBe(true);
+      expect(surface().classList.contains("is-comfortable-width")).toBe(true);
+      await waitFor(() => JSON.parse(demoPersistence.get("tigrana-demo-v5")!).notes["Welcome.md"].includes("tigrana_writing_style: story"));
+      expect(JSON.parse(demoPersistence.get("tigrana-demo-v5")!).notes["Welcome.md"]).toContain("Freshly edited prose.");
+      await act(async () => container.querySelector<HTMLButtonElement>('[aria-label="Editor options"]')!.click());
+      await act(async () => container.querySelector<HTMLButtonElement>('button[data-note-path="Other.md"]')!.click());
+      await waitFor(() => surface().classList.contains("writing-style-notes"));
+      await act(async () => container.querySelector<HTMLButtonElement>('button[data-note-path="Welcome.md"]')!.click());
+      await waitFor(() => surface().classList.contains("writing-style-story"));
+      await act(async () => root.unmount());
+      root = createRoot(container);
+      await act(async () => root.render(<App />));
+      await waitFor(() => surface()?.classList.contains("writing-style-story") ?? false);
+      expect(container.querySelector<HTMLTextAreaElement>('[aria-label="Test note body"]')!.value).toBe("Freshly edited prose.");
+    } finally { await act(async () => root.unmount()); }
+  });
+
+  it("offers raw Markdown in editor options without a toolbar button", async () => {
     demoPersistence.set("tigrana-demo-v5", JSON.stringify({
       folders: [],
       notes: {
@@ -1857,12 +2071,18 @@ describe("Note navigation persistence", () => {
 
     const markdownButton = container.querySelector<HTMLButtonElement>('button[aria-label="Show raw Markdown"]');
     const editorOptions = container.querySelector<HTMLButtonElement>('button[title="Editor options"]');
-    expect(markdownButton?.getAttribute("aria-pressed")).toBe("false");
-
-    await act(async () => markdownButton?.click());
+    expect(markdownButton).toBeNull();
+    await act(async () => editorOptions?.click());
+    const showMarkdown = Array.from(container.querySelectorAll<HTMLButtonElement>('[role="menuitemcheckbox"]'))
+      .find(button => button.textContent?.includes("Show raw Markdown"))!;
+    expect(showMarkdown.getAttribute("aria-checked")).toBe("false");
+    await act(async () => showMarkdown.click());
     expect(container.querySelector('textarea[aria-label="Raw Markdown"]')).not.toBeNull();
-    expect(markdownButton?.getAttribute("aria-label")).toBe("Show rich editor");
-    expect(markdownButton?.getAttribute("aria-pressed")).toBe("true");
+    expect(container.querySelector('button[aria-label="Show rich editor"]')).toBeNull();
+    const colorButton = container.querySelector<HTMLButtonElement>('.editor-color-toolbar-slot button');
+    expect(colorButton?.getAttribute("aria-label")).toBe("Text and highlight colors");
+    expect(colorButton?.disabled).toBe(true);
+    expect(container.querySelector('.editor-color-toolbar-slot')?.nextElementSibling?.getAttribute('aria-label')).toBe('Enter focus mode');
 
     await act(async () => editorOptions?.click());
     const markdownMenuItem = Array.from(container.querySelectorAll<HTMLButtonElement>('[role="menuitemcheckbox"]'))
@@ -1873,8 +2093,7 @@ describe("Note navigation persistence", () => {
 
     expect(container.querySelector('textarea[aria-label="Raw Markdown"]')).toBeNull();
     expect(container.querySelector('textarea[aria-label="Test note body"]')).not.toBeNull();
-    expect(markdownButton?.getAttribute("aria-label")).toBe("Show raw Markdown");
-    expect(markdownButton?.getAttribute("aria-pressed")).toBe("false");
+    expect(container.querySelector('button[aria-label="Show raw Markdown"]')).toBeNull();
 
     await act(async () => root.unmount());
   });

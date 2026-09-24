@@ -1,7 +1,9 @@
+import { requestEquation } from "./mathNodes";
 import type { Editor, Range } from "@tiptap/react";
 import { TextSelection } from "@tiptap/pm/state";
 import { TableMap } from "@tiptap/pm/tables";
 import {
+  Sigma,
   CheckSquare,
   Code,
   Heading1,
@@ -229,6 +231,16 @@ export const slashCommands: SlashCommand[] = [
       markCurrentTableAsTigranaHtml(editor);
       ensureParagraphAfterCurrentTable(editor);
     },
+  },
+  {
+    id: "equation", title: "Equation", hint: "Math on its own line, with examples", icon: Sigma,
+    keywords: ["math", "latex", "tex", "formula"],
+    run: (editor, range) => requestEquation(editor, { block: true, from: range.from, to: range.to }),
+  },
+  {
+    id: "inline-equation", title: "Inline equation", hint: "Math within a sentence", icon: Sigma,
+    keywords: ["math", "latex", "tex", "formula"],
+    run: (editor, range) => requestEquation(editor, { block: false, from: range.from, to: range.to }),
   },
 ];
 

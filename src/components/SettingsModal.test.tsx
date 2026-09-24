@@ -46,6 +46,7 @@ it.each(["Create theme", "Edit theme"])(
       await act(async () =>
         root.render(
           <SettingsModal
+            newNoteWritingStyle="last-used" lastWritingStyle="notes" onNewNoteWritingStyleChange={vi.fn()}
             editorWidthMode="comfortable"
             onEditorWidthModeChange={vi.fn()}
             noteAlignment="center"
@@ -68,9 +69,9 @@ it.each(["Create theme", "Edit theme"])(
       expect(host.textContent).not.toContain("Restore default appearance");
       const generalLabels = [...host.querySelectorAll(".setting-row")];
       expect(generalLabels.map((label) => label.textContent?.trim())).toEqual([
-        "Navigation styleDual paneDual pane with sections (recommended)Single pane", "Editor widthComfortable WidthNarrow WidthFull Width", "Note alignmentAlign leftAlign center", "Check spelling while typing", "Show word count",
+        "Navigation styleDual paneDual pane with sections (recommended)Single pane", "Editor widthComfortable WidthNarrow WidthFull Width", "Editor AlignmentAlign leftAlign center", "New Note Writing StyleFor this notebookLast used writing style (Notes)NotesStory", "Check spelling while typing", "Show word count",
       ]);
-      const wordCount = generalLabels[4].querySelector<HTMLInputElement>("input")!;
+      const wordCount = generalLabels[5].querySelector<HTMLInputElement>("input")!;
       expect(wordCount.checked).toBe(true);
       await act(async () => wordCount.click());
       expect(changeWordCount).toHaveBeenCalledWith(false);
