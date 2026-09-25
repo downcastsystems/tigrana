@@ -222,6 +222,8 @@ struct AppMenuState {
     #[serde(default)]
     has_editor_selection: bool,
     #[serde(default)]
+    bullet_method_enabled: bool,
+    #[serde(default)]
     title_focused: bool,
     #[serde(default)]
     contents_active: bool,
@@ -246,6 +248,7 @@ impl Default for AppMenuState {
             has_open_note: false,
             active_note_editable: false,
             has_editor_selection: false,
+            bullet_method_enabled: false,
             title_focused: false,
             contents_active: false,
             has_unsaved_changes: false,
@@ -1858,8 +1861,9 @@ fn build_app_menu(
         handle, "sort_bullet_method", "Bullet Method", can_sort, Some(bullet_icon), Some("CmdOrCtrl+Alt+Period"),
     )?;
     let sort_lines = Submenu::with_items(
-        handle, "Sort Lines", can_sort, &[&sort_az, &sort_za, &sort_az_case, &sort_za_case, &sort_bullet_method],
+        handle, "Sort Lines", can_sort, &[&sort_az, &sort_za, &sort_az_case, &sort_za_case],
     )?;
+    if state.bullet_method_enabled { sort_lines.append(&sort_bullet_method)?; }
     // Share labels and ordering with the editor's palette.
     #[derive(serde::Deserialize)]
     struct InlineColorEntry {

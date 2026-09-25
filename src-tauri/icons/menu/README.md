@@ -1,8 +1,8 @@
 # Sort menu icons
 
 The A–Z and Z–A SVGs come from lucide-react 0.468.0, `ArrowDownAZ` and
-`ArrowDownZA`. Their full license is in LICENSE-lucide. The Bullet Method SVG
-is Tigrana's own mark and matches src/components/BulletMethodIcon.tsx.
+`ArrowDownZA`. The Bullet Method SVG uses Lucide's `CircleDot` and matches
+src/components/BulletMethodIcon.tsx. Their full license is in LICENSE-lucide.
 Keep the two Bullet Method representations synchronized when changing the mark.
 
 The native menu uses 36 × 36 straight RGBA pixels rendered from these SVGs.

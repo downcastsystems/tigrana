@@ -42,6 +42,35 @@ function setReactInputValue(input: HTMLInputElement, value: string) {
 describe("Note editor typing performance", () => {
   const mounted: Array<{ container: HTMLElement; root: Root }> = [];
 
+  it("keeps current Bullet Method settings after fresh loads, cached switches, and reloads", async () => {
+    const container = document.createElement("div"); document.body.append(container);
+    const root = createRoot(container); mounted.push({ container, root });
+    const display = { enabled: true, replaceBullets: true, dimCompleted: true };
+    const off = { ...display, enabled: false };
+    const render = (path: string, settings = display, reloadRequest = 0) => <NotesEditor
+      content={"- DONE: Finished\n- TODO: Work"} bulletMethodDisplay={settings}
+      commandRequest={null} editable findRequest={0} focusAtEndRequest={0} focusRequest={0}
+      historyKey={path} notePath={path} onChange={() => undefined} onLoadError={error => { throw error; }}
+      onPendingChange={() => undefined} onPositionChange={() => undefined} reloadRequest={reloadRequest}
+      restorePosition={null} spellcheckEnabled workspace="/Notebook" />;
+    const count = () => container.querySelectorAll('.bullet-method-marker-button').length;
+    await act(async () => root.render(render('A.md', off)));
+    await act(async () => root.render(render('A.md')));
+    expect(count()).toBe(2);
+    await act(async () => root.render(render('B.md')));
+    expect(count()).toBe(2);
+    await act(async () => root.render(render('A.md')));
+    expect(count()).toBe(2);
+    await act(async () => root.render(render('A.md', off)));
+    await act(async () => root.render(render('B.md', off)));
+    expect(count()).toBe(0);
+    await act(async () => root.render(render('B.md')));
+    await act(async () => root.render(render('A.md')));
+    expect(count()).toBe(2);
+    await act(async () => root.render(render('A.md', display, 1)));
+    expect(count()).toBe(2);
+  });
+
   it("allows native selection to start in the blank space below the last line", async () => {
     const container = document.createElement("div"); document.body.appendChild(container);
     const root = createRoot(container); mounted.push({ container, root });

@@ -1,8 +1,13 @@
 import { useEffect, useRef, useState, type PointerEvent as ReactPointerEvent } from "react";
 import { ArrowDown, ArrowUp, GripVertical, Plus, RotateCcw, Trash2 } from "lucide-react";
-import { defaultBulletMethodStatuses, validateBulletMethodStatuses, type BulletMethodStatus } from "../lib/bulletMethod";
+import { bulletMethodDimPercent, defaultBulletMethodDisplay, type BulletMethodDisplay, statusIcon, defaultBulletMethodStatuses, validateBulletMethodStatuses, type BulletMethodStatus } from "../lib/bulletMethod";
 
-export default function BulletMethodSettings({ statuses, onChange }: {
+import { BulletMethodIconPicker } from "./BulletMethodIconPicker";
+
+export default function BulletMethodSettings({ statuses, onChange, display = defaultBulletMethodDisplay, onDisplayChange, colorMode = "light" }: {
+  colorMode?: "light" | "dark";
+  display?: BulletMethodDisplay;
+  onDisplayChange?: (display: BulletMethodDisplay) => void;
   statuses: readonly BulletMethodStatus[];
   onChange: (statuses: readonly BulletMethodStatus[]) => void;
 }) {
@@ -94,8 +99,13 @@ export default function BulletMethodSettings({ statuses, onChange }: {
     window.addEventListener("blur", cleanup);
     window.addEventListener("keydown", onKey);
   }
-  function save(next: readonly BulletMethodStatus[], feedback: string) {
+  function save(next: readonly BulletMethodStatus[], feedback: string, restoreDimming = false) {
     try {
+      if (restoreDimming) onDisplayChange?.({
+        ...display,
+        lightPercent: bulletMethodDimPercent(defaultBulletMethodDisplay, "light"),
+        darkPercent: bulletMethodDimPercent(defaultBulletMethodDisplay, "dark"),
+      });
       onChange(next);
       setDraft(next);
       setSaveError(null);
@@ -106,8 +116,45 @@ export default function BulletMethodSettings({ statuses, onChange }: {
   }
   return (
     <div className="bullet-method-settings">
-      <p>Keep tasks in your everyday notes. Start a bullet with a status and a colon, such as <code>TODO: Review the proposal</code>. Leave general notes unmarked.</p>
-      <p>The default statuses describe what needs your attention. CLOSED does not necessarily mean the task is done; it means there is nothing more for you to do.</p>
+      <div className="bullet-method-enable">
+        <label><input type="checkbox" aria-label="Turn on the Bullet Method" checked={Boolean(display.enabled)} onChange={event => {
+          try { onDisplayChange?.({ ...display, enabled: event.target.checked }); setSaveError(null); }
+          catch { setSaveError("Could not save Bullet Method settings. Please try again."); }
+        }} /><span>Turn on the Bullet Method<small>Supercharge your workflow</small></span></label>
+      </div>
+      {display.enabled && <>
+      <div className="bullet-method-display-options">
+        <label><input type="checkbox" checked={display.replaceBullets} onChange={event => {
+          try { onDisplayChange?.({ ...display, replaceBullets: event.target.checked }); setSaveError(null); }
+          catch { setSaveError("Could not save display settings. Please try again."); }
+        }} /> Replace bullets with status icons</label>
+        <label><input type="checkbox" checked={display.dimCompleted} onChange={event => {
+          try { onDisplayChange?.({ ...display, dimCompleted: event.target.checked }); setSaveError(null); }
+          catch { setSaveError("Could not save display settings. Please try again."); }
+        }} /> Dim DONE/CLOSED items</label>
+        {display.dimCompleted && <div className="bullet-method-dim-slider">
+          <span>Dimming ({colorMode} mode)</span>
+          <input type="range" min={40} max={90} step={1} aria-label={`Dimming percentage for ${colorMode} mode`}
+            value={bulletMethodDimPercent(display, colorMode)} onChange={event => {
+              try { onDisplayChange?.({ ...display, [colorMode === "light" ? "lightPercent" : "darkPercent"]: Number(event.target.value) }); setSaveError(null); }
+              catch { setSaveError("Could not save display settings. Please try again."); }
+            }} />
+          <output>{bulletMethodDimPercent(display, colorMode)}%</output>
+          <span className="bullet-method-dim-reset-slot">
+          {bulletMethodDimPercent(display, colorMode) !== bulletMethodDimPercent(defaultBulletMethodDisplay, colorMode) && <button
+            type="button" className="icon-button" aria-label={`Reset ${colorMode} dimming to default`}
+            title={`Reset to ${bulletMethodDimPercent(defaultBulletMethodDisplay, colorMode)}%`} onClick={() => {
+              try { onDisplayChange?.({ ...display, [colorMode === "light" ? "lightPercent" : "darkPercent"]: bulletMethodDimPercent(defaultBulletMethodDisplay, colorMode) }); setSaveError(null); }
+              catch { setSaveError("Could not save display settings. Please try again."); }
+            }}><RotateCcw size={16} /></button>}
+          </span>
+        </div>}
+      </div>
+      </>}
+      <section className="bullet-method-status-section" aria-labelledby="bullet-method-statuses-heading">
+      <h3 id="bullet-method-statuses-heading">Statuses</h3>
+      <details className="bullet-method-meanings">
+        <summary>What the default statuses mean</summary>
       <ul className="bullet-method-guide">
         <li><strong>CLOSED:</strong> No further action needed from you; not necessarily &quot;done&quot;.<br />Example: <code>CLOSED: Proposal withdrawn</code></li>
         <li><strong>DONE:</strong> Task is complete.<br />Example: <code>DONE: Send the meeting summary</code></li>
@@ -115,7 +162,8 @@ export default function BulletMethodSettings({ statuses, onChange }: {
         <li><strong>IN PROGRESS:</strong> Actively working on it.<br />Example: <code>IN PROGRESS: Draft the project plan</code></li>
         <li><strong>No status:</strong> Uncategorized notes.<br />Example: <code>The client prefers a September launch</code></li>
       </ul>
-      <p>Select your list, then choose <strong>Edit → Sort Lines → Bullet Method</strong>. The shortcut is <strong>Command+Option+period</strong> on Mac or <strong>Ctrl+Alt+period</strong> on Windows and Linux. Items sort in the order below, keeping their order within each status and their nested notes attached.</p>
+      </details>
+      {display.enabled && <p>Select a list and choose <strong>Edit → Sort Lines → Bullet Method</strong> to sort by the status order below. Shortcut: <strong>⌘⌥.</strong> on Mac, <strong>Ctrl+Alt+.</strong> on Windows/Linux.</p>}
       <section className="bullet-method-order-section" aria-labelledby="bullet-method-status-order-heading">
         <h3 id="bullet-method-status-order-heading">Status order</h3>
         <p>Drag a handle or use the arrows to reorder. Edit names or add your own statuses. Names match regardless of capitalization.</p>
@@ -135,6 +183,7 @@ export default function BulletMethodSettings({ statuses, onChange }: {
                       onChange={event => update(status.id, { prefix: event.target.value })} />
                   )}
                 </div>
+                {status.prefix !== null && <BulletMethodIconPicker name={name} value={statusIcon(status) ?? "circle"} onChange={icon => update(status.id, { icon })} />}
                 <div className="bullet-method-row-actions">
                   <button className="icon-button" aria-label={`Move ${name} up`} title="Move up" disabled={index === 0} onClick={() => move(status.id, index - 1)}><ArrowUp size={16} /></button>
                   <button className="icon-button" aria-label={`Move ${name} down`} title="Move down" disabled={index === draft.length - 1} onClick={() => move(status.id, index + 1)}><ArrowDown size={16} /></button>
@@ -149,7 +198,7 @@ export default function BulletMethodSettings({ statuses, onChange }: {
           let name = "NEW STATUS", suffix = 2;
           while (draft.some(status => status.prefix?.trim().toUpperCase() === name)) name = `NEW STATUS ${suffix++}`;
           const next = [...draft];
-          next.splice(next.findIndex(status => status.prefix === null), 0, { id: crypto.randomUUID(), prefix: name, description: "" });
+          next.splice(next.findIndex(status => status.prefix === null), 0, { id: crypto.randomUUID(), prefix: name, description: "", icon: "circle" });
           setDraft(next); setMessage("");
         }}><Plus size={16} /> Add status</button>
         <p className="bullet-method-help">No status includes unmarked notes and unrecognized prefixes. It can move, but cannot be removed. Renaming or removing a status does not change existing notes; their old prefixes become unrecognized.</p>
@@ -161,10 +210,11 @@ export default function BulletMethodSettings({ statuses, onChange }: {
           <span role="status">{dirty ? "Unsaved changes" : message}</span>
         </div>
       </section>
+      </section>
       <section className="settings-reset-appearance">
         <h3>Default Bullet Method</h3>
-        <p>Restore CLOSED, DONE, TODO, IN PROGRESS, then No status, in that order. Your notes stay unchanged.</p>
-        <button className="toolbar-button" onClick={() => save(defaultBulletMethodStatuses, "Bullet Method defaults restored.")}><RotateCcw size={16} /> Restore defaults</button>
+        <p>Restore the default statuses, icons, and order, plus dimming to 65% in light mode and 70% in dark mode. Your notes stay unchanged.</p>
+        <button className="toolbar-button" onClick={() => save(defaultBulletMethodStatuses, "Bullet Method defaults restored.", true)}><RotateCcw size={16} /> Restore defaults</button>
       </section>
     </div>
   );

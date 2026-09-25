@@ -1,9 +1,13 @@
 // @vitest-environment jsdom
-import { act, useState } from "react";
+import { act, useState, type ComponentProps } from "react";
 import { createRoot } from "react-dom/client";
 import { expect, it, vi } from "vitest";
-import BulletMethodSettings from "./BulletMethodSettings";
+import Settings from "./BulletMethodSettings";
 import { defaultBulletMethodStatuses, type BulletMethodStatus } from "../lib/bulletMethod";
+// Existing configuration tests exercise the enabled controls.
+function BulletMethodSettings(props: ComponentProps<typeof Settings>) {
+  return <Settings {...props} display={{ replaceBullets: true, dimCompleted: true, ...props.display, enabled: true }} />;
+}
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 
 it("edits, validates, reorders by buttons and drag, removes, saves and restores defaults", async () => {
@@ -52,7 +56,10 @@ it("edits, validates, reorders by buttons and drag, removes, saves and restores 
     await pointer(window, "pointerup", 20);
     await click("Remove DONE");
     expect(saved).not.toHaveBeenCalled();
+    await click("Icon for CLOSED");
+    await click("circle-x");
     await click("Save changes");
+    expect(saved.mock.lastCall![0].find((status: BulletMethodStatus) => status.id === "closed").icon).toBe("x");
     expect(saved.mock.lastCall![0].map((status: BulletMethodStatus) => status.prefix)).toEqual(["WAITING", "CLOSED", "TODO", null, "IN PROGRESS"]);
     await click("Restore defaults");
     expect(saved.mock.lastCall![0]).toEqual(defaultBulletMethodStatuses);
@@ -106,4 +113,90 @@ it.each(["drop", "pointercancel", "blur", "unmount", "outside", "click"])("handl
     if (!unmounted) await act(async () => root.unmount());
     host.remove();
   }
+});
+
+it("applies display toggles immediately without changing status drafts", async () => {
+  const host = document.createElement("div"); document.body.append(host);
+  const root = createRoot(host);
+  const changed = vi.fn(), statusesChanged = vi.fn();
+  try {
+    await act(async () => root.render(<BulletMethodSettings statuses={defaultBulletMethodStatuses} onChange={statusesChanged} onDisplayChange={changed} />));
+    const boxes = host.querySelectorAll<HTMLInputElement>('.bullet-method-display-options input[type="checkbox"]');
+    expect([...boxes].map(box => box.checked)).toEqual([true, true]);
+    await act(async () => boxes[0].click());
+    expect(changed).toHaveBeenLastCalledWith({ enabled: true, replaceBullets: false, dimCompleted: true });
+    await act(async () => boxes[1].click());
+    expect(changed).toHaveBeenLastCalledWith({ enabled: true, replaceBullets: true, dimCompleted: false });
+    expect(statusesChanged).not.toHaveBeenCalled();
+  } finally { await act(async () => root.unmount()); host.remove(); }
+});
+
+it("collapses meanings and shows a bounded percentage slider only when dimming is enabled", async () => {
+  const host = document.createElement("div"); document.body.append(host);
+  const root = createRoot(host);
+  try {
+    await act(async () => root.render(<BulletMethodSettings statuses={defaultBulletMethodStatuses} onChange={vi.fn()} colorMode="dark" />));
+    expect(host.querySelector('details')!.open).toBe(false);
+    expect(host.querySelector('summary')!.textContent).toBe("What the default statuses mean");
+    const slider = host.querySelector<HTMLInputElement>('input[type="range"]')!;
+    expect([slider.min, slider.max, slider.step, slider.value]).toEqual(['40', '90', '1', '70']);
+    await act(async () => root.render(<BulletMethodSettings statuses={defaultBulletMethodStatuses} onChange={vi.fn()} display={{ replaceBullets: true, dimCompleted: false }} />));
+    expect(host.querySelector('input[type="range"]')).toBeNull();
+  } finally { await act(async () => root.unmount()); host.remove(); }
+});
+
+it.each(['light', 'dark'] as const)('restores both dimming percentages and updates the %s slider', async mode => {
+  const host = document.createElement('div'); document.body.append(host);
+  const root = createRoot(host);
+  const saved = vi.fn();
+  function Harness() {
+    const [display, setDisplay] = useState({ replaceBullets: true, dimCompleted: true, lightPercent: 42, darkPercent: 51 });
+    return <BulletMethodSettings statuses={defaultBulletMethodStatuses} onChange={vi.fn()} colorMode={mode} display={display}
+      onDisplayChange={next => { saved(next); setDisplay(next as typeof display); }} />;
+  }
+  try {
+    await act(async () => root.render(<Harness />));
+    await act(async () => [...host.querySelectorAll('button')].find(button => button.textContent?.includes('Restore defaults'))!.click());
+    expect(saved).toHaveBeenCalledWith({ enabled: true, replaceBullets: true, dimCompleted: true, lightPercent: 65, darkPercent: 70 });
+    expect(host.querySelector<HTMLInputElement>('input[type="range"]')!.value).toBe(mode === 'light' ? '65' : '70');
+  } finally { await act(async () => root.unmount()); host.remove(); }
+});
+
+it("starts off, hides subordinate controls, and reveals them when enabled", async () => {
+  const host = document.createElement('div'); document.body.append(host);
+  const root = createRoot(host);
+  function Harness() {
+    const [display, setDisplay] = useState({ enabled: false, replaceBullets: true, dimCompleted: true });
+    return <Settings statuses={defaultBulletMethodStatuses} onChange={vi.fn()} display={display} onDisplayChange={next => setDisplay({ ...next, enabled: Boolean(next.enabled) })} />;
+  }
+  try {
+    await act(async () => root.render(<Harness />));
+    expect(host.querySelectorAll('input[type="checkbox"]')).toHaveLength(1);
+    expect(host.textContent).not.toContain('Select a list');
+    await act(async () => host.querySelector<HTMLInputElement>('input[type="checkbox"]')!.click());
+    expect(host.querySelectorAll('input[type="checkbox"]')).toHaveLength(3);
+    expect(host.textContent).toContain('Select a list');
+    await act(async () => host.querySelector<HTMLInputElement>('input[type="checkbox"]')!.click());
+    expect(host.querySelector('input[type="range"]')).toBeNull();
+  } finally { await act(async () => root.unmount()); host.remove(); }
+});
+
+it.each(['light', 'dark'] as const)('resets only the current %s dimming value and hides the reset icon at default', async mode => {
+  const host = document.createElement('div'); document.body.append(host);
+  const root = createRoot(host);
+  const saved = vi.fn();
+  function Harness() {
+    const [display, setDisplay] = useState({ enabled: true, replaceBullets: true, dimCompleted: true, lightPercent: 42, darkPercent: 51 });
+    return <BulletMethodSettings statuses={defaultBulletMethodStatuses} onChange={vi.fn()} colorMode={mode} display={display}
+      onDisplayChange={next => { saved(next); setDisplay(next as typeof display); }} />;
+  }
+  try {
+    await act(async () => root.render(<Harness />));
+    const selector = `button[aria-label="Reset ${mode} dimming to default"]`;
+    expect(host.querySelector(selector)).not.toBeNull();
+    await act(async () => host.querySelector<HTMLButtonElement>(selector)!.click());
+    expect(saved.mock.lastCall![0]).toMatchObject(mode === 'light' ? { lightPercent: 65, darkPercent: 51 } : { lightPercent: 42, darkPercent: 70 });
+    expect(host.querySelector(selector)).toBeNull();
+    expect(host.querySelector<HTMLInputElement>('input[type="range"]')!.value).toBe(mode === 'light' ? '65' : '70');
+  } finally { await act(async () => root.unmount()); host.remove(); }
 });

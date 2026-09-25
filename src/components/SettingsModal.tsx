@@ -1,6 +1,6 @@
 import BulletMethodSettings from "./BulletMethodSettings";
 import { BulletMethodIcon } from "./BulletMethodIcon";
-import type { BulletMethodStatus } from "../lib/bulletMethod";
+import type { BulletMethodDisplay, BulletMethodStatus } from "../lib/bulletMethod";
 import type { NewNoteWritingStyle, WritingStyle } from "../lib/writingStyle";
 import { ThemePreviewHostContext } from "./ThemePreviewHost";
 import type { ReactNode } from "react";
@@ -11,6 +11,9 @@ import type { NavigationStyle } from "../types";
 export type SettingsSection = "general" | "appearance" | "bullet-method";
 
 export default function SettingsModal(props: {
+  colorMode?: "light" | "dark";
+  bulletMethodDisplay?: BulletMethodDisplay;
+  onBulletMethodDisplayChange?: (display: BulletMethodDisplay) => void;
   bulletMethodStatuses: readonly BulletMethodStatus[];
   onBulletMethodStatusesChange: (statuses: readonly BulletMethodStatus[]) => void;
   newNoteWritingStyle: NewNoteWritingStyle;
@@ -86,7 +89,7 @@ export default function SettingsModal(props: {
                     {section === "bullet-method" ? <BulletMethodIcon size={20} /> : null}
                   </h2>
                   <p>
-                    {section === "bullet-method" ? "Tasks in ordinary notes. Settings apply across notebooks on this device." : section === "appearance"
+                    {section === "bullet-method" ? <>Keep tasks in your everyday notes. Start a bullet with a status and a colon, such as <code>TODO: Review the proposal</code>. Other statuses: IN PROGRESS, DONE, CLOSED. Leave general notes unmarked.</> : section === "appearance"
                       ? "Customize themes, colors, and typography."
                       : "Navigation, editing, and word count preferences."}
                   </p>
@@ -112,7 +115,7 @@ export default function SettingsModal(props: {
                 </div>
               </div>
               <div className="settings-scroll" key={section}>
-                {section === "bullet-method" ? <BulletMethodSettings statuses={props.bulletMethodStatuses} onChange={props.onBulletMethodStatusesChange} /> : null}
+                {section === "bullet-method" ? <BulletMethodSettings colorMode={props.colorMode} display={props.bulletMethodDisplay} onDisplayChange={props.onBulletMethodDisplayChange} statuses={props.bulletMethodStatuses} onChange={props.onBulletMethodStatusesChange} /> : null}
                 {section === "appearance" ? (
                   <div className="settings-appearance">
                     {props.themeContent}

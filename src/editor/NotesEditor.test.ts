@@ -605,6 +605,9 @@ describe("Bullet Method formatting button", () => {
     try {
       await act(async () => root.render(createElement(FormattingBubbleMenu, { editor, bulletMethodStatuses: statuses })));
       await act(async () => vi.advanceTimersByTime(80));
+      expect(document.querySelector('button[aria-label="Sort by Bullet Method"]')).toBeNull();
+      await act(async () => root.render(createElement(FormattingBubbleMenu, { editor, bulletMethodStatuses: statuses, bulletMethodEnabled: true })));
+      await act(async () => vi.advanceTimersByTime(80));
       const button = document.querySelector<HTMLButtonElement>('button[aria-label="Sort by Bullet Method"]');
       expect(button).not.toBeNull();
       expect(button!.title).toContain("Sort by Bullet Method");

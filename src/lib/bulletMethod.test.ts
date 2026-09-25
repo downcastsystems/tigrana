@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { beforeEach, describe, expect, it } from "vitest";
-import { bulletMethodRank, bulletMethodSettingsKey, defaultBulletMethodStatuses, readBulletMethodStatuses, validateBulletMethodStatuses, writeBulletMethodStatuses } from "./bulletMethod";
+import { bulletMethodDimPercent, bulletMethodDisplayKey, defaultBulletMethodDisplay, readBulletMethodDisplay, writeBulletMethodDisplay, bulletMethodRank, bulletMethodSettingsKey, defaultBulletMethodStatuses, readBulletMethodStatuses, validateBulletMethodStatuses, writeBulletMethodStatuses } from "./bulletMethod";
 
 beforeEach(() => localStorage.clear());
 describe("Bullet Method settings", () => {
@@ -32,4 +32,33 @@ describe("Bullet Method settings", () => {
     expect(bulletMethodRank("wait (a+b)?: literal", statuses)).toBe(0);
     expect(bulletMethodRank("WAIT AAB: different", statuses)).toBe(1);
   });
+});
+
+it("persists icon choices while accepting older settings without icons", () => {
+  writeBulletMethodStatuses(defaultBulletMethodStatuses);
+  expect(readBulletMethodStatuses()).toEqual(defaultBulletMethodStatuses);
+  const statuses = defaultBulletMethodStatuses.map(status => ({ ...status, icon: "dashed" as const }));
+  writeBulletMethodStatuses(statuses);
+  expect(readBulletMethodStatuses()).toEqual(statuses);
+  localStorage.setItem(bulletMethodSettingsKey, JSON.stringify(statuses.map(status => ({ ...status, icon: "unknown" }))));
+  expect(readBulletMethodStatuses()).toEqual(defaultBulletMethodStatuses);
+});
+
+it("defaults both display options on and persists each independently", () => {
+  expect(readBulletMethodDisplay()).toEqual(defaultBulletMethodDisplay);
+  writeBulletMethodDisplay({ replaceBullets: false, dimCompleted: true });
+  expect(readBulletMethodDisplay()).toEqual({ enabled: false, replaceBullets: false, dimCompleted: true });
+  writeBulletMethodDisplay({ replaceBullets: true, dimCompleted: false });
+  expect(readBulletMethodDisplay()).toEqual({ enabled: false, replaceBullets: true, dimCompleted: false });
+  localStorage.setItem(bulletMethodDisplayKey, "invalid");
+  expect(readBulletMethodDisplay()).toEqual(defaultBulletMethodDisplay);
+});
+
+it("keeps dimming percentages as bounded integers and preserves separate mode values", () => {
+  expect(bulletMethodDimPercent(defaultBulletMethodDisplay, "light")).toBe(65);
+  expect(bulletMethodDimPercent(defaultBulletMethodDisplay, "dark")).toBe(70);
+  writeBulletMethodDisplay({ ...defaultBulletMethodDisplay, lightPercent: 55.7, darkPercent: 95 });
+  expect(readBulletMethodDisplay()).toEqual({ ...defaultBulletMethodDisplay, lightPercent: 56, darkPercent: 90 });
+  writeBulletMethodDisplay({ ...defaultBulletMethodDisplay, lightPercent: 2 });
+  expect(bulletMethodDimPercent(readBulletMethodDisplay(), "light")).toBe(40);
 });

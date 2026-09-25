@@ -46,7 +46,7 @@ X,
 import { Fragment, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties } from "react";
 import { createPortal } from "react-dom";
 import { BulletMethodIcon } from "../components/BulletMethodIcon";
-import { defaultBulletMethodStatuses, type BulletMethodStatus } from "../lib/bulletMethod";
+import { defaultBulletMethodDisplay, type BulletMethodDisplay, defaultBulletMethodStatuses, type BulletMethodStatus } from "../lib/bulletMethod";
 import { createDeferredCommit, type DeferredCommit } from "../lib/deferredCommit";
 import { isTauri, openExternal } from "../lib/desktop";
 import { emojiShortcodeToText } from "../lib/emoji";
@@ -62,6 +62,7 @@ import { applyInlineColor, ColorHighlight, TextColor } from "./inlineColorMarks"
 import { EditorColorControls, InlineColorPicker } from "./InlineColorPicker";
 import { BlockMath, InlineMath, requestEquation } from "./mathNodes";
 import { BoundedNoteStateCache, cacheCurrentNoteEditorState, collapseBoundarySelectionAt, decodeInternalHref, deleteEmptyListItem, findListItemAtSelection, findSlashQueryInState, getEditorDocumentLoadAction, getTaskLineCutDeleteRange, handleEmptyListItemBackspace, handleNestedListBoundaryDelete, handleOutermostListItemBackspace, handleSameLevelListItemBackspace, isFormattingSelection, isInternalNotebookHref, isPlainDeleteKey, normalizeTableClipboardHtml, resetEditorHistory, restoreCachedNoteEditorState, serializeEditorSelectionForClipboard, setEditorEditableSilently, setEditorSpellcheck, type ListItemRange } from "./notesEditorBehavior";
+import { BulletMethodMarkers, bulletMethodMarkersKey } from "./bulletMethodMarkers";
 import { ensureParagraphAfterCurrentTable, filterSlashCommands, markCurrentTableAsTigranaHtml } from "./slashCommands";
 import { isSortCommand, sortSelectedLines, type SortCommand } from "./sortLines";
 import { refreshSortedSelectionPaint } from "./sortSelectionPaint";
@@ -70,6 +71,7 @@ import { handleStoryParagraphKey, setParagraphIndent, StoryParagraphs } from "./
 const { readAssetDataUrl, saveAsset, saveClipboardImageAsset } = notebookStorage;
 
 type NotesEditorProps = {
+  bulletMethodDisplay?: BulletMethodDisplay;
   bulletMethodStatuses?: readonly BulletMethodStatus[];
   colorToolbarElement?: HTMLElement | null;
   writingStyle?: WritingStyle;
@@ -2349,7 +2351,7 @@ const MarkdownImage = Image.extend({
   },
 });
 
-export function NotesEditor({ bulletMethodStatuses = defaultBulletMethodStatuses, writingStyle = "notes", colorsDisabled = false, colorToolbarElement, content, commandRequest, focusRequest, focusAtEndRequest, findRequest, historyKey, reloadRequest, notePath, restorePosition, editable, spellcheckEnabled, workspace, onChange, onPendingChange, onPersistenceReady, onLoadError, onPositionChange, onInternalLinkClick, onRequestEmoji, onRequestLink, onRequestImage }: NotesEditorProps) {
+export function NotesEditor({ bulletMethodDisplay = defaultBulletMethodDisplay, bulletMethodStatuses = defaultBulletMethodStatuses, writingStyle = "notes", colorsDisabled = false, colorToolbarElement, content, commandRequest, focusRequest, focusAtEndRequest, findRequest, historyKey, reloadRequest, notePath, restorePosition, editable, spellcheckEnabled, workspace, onChange, onPendingChange, onPersistenceReady, onLoadError, onPositionChange, onInternalLinkClick, onRequestEmoji, onRequestLink, onRequestImage }: NotesEditorProps) {
   const writingStyleRef = useRef(writingStyle);
   writingStyleRef.current = writingStyle;
   const [slash, setSlash] = useState<SlashState | null>(null);
@@ -2442,6 +2444,7 @@ export function NotesEditor({ bulletMethodStatuses = defaultBulletMethodStatuses
         },
       }),
       StoryParagraphs,
+      BulletMethodMarkers,
       CodeBlockWithControls.configure({ lowlight }),
       TextColor,
       ColorHighlight,
@@ -2797,6 +2800,12 @@ export function NotesEditor({ bulletMethodStatuses = defaultBulletMethodStatuses
     }
   }, [content, editor, historyKey, notePath, onLoadError, reloadRequest, restorePosition, workspace]);
 
+  // Loading resets plugin state; cached notes may carry old global settings.
+  // Reapply after either path, without reloading content or disturbing history.
+  useEffect(() => {
+    if (editor) editor.view.dispatch(editor.state.tr.setMeta(bulletMethodMarkersKey, bulletMethodStatuses).setMeta("bulletMethodDisplay", bulletMethodDisplay));
+  }, [editor, bulletMethodStatuses, bulletMethodDisplay, historyKey, notePath, reloadRequest, workspace]);
+
   useEffect(() => {
     if (!editor || !focusRequest) return;
     const scrollSurface = editor.view.dom.closest(".note-surface");
@@ -2940,7 +2949,7 @@ export function NotesEditor({ bulletMethodStatuses = defaultBulletMethodStatuses
       return;
     }
     if (isSortCommand(request.command)) {
-      applyLineSort(editor, request.command, bulletMethodStatuses);
+      if (request.command !== "sort_bullet_method" || bulletMethodDisplay.enabled) applyLineSort(editor, request.command, bulletMethodStatuses);
       return;
     }
     if (request.command === "findNext") {
@@ -3039,7 +3048,7 @@ export function NotesEditor({ bulletMethodStatuses = defaultBulletMethodStatuses
       default:
         break;
     }
-  }, [editor, findIndex, onRequestLink, selectFindMatch, bulletMethodStatuses]);
+  }, [editor, findIndex, onRequestLink, selectFindMatch, bulletMethodStatuses, bulletMethodDisplay.enabled]);
 
   useEffect(() => {
     if (!commandRequest || commandRequest.id === handledCommandRequest.current) return;
@@ -3115,7 +3124,7 @@ export function NotesEditor({ bulletMethodStatuses = defaultBulletMethodStatuses
       {editor && colorToolbarElement ? createPortal(<EditorColorControls editor={editor} disabled={!editable || colorsDisabled} />, colorToolbarElement) : null}
       {editor ? <EquationContextMenu editor={editor} disabled={!editable} /> : null}
       {editor ? <EquationDialog editor={editor} disabled={!editable} /> : null}
-      {editor ? <FormattingBubbleMenu editor={editor} onRequestLink={onRequestLink} bulletMethodStatuses={bulletMethodStatuses} /> : null}
+      {editor ? <FormattingBubbleMenu bulletMethodEnabled={Boolean(bulletMethodDisplay.enabled)} editor={editor} onRequestLink={onRequestLink} bulletMethodStatuses={bulletMethodStatuses} /> : null}
       {findOpen ? (
         <div className={replaceOpen ? "note-find-bar has-replace" : "note-find-bar"}>
           <div className="note-find-row">
@@ -3333,11 +3342,13 @@ function applyLineSort(editor: Editor, command: SortCommand, statuses: readonly 
 }
 
 export function FormattingBubbleMenu({
+  bulletMethodEnabled = false,
   editor,
   onRequestLink,
   bulletMethodStatuses = defaultBulletMethodStatuses,
 }: {
   editor: Editor;
+  bulletMethodEnabled?: boolean;
   bulletMethodStatuses?: readonly BulletMethodStatus[];
   onRequestLink?: () => Promise<{ href: string; title: string } | null>;
 }) {
@@ -3615,7 +3626,7 @@ export function FormattingBubbleMenu({
                 >
                   <Icon size={15} />
                 </button>
-                {button.label === "Tasks" && (
+                {button.label === "Tasks" && bulletMethodEnabled && (
                   <button
                     type="button"
                     aria-label="Sort by Bullet Method"

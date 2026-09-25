@@ -1,4 +1,4 @@
-import { generate, parse, walk, type Rule, type SelectorList } from "css-tree";
+import { generate, parse, walk, type Rule, type SelectorList, type Value } from "css-tree";
 import type { ThemeDesign } from "./themeDesign";
 
 const functions = new Set([
@@ -141,6 +141,23 @@ export function compileThemeCss(design: ThemeDesign, region: string): string {
   });
   for (const rule of rules) {
     const selectors = (rule.prelude as SelectorList).children.toArray();
+    // Theme-authored link colors participate in completed-item dimming too.
+    // Keep the original hue, and leave explicitly colored text marks alone.
+    const linksOnly = selectors.every(selector => {
+      if (selector.type !== "Selector") return false;
+      let link = false;
+      selector.children.forEach(part => {
+        if (part.type === "Combinator") link = false;
+        if (part.type === "TypeSelector" && part.name.toLowerCase() === "a") link = true;
+      });
+      return link;
+    });
+    if (linksOnly) rule.block.children.forEach(declaration => {
+      if (declaration.type === "Declaration" && declaration.property.toLowerCase() === "color") {
+        declaration.value = parse(`color-mix(in srgb, ${generate(declaration.value)} var(--bullet-link-opacity, 100%), transparent)`, { context: "value" }) as Value;
+      }
+    });
+
     const scoped = selectors
       .map((selector) => {
         let hasScope = false;

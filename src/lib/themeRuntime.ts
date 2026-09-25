@@ -136,6 +136,6 @@ function explicitEditorColors(theme: ThemeDocument, mode: "light" | "dark", regi
   const selectionBackground = `rgba(${channels.join(', ')}, ${selectionBackgroundOpacity})`;
   const selection = ['.ProseMirror', '.ProseMirror *', '.note-title-input', '.raw-markdown-input']
     .map(selector => `${scope} ${selector}::selection`).join(',');
-  return (p.linkColor ? `${scope} .ProseMirror a { color: ${p.linkColor}; }` : '')
+  return (p.linkColor ? `${scope} .ProseMirror a { color: color-mix(in srgb, ${p.linkColor} var(--bullet-link-opacity, 100%), transparent); }` : '')
     + (p.selectionBackground || p.selectionText ? `${selection} { background-color: ${selectionBackground}; color: ${p.selectionText ?? readableThemeText(p.selectionBackground ?? p.accent, selectionBackgroundOpacity)}; }` : '');
 }
