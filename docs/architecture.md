@@ -418,3 +418,10 @@ settings without an enabled flag. While off, the native sort menu entry and tool
 button are omitted, sort commands are ignored, and all status decorations are
 removed. The display controls and sort instructions appear only while enabled;
 individual display choices remain saved when disabling the master switch.
+
+Each status row has a Dim checkbox. Missing saved dim choices default to true
+for DONE/CLOSED identities and false otherwise. Choices travel with a status
+when renamed or reordered. Valid edits save automatically; invalid names remain
+local until corrected. The dimming label lists the checked statuses live. Dim selected statuses
+is the global dimming switch. Selecting No status dims unmatched/unmarked bullets.
+COMPLETE uses the DONE choice unless configured as its own status.

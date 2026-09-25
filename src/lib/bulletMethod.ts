@@ -4,6 +4,9 @@ const defaultIcons: Record<string, BulletMethodIcon> = { closed: "slash", done: 
 export function statusIcon(status: BulletMethodStatus): BulletMethodIcon | null {
   return status.icon ?? (Object.prototype.hasOwnProperty.call(defaultIcons, status.id) ? defaultIcons[status.id] : null);
 }
+export function statusDims(status: BulletMethodStatus): boolean {
+  return status.dim ?? (status.id === "done" || status.id === "closed");
+}
 export function nextBulletMethodStatus(status: BulletMethodStatus, statuses: readonly BulletMethodStatus[]) {
   const ids = ["todo", "in-progress", "done", "closed"];
   const cycle = [...ids.flatMap(id => statuses.filter(row => row.id === id && row.prefix !== null)),
@@ -17,6 +20,7 @@ export type BulletMethodStatus = {
   prefix: string | null;
   description: string;
   icon?: BulletMethodIcon;
+  dim?: boolean;
 };
 
 export const defaultBulletMethodStatuses: readonly BulletMethodStatus[] = [
@@ -35,6 +39,7 @@ export function validateBulletMethodStatuses(statuses: readonly BulletMethodStat
   for (const status of statuses) {
     if (!status.id || ids.has(status.id)) return "Each status must have a unique identity.";
     ids.add(status.id);
+    if (status.dim !== undefined && typeof status.dim !== "boolean") return "Choose whether to dim each status.";
     if (status.icon !== undefined && !bulletMethodIcons.includes(status.icon)) return "Choose a supported circle icon.";
     if (status.prefix === null) continue;
     const prefix = status.prefix.trim();

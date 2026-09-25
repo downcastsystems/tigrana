@@ -4,7 +4,7 @@ import type { Node as ProseMirrorNode } from "@tiptap/pm/model";
 import { closeHistory } from "@tiptap/pm/history";
 import { Plugin, PluginKey } from "@tiptap/pm/state";
 import { Decoration, DecorationSet } from "@tiptap/pm/view";
-import { bulletMethodDimPercent, defaultBulletMethodDisplay, type BulletMethodDisplay, defaultBulletMethodStatuses, statusIcon, nextBulletMethodStatus, type BulletMethodStatus } from "../lib/bulletMethod";
+import { bulletMethodDimPercent, defaultBulletMethodDisplay, type BulletMethodDisplay, defaultBulletMethodStatuses, statusDims, statusIcon, nextBulletMethodStatus, type BulletMethodStatus } from "../lib/bulletMethod";
 
 type MarkerState = { decorations: DecorationSet; statuses: readonly BulletMethodStatus[]; display: BulletMethodDisplay };
 export const bulletMethodMarkersKey = new PluginKey<MarkerState>("bulletMethodMarkers");
@@ -33,7 +33,9 @@ function decorationsIn(doc: ProseMirrorNode, from: number, to: number, statuses:
     const icon = match && statusIcon(match.status);
     const paragraph = node.firstChild;
     const completePrefix = paragraph?.type.name === "paragraph" && /^COMPLETE:/i.test(paragraph.textBetween(0, Math.min(9, paragraph.content.size)));
-    const dimmed = display.dimCompleted && (match?.status.id === "done" || match?.status.id === "closed" || completePrefix);
+    // COMPLETE remains a legacy alias for DONE unless explicitly configured.
+    const dimStatus = match?.status ?? (completePrefix ? statuses.find(status => status.id === "done") : statuses.find(status => status.prefix === null));
+    const dimmed = display.dimCompleted && dimStatus !== undefined && statusDims(dimStatus);
     const attributes: Record<string, string> = {};
     if (dimmed) {
       attributes["data-bullet-method-completed"] = "true";

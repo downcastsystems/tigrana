@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { beforeEach, describe, expect, it } from "vitest";
-import { bulletMethodDimPercent, bulletMethodDisplayKey, defaultBulletMethodDisplay, readBulletMethodDisplay, writeBulletMethodDisplay, bulletMethodRank, bulletMethodSettingsKey, defaultBulletMethodStatuses, readBulletMethodStatuses, validateBulletMethodStatuses, writeBulletMethodStatuses } from "./bulletMethod";
+import { statusDims, bulletMethodDimPercent, bulletMethodDisplayKey, defaultBulletMethodDisplay, readBulletMethodDisplay, writeBulletMethodDisplay, bulletMethodRank, bulletMethodSettingsKey, defaultBulletMethodStatuses, readBulletMethodStatuses, validateBulletMethodStatuses, writeBulletMethodStatuses } from "./bulletMethod";
 
 beforeEach(() => localStorage.clear());
 describe("Bullet Method settings", () => {
@@ -61,4 +61,12 @@ it("keeps dimming percentages as bounded integers and preserves separate mode va
   expect(readBulletMethodDisplay()).toEqual({ ...defaultBulletMethodDisplay, lightPercent: 56, darkPercent: 90 });
   writeBulletMethodDisplay({ ...defaultBulletMethodDisplay, lightPercent: 2 });
   expect(bulletMethodDimPercent(readBulletMethodDisplay(), "light")).toBe(40);
+});
+
+it("preserves per-status dim choices and gives old configurations sensible defaults", () => {
+  expect(defaultBulletMethodStatuses.map(statusDims)).toEqual([true, true, false, false, false]);
+  const statuses = defaultBulletMethodStatuses.map(status => ({ ...status, dim: status.id === "todo" }));
+  writeBulletMethodStatuses(statuses);
+  expect(readBulletMethodStatuses().map(statusDims)).toEqual([false, false, true, false, false]);
+  expect(statusDims({ id: "custom", prefix: "WAITING", description: "" })).toBe(false);
 });

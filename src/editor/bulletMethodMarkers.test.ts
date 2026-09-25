@@ -142,3 +142,16 @@ it("defaults off and removes all appearance decorations when disabled", () => {
   editor.view.dispatch(editor.state.tr.setMeta('bulletMethodDisplay', { enabled: false, replaceBullets: true, dimCompleted: true }));
   expect(editor.view.dom.querySelector('[data-bullet-method-completed],button')).toBeNull();
 });
+
+it("uses each status's dim choice, including renamed, custom, and unmarked items", () => {
+  const editor = make('<ul><li><p>DONE: Keep bright</p></li><li><p>WAITING: Dim me</p><ul><li><p>Nested note</p></li></ul></li><li><p>Custom: Dim me too</p></li><li><p>Unmarked</p></li></ul>');
+  const statuses = [...defaultBulletMethodStatuses.map(status => status.id === 'done' ? { ...status, dim: false } : status.id === 'todo' ? { ...status, prefix: 'WAITING', dim: true } : status), { id: 'custom', prefix: 'Custom', description: '', dim: true }];
+  editor.view.dispatch(editor.state.tr.setMeta(bulletMethodMarkersKey, statuses));
+  const dimmed = () => [...editor.view.dom.querySelectorAll('p[data-bullet-method-dim]')].map(node => node.textContent);
+  expect(dimmed()).toEqual(['WAITING: Dim me', 'Custom: Dim me too']);
+  editor.view.dispatch(editor.state.tr.setMeta(bulletMethodMarkersKey, statuses.map(status => status.prefix === null ? { ...status, dim: true } : status)));
+  expect(dimmed()).toEqual(['WAITING: Dim me', 'Nested note', 'Custom: Dim me too', 'Unmarked']);
+  editor.view.dispatch(editor.state.tr.setMeta('bulletMethodDisplay', { enabled: true, replaceBullets: true, dimCompleted: false }));
+  expect(dimmed()).toEqual([]);
+  expect(editor.getHTML()).not.toContain('data-bullet-method-dim');
+});

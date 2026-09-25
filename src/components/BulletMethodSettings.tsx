@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState, type PointerEvent as ReactPointerEvent } from "react";
 import { ArrowDown, ArrowUp, GripVertical, Plus, RotateCcw, Trash2 } from "lucide-react";
-import { bulletMethodDimPercent, defaultBulletMethodDisplay, type BulletMethodDisplay, statusIcon, defaultBulletMethodStatuses, validateBulletMethodStatuses, type BulletMethodStatus } from "../lib/bulletMethod";
+import { bulletMethodDimPercent, defaultBulletMethodDisplay, type BulletMethodDisplay, statusDims, statusIcon, defaultBulletMethodStatuses, validateBulletMethodStatuses, type BulletMethodStatus } from "../lib/bulletMethod";
 
 import { BulletMethodIconPicker } from "./BulletMethodIconPicker";
 
@@ -19,9 +19,30 @@ export default function BulletMethodSettings({ statuses, onChange, display = def
   useEffect(() => () => { cleanupDragRef.current?.(); }, []);
   const [saveError, setSaveError] = useState<string | null>(null);
   const [message, setMessage] = useState("");
-  useEffect(() => { setDraft(statuses); }, [statuses]);
+  const onChangeRef = useRef(onChange);
+  onChangeRef.current = onChange;
+  const lastSaved = useRef(JSON.stringify(statuses));
+  useEffect(() => {
+    lastSaved.current = JSON.stringify(statuses);
+    setDraft(current => JSON.stringify(current.map(status => ({ ...status, prefix: status.prefix?.trim() ?? null }))) === JSON.stringify(statuses) ? current : statuses);
+  }, [statuses]);
   const error = validateBulletMethodStatuses(draft);
-  const dirty = JSON.stringify(draft) !== JSON.stringify(statuses);
+  const dimNames = draft.filter(statusDims).map(status => status.prefix?.trim() || "No status");
+  const dimLabel = dimNames.length ? `Dim ${dimNames.join(", ")}` : "Dim selected statuses (none selected)";
+  useEffect(() => {
+    if (error) return;
+    const normalized = draft.map(status => ({ ...status, prefix: status.prefix?.trim() ?? null }));
+    const signature = JSON.stringify(normalized);
+    if (signature === lastSaved.current) return;
+    try {
+      onChangeRef.current(normalized);
+      lastSaved.current = signature;
+      setSaveError(null);
+      setMessage("");
+    } catch {
+      setSaveError("Could not save Bullet Method settings. Your changes are still here; try again.");
+    }
+  }, [draft, error]);
   function update(id: string, patch: Partial<BulletMethodStatus>) {
     setDraft(current => current.map(status => status.id === id ? { ...status, ...patch } : status));
     setMessage("");
@@ -107,6 +128,7 @@ export default function BulletMethodSettings({ statuses, onChange, display = def
         darkPercent: bulletMethodDimPercent(defaultBulletMethodDisplay, "dark"),
       });
       onChange(next);
+      lastSaved.current = JSON.stringify(next);
       setDraft(next);
       setSaveError(null);
       setMessage(feedback);
@@ -131,7 +153,7 @@ export default function BulletMethodSettings({ statuses, onChange, display = def
         <label><input type="checkbox" checked={display.dimCompleted} onChange={event => {
           try { onDisplayChange?.({ ...display, dimCompleted: event.target.checked }); setSaveError(null); }
           catch { setSaveError("Could not save display settings. Please try again."); }
-        }} /> Dim DONE/CLOSED items</label>
+        }} /> {dimLabel}</label>
         {display.dimCompleted && <div className="bullet-method-dim-slider">
           <span>Dimming ({colorMode} mode)</span>
           <input type="range" min={40} max={90} step={1} aria-label={`Dimming percentage for ${colorMode} mode`}
@@ -183,7 +205,13 @@ export default function BulletMethodSettings({ statuses, onChange, display = def
                       onChange={event => update(status.id, { prefix: event.target.value })} />
                   )}
                 </div>
-                {status.prefix !== null && <BulletMethodIconPicker name={name} value={statusIcon(status) ?? "circle"} onChange={icon => update(status.id, { icon })} />}
+                <label className="bullet-method-dim-choice">
+                  <input type="checkbox" aria-label={`Dim ${name}`} checked={statusDims(status)}
+                    onChange={event => update(status.id, { dim: event.target.checked })} /> Dim
+                </label>
+                <div className="bullet-method-status-icon-slot">
+                  {status.prefix !== null && <BulletMethodIconPicker name={name} value={statusIcon(status) ?? "circle"} onChange={icon => update(status.id, { icon })} />}
+                </div>
                 <div className="bullet-method-row-actions">
                   <button className="icon-button" aria-label={`Move ${name} up`} title="Move up" disabled={index === 0} onClick={() => move(status.id, index - 1)}><ArrowUp size={16} /></button>
                   <button className="icon-button" aria-label={`Move ${name} down`} title="Move down" disabled={index === draft.length - 1} onClick={() => move(status.id, index + 1)}><ArrowDown size={16} /></button>
@@ -204,11 +232,8 @@ export default function BulletMethodSettings({ statuses, onChange, display = def
         <p className="bullet-method-help">No status includes unmarked notes and unrecognized prefixes. It can move, but cannot be removed. Renaming or removing a status does not change existing notes; their old prefixes become unrecognized.</p>
         {error ? <p role="alert">{error}</p> : null}
         {saveError ? <p role="alert">{saveError}</p> : null}
-        <div className="bullet-method-actions">
-          <button className="toolbar-button" disabled={!dirty || Boolean(error)} onClick={() => save(draft, "Bullet Method settings saved.")}>Save changes</button>
-          <button className="toolbar-button" disabled={!dirty} onClick={() => { setDraft(statuses); setSaveError(null); setMessage(""); }}>Discard changes</button>
-          <span role="status">{dirty ? "Unsaved changes" : message}</span>
-        </div>
+        {saveError && <button className="toolbar-button" disabled={Boolean(error)} onClick={() => save(draft, "Settings saved.")}>Retry</button>}
+        {message && <span role="status">{message}</span>}
       </section>
       </section>
       <section className="settings-reset-appearance">

@@ -6813,3 +6813,7 @@ html[data-theme="light"] .ProseMirror li[data-bullet-method-completed="true"] .b
 .bullet-method-enable small { display: block; margin-top: 2px; font-size: 12px; line-height: 1.4; color: var(--text-muted); }
 
 .bullet-method-dim-reset-slot { display: inline-flex; align-items: center; justify-content: center; flex: 0 0 30px; width: 30px; height: 30px; }
+
+.settings-modal .bullet-method-dim-choice { flex: 0 0 auto; gap: 6px; white-space: nowrap; }
+
+.bullet-method-status-icon-slot { display: flex; align-items: center; justify-content: center; flex: 0 0 30px; width: 30px; }

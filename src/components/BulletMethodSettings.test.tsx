@@ -36,7 +36,7 @@ it("edits, validates, reorders by buttons and drag, removes, saves and restores 
     await click("Add status");
     await input("Status 4 name", "todo");
     expect(host.querySelector('[role="alert"]')!.textContent).toContain("unique");
-    expect([...host.querySelectorAll("button")].find(button => button.textContent === "Save changes")!.disabled).toBe(true);
+    expect(saved.mock.lastCall![0].find((status: BulletMethodStatus) => status.prefix === "todo")).toBeUndefined();
     await input("Status 4 name", "WAITING");
     expect(host.querySelector('input[aria-label$=" meaning"]')).toBeNull();
     // Native WebKit may take over HTML drag/drop. Reordering must work from
@@ -55,10 +55,9 @@ it("edits, validates, reorders by buttons and drag, removes, saves and restores 
     await pointer(window, "pointermove", 20);
     await pointer(window, "pointerup", 20);
     await click("Remove DONE");
-    expect(saved).not.toHaveBeenCalled();
+    expect(saved).toHaveBeenCalled();
     await click("Icon for CLOSED");
     await click("circle-x");
-    await click("Save changes");
     expect(saved.mock.lastCall![0].find((status: BulletMethodStatus) => status.id === "closed").icon).toBe("x");
     expect(saved.mock.lastCall![0].map((status: BulletMethodStatus) => status.prefix)).toEqual(["WAITING", "CLOSED", "TODO", null, "IN PROGRESS"]);
     await click("Restore defaults");
@@ -74,7 +73,6 @@ it("keeps edits available when saving fails", async () => {
   try {
     await act(async () => root.render(<BulletMethodSettings statuses={defaultBulletMethodStatuses} onChange={() => { throw new Error("Storage full"); }} />));
     await act(async () => host.querySelector<HTMLButtonElement>('[aria-label="Move CLOSED down"]')!.click());
-    await act(async () => [...host.querySelectorAll("button")].find(button => button.textContent === "Save changes")!.click());
     expect(host.querySelector('[role="alert"]')!.textContent).toContain("Could not save");
     expect(host.querySelector<HTMLInputElement>('[aria-label="Status 1 name"]')!.value).toBe("DONE");
   } finally { await act(async () => root.unmount()); }
@@ -105,7 +103,6 @@ it.each(["drop", "pointercancel", "blur", "unmount", "outside", "click"])("handl
       const names = [...host.querySelectorAll<HTMLInputElement>('input[aria-label$=" name"]')].map(input => input.value);
       expect(names).toEqual(completion === "drop" ? ["DONE", "TODO", "IN PROGRESS", "CLOSED"] : ["CLOSED", "DONE", "TODO", "IN PROGRESS"]);
       if (completion === "drop") {
-        await act(async () => [...host.querySelectorAll("button")].find(button => button.textContent === "Save changes")!.click());
         expect(saved.mock.lastCall![0].map((status: BulletMethodStatus) => status.prefix)).toEqual(["DONE", "TODO", "IN PROGRESS", null, "CLOSED"]);
       }
     }
@@ -171,10 +168,10 @@ it("starts off, hides subordinate controls, and reveals them when enabled", asyn
   }
   try {
     await act(async () => root.render(<Harness />));
-    expect(host.querySelectorAll('input[type="checkbox"]')).toHaveLength(1);
+    expect(host.querySelectorAll('.bullet-method-enable input[type="checkbox"], .bullet-method-display-options input[type="checkbox"]')).toHaveLength(1);
     expect(host.textContent).not.toContain('Select a list');
     await act(async () => host.querySelector<HTMLInputElement>('input[type="checkbox"]')!.click());
-    expect(host.querySelectorAll('input[type="checkbox"]')).toHaveLength(3);
+    expect(host.querySelectorAll('.bullet-method-enable input[type="checkbox"], .bullet-method-display-options input[type="checkbox"]')).toHaveLength(3);
     expect(host.textContent).toContain('Select a list');
     await act(async () => host.querySelector<HTMLInputElement>('input[type="checkbox"]')!.click());
     expect(host.querySelector('input[type="range"]')).toBeNull();
@@ -198,5 +195,51 @@ it.each(['light', 'dark'] as const)('resets only the current %s dimming value an
     expect(saved.mock.lastCall![0]).toMatchObject(mode === 'light' ? { lightPercent: 65, darkPercent: 51 } : { lightPercent: 42, darkPercent: 70 });
     expect(host.querySelector(selector)).toBeNull();
     expect(host.querySelector<HTMLInputElement>('input[type="range"]')!.value).toBe(mode === 'light' ? '65' : '70');
+  } finally { await act(async () => root.unmount()); host.remove(); }
+});
+
+it("automatically saves per-status dim choices and restores their defaults", async () => {
+  const host = document.createElement('div'); document.body.append(host);
+  const root = createRoot(host);
+  const saved = vi.fn();
+  try {
+    await act(async () => root.render(<BulletMethodSettings statuses={defaultBulletMethodStatuses} onChange={saved} />));
+    const dim = (name: string) => host.querySelector<HTMLInputElement>(`input[aria-label="Dim ${name}"]`)!;
+    expect(['CLOSED', 'DONE', 'TODO', 'IN PROGRESS', 'No status'].map(name => dim(name).checked)).toEqual([true, true, false, false, false]);
+    await act(async () => { dim('DONE').click(); dim('TODO').click(); });
+    expect(saved).toHaveBeenCalled();
+    expect(saved.mock.lastCall![0].find((status: BulletMethodStatus) => status.id === 'done').dim).toBe(false);
+    expect(saved.mock.lastCall![0].find((status: BulletMethodStatus) => status.id === 'todo').dim).toBe(true);
+    await act(async () => [...host.querySelectorAll('button')].find(button => button.textContent?.includes('Restore defaults'))!.click());
+    expect(dim('DONE').checked).toBe(true);
+    expect(dim('TODO').checked).toBe(false);
+  } finally { await act(async () => root.unmount()); host.remove(); }
+});
+
+it("updates the dimming label live and preserves spaces while autosaving names", async () => {
+  const host = document.createElement('div'); document.body.append(host);
+  const root = createRoot(host);
+  function Harness() {
+    const [statuses, setStatuses] = useState<readonly BulletMethodStatus[]>(defaultBulletMethodStatuses);
+    return <BulletMethodSettings statuses={statuses} onChange={setStatuses} />;
+  }
+  try {
+    await act(async () => root.render(<Harness />));
+    const globalLabel = () => host.querySelector('.bullet-method-display-options')!.textContent;
+    expect(globalLabel()).toContain('Dim CLOSED, DONE');
+    await act(async () => host.querySelector<HTMLInputElement>('[aria-label="Dim TODO"]')!.click());
+    expect(globalLabel()).toContain('Dim CLOSED, DONE, TODO');
+    const field = host.querySelector<HTMLInputElement>('[aria-label="Status 3 name"]')!;
+    for (const value of ['NEXT ', 'NEXT UP']) {
+      await act(async () => {
+        Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')!.set!.call(field, value);
+        field.dispatchEvent(new Event('input', { bubbles: true }));
+      });
+      expect(field.value).toBe(value);
+    }
+    expect(globalLabel()).toContain('Dim CLOSED, DONE, NEXT UP');
+    for (const name of ['CLOSED', 'DONE', 'NEXT UP']) await act(async () => host.querySelector<HTMLInputElement>(`[aria-label="Dim ${name}"]`)!.click());
+    expect(globalLabel()).toContain('none selected');
+    expect([...host.querySelectorAll('button')].some(button => /Save changes|Discard changes/.test(button.textContent ?? ''))).toBe(false);
   } finally { await act(async () => root.unmount()); host.remove(); }
 });
