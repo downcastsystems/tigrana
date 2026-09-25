@@ -42,6 +42,28 @@ function setReactInputValue(input: HTMLInputElement, value: string) {
 describe("Note editor typing performance", () => {
   const mounted: Array<{ container: HTMLElement; root: Root }> = [];
 
+  it("allows native selection to start in the blank space below the last line", async () => {
+    const container = document.createElement("div"); document.body.appendChild(container);
+    const root = createRoot(container); mounted.push({ container, root });
+    const onChange = vi.fn();
+    await act(async () => root.render(<NotesEditor content={"DONE: Yo\n\nTODO: Testing\n\nSomething else"} editable findRequest={0}
+      focusAtEndRequest={0} focusRequest={0} historyKey="selection" notePath="Selection.md"
+      onChange={onChange} onLoadError={error => { throw error; }}
+      onPendingChange={() => undefined} onPositionChange={() => undefined}
+      restorePosition={null} spellcheckEnabled workspace="/Notebook" />));
+    const pm = container.querySelector<HTMLElement>(".ProseMirror")!;
+    const editor = (pm as HTMLElement & { editor: import("@tiptap/core").Editor }).editor;
+    // jsdom has no layout hit-testing. A press below the final block maps
+    // to the end of the document in the browser.
+    vi.spyOn(editor.view, "posAtCoords").mockReturnValue({ pos: editor.state.doc.content.size - 1, inside: -1 });
+    vi.spyOn(pm.lastElementChild!, "getBoundingClientRect").mockReturnValue(new DOMRect(0, 80, 300, 20));
+    const down = new MouseEvent("mousedown", { bubbles: true, cancelable: true, button: 0, clientX: 50, clientY: 200 });
+    await act(async () => { pm.dispatchEvent(down); });
+    expect(down.defaultPrevented).toBe(false);
+    await act(async () => { pm.dispatchEvent(new MouseEvent("mouseup", { bubbles: true, clientX: 50, clientY: 200 })); });
+    expect(onChange).not.toHaveBeenCalled();
+  });
+
   afterEach(async () => {
     vi.useRealTimers();
     await Promise.all(mounted.splice(0).map(async ({ container, root }) => {

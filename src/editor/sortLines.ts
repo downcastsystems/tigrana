@@ -1,16 +1,17 @@
+import { bulletMethodRank, defaultBulletMethodStatuses, type BulletMethodStatus } from "../lib/bulletMethod";
 import { Fragment, type Node as ProseMirrorNode } from "@tiptap/pm/model";
 import { closeHistory } from "@tiptap/pm/history";
 import { CellSelection, TableMap } from "@tiptap/pm/tables";
 import { TextSelection, type EditorState, type Transaction } from "@tiptap/pm/state";
 
-export const sortCommands = ["sort_az", "sort_za", "sort_az_case", "sort_za_case"] as const;
+export const sortCommands = ["sort_az", "sort_za", "sort_az_case", "sort_za_case", "sort_bullet_method"] as const;
 export type SortCommand = typeof sortCommands[number];
 export function isSortCommand(command: string): command is SortCommand {
   return sortCommands.some((value) => value === command);
 }
 
 /** Sort touched sibling units, retaining their marks, attributes and descendants. */
-export function sortSelectedLines(state: EditorState, command: SortCommand): Transaction | null {
+export function sortSelectedLines(state: EditorState, command: SortCommand, statuses: readonly BulletMethodStatus[] = defaultBulletMethodStatuses): Transaction | null {
   const { selection } = state;
   if (selection.empty) return null;
   // CellSelection.from/to describe just its primary cell, not the rectangle.
@@ -25,14 +26,22 @@ export function sortSelectedLines(state: EditorState, command: SortCommand): Tra
     ? tableMap.findCell(cellSelection.$anchorCell.pos - tableStart!) : null;
   const headCell = cellSelection && tableMap
     ? tableMap.findCell(cellSelection.$headCell.pos - tableStart!) : null;
+  const bulletMethod = command === "sort_bullet_method";
   const sensitive = command.endsWith("_case");
   const direction = command.startsWith("sort_za") ? -1 : 1;
   const compare = (a: string, b: string) => {
+    if (bulletMethod) return bulletMethodRank(a, statuses) - bulletMethodRank(b, statuses);
     const left = sensitive ? a : a.toLowerCase();
     const right = sensitive ? b : b.toLowerCase();
     return direction * (left < right ? -1 : left > right ? 1 : 0);
   };
   const touches = (start: number, end: number) => from < end && to > start;
+  let selectedFrom = from;
+  let selectedTo = to;
+  const includeSortedRange = (start: number, end: number) => {
+    selectedFrom = Math.min(selectedFrom, start);
+    selectedTo = Math.max(selectedTo, end);
+  };
   const listNames = new Set(["bulletList", "orderedList", "taskList"]);
 
   function visit(node: ProseMirrorNode, pos: number): ProseMirrorNode {
@@ -77,6 +86,7 @@ export function sortSelectedLines(state: EditorState, command: SortCommand): Tra
       lines.push({ content, start, end: pos + node.nodeSize - 1 });
       const selected = lines.map((line, index) => touches(line.start, line.end + 1) ? index : -1).filter((index) => index >= 0);
       if (selected.length < 2 || !separators.length) return node;
+      includeSortedRange(lines[selected[0]].start, lines[selected[selected.length - 1]].end);
       const sorted = selected.map((index) => lines[index]).sort((a, b) => compare(a.content.map((n) => n.textContent).join(""), b.content.map((n) => n.textContent).join("")));
       selected.forEach((index, i) => { lines[index] = sorted[i]; });
       const result: ProseMirrorNode[] = [];
@@ -86,7 +96,16 @@ export function sortSelectedLines(state: EditorState, command: SortCommand): Tra
       });
       return node.copy(Fragment.fromArray(result));
     }
-    const children: { node: ProseMirrorNode; selected: boolean; group: string | null }[] = [];
+    // When sorting sibling tasks, their entire contents travel untouched.
+    // A selection inside one item can still sort its nested list independently.
+    let selectedItems = 0;
+    if (bulletMethod && listNames.has(node.type.name)) {
+      node.forEach((child, offset) => {
+        const start = pos + 1 + offset;
+        if (touches(start + 1, start + child.nodeSize - 1)) selectedItems++;
+      });
+    }
+    const children: { node: ProseMirrorNode; selected: boolean; group: string | null; start: number; end: number }[] = [];
     node.forEach((child, offset) => {
       const childPos = pos + 1 + offset;
       const selected = touches(childPos + 1, childPos + child.nodeSize - 1);
@@ -96,15 +115,16 @@ export function sortSelectedLines(state: EditorState, command: SortCommand): Tra
         let header = false;
         child.forEach((cell) => { if (cell.type.name === "tableHeader") header = true; });
         if (!header) group = "row";
-      } else if (child.type.name === "paragraph" || child.type.name === "heading") group = child.type.name;
+      } else if (child.type.name === "paragraph" || (!bulletMethod && child.type.name === "heading")) group = child.type.name;
       // A table row is atomic; do not rearrange paragraphs within its cells.
-      children.push({ node: node.type.name === "table" ? child : visit(child, childPos), selected, group });
+      children.push({ node: node.type.name === "table" || selectedItems > 1 ? child : visit(child, childPos), selected, group, start: childPos + 1, end: childPos + child.nodeSize - 1 });
     });
     for (let i = 0; i < children.length;) {
       const first = children[i];
       if (!first.selected || !first.group) { i++; continue; }
       let end = i + 1;
       while (end < children.length && children[end].selected && children[end].group === first.group) end++;
+      if (end - i > 1) includeSortedRange(first.start, children[end - 1].end);
       const key = (child: ProseMirrorNode) => first.group === "item" || first.group === "row" ? child.firstChild?.textContent ?? "" : child.textContent;
       const sorted = children.slice(i, end).sort((a, b) => compare(key(a.node), key(b.node)));
       children.splice(i, end - i, ...sorted);
@@ -125,7 +145,14 @@ export function sortSelectedLines(state: EditorState, command: SortCommand): Tra
       tableStart + sortedMap.positionAt(headCell.top, headCell.left, sortedTable),
     ));
   } else {
-    tr.setSelection(TextSelection.between(tr.doc.resolve(from), tr.doc.resolve(to)));
+    // Sorting moves whole touched lines, including partially selected edge
+    // lines. Keep that entire range selected rather than reusing offsets that
+    // may now land in a different, longer line. Preserve drag direction too.
+    const reverse = selection.anchor > selection.head;
+    tr.setSelection(TextSelection.between(
+      tr.doc.resolve(reverse ? selectedTo : selectedFrom),
+      tr.doc.resolve(reverse ? selectedFrom : selectedTo),
+    ));
   }
   return tr.scrollIntoView();
 }

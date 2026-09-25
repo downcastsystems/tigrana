@@ -1,3 +1,6 @@
+import BulletMethodSettings from "./BulletMethodSettings";
+import { BulletMethodIcon } from "./BulletMethodIcon";
+import type { BulletMethodStatus } from "../lib/bulletMethod";
 import type { NewNoteWritingStyle, WritingStyle } from "../lib/writingStyle";
 import { ThemePreviewHostContext } from "./ThemePreviewHost";
 import type { ReactNode } from "react";
@@ -5,9 +8,11 @@ import { useState } from "react";
 import { Maximize2, Minimize2, RotateCcw, Settings, X } from "lucide-react";
 import type { NavigationStyle } from "../types";
 
-export type SettingsSection = "general" | "appearance";
+export type SettingsSection = "general" | "appearance" | "bullet-method";
 
 export default function SettingsModal(props: {
+  bulletMethodStatuses: readonly BulletMethodStatus[];
+  onBulletMethodStatusesChange: (statuses: readonly BulletMethodStatus[]) => void;
   newNoteWritingStyle: NewNoteWritingStyle;
   lastWritingStyle: WritingStyle;
   onNewNoteWritingStyleChange: (value: NewNoteWritingStyle) => void;
@@ -62,13 +67,13 @@ export default function SettingsModal(props: {
                 <h2>Settings</h2>
               </div>
               <nav className="settings-nav" aria-label="Settings sections">
-                {(["general", "appearance"] as const).map((id) => (
+                {(["general", "appearance", "bullet-method"] as const).map((id) => (
                   <button
                     key={id}
                     className={`settings-nav-item ${section === id ? "is-active" : ""}`}
                     onClick={() => { setSection(id); props.onSectionChange?.(id); }}
                   >
-                    {id === "appearance" ? "Appearance" : "General"}
+                    {id === "bullet-method" ? "Bullet Method" : id === "appearance" ? "Appearance" : "General"}
                   </button>
                 ))}
               </nav>
@@ -76,9 +81,12 @@ export default function SettingsModal(props: {
             <div className="settings-content">
               <div className="settings-content-header">
                 <div>
-                  <h2>{section === "appearance" ? "Appearance" : "General"}</h2>
+                  <h2 className={section === "bullet-method" ? "bullet-method-heading" : undefined}>
+                    {section === "bullet-method" ? "Bullet Method" : section === "appearance" ? "Appearance" : "General"}
+                    {section === "bullet-method" ? <BulletMethodIcon size={20} /> : null}
+                  </h2>
                   <p>
-                    {section === "appearance"
+                    {section === "bullet-method" ? "Tasks in ordinary notes. Settings apply across notebooks on this device." : section === "appearance"
                       ? "Customize themes, colors, and typography."
                       : "Navigation, editing, and word count preferences."}
                   </p>
@@ -104,6 +112,7 @@ export default function SettingsModal(props: {
                 </div>
               </div>
               <div className="settings-scroll" key={section}>
+                {section === "bullet-method" ? <BulletMethodSettings statuses={props.bulletMethodStatuses} onChange={props.onBulletMethodStatusesChange} /> : null}
                 {section === "appearance" ? (
                   <div className="settings-appearance">
                     {props.themeContent}

@@ -217,11 +217,35 @@ command executor.
 
 ### Selection sorting
 
+The floating formatting bar includes a Bullet Method sort button beside the list controls. It uses the same selection sort and saved status order as the native menu, and supports a single undo.
+
 Edit > Sort Lines sorts the whole lines or sibling list items touched by the
 rich-editor selection. A-Z and Z-A compare lowercase keys; the Case Sensitive
 variants compare the original strings in Unicode order. Equal keys retain their
 order. Nested lists stay with their parent item and selected sublists sort
 independently. Inline formatting and task checkbox state travel with the content.
+
+Bullet Method sorts by a leading, case-insensitive status followed by a colon:
+CLOSED, DONE, TODO, IN PROGRESS, then unmarked text. Items within each status
+retain their order. Selected sibling tasks carry nested lists and continuation
+paragraphs unchanged; headings separate groups. Use Edit > Sort Lines > Bullet
+Method or Command+Option+period on macOS, Ctrl+Alt+period elsewhere. Like the
+other sort commands, it requires a rich-editor selection.
+
+Settings > Bullet Method explains the workflow and lets users reorder statuses
+(including No status) and add/remove prefixes. A fixed guide explains the default
+statuses with examples; status meanings are not editable. Drag handles
+use pointer events and hit testing, like bookmark/sidebar reordering, rather than
+HTML drag/drop that native WebKit can intercept as a copy operation. Drop targets
+show before/after placement; cancellation, window blur, and unmount clean up the
+gesture without changing the order. Changes are
+applied with Save changes; Restore defaults immediately restores the original
+configuration. No status is permanent and catches unknown prefixes. Names must
+be nonempty, unique ignoring case, and contain no colons or line breaks.
+Renaming/removing a prefix never rewrites notes. Configuration is app-local in
+`tigrana.bulletMethod.v1` localStorage and storage events synchronize open windows.
+Invalid stored configuration falls back to defaults. The editor receives the
+saved configuration without recreating its instance or reloading note content.
 
 Tables sort selected body rows by the first column, keeping header rows fixed.
 Tables containing merged cells are left unchanged. Sorting is disabled in raw

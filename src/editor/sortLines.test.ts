@@ -1,4 +1,5 @@
 // @vitest-environment jsdom
+import { defaultBulletMethodStatuses } from "../lib/bulletMethod";
 import { Editor } from "@tiptap/core";
 import StarterKit from "@tiptap/starter-kit";
 import { TaskList, TaskItem } from "@tiptap/extension-list";
@@ -6,7 +7,7 @@ import { Table, TableRow, TableCell, TableHeader } from "@tiptap/extension-table
 import { CellSelection } from "@tiptap/pm/tables";
 import { AllSelection, TextSelection } from "@tiptap/pm/state";
 import { afterEach, describe, expect, it } from "vitest";
-import { sortSelectedLines, type SortCommand } from "./sortLines";
+import { isSortCommand, sortSelectedLines, type SortCommand } from "./sortLines";
 
 HTMLCanvasElement.prototype.getContext = (() => null) as typeof HTMLCanvasElement.prototype.getContext;
 const { markdownToHtml, htmlToMarkdown } = await import("../lib/markdown");
@@ -26,6 +27,44 @@ function sort(editor: Editor, command: SortCommand = "sort_az") {
 function texts(editor: Editor) { return editor.state.doc.content.content.map((node) => node.textContent); }
 
 describe("Sort Lines", () => {
+  it.each(["paragraphs", "bullets", "soft breaks", "code"])("keeps all sorted %s highlighted with full or partial edge selections", shape => {
+    const lines = ["IN PROGRESS: Work", "DONE: Sent", "TODO: Review the long proposal with everyone"];
+    const content = shape === "bullets" ? `<ul>${lines.map(line => `<li><p>${line}</p></li>`).join("")}</ul>`
+      : shape === "soft breaks" ? `<p>${lines.join("<br>")}</p>`
+      : shape === "code" ? `<pre><code>${lines.join("\n")}</code></pre>`
+      : lines.map(line => `<p>${line}</p>`).join("");
+    for (const partial of [false, true]) {
+      const editor = setup(content);
+      let start = -1, end = 0;
+      editor.state.doc.descendants((node, pos) => {
+        if (node.isText) { if (start < 0) start = pos; end = pos + node.nodeSize; }
+      });
+      editor.commands.setTextSelection({ from: start, to: end - (partial ? lines[2].length - 4 : 0) });
+      sort(editor, "sort_bullet_method");
+      const selected: string[] = [];
+      editor.state.doc.nodesBetween(editor.state.selection.from, editor.state.selection.to, (node, pos) => {
+        if (node.isText) {
+          expect(pos).toBeGreaterThanOrEqual(editor.state.selection.from);
+          expect(pos + node.nodeSize).toBeLessThanOrEqual(editor.state.selection.to);
+          selected.push(node.text!);
+        }
+      });
+      expect(selected.join("\n")).toBe([lines[1], lines[2], lines[0]].join("\n"));
+    }
+  });
+  it.each([false, true])("keeps every sorted line selected when edge lines are only partly selected (reverse: %s)", reverse => {
+    const editor = setup("<p>Before</p><p>IN PROGRESS: Working on the proposal</p><p>DONE: Sent</p><p>TODO: Review</p><p>After</p>");
+    const positions: Record<string, number> = {};
+    editor.state.doc.descendants((node, pos) => { if (node.isText) positions[node.text!] = pos; });
+    const start = positions["IN PROGRESS: Working on the proposal"];
+    const end = positions["TODO: Review"] + 4;
+    editor.commands.setTextSelection(reverse ? { from: end, to: start } : { from: start, to: end });
+    sort(editor, "sort_bullet_method");
+    expect(texts(editor)).toEqual(["Before", "DONE: Sent", "TODO: Review", "IN PROGRESS: Working on the proposal", "After"]);
+    const { from, to } = editor.state.selection;
+    expect(editor.state.doc.textBetween(from, to, "\n")).toBe("DONE: Sent\nTODO: Review\nIN PROGRESS: Working on the proposal");
+    expect(editor.state.selection.anchor > editor.state.selection.head).toBe(reverse);
+  });
   it.each([
     ["sort_az", ["a", "B", "c"]],
     ["sort_za", ["c", "B", "a"]],
@@ -149,4 +188,66 @@ describe("Sort Lines", () => {
     editor.commands.setTextSelection(1);
     expect(sortSelectedLines(editor.state, "sort_za")).toBeNull();
   });
+});
+
+
+describe("Bullet Method", () => {
+  it("recognizes the menu command and stably sorts statuses, preserving content and undo", () => {
+    expect(isSortCommand("sort_bullet_method")).toBe(true);
+    const editor = setup("<ul><li>General notes</li><li>TODO: zebra</li><li>IN PROGRESS: working</li><li><strong>done:</strong> shipped</li><li>CLOSED: delegated</li><li>TODO: alpha</li><li>We are DONE: with this</li><li>DONE without a colon</li></ul>");
+    const before = editor.state.doc;
+    sort(editor, "sort_bullet_method");
+    expect(editor.state.doc.firstChild!.content.content.map((item) => item.textContent)).toEqual([
+      "CLOSED: delegated", "done: shipped", "TODO: zebra", "TODO: alpha", "IN PROGRESS: working",
+      "General notes", "We are DONE: with this", "DONE without a colon",
+    ]);
+    expect(editor.getHTML()).toContain("<strong>done:</strong>");
+    expect(sortSelectedLines(editor.state, "sort_bullet_method")).toBeNull();
+    editor.commands.undo();
+    expect(editor.state.doc.eq(before)).toBe(true);
+  });
+  it("moves nested notes and continuation paragraphs intact with their parent", () => {
+    const editor = setup("<ul><li><p>TODO: parent</p><p>DONE: explanation</p><ul><li>TODO: child</li><li>CLOSED: child</li></ul></li><li><p>CLOSED: other</p></li></ul>");
+    const parent = editor.state.doc.firstChild!.firstChild!;
+    sort(editor, "sort_bullet_method");
+    expect(editor.state.doc.firstChild!.lastChild!.eq(parent)).toBe(true);
+    expect(editor.state.doc.firstChild!.firstChild!.textContent).toBe("CLOSED: other");
+  });
+  it("sorts only the selected nested items", () => {
+    const editor = setup("<ul><li><p>TODO: parent</p><ul><li>TODO: child</li><li>CLOSED: child</li></ul></li><li>CLOSED: other</li></ul>");
+    const positions: number[] = [];
+    editor.state.doc.descendants((node, pos) => {
+      if (node.isText && node.text!.endsWith(": child")) positions.push(pos);
+    });
+    editor.commands.setTextSelection({ from: positions[0], to: positions[1] + "CLOSED: child".length });
+    sort(editor, "sort_bullet_method");
+    const list = editor.state.doc.firstChild!;
+    expect(list.firstChild!.firstChild!.textContent).toBe("TODO: parent");
+    expect(list.firstChild!.lastChild!.firstChild!.textContent).toBe("CLOSED: child");
+    expect(list.lastChild!.textContent).toBe("CLOSED: other");
+  });
+  it("keeps date headings fixed and sorts groups separately", () => {
+    const editor = setup("<h2>September 25</h2><p>TODO: today</p><p>DONE: today</p><h2>September 24</h2><p>TODO: yesterday</p><p>CLOSED: yesterday</p>");
+    sort(editor, "sort_bullet_method");
+    expect(texts(editor)).toEqual(["September 25", "DONE: today", "TODO: today", "September 24", "CLOSED: yesterday", "TODO: yesterday"]);
+  });
+  it("sorts soft lines with formatting and requires a selection", () => {
+    const editor = setup("<p>Notes<br>TODO: work<br><strong>CLOSED: handed off</strong></p>");
+    sort(editor, "sort_bullet_method");
+    expect(editor.getHTML()).toBe("<p><strong>CLOSED: handed off</strong><br>TODO: work<br>Notes</p>");
+    editor.commands.setTextSelection(1);
+    expect(sortSelectedLines(editor.state, "sort_bullet_method")).toBeNull();
+  });
+});
+
+
+it("sorts by saved custom order with unknown statuses in the movable No status group", () => {
+  const editor = setup("<ul><li>TODO: next</li><li>WAITING: review</li><li>CLOSED: old prefix</li><li>General notes</li><li>waiting: another</li></ul>");
+  const statuses = [defaultBulletMethodStatuses[4], { id: "waiting", prefix: "WAITING", description: "" }, defaultBulletMethodStatuses[2]];
+  const transaction = sortSelectedLines(editor.state, "sort_bullet_method", statuses);
+  expect(transaction).not.toBeNull();
+  editor.view.dispatch(transaction!);
+  expect(editor.state.doc.firstChild!.content.content.map(node => node.textContent)).toEqual([
+    "CLOSED: old prefix", "General notes", "WAITING: review", "waiting: another", "TODO: next",
+  ]);
 });

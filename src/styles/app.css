@@ -6417,9 +6417,12 @@ html[data-theme] .theme-conflict .theme-actions .toolbar-button.is-recommended:h
 .settings-appearance-divider { width: 100%; border: 0; border-top: 1px solid var(--border); margin: 12px 0; }
 /* Reserve space inside the scroller for the Theme background to extend past
    the shared text edge without being clipped by overflow. */
-.settings-scroll:has(.settings-appearance):not(:has(.theme-editor)) { margin-left: -12px; padding-left: 12px; }
-.settings-theme-section { margin-inline: -12px; padding: 14px 12px; border-radius: 8px; background: rgb(0 0 0 / 4%); }
-html[data-theme="dark"] .settings-theme-section { background: rgb(0 0 0 / 16%); }
+.settings-scroll:has(.settings-appearance):not(:has(.theme-editor)),
+.settings-scroll:has(.bullet-method-settings) { margin-left: -12px; padding-left: 12px; }
+.settings-theme-section,
+.bullet-method-order-section { margin-inline: -12px; padding: 14px 12px; border-radius: 8px; background: rgb(0 0 0 / 4%); }
+html[data-theme="dark"] .settings-theme-section,
+html[data-theme="dark"] .bullet-method-order-section { background: rgb(0 0 0 / 16%); }
 .settings-theme-section > .setting-row { padding-top: 0; }
 .theme-color-presets { margin-top: 6px; }
 .settings-theme-section > .theme-actions:last-child { margin-bottom: 0; }
@@ -6693,3 +6696,37 @@ html[data-theme="dark"] .settings-theme-section { background: rgb(0 0 0 / 16%); 
 .notebook-wallpaper-delete { position: absolute; top: 4px; right: 4px; border-radius: 4px; background: var(--surface-strong); }
 .notebook-wallpaper-delete .icon-button { width: 26px; height: 26px; }
 .notebook-wallpaper-delete .icon-button:disabled { opacity: 0.45; cursor: not-allowed; pointer-events: none; }
+
+
+@layer tigrana-base {
+.bullet-method-settings { max-width: 760px; }
+.bullet-method-heading { display: flex; align-items: center; gap: 12px; }
+.bullet-method-settings p { color: var(--text-muted); line-height: 1.55; margin: 0 0 16px; }
+.bullet-method-settings h3 { margin: 24px 0 8px; font-size: 15px; }
+.bullet-method-order-section > h3:first-child { margin-top: 0; }
+.bullet-method-settings code { color: var(--text); }
+.bullet-method-guide { margin: 0 0 20px; padding-left: 24px; color: var(--text-muted); line-height: 1.55; }
+.bullet-method-guide li + li { margin-top: 8px; }
+.bullet-method-guide strong { color: var(--text); }
+.bullet-method-statuses { list-style: none; margin: 12px 0; padding: 0; }
+.bullet-method-status { display: flex; align-items: center; gap: 8px; padding: 12px 0; border-top: 2px solid var(--border); }
+.bullet-method-status.is-drop-before { border-top-color: var(--settings-focus); }
+.bullet-method-status.is-drop-after { box-shadow: 0 2px 0 var(--settings-focus); }
+.bullet-method-status.is-dragging { opacity: .5; }
+body.is-dragging-bullet-status, body.is-dragging-bullet-status * { cursor: grabbing !important; user-select: none !important; }
+.bullet-method-grip { touch-action: none; user-select: none; -webkit-user-drag: none; }
+.bullet-method-position { width: 14px; color: var(--text-muted); font-size: 12px; }
+.bullet-method-grip { cursor: grab; color: var(--text-muted); display: flex; }
+.bullet-method-grip:active { cursor: grabbing; }
+.bullet-method-fields { display: flex; flex: 1; min-width: 0; flex-direction: column; gap: 6px; }
+.bullet-method-fields .settings-text-input { box-sizing: border-box; width: 100%; min-width: 0; padding: 7px 8px; border: 1px solid var(--border); border-radius: 5px; color: var(--text); background: var(--surface); font: inherit; }
+.bullet-method-unmarked { padding: 7px 8px; font-size: 14px; }
+.bullet-method-row-actions { display: flex; gap: 2px; }
+.bullet-method-settings .toolbar-button { display: inline-flex; align-items: center; gap: 6px; }
+.bullet-method-settings .bullet-method-help { margin-top: 16px; font-size: 12px; }
+.bullet-method-actions { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; }
+.bullet-method-actions [role="status"] { font-size: 12px; color: var(--text-muted); }
+.bullet-method-settings button:disabled { opacity: .4; cursor: default; }
+.bullet-method-settings [role="alert"] { color: var(--text); border-left: 3px solid var(--settings-focus); padding-left: 10px; }
+@media (max-width: 650px) { .bullet-method-row-actions { flex-direction: column; } }
+}

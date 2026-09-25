@@ -17,7 +17,6 @@ const {
   cacheCurrentNoteEditorState,
   collapseBoundarySelectionAt,
   findSlashQueryInState,
-  FormattingBubbleMenu,
   getTaskLineCutDeleteRange,
   getEditorDocumentLoadAction,
   handleEmptyListItemBackspace,
@@ -30,7 +29,12 @@ const {
   serializeEditorSelectionForClipboard,
   setEditorEditableSilently,
   setEditorSpellcheck,
-} = await import("./NotesEditor");
+} = await import("./notesEditorBehavior");
+const { FormattingBubbleMenu } = await import("./NotesEditor");
+
+it("keeps the editor Fast Refresh boundary limited to React components", async () => {
+  expect(Object.keys(await import("./NotesEditor")).sort()).toEqual(["FormattingBubbleMenu", "NotesEditor"]);
+});
 
 const schema = new Schema({
   nodes: {
@@ -573,6 +577,58 @@ describe("formatting selection eligibility", () => {
 
     expect(boundarySelection.empty).toBe(false);
     expect(isFormattingSelection(boundarySelection)).toBe(false);
+  });
+});
+
+describe("Bullet Method formatting button", () => {
+  it.each([false, true])("sorts selected bullets using the configured order (custom: %s) and supports undo", async (custom) => {
+    vi.useFakeTimers();
+    const editor = new Editor({
+      extensions: [StarterKit],
+      content: "<ul><li><p>TODO: Start</p></li><li><p>DONE: Finished</p></li><li><p>New note</p></li></ul>",
+    });
+    const first = textRange(editor.state.doc, "TODO: Start");
+    const last = textRange(editor.state.doc, "New note");
+    editor.commands.setTextSelection({ from: first.from, to: last.to });
+    const original = editor.getJSON();
+    editor.isFocused = true;
+    const focus = vi.spyOn(editor.view, "focus").mockImplementation(() => {});
+    vi.spyOn(editor.view, "coordsAtPos").mockReturnValue({ top: 120, bottom: 140, left: 240, right: 260 });
+    const container = document.createElement("div");
+    document.body.appendChild(container);
+    const root = createRoot(container);
+    const statuses = custom ? [
+      { id: "notes", prefix: null, description: "Notes first" },
+      { id: "todo", prefix: "TODO", description: "Next" },
+      { id: "done", prefix: "DONE", description: "Finished" },
+    ] : undefined;
+    try {
+      await act(async () => root.render(createElement(FormattingBubbleMenu, { editor, bulletMethodStatuses: statuses })));
+      await act(async () => vi.advanceTimersByTime(80));
+      const button = document.querySelector<HTMLButtonElement>('button[aria-label="Sort by Bullet Method"]');
+      expect(button).not.toBeNull();
+      expect(button!.title).toContain("Sort by Bullet Method");
+      await act(async () => {
+        const mouseDown = new MouseEvent("mousedown", { bubbles: true, cancelable: true });
+        button!.dispatchEvent(mouseDown);
+        expect(mouseDown.defaultPrevented).toBe(true);
+        button!.click();
+      });
+      const items: string[] = [];
+      editor.state.doc.firstChild!.forEach(item => items.push(item.textContent));
+      expect(items).toEqual(custom
+        ? ["New note", "TODO: Start", "DONE: Finished"]
+        : ["DONE: Finished", "TODO: Start", "New note"]);
+      expect(editor.state.selection.empty).toBe(false);
+      expect(focus).toHaveBeenCalled();
+      await act(async () => { expect(editor.commands.undo()).toBe(true); });
+      expect(editor.getJSON()).toEqual(original);
+    } finally {
+      await act(async () => root.unmount());
+      editor.destroy();
+      container.remove();
+      vi.useRealTimers();
+    }
   });
 });
 

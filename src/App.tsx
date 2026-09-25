@@ -19,6 +19,7 @@ import { applyQuickAppearance, quickAppearanceStyles, quickAppearanceResetPatch 
 import { QuickAppearanceControls } from "./components/QuickAppearanceControls";
 import { ThemeStyles } from "./components/ThemeStyles";
 import "./styles/theme-api.css";
+import { bulletMethodSettingsKey, readBulletMethodStatuses, writeBulletMethodStatuses } from "./lib/bulletMethod";
 import SettingsModal, { type SettingsSection } from "./components/SettingsModal";
 import { ThemeBuilder, ThemeReconciliation } from "./components/ThemeBuilder";
 import { listThemes, readTheme, themeAppearance, type ThemeDocument } from "./lib/themes";
@@ -547,6 +548,14 @@ export default function App() {
   const [noteFindRequest, setNoteFindRequest] = useState(0);
   const [appError, setAppError] = useState<string | null>(null);
   const [settingsOpen, setSettingsOpen] = useState(false);
+  const [bulletMethodStatuses, setBulletMethodStatuses] = useState(readBulletMethodStatuses);
+  useEffect(() => {
+    const syncBulletMethod = (event: StorageEvent) => {
+      if (event.key === bulletMethodSettingsKey || event.key === null) setBulletMethodStatuses(readBulletMethodStatuses());
+    };
+    window.addEventListener("storage", syncBulletMethod);
+    return () => window.removeEventListener("storage", syncBulletMethod);
+  }, []);
   const [settingsSection, setSettingsSection] = useState<SettingsSection>("general");
   const [notebooksManageOpen, setNotebooksManageOpen] = useState(false);
   const [recentlyDeletedOpen, setRecentlyDeletedOpen] = useState(false);
@@ -5409,6 +5418,7 @@ export default function App() {
             ) : (
               <EditorErrorBoundary resetKey={activePath ?? "pending-note"} onError={handleNoteLoadError}>
                 <NotesEditor
+                  bulletMethodStatuses={bulletMethodStatuses}
                   writingStyle={writingStyle}
                   colorToolbarElement={colorToolbarElement}
                   colorsDisabled={titleFocused}
@@ -5718,6 +5728,8 @@ export default function App() {
       <ThemeStyles theme={renderedTheme} mode={resolvedTheme} onReset={resetThemeAppearance} />
       {settingsOpen ? (
           <SettingsModal
+            bulletMethodStatuses={bulletMethodStatuses}
+            onBulletMethodStatusesChange={statuses => setBulletMethodStatuses(writeBulletMethodStatuses(statuses))}
             newNoteWritingStyle={newNoteWritingStyle}
             lastWritingStyle={lastWritingStyle}
             onNewNoteWritingStyleChange={value => updateMetadata(current => ({ ...current, newNoteWritingStyle: value }))}

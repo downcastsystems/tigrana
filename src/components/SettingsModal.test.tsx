@@ -2,6 +2,7 @@
 import { act } from "react";
 import { createRoot } from "react-dom/client";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
+import { defaultBulletMethodStatuses } from "../lib/bulletMethod";
 import SettingsModal from "./SettingsModal";
 import { ThemeBuilder } from "./ThemeBuilder";
 import { exampleTheme } from "../lib/themes.fixture";
@@ -46,6 +47,7 @@ it.each(["Create theme", "Edit theme"])(
       await act(async () =>
         root.render(
           <SettingsModal
+            bulletMethodStatuses={defaultBulletMethodStatuses} onBulletMethodStatusesChange={vi.fn()}
             newNoteWritingStyle="last-used" lastWritingStyle="notes" onNewNoteWritingStyleChange={vi.fn()}
             editorWidthMode="comfortable"
             onEditorWidthModeChange={vi.fn()}

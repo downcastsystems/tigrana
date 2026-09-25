@@ -1,0 +1,10 @@
+<style>body{background:#faf5e9;color:#302e27;font:24px Georgia;padding:24px}li{margin:16px 0}.ProseMirror{outline:none}.ProseMirror li{position:static}.ProseMirror p{display:inline}.ProseMirror::selection,.ProseMirror *::selection{background:rgba(119,83,62,.999);color:white}</style><div id="editor"></div><script type="module">
+import {Editor} from '@tiptap/core';
+import StarterKit from '@tiptap/starter-kit';
+import {sortSelectedLines} from '/src/editor/sortLines.ts';
+import {refreshSortedSelectionPaint} from '/src/editor/sortSelectionPaint.ts';
+const lines=['CLOSED: Review migrations','DONE: Checked the work','TODO: Look at the report','TODO: Prepare meeting','TODO: Latest version','IN PROGRESS: Dashview URL shortening','TODO: extra task','Uncategorized note'];
+window.editor=new Editor({element:document.querySelector('#editor'),extensions:[StarterKit],content:'<ul>'+lines.map(t=>'<li><p>'+t+'</p></li>').join('')+'</ul>'});
+window.selectAll=()=>{let from,to;editor.state.doc.descendants((n,p)=>{if(n.isText){from??=p;to=p+n.nodeSize}});editor.commands.setTextSelection({from,to});editor.view.focus()};
+window.sort=()=>{const tr=sortSelectedLines(editor.state,'sort_bullet_method');if(tr){editor.view.dispatch(tr);if(new URLSearchParams(location.search).has('refresh'))refreshSortedSelectionPaint(editor.view);}editor.view.focus()};
+</script>
