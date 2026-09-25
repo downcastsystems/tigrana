@@ -3332,6 +3332,8 @@ async function applyLinkToEditorSelection(
 
 function applyLineSort(editor: Editor, command: SortCommand, statuses: readonly BulletMethodStatus[]) {
   if (!editor.isEditable) return;
+  // A cursor-only shortcut must not act on a stale cursor while another field has focus.
+  if (editor.state.selection.empty && !editor.isFocused) return;
   const tr = sortSelectedLines(editor.state, command, statuses);
   if (tr) {
     editor.view.dispatch(tr);

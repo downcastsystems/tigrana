@@ -3899,6 +3899,15 @@ html[data-theme="dark"] .tab-list-separator {
 .ProseMirror ul:not([data-type="taskList"]) > li[data-bullet-method-marker] {
   position: relative;
   list-style-type: none;
+  /* Keep WebKit's text selection inside each paragraph, not its block gaps. */
+  display: flex;
+  flex-direction: column;
+}
+/* Positioned status rows otherwise paint a thin selection strip in the list
+   gutter. Paragraphs and inline content retain the theme's selection colors. */
+.ProseMirror ul:has(> li[data-bullet-method-marker])::selection,
+.ProseMirror li[data-bullet-method-marker]::selection {
+  background: transparent !important;
 }
 .ProseMirror .bullet-method-marker-button {
   user-select: none;

@@ -227,10 +227,9 @@ independently. Inline formatting and task checkbox state travel with the content
 
 Bullet Method sorts by a leading, case-insensitive status followed by a colon:
 CLOSED, DONE, TODO, IN PROGRESS, then unmarked text. Items within each status
-retain their order. Selected sibling tasks carry nested lists and continuation
-paragraphs unchanged; headings separate groups. Use Edit > Sort Lines > Bullet
+retain their order. Selected sibling tasks carry continuation paragraphs unchanged and sort their nested lists recursively; headings separate groups. Use Edit > Sort Lines > Bullet
 Method or Command+Option+period on macOS, Ctrl+Alt+period elsewhere. Like the
-other sort commands, it requires a rich-editor selection.
+other sort commands, it sorts selected rich-editor text. With a collapsed cursor, Bullet Method instead sorts the outermost containing bullet, numbered, or task list and all its descendant lists, preserving item contents and the cursor’s position within its moved item. Outside a list it does nothing.
 
 Ordinary bullet lists display Lucide status markers: circle-slash for CLOSED, circle-check for DONE,
 circle for TODO, and circle-dot for IN PROGRESS. These ProseMirror decorations

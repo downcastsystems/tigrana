@@ -26,6 +26,86 @@ function sort(editor: Editor, command: SortCommand = "sort_az") {
 }
 function texts(editor: Editor) { return editor.state.doc.content.content.map((node) => node.textContent); }
 
+describe("Bullet Method at the cursor", () => {
+  function cursorIn(editor: Editor, text: string, offset = 3) {
+    let position = 0;
+    editor.state.doc.descendants((node, pos) => { if (node.isText && node.text === text) position = pos + offset; });
+    editor.commands.setTextSelection(position);
+    return position;
+  }
+
+  it.each(["- ", "1. ", "- [ ] "])("sorts the containing list with %s markers and keeps the cursor in its item", marker => {
+    const editor = setup(markdownToHtml(`${marker}TODO: Start\n${marker}DONE: Finished\n${marker}Unmarked`));
+    const originalPosition = cursorIn(editor, "TODO: Start");
+    const original = editor.getJSON();
+    sort(editor, "sort_bullet_method");
+    expect(editor.state.doc.firstChild!.content.content.map(node => node.textContent))
+      .toEqual(["DONE: Finished", "TODO: Start", "Unmarked"]);
+    expect(editor.state.selection.empty).toBe(true);
+    expect(editor.state.selection.$from.parent.textContent).toBe("TODO: Start");
+    expect(editor.state.selection.$from.parentOffset).toBe(3);
+    expect(sortSelectedLines(editor.state, "sort_bullet_method")).toBeNull();
+    editor.commands.undo();
+    expect(editor.getJSON()).toEqual(original);
+    expect(editor.state.selection.from).toBe(originalPosition);
+  });
+
+  it("sorts a nested hierarchy using custom statuses and carries descendants with their parent", () => {
+    const editor = setup("<p>Before</p><ul><li><p>TODO: Parent</p><ul><li><p>DONE: Child</p><ul><li><p>Nested detail</p></li></ul></li><li><p>TODO: Child</p></li></ul></li><li><p>CLOSED: Other parent</p></li></ul><p>After</p>");
+    cursorIn(editor, "DONE: Child");
+    const original = editor.getJSON();
+    const tr = sortSelectedLines(editor.state, "sort_bullet_method", [
+      { id: "todo", prefix: "TODO", description: "First" },
+      { id: "done", prefix: "DONE", description: "Second" },
+      { id: "none", prefix: null, description: "Last" },
+    ]);
+    expect(tr).not.toBeNull();
+    editor.view.dispatch(tr!);
+    const outer = editor.state.doc.child(1);
+    expect(outer.child(0).firstChild!.textContent).toBe("TODO: Parent");
+    expect(outer.child(1).textContent).toBe("CLOSED: Other parent");
+    const nested = outer.child(0).child(1);
+    expect(nested.child(0).textContent).toBe("TODO: Child");
+    expect(nested.child(1).textContent).toBe("DONE: ChildNested detail");
+    expect(editor.state.selection.$from.parent.textContent).toBe("DONE: Child");
+    editor.commands.undo();
+    expect(editor.getJSON()).toEqual(original);
+  });
+
+  it.each(["TODO: Parent", "TODO: Deep"])("sorts ancestors and all descendant lists from %s, retaining the cursor and undo", target => {
+    const editor = setup("<p>Before</p><ul><li><p>TODO: Parent</p><ul><li><p>TODO: Child</p><ul><li><p>TODO: Deep</p></li><li><p>DONE: Deep</p></li></ul></li><li><p>DONE: Child</p></li></ul></li><li><p>DONE: Parent</p><ul><li><p>TODO: Sibling</p></li><li><p>CLOSED: Sibling</p></li></ul></li></ul><p>After</p><ul><li>TODO: Separate</li><li>DONE: Separate</li></ul>");
+    const position = cursorIn(editor, target);
+    const original = editor.getJSON();
+    const separate = editor.state.doc.child(3);
+    sort(editor, "sort_bullet_method");
+    const list = editor.state.doc.child(1);
+    expect(list.child(0).firstChild!.textContent).toBe("DONE: Parent");
+    expect(list.child(0).child(1).firstChild!.textContent).toBe("CLOSED: Sibling");
+    const children = list.child(1).child(1);
+    expect(children.child(0).textContent).toBe("DONE: Child");
+    expect(children.child(1).child(1).firstChild!.textContent).toBe("DONE: Deep");
+    expect(editor.state.doc.child(3).eq(separate)).toBe(true);
+    expect(editor.state.selection.empty).toBe(true);
+    expect(editor.state.selection.$from.parent.textContent).toBe(target);
+    expect(editor.state.selection.$from.parentOffset).toBe(3);
+    expect(sortSelectedLines(editor.state, "sort_bullet_method")).toBeNull();
+    editor.commands.undo();
+    expect(editor.getJSON()).toEqual(original);
+    expect(editor.state.selection.from).toBe(position);
+  });
+
+  it("leaves ordinary text, single-item lists, and alphabetical sorts alone without a selection", () => {
+    for (const content of ["<p>TODO: Start</p><p>DONE: Finished</p>", "<ul><li><p>TODO: Start</p></li></ul>"]) {
+      const editor = setup(content);
+      cursorIn(editor, "TODO: Start");
+      expect(sortSelectedLines(editor.state, "sort_bullet_method")).toBeNull();
+    }
+    const editor = setup("<ul><li><p>z</p></li><li><p>a</p></li></ul>");
+    cursorIn(editor, "z", 0);
+    expect(sortSelectedLines(editor.state, "sort_az")).toBeNull();
+  });
+});
+
 describe("Sort Lines", () => {
   it.each(["paragraphs", "bullets", "soft breaks", "code"])("keeps all sorted %s highlighted with full or partial edge selections", shape => {
     const lines = ["IN PROGRESS: Work", "DONE: Sent", "TODO: Review the long proposal with everyone"];
@@ -210,7 +290,10 @@ describe("Bullet Method", () => {
     const editor = setup("<ul><li><p>TODO: parent</p><p>DONE: explanation</p><ul><li>TODO: child</li><li>CLOSED: child</li></ul></li><li><p>CLOSED: other</p></li></ul>");
     const parent = editor.state.doc.firstChild!.firstChild!;
     sort(editor, "sort_bullet_method");
-    expect(editor.state.doc.firstChild!.lastChild!.eq(parent)).toBe(true);
+    const moved = editor.state.doc.firstChild!.lastChild!;
+    expect(moved.child(0).eq(parent.child(0))).toBe(true);
+    expect(moved.child(1).eq(parent.child(1))).toBe(true);
+    expect(moved.child(2).content.content.map(item => item.textContent)).toEqual(["CLOSED: child", "TODO: child"]);
     expect(editor.state.doc.firstChild!.firstChild!.textContent).toBe("CLOSED: other");
   });
   it("sorts only the selected nested items", () => {

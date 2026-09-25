@@ -1845,6 +1845,10 @@ fn build_app_menu(
         && state.active_note_editable
         && state.has_editor_selection
         && !state.raw_markdown_visible;
+    let can_sort_bullet_method = state.has_open_note
+        && state.active_note_editable
+        && state.bullet_method_enabled
+        && !state.raw_markdown_visible;
     // Rendered at 2x the native macOS menu icon height for Retina displays.
     let az_icon = tauri::image::Image::new(include_bytes!("../icons/menu/arrow-down-a-z.rgba"), 36, 36);
     let za_icon = tauri::image::Image::new(include_bytes!("../icons/menu/arrow-down-z-a.rgba"), 36, 36);
@@ -1858,10 +1862,10 @@ fn build_app_menu(
         handle, "sort_za_case", "Z-A (Case Sensitive)", can_sort, Some(za_icon), None::<&str>,
     )?;
     let sort_bullet_method = IconMenuItem::with_id(
-        handle, "sort_bullet_method", "Bullet Method", can_sort, Some(bullet_icon), Some("CmdOrCtrl+Alt+Period"),
+        handle, "sort_bullet_method", "Bullet Method", can_sort_bullet_method, Some(bullet_icon), Some("CmdOrCtrl+Alt+Period"),
     )?;
     let sort_lines = Submenu::with_items(
-        handle, "Sort Lines", can_sort, &[&sort_az, &sort_za, &sort_az_case, &sort_za_case],
+        handle, "Sort Lines", can_sort || can_sort_bullet_method, &[&sort_az, &sort_za, &sort_az_case, &sort_za_case],
     )?;
     if state.bullet_method_enabled { sort_lines.append(&sort_bullet_method)?; }
     // Share labels and ordering with the editor's palette.

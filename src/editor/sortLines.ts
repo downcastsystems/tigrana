@@ -10,10 +10,52 @@ export function isSortCommand(command: string): command is SortCommand {
   return sortCommands.some((value) => value === command);
 }
 
+const listNames = new Set(["bulletList", "orderedList", "taskList"]);
+
+/** Cursor offsets are relative to the node's opening token, and travel with its children. */
+function sortListTree(node: ProseMirrorNode, statuses: readonly BulletMethodStatus[], cursor?: number): { node: ProseMirrorNode; cursor?: number } {
+  if (node.isLeaf || node.isTextblock) return { node, cursor };
+  const children: { node: ProseMirrorNode; cursor?: number }[] = [];
+  node.forEach((child, offset) => {
+    const start = offset + 1;
+    const childCursor = cursor !== undefined && cursor >= start && cursor < start + child.nodeSize
+      ? cursor - start : undefined;
+    children.push(sortListTree(child, statuses, childCursor));
+  });
+  if (listNames.has(node.type.name)) {
+    children.sort((a, b) => bulletMethodRank(a.node.firstChild?.textContent ?? "", statuses)
+      - bulletMethodRank(b.node.firstChild?.textContent ?? "", statuses));
+  }
+  let offset = 1;
+  let mappedCursor = cursor;
+  for (const child of children) {
+    if (child.cursor !== undefined) mappedCursor = offset + child.cursor;
+    offset += child.node.nodeSize;
+  }
+  return { node: node.copy(Fragment.fromArray(children.map(child => child.node))), cursor: mappedCursor };
+}
+
+function sortListAtCursor(state: EditorState, statuses: readonly BulletMethodStatus[]): Transaction | null {
+  const { selection } = state;
+  if (!(selection instanceof TextSelection) || !selection.empty) return null;
+  const { $from } = selection;
+  // Start at the outermost containing list so every level is sorted together.
+  for (let depth = 1; depth <= $from.depth; depth++) {
+    const list = $from.node(depth);
+    if (!listNames.has(list.type.name)) continue;
+    const start = $from.before(depth);
+    const sorted = sortListTree(list, statuses, $from.pos - start);
+    if (sorted.node.eq(list)) return null;
+    const tr = closeHistory(state.tr).replaceWith(start, start + list.nodeSize, sorted.node);
+    return tr.setSelection(TextSelection.create(tr.doc, start + sorted.cursor!)).scrollIntoView();
+  }
+  return null;
+}
+
 /** Sort touched sibling units, retaining their marks, attributes and descendants. */
 export function sortSelectedLines(state: EditorState, command: SortCommand, statuses: readonly BulletMethodStatus[] = defaultBulletMethodStatuses): Transaction | null {
   const { selection } = state;
-  if (selection.empty) return null;
+  if (selection.empty) return command === "sort_bullet_method" ? sortListAtCursor(state, statuses) : null;
   // CellSelection.from/to describe just its primary cell, not the rectangle.
   // Its range envelope covers all selected rows, including reverse selections.
   const from = selection.ranges.reduce((start, range) => Math.min(start, range.$from.pos), selection.from);
@@ -42,7 +84,6 @@ export function sortSelectedLines(state: EditorState, command: SortCommand, stat
     selectedFrom = Math.min(selectedFrom, start);
     selectedTo = Math.max(selectedTo, end);
   };
-  const listNames = new Set(["bulletList", "orderedList", "taskList"]);
 
   function visit(node: ProseMirrorNode, pos: number): ProseMirrorNode {
     if (!touches(pos, pos + node.nodeSize)) return node;
@@ -96,7 +137,7 @@ export function sortSelectedLines(state: EditorState, command: SortCommand, stat
       });
       return node.copy(Fragment.fromArray(result));
     }
-    // When sorting sibling tasks, their entire contents travel untouched.
+    // Sibling tasks carry their content, with descendant lists sorted recursively.
     // A selection inside one item can still sort its nested list independently.
     let selectedItems = 0;
     if (bulletMethod && listNames.has(node.type.name)) {
@@ -117,7 +158,8 @@ export function sortSelectedLines(state: EditorState, command: SortCommand, stat
         if (!header) group = "row";
       } else if (child.type.name === "paragraph" || (!bulletMethod && child.type.name === "heading")) group = child.type.name;
       // A table row is atomic; do not rearrange paragraphs within its cells.
-      children.push({ node: node.type.name === "table" || selectedItems > 1 ? child : visit(child, childPos), selected, group, start: childPos + 1, end: childPos + child.nodeSize - 1 });
+      children.push({ node: node.type.name === "table" ? child : selectedItems > 1
+        ? (selected ? sortListTree(child, statuses).node : child) : visit(child, childPos), selected, group, start: childPos + 1, end: childPos + child.nodeSize - 1 });
     });
     for (let i = 0; i < children.length;) {
       const first = children[i];

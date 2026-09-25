@@ -2137,7 +2137,7 @@ export default function App() {
     if (userPathMutationRef.current) return;
     if (isSortCommand(command)) {
       if (command === "sort_bullet_method" && !bulletMethodDisplay.enabled) return;
-      if (activeNoteEditable && !rawMarkdownVisible && !frontmatterError && hasEditorSelection) requestEditorCommand(command);
+      if (activeNoteEditable && !rawMarkdownVisible && !frontmatterError && (hasEditorSelection || command === "sort_bullet_method")) requestEditorCommand(command);
       return;
     }
     if (command.startsWith("open_recent_note:")) {
