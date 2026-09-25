@@ -1,6 +1,6 @@
 import type { NavigationStyle, NotebookAppearance } from '../types';
 import { defaultThemeDesign } from './themeDesign';
-import { applyQuickAppearanceFonts, quickAppearanceStyles } from './quickAppearance';
+import { applyQuickAppearance, quickAppearanceStyles } from './quickAppearance';
 import { readableThemeText, themeVariables } from './themeRuntime';
 import { defaultPlasmaSettings, type PlasmaSettings, type ThemeDocument } from './themes';
 
@@ -17,7 +17,7 @@ type CurrentSettings = {
 
 /** Bake notebook overrides into a portable theme without changing the selected original. */
 export function captureCurrentThemeSettings(theme: ThemeDocument, settings: CurrentSettings): ThemeDocument {
-  const result = { ...applyQuickAppearanceFonts(theme, settings.quickAppearance), navigationStyle: settings.navigationStyle, rightSidebarOpen: settings.rightSidebarOpen,
+  const result = { ...applyQuickAppearance(theme, settings.quickAppearance), navigationStyle: settings.navigationStyle, rightSidebarOpen: settings.rightSidebarOpen,
     ...(settings.wordCountVisible === undefined ? {} : { wordCountVisible: settings.wordCountVisible }),
     ...(settings.editorWidthMode === undefined ? {} : { editorWidthMode: settings.editorWidthMode }),
     ...(settings.noteAlignment === undefined ? {} : { noteAlignment: settings.noteAlignment }),
@@ -27,7 +27,7 @@ export function captureCurrentThemeSettings(theme: ThemeDocument, settings: Curr
     const quick = settings.quickAppearance;
     const accent = quick?.accentColor ?? theme[mode].accent;
     const titlebar = theme.id === 'default' ? '#001428' : accent;
-    result[mode] = { ...theme[mode], ...(quick?.accentColor ? { accent, selectedText: readableThemeText(accent) } : {}) };
+    result[mode] = { ...result[mode], ...(quick?.accentColor ? { accent, selectedText: readableThemeText(accent) } : {}) };
     // Preserve an accent change on a theme-authored colored title bar.
     const style = quickAppearanceStyles(quick, settings.accentTitlebar, titlebar).titlebar;
     if (style.background) {
@@ -42,17 +42,29 @@ export function captureCurrentThemeSettings(theme: ThemeDocument, settings: Curr
     const design = result.design ?? defaultThemeDesign;
     result.design = { ...design, css: `${design.css}\n/* Captured notebook accent on the title bar. */\n${titlebarRules.join('\n')}` };
   }
+  if (result.design && result.design !== theme.design) {
+    // The captured rules are now theme defaults, not a replaceable quick layer.
+    result.design = { ...result.design, css: result.design.css
+      .replace('/* Notebook quick appearance */', '/* Captured notebook appearance */')
+      .replace('/* End notebook quick appearance */', '/* End captured notebook appearance */') };
+  }
+  // Capture the currently displayed palette, not the source variant's default.
+  if (settings.quickAppearance?.accentColor || result.colorVariants) {
+    delete result.colorVariants;
+    delete result.defaultColorVariantId;
+  }
   return result;
 }
 
-/** Compare effective values, ignoring identity and optional defaults that mean "keep current". */
+/** Compare effective values, ignoring identity, sidebar visibility, and defaults that mean "keep current". */
 export function hasCurrentThemeChanges(original: ThemeDocument, current: ThemeDocument): boolean {
   const values = (theme: ThemeDocument) => ({
     light: themeVariables(theme, 'light'), dark: themeVariables(theme, 'dark'),
     accentTitlebar: theme.accentTitlebar,
     customCss: theme.design?.css ?? "",
+    surfaces: theme.surfaces,
+    backgroundAsset: theme.surfaces?.image ? theme.design?.assets[theme.surfaces.image] : undefined,
     navigationStyle: theme.navigationStyle ?? current.navigationStyle,
-    rightSidebarOpen: theme.rightSidebarOpen ?? current.rightSidebarOpen,
     wordCountVisible: theme.wordCountVisible ?? current.wordCountVisible,
     editorWidthMode: theme.editorWidthMode ?? current.editorWidthMode,
     noteAlignment: theme.noteAlignment ?? current.noteAlignment,

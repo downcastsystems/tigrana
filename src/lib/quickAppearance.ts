@@ -1,9 +1,9 @@
 import type { CSSProperties } from "react";
 import type { NotebookAppearance } from "../types";
 import type { ThemeDocument } from "./themes";
-import { readableThemeText } from "./themeRuntime";
+import { readableThemeText, selectionBackgroundOpacity } from "./themeRuntime";
 import { allBuiltInThemes } from "./bundledThemes";
-import { defaultThemeDesign } from "./themeDesign";
+import { defaultThemeDesign, parseThemeDesign } from "./themeDesign";
 import vt323Font from "./vt323Font.json";
 
 export function quickAppearanceStyles(quick: NotebookAppearance["quickAppearance"], colored: boolean, titlebarColor: string) {
@@ -18,7 +18,8 @@ export function quickAppearanceStyles(quick: NotebookAppearance["quickAppearance
   }
   // An accent change follows a theme's colored title bar, but cannot enable it.
   const titlebar: CSSProperties = palette["--accent"] && colored
-    ? { background: titlebarColor, color: readableThemeText(titlebarColor) }
+    ? { background: typeof quick?.panelOpacity === "number" && Number.isFinite(quick.panelOpacity) && quick.panelOpacity >= 0 && quick.panelOpacity <= 100
+      ? `color-mix(in srgb, ${titlebarColor} ${quick.panelOpacity}%, transparent)` : titlebarColor, color: readableThemeText(titlebarColor) }
     : {};
   return { palette: palette as CSSProperties, titlebar };
 }
@@ -55,7 +56,7 @@ export type QuickAppearanceField = keyof NonNullable<NotebookAppearance["quickAp
 export function quickAppearanceResetPatch(theme: ThemeDocument, quick: NotebookAppearance["quickAppearance"], field: QuickAppearanceField): Partial<NotebookAppearance> {
   return {
     quickAppearance: { ...quick, [field]: undefined },
-    ...(field === "editorLineHeight" || field === "editorLetterSpacing" ? {} : field === "accentColor" ? {
+    ...(field === "panelOpacity" || field === "backgroundImage" || field === "editorLineHeight" || field === "editorLetterSpacing" ? {} : field === "accentColor" ? {
       colors: { light: { accentColor: theme.light.accent }, dark: { accentColor: theme.dark.accent } },
     } : { [field]: theme[field] }),
   };
@@ -113,4 +114,77 @@ export function themeFontLabel(family: string): string {
     "ui-monospace": "System monospace",
   };
   return names[first] ?? first.replace(/^theme-font-/, "").replace(/-/g, " ");
+}
+
+/** Mix sRGB channels so the persisted selection can choose a readable foreground. */
+export function mixAccentColor(accent: string, text: string, weight: number) {
+  return '#' + [1, 3, 5].map(index => Math.round(
+    parseInt(accent.slice(index, index + 2), 16) * weight
+    + parseInt(text.slice(index, index + 2), 16) * (1 - weight),
+  ).toString(16).padStart(2, '0')).join('');
+}
+
+export function quickPanelOpacity(theme: ThemeDocument) {
+  return theme.surfaces?.editor ?? (theme.plasma?.enabled ? Math.min(95, theme.plasma.frost * 1.1) : 100);
+}
+
+/** Apply notebook controls to a copy, which can also be exported as a theme. */
+export function applyQuickAppearance(theme: ThemeDocument, quick: NotebookAppearance['quickAppearance']): ThemeDocument {
+  let result = applyQuickAppearanceFonts(theme, quick);
+  const rules: string[] = [];
+  if (quick?.accentColor && /^#[0-9a-f]{6}$/i.test(quick.accentColor)) {
+    const accent = quick.accentColor;
+    const palette = (mode: 'light' | 'dark') => {
+      const original = theme[mode];
+      const text = original.editorText ?? original.text;
+      const selectionBackground = mixAccentColor(accent, text, 0.65);
+      return { ...original, accent, selectedText: readableThemeText(accent),
+        linkColor: mixAccentColor(accent, text, 0.45), selectionBackground,
+        selectionText: readableThemeText(selectionBackground, selectionBackgroundOpacity) };
+    };
+    result = { ...result, light: palette('light'), dark: palette('dark') };
+    rules.push(':scope.app-titlebar.theme-light .note-tab.is-active, :scope.app-titlebar.theme-dark .note-tab.is-active { background: var(--tigrana-accent); color: var(--tigrana-selected-text); }');
+  }
+  const opacity = quick?.panelOpacity;
+  const validOpacity = typeof opacity === 'number' && Number.isFinite(opacity) && opacity >= 0 && opacity <= 100;
+  let backgroundPath: string | undefined;
+  if (quick?.backgroundImage) {
+    try {
+      const { asset } = quick.backgroundImage;
+      const extension = { 'image/png': 'png', 'image/jpeg': 'jpg', 'image/webp': 'webp' }[asset.mime];
+      if (!extension) throw new Error('Unsupported background image.');
+      const original = result.design ?? defaultThemeDesign;
+      let path = `assets/quick-background.${extension}`;
+      let suffix = 1;
+      while (original.assets[path] && original.assets[path].data !== asset.data) path = `assets/quick-background-${suffix++}.${extension}`;
+      const design = parseThemeDesign({ ...original, assets: { ...original.assets, [path]: asset } });
+      result = { ...result, schemaVersion: 2, design };
+      backgroundPath = path;
+    } catch {
+      // Malformed or oversized notebook overrides must not break the theme.
+    }
+  }
+  if (validOpacity || backgroundPath) {
+    const defaults = { background: theme.light.background, navigation: quickPanelOpacity(theme),
+      editor: quickPanelOpacity(theme), outline: quickPanelOpacity(theme), titlebar: 100 };
+    result = { ...result, surfaces: { ...(result.surfaces ?? defaults),
+      ...(validOpacity ? { navigation: opacity, editor: opacity, outline: opacity, titlebar: opacity } : {}),
+      ...(backgroundPath ? { image: backgroundPath } : {}) } };
+    const backgroundRule = ':scope.app-frame.theme-standard { background-color: var(--tigrana-workspace-background, var(--surface-muted)); }';
+    if (!theme.surfaces || theme.design?.css.includes(backgroundRule)) rules.push(backgroundRule);
+    if (validOpacity) {
+      // Paint just the panel backgrounds; children and text remain fully opaque.
+      rules.push(`:scope.app-frame .left-panes, :scope.app-frame .note-surface { background: transparent; }
+:scope.app-frame .folder-pane, :scope.app-frame .notes-pane, :scope.app-frame .unified-tree-pane, :scope.app-frame .right-sidebar { background: color-mix(in srgb, var(--surface) ${opacity}%, transparent); }
+:scope.app-frame .main-pane { background: color-mix(in srgb, var(--app-bg) ${opacity}%, transparent); }
+:scope.app-titlebar.theme-light, :scope.app-titlebar.theme-dark { background: color-mix(in srgb, ${theme.accentTitlebar ? 'var(--titlebar-bg)' : 'var(--surface)'} ${opacity}%, transparent); }`);
+    }
+  }
+  if (rules.length) {
+    const design = result.design ?? defaultThemeDesign;
+    const css = design.css.replace(/\n?\/\* Notebook quick appearance \*\/[\s\S]*?\/\* End notebook quick appearance \*\//g, '').trimEnd();
+    result = { ...result, schemaVersion: 2, design: { ...design,
+      css: css + '\n/* Notebook quick appearance */\n' + rules.join('\n') + '\n/* End notebook quick appearance */' } };
+  }
+  return result;
 }

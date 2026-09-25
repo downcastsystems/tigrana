@@ -55,13 +55,16 @@ export type ThemeDifferenceAcknowledgement = {
   appWide: string | null;
 };
 
+export type NotebookWallpaper = { name: string; asset: import("./lib/themeDesign").ThemeAsset };
+
 export type NotebookAppearance = {
+  wallpapers?: NotebookWallpaper[];
   editorWidthMode?: "comfortable" | "narrow" | "full";
   noteAlignment?: "left" | "center";
   rightSidebarOpen?: boolean;
   wordCountVisible?: boolean;
   themeColorPreferences?: Record<string, string>;
-  quickAppearance?: { accentColor?: string; editorFontFamily?: string; editorFontSize?: number; editorLineHeight?: number; editorLetterSpacing?: number } | null;
+  quickAppearance?: { panelOpacity?: number; backgroundImage?: NotebookWallpaper; accentColor?: string; editorFontFamily?: string; editorFontSize?: number; editorLineHeight?: number; editorLetterSpacing?: number } | null;
   acknowledgedThemeDifference?: ThemeDifferenceAcknowledgement;
   plasma?: import("./lib/themes").PlasmaSettings;
   customTheme?: import("./lib/themes").ThemeDocument | null;

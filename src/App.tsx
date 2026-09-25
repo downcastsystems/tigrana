@@ -1,3 +1,5 @@
+import { updateNoteEntryAfterSave } from "./lib/updateNoteEntryAfterSave";
+import { notebookWallpapers, sameWallpaper, wallpaperDeletionReason } from "./lib/notebookWallpapers";
 import { readWritingStyle, setWritingStyle } from "./lib/writingStyle";
 import { EditorOptionsSubmenu } from "./components/EditorOptionsSubmenu";
 import { isInlineColorCommand, type InlineColorCommand } from "./lib/inlineColors";
@@ -13,13 +15,13 @@ import { recoveryTheme } from "./lib/themeCatalog";
 import { themeCatalogWarnings } from "./lib/bundledThemes";
 import { readableThemeText, themeVariables, themeBackgroundImage, themeRenderingMode } from "./lib/themeRuntime";
 import { classicThemes } from "./lib/bundledThemes";
-import { applyQuickAppearanceFonts, quickAppearanceStyles, quickAppearanceResetPatch } from "./lib/quickAppearance";
+import { applyQuickAppearance, quickAppearanceStyles, quickAppearanceResetPatch } from "./lib/quickAppearance";
 import { QuickAppearanceControls } from "./components/QuickAppearanceControls";
 import { ThemeStyles } from "./components/ThemeStyles";
 import "./styles/theme-api.css";
 import SettingsModal, { type SettingsSection } from "./components/SettingsModal";
 import { ThemeBuilder, ThemeReconciliation } from "./components/ThemeBuilder";
-import { readTheme, themeAppearance, type ThemeDocument } from "./lib/themes";
+import { listThemes, readTheme, themeAppearance, type ThemeDocument } from "./lib/themes";
 import PlasmaTheme from "./components/PlasmaTheme";
 import { isSortCommand, type SortCommand } from "./editor/sortLines";
 import { ReleaseNotice } from "./components/ReleaseNotice";
@@ -120,7 +122,6 @@ import {
   createNoteDocument,
   measureNoteText,
   normalizeNoteMarkdown,
-  readNoteCreatedAt,
   readNoteDocument,
   readNotePreview,
   reviseNoteDocument,
@@ -876,7 +877,7 @@ export default function App() {
   // Both old presets and portable themes use the same renderer and preview document.
   const renderedTheme = useMemo<ThemeDocument>(() => {
     if (invalidNotebookTheme) return recoveryTheme;
-    if (customTheme) return applyQuickAppearanceFonts(resolveThemeVariant(customTheme, metadata.appearance?.themeColorPreferences?.[customTheme.id]), quickAppearance);
+    if (customTheme) return applyQuickAppearance(resolveThemeVariant(customTheme, metadata.appearance?.themeColorPreferences?.[customTheme.id]), quickAppearance);
     const base = classicThemes.find(t => t.id === themePresetId) ?? classicThemes[0];
     const palette = (mode: "light" | "dark") => {
       const colors = themeColors[mode];
@@ -886,7 +887,7 @@ export default function App() {
           ? (base.id === "default" ? "#001428" : accent)
           : colors.titlebarColor || base[mode].titlebar };
     };
-    return applyQuickAppearanceFonts({ ...base, light: palette("light"), dark: palette("dark"),
+    return applyQuickAppearance({ ...base, light: palette("light"), dark: palette("dark"),
       appFontFamily, appFontSize, editorFontFamily, editorFontSize, accentTitlebar: savedAccentTitlebar }, quickAppearance);
   }, [metadata.appearance?.themeColorPreferences, customTheme, invalidNotebookTheme, themePresetId, themeColors, quickAppearance, appFontFamily, appFontSize, editorFontFamily, editorFontSize, savedAccentTitlebar]);
   const renderedColorMode = themeRenderingMode(renderedTheme, resolvedTheme);
@@ -1949,6 +1950,7 @@ export default function App() {
         appearance: {
           ...previous,
           ...patch,
+          wallpapers: notebookWallpapers(previous?.wallpapers, previous?.quickAppearance?.backgroundImage, patch.quickAppearance?.backgroundImage),
           ...(patch.colors ? { colors } : {}),
         },
       };
@@ -5737,7 +5739,19 @@ export default function App() {
               {metadata.appearance?.customTheme && !customTheme ? <p role="alert">This notebook contains an invalid or unsupported theme. Choose a theme to replace it.</p> : null}
               <ThemeBuilder key={workspace} current={customTheme} seed={themeSeed()} onApply={applyCustomTheme} onUseThemeDefaults={useThemeDefaults} onRestoreDefault={resetThemeAppearance}
                 onSaved={() => setSettingsOpen(false)}
-                quickAppearanceControls={<QuickAppearanceControls theme={quickAppearanceTheme} mode={resolvedTheme} quick={quickAppearance}
+                quickAppearanceControls={<QuickAppearanceControls onDeleteWallpaper={async wallpaper => {
+                  const library = await listThemes();
+                  if (workspaceRef.current !== workspace) return;
+                  if (library.warnings.length) throw new Error('Some custom themes could not be checked.');
+                  updateMetadata(current => {
+                    const appearance = current.appearance;
+                    const currentTheme = readTheme(appearance?.customTheme);
+                    if (wallpaperDeletionReason(wallpaper, [...library.themes, ...(currentTheme ? [currentTheme] : [])], appearance?.quickAppearance?.backgroundImage)) return current;
+                    return { ...current, appearance: { ...appearance,
+                      wallpapers: (appearance?.wallpapers ?? []).filter(saved => !sameWallpaper(saved, wallpaper)),
+                    } };
+                  });
+                }} key={`${workspace}:${quickAppearanceTheme.id}`} theme={quickAppearanceTheme} mode={resolvedTheme} quick={quickAppearance} wallpapers={metadata.appearance?.wallpapers}
                   current={{ accentColor: effectiveAccentColor, editorFontFamily: renderedTheme.editorFontFamily, editorFontSize: renderedTheme.editorFontSize }}
                   onChange={patch => updateNotebookAppearance({ quickAppearance: { ...quickAppearance, ...patch } })}
                   onReset={field => updateNotebookAppearance(quickAppearanceResetPatch(quickAppearanceTheme, quickAppearance, field))} />}
@@ -7986,19 +8000,6 @@ export function PropertiesPane({ activeNote, pendingNote, workspace }: { activeN
   );
 }
 
-export function updateNoteEntryAfterSave(
-  note: NoteEntry,
-  savedPath: string,
-  written: string,
-  savedAt: number,
-): NoteEntry {
-  if (note.path !== savedPath) return note;
-  return {
-    ...note,
-    created_at: readNoteCreatedAt(written) ?? note.created_at,
-    updated_at: savedAt,
-  };
-}
 
 function PropertyRow({ code, label, value }: { code?: boolean; label: string; value: string }) {
   return (
@@ -9962,7 +9963,7 @@ function displayFolderName(path: string, folders: FolderEntry[], workspace: stri
   return decodeTitleFromFilename(tail);
 }
 
-export function buildNoteCreationTargets(
+function buildNoteCreationTargets(
   baseParentPath: string,
   currentParentPath: string,
   activeNote: NoteEntry | null,

@@ -176,3 +176,13 @@ it('round trips panel opacity and rejects unsafe surface settings', () => {
   }
   expect(parseTheme(exampleTheme()).surfaces).toBeUndefined();
 });
+
+it('renders explicit selection colors without WebKit darkening their opaque backgrounds', () => {
+  const source = exampleTheme();
+  const theme = { ...source, dark: { ...source.dark, selectionBackground: '#f45b4e', selectionText: '#000000' } };
+  const css = themeStylesheet(theme, 'dark', 'notebook');
+  expect(css).toContain('background-color: rgba(244, 91, 78, 0.99); color: #000000;');
+  for (const selector of ['.ProseMirror::selection', '.ProseMirror *::selection', '.note-title-input::selection', '.raw-markdown-input::selection']) {
+    expect(css).toContain(selector);
+  }
+});

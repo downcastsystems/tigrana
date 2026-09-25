@@ -1,10 +1,11 @@
+import { mixAccentColor } from "../lib/quickAppearance";
 import { ThemeVariantsEditor } from "./ThemeVariantsEditor";
 import { resolveThemeVariant } from "../lib/themes";
 import { themeFamilies, themeFamily, rememberedThemeColor } from "../lib/themeFamilies";
 import { ThemeDefaultsMenu } from "./ThemeDefaultsMenu";
 import type { ThemeDefaultsScope } from "../lib/themeDefaults";
 import { hasCurrentThemeChanges } from "../lib/currentThemeSettings";
-import { readableThemeText } from "../lib/themeRuntime";
+import { readableThemeText, selectionBackgroundOpacity } from "../lib/themeRuntime";
 import { authoringOriginal, originalSnapshot, updateDerivedTheme } from "../lib/themeDerivation";
 import { ThemeTypographyEditor } from "./ThemeTypographyEditor";
 import { ThemeControlsEditor } from "./ThemeControlsEditor";
@@ -40,6 +41,7 @@ import {
 } from "../lib/themes";
 
 const labels = {
+  linkColor: "Links", selectionBackground: "Text selection background", selectionText: "Text selection text",
   menuSelectedBackground: "Selected menu background", menuSelectedText: "Selected menu text", hoverBackground: "Hovered item background", hoverText: "Hovered item text",
   background: "Editor background",
   surface: "Sidebar",
@@ -58,9 +60,9 @@ const labels = {
 };
 
 const colorGroups = [
-  { title: "Editor", keys: ["background", "editorText", "highlightBackground", "highlightText"] },
+  { title: "Editor", keys: ["background", "editorText", "linkColor", "highlightBackground", "highlightText"] },
   { title: "Interface", keys: ["surface", "text", "surfaceMuted", "textMuted", "surfaceSoft", "surfaceStrong", "border", "titlebar"] },
-  { title: "Selection and hover", keys: ["accent", "selectedText", "menuSelectedBackground", "menuSelectedText", "hoverBackground", "hoverText"] },
+  { title: "Selection and hover", keys: ["accent", "selectedText", "selectionBackground", "selectionText", "menuSelectedBackground", "menuSelectedText", "hoverBackground", "hoverText"] },
 ] as const;
 
 export function ThemePreview({
@@ -265,7 +267,6 @@ export function ThemeBuilder({
   const cssHints = useMemo(() => visualCssHints(draft?.design?.css ?? "", mode), [draft?.design?.css, mode]);
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
-  const [lastPickedThemeId, setLastPickedThemeId] = useState<string | null>(null);
   const [deleting, setDeleting] = useState<ThemeDocument | null>(null);
   const [verifying, setVerifying] = useState(false);
   const libraryRequest = useRef({ version: 0 });
@@ -304,10 +305,15 @@ export function ThemeBuilder({
   const isDefault = current ? current.id === "default" : builtInThemeId === "default";
   const sourceTheme = (isDefault ? allBuiltInThemes.find(theme => theme.id === "default") : current)
     ?? allBuiltInThemes.find(theme => theme.id === builtInThemeId) ?? seed;
+  const selectedVariant = sourceTheme.colorVariants?.find(variant => variant.id === selectedVariantId)
+    ?? sourceTheme.colorVariants?.find(variant => variant.id === sourceTheme.defaultColorVariantId);
+  const sourceFamily = themeFamily(sourceTheme.id);
+  const sourceColor = sourceFamily?.colors.find(color => color.id === sourceTheme.id);
+  const sourceThemeLabel = selectedVariant ? `${sourceTheme.name} (${selectedVariant.name})`
+    : sourceFamily && sourceColor ? `${sourceFamily.name} (${sourceColor.name})` : sourceTheme.name;
   const settingsModified = hasCurrentThemeChanges(resolveThemeVariant(sourceTheme, selectedVariantId), seed);
   const defaultModified = isDefault && settingsModified;
-  const layoutDiffers = (sourceTheme.navigationStyle !== undefined && sourceTheme.navigationStyle !== seed.navigationStyle)
-    || (sourceTheme.rightSidebarOpen !== undefined && sourceTheme.rightSidebarOpen !== seed.rightSidebarOpen);
+  const layoutDiffers = sourceTheme.navigationStyle !== undefined && sourceTheme.navigationStyle !== seed.navigationStyle;
   const sourceOriginal = useMemo(() => authoringOriginal(sourceTheme, [...allBuiltInThemes, ...themes]), [sourceTheme, themes]);
   const sourceBuiltIn = allBuiltInThemes.find(theme => theme.id === sourceTheme.id);
   const draftOriginal = draft?.baseThemeSnapshot ?? allBuiltInThemes.find(theme => theme.id === (draft?.baseThemeId ?? draft?.id));
@@ -408,10 +414,8 @@ export function ThemeBuilder({
                 onChange={(e) => {
                   const value = e.target.value;
                   if (value === "modified:default") return;
-                  setLastPickedThemeId(value.slice(value.indexOf(":") + 1));
                   if (value === "builtin:default" && defaultModified && onRestoreDefault) {
                     onRestoreDefault();
-                    setLastPickedThemeId(null);
                   } else if (value.startsWith("builtin:")) {
                     const id = value.slice(8);
                     const family = themeFamily(id);
@@ -435,7 +439,7 @@ export function ThemeBuilder({
                 </optgroup>
                 {defaultModified && <optgroup label="This notebook"><option value="modified:default">Classic (modified)</option></optgroup>}
                 {savedOptions.length ? (
-                  <optgroup label="Saved">
+                  <optgroup label="Custom">
                     {savedOptions.map((t) => (
                         <option key={t.id} value={`saved:${t.id}`}>
                           {displayNames[t.id] ?? t.name}
@@ -462,16 +466,10 @@ export function ThemeBuilder({
           {quickAppearanceControls}
           {themes.some(t => displayNames[t.id] !== t.name) && <p className="settings-description">Some older themes share a name. Numbered labels distinguish them here; editing and saving one gives it a unique name.</p>}
           {(settingsModified || (onUseThemeDefaults && layoutDiffers)) && <div className="theme-current-settings">
-            <p className="settings-description" role="status">{defaultModified
-              ? "Your changes apply only to this notebook. Classic’s default colors and fonts are unchanged."
-              : onUseThemeDefaults && layoutDiffers
-              ? lastPickedThemeId === sourceTheme.id
-                ? `${sourceTheme.name} applied. Your navigation and panels were kept.`
-                : "Your navigation and panels differ from this theme's defaults."
-              : `Current settings differ from ${sourceTheme.name}.`}</p>
+            <p className="settings-description" role="status"><strong>{`Current settings differ from ${sourceThemeLabel}.`}</strong></p>
             <div className="theme-actions">
               {settingsModified && <button type="button" className="toolbar-button" disabled={busy} onClick={create}>Save current settings as new theme</button>}
-              {onUseThemeDefaults && <ThemeDefaultsMenu disabled={busy} onSelect={scope => { onUseThemeDefaults(sourceTheme, scope); setLastPickedThemeId(null); }} />}
+              {onUseThemeDefaults && <ThemeDefaultsMenu disabled={busy} onSelect={scope => { onUseThemeDefaults(sourceTheme, scope); }} />}
             </div>
           </div>}
           <div className="theme-actions">
@@ -657,7 +655,7 @@ export function ThemeBuilder({
                           onReset={optionalPaletteKeys.includes(key as typeof optionalPaletteKeys[number]) && editingTheme![mode][key] !== undefined ? () => {
                             const palette = { ...editingTheme![mode] }; delete (palette as Partial<typeof palette>)[key]; update({ [mode]: palette });
                           } : undefined}
-                          value={editingTheme![mode][key] ?? (key === "menuSelectedBackground" || key === "hoverBackground" ? editingTheme![mode].accent : key === "menuSelectedText" ? (editingTheme![mode].menuSelectedBackground ? readableThemeText(editingTheme![mode].menuSelectedBackground!) : editingTheme![mode].selectedText ?? readableThemeText(editingTheme![mode].accent)) : key === "hoverText" ? (editingTheme![mode].hoverBackground ? readableThemeText(editingTheme![mode].hoverBackground!) : editingTheme![mode].selectedText ?? readableThemeText(editingTheme![mode].accent)) : key === "selectedText" ? readableThemeText(editingTheme![mode].accent) : key === "highlightText" ? "#000000" : key === "highlightBackground" ? "#ffff00" : editingTheme![mode].text)}
+                          value={editingTheme![mode][key] ?? (key === "linkColor" ? mixAccentColor(editingTheme![mode].accent, editingTheme![mode].editorText ?? editingTheme![mode].text, 0.45) : key === "selectionBackground" || key === "menuSelectedBackground" || key === "hoverBackground" ? editingTheme![mode].accent : key === "menuSelectedText" ? (editingTheme![mode].menuSelectedBackground ? readableThemeText(editingTheme![mode].menuSelectedBackground!) : editingTheme![mode].selectedText ?? readableThemeText(editingTheme![mode].accent)) : key === "hoverText" ? (editingTheme![mode].hoverBackground ? readableThemeText(editingTheme![mode].hoverBackground!) : editingTheme![mode].selectedText ?? readableThemeText(editingTheme![mode].accent)) : key === "selectionText" ? readableThemeText(editingTheme![mode].selectionBackground ?? editingTheme![mode].accent, selectionBackgroundOpacity) : key === "selectedText" ? readableThemeText(editingTheme![mode].accent) : key === "highlightText" ? "#000000" : key === "highlightBackground" ? "#ffff00" : editingTheme![mode].text)}
                           onChange={(color) =>
                             update({ [mode]: { ...editingTheme![mode], [key]: color } })
                           }

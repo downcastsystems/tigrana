@@ -18,7 +18,7 @@ export const paletteKeys = [
   "accent",
   "titlebar",
 ] as const;
-export const optionalPaletteKeys = ["editorText", "selectedText", "highlightText", "highlightBackground", "menuSelectedBackground", "menuSelectedText", "hoverBackground", "hoverText"] as const;
+export const optionalPaletteKeys = ["editorText", "selectedText", "highlightText", "highlightBackground", "menuSelectedBackground", "menuSelectedText", "hoverBackground", "hoverText", "linkColor", "selectionBackground", "selectionText"] as const;
 export type ThemePalette = Record<(typeof paletteKeys)[number], string> & Partial<Record<(typeof optionalPaletteKeys)[number], string>>;
 export type PlasmaSettings = {
   ambientDrops?: boolean;

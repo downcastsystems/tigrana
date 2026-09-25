@@ -63,7 +63,7 @@ it.each(classicThemes)("does not ask to publish built-in $name after restoring i
   }
 });
 
-it.each(classicThemes)("keeps the built-in $name snapshot out of Saved", async (theme) => {
+it.each(classicThemes)("keeps the built-in $name snapshot out of Custom", async (theme) => {
   const host = document.createElement("div"), root = createRoot(host);
   try {
     await act(async () => root.render(<ThemeBuilder current={theme} seed={theme}
@@ -72,12 +72,12 @@ it.each(classicThemes)("keeps the built-in $name snapshot out of Saved", async (
     expect(picker.value).toBe(`builtin:${themeFamily(theme.id)?.colors[0].id ?? theme.id}`);
     if (themeFamily(theme.id)) expect(host.querySelector<HTMLSelectElement>('[aria-label="Colors"]')?.value).toBe(theme.id);
     expect(picker.selectedOptions[0].parentElement?.getAttribute("label")).toBe("Built-in");
-    expect(picker.querySelector('optgroup[label="Saved"]')).toBeNull();
+    expect(picker.querySelector('optgroup[label="Custom"]')).toBeNull();
     expect((await listThemes()).themes).toHaveLength(0);
   } finally { await act(async () => root.unmount()); }
 });
 
-it("keeps an older Vampire snapshot built-in and a separately saved copy in Saved", async () => {
+it("keeps an older Vampire snapshot built-in and a separately saved copy in Custom", async () => {
   const latest = classicThemes.find(theme => theme.id === "dracula")!;
   const old = { ...latest, design: { ...latest.design!, version: "0.9.0" } };
   const copy = { ...latest, id: crypto.randomUUID() };
@@ -88,7 +88,7 @@ it("keeps an older Vampire snapshot built-in and a separately saved copy in Save
       builtInThemes={classicThemes} onApply={apply} onBuiltInChange={builtIn} />));
     const picker = host.querySelector<HTMLSelectElement>('[aria-label="Theme"]')!;
     expect(picker.value).toBe("builtin:dracula");
-    const saved = picker.querySelectorAll('optgroup[label="Saved"] option');
+    const saved = picker.querySelectorAll('optgroup[label="Custom"] option');
     expect(saved).toHaveLength(1);
     expect((saved[0] as HTMLOptionElement).value).toBe(`saved:${copy.id}`);
     await act(async () => { picker.value = `saved:${copy.id}`; picker.dispatchEvent(new Event("change", { bubbles: true })); });
@@ -605,7 +605,7 @@ it("keeps an older built-in under Built-in without saving it to the library", as
     const picker = host.querySelector<HTMLSelectElement>('[aria-label="Theme"]')!;
     expect(picker.value).toBe(`bundled:${latest.id}`);
     expect(picker.selectedOptions[0].parentElement?.getAttribute("label")).toBe("Built-in");
-    expect(host.querySelector('optgroup[label="Saved"]')).toBeNull();
+    expect(host.querySelector('optgroup[label="Custom"]')).toBeNull();
     expect((await listThemes()).themes).toHaveLength(0);
     await act(async () => button(host, "Edit theme").click());
     expect(host.querySelector<HTMLInputElement>('[aria-label="Theme name"]')!.value).toBe("Twain copy");
@@ -881,7 +881,7 @@ it("alphabetizes built-in and saved themes, keeping Default first", async () => 
     expect(builtInNames).toEqual(['Classic', ...bundledThemes.map(theme => theme.name).sort((a, b) => a.localeCompare(b))]);
     expect(builtInNames).toContain('Quest');
     expect(builtInNames).not.toContain('Adventure Quest');
-    expect([...picker.querySelectorAll('optgroup[label="Saved"] option')].map(option => option.textContent)).toEqual(['Alpha', 'Middle', 'Zulu']);
+    expect([...picker.querySelectorAll('optgroup[label="Custom"] option')].map(option => option.textContent)).toEqual(['Alpha', 'Middle', 'Zulu']);
     expect(picker.value).toBe(`saved:${current.id}`);
     await act(async () => { picker.value = 'bundled:builtin-8-bit-adventure'; picker.dispatchEvent(new Event('change', { bubbles: true })); });
     expect(apply).toHaveBeenCalledWith(expect.objectContaining({ id: 'builtin-8-bit-adventure', name: 'Quest' }));
@@ -932,5 +932,56 @@ it("blocks theme saving until a pending color variant is created or cancelled", 
     expect(button(host, "Save and use").disabled).toBe(true);
     await act(async () => button(host, "Create variant").click());
     expect(button(host, "Save and use").disabled).toBe(false);
+  } finally { await act(async () => root.unmount()); }
+});
+
+it.each([
+  ['green', 'Green'],
+  ['purple', 'Purple'],
+  ['missing', 'Gray'],
+])('names the selected %s color scheme in the settings difference message', async (selectedVariantId, label) => {
+  const theme = bundledThemes.find(theme => theme.name === 'Based')!;
+  const host = document.createElement('div'), root = createRoot(host);
+  try {
+    await act(async () => root.render(<ThemeBuilder current={theme}
+      seed={{ ...theme, editorFontSize: theme.editorFontSize + 1 }}
+      selectedVariantId={selectedVariantId} onApply={vi.fn()} />));
+    expect(host.querySelector('.theme-current-settings strong')?.textContent)
+      .toBe(`Current settings differ from Based (${label}).`);
+  } finally { await act(async () => root.unmount()); }
+});
+
+it.each([
+  [classicThemes.find(theme => theme.id === 'default')!, 'Classic (Default)'],
+  [classicThemes.find(theme => theme.id === 'nord')!, 'Classic (Nord)'],
+  [bundledThemes.find(theme => theme.name === 'Minimal')!, 'Minimal'],
+])('uses the same difference message for $name appearance and layout changes', async (theme, label) => {
+  const host = document.createElement('div'), root = createRoot(host);
+  try {
+    for (const seed of [
+      { ...theme, editorFontSize: theme.editorFontSize + 1 },
+      { ...theme, navigationStyle: theme.navigationStyle === 'single-pane' ? 'dual-pane' as const : 'single-pane' as const },
+    ]) {
+      await act(async () => root.render(<ThemeBuilder current={theme} seed={seed}
+        onApply={vi.fn()} onUseThemeDefaults={vi.fn()} />));
+      expect(host.querySelector('.theme-current-settings strong')?.textContent)
+        .toBe(`Current settings differ from ${label}.`);
+    }
+  } finally { await act(async () => root.unmount()); }
+});
+
+it.each([true, false])('does not flag sidebar visibility alone as a theme change when the default is %s', async (rightSidebarOpen) => {
+  const theme = { ...exampleTheme(), rightSidebarOpen };
+  const host = document.createElement('div'), root = createRoot(host);
+  try {
+    const seed = { ...theme, rightSidebarOpen: !rightSidebarOpen };
+    await act(async () => root.render(<ThemeBuilder current={theme} seed={seed}
+      onApply={vi.fn()} onUseThemeDefaults={vi.fn()} />));
+    expect(host.querySelector('.theme-current-settings')).toBeNull();
+    await act(async () => root.render(<ThemeBuilder current={theme}
+      seed={{ ...seed, editorFontSize: theme.editorFontSize + 1 }}
+      onApply={vi.fn()} onUseThemeDefaults={vi.fn()} />));
+    expect(host.querySelector('.theme-current-settings strong')?.textContent)
+      .toBe(`Current settings differ from ${theme.name}.`);
   } finally { await act(async () => root.unmount()); }
 });

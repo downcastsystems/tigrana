@@ -14,6 +14,7 @@ export function generatedVisualCss(theme: ThemeDocument): string {
 }
 
 const colorTokens: Record<string, string[]> = {
+  linkColor: ["--link-color"], selectionBackground: ["--tigrana-selection-background"], selectionText: ["--tigrana-selection-text"],
   appFontFamily: ['--app-font-family'], editorFontFamily: ['--editor-font-family'],
   appFontSize: ['--app-font-size'], editorFontSize: ['--editor-font-size'],
   background: ['--tigrana-background','--app-bg'], surface: ['--tigrana-surface','--surface'],
@@ -44,9 +45,9 @@ export function visualCssHints(css: string, mode: 'light' | 'dark'): Record<stri
             const prefix = /ProseMirror|note-title-input|raw-markdown-input/.test(selector) ? 'editor' : 'app';
             key = prefix + (decl.property === 'font-size' ? 'FontSize' : 'FontFamily');
           } else if (decl.property === 'color') {
-            key = selector.includes('mark') ? 'highlightText' : selector.includes('.is-active') ? 'selectedText' : /ProseMirror|note-title-input|raw-markdown-input/.test(selector) ? 'editorText' : 'text';
+            key = selector.includes('::selection') ? 'selectionText' : selector.includes('mark') ? 'highlightText' : selector.includes('.is-active') ? 'selectedText' : /ProseMirror|note-title-input|raw-markdown-input/.test(selector) ? 'editorText' : 'text';
           } else if (['background','background-color','background-image'].includes(decl.property)) {
-            key = selector.includes('mark') ? 'highlightBackground' : selector.includes('.app-titlebar') ? 'titlebar' : selector.includes('.is-active') ? 'accent' : /folder-pane|notes-pane|unified-tree-pane|right-sidebar/.test(selector) ? 'surface' : /main-pane|note-surface|ProseMirror/.test(selector) ? 'background' : undefined;
+            key = selector.includes('::selection') ? 'selectionBackground' : selector.includes('mark') ? 'highlightBackground' : selector.includes('.app-titlebar') ? 'titlebar' : selector.includes('.is-active') ? 'accent' : /folder-pane|notes-pane|unified-tree-pane|right-sidebar/.test(selector) ? 'surface' : /main-pane|note-surface|ProseMirror/.test(selector) ? 'background' : undefined;
           } else if (decl.property.startsWith('border') && !/^(none|0)$/.test(value)) key = 'border';
           if (key && !colorTokens[key].some(token => value.includes(`var(${token})`))) note(key, selector);
         }

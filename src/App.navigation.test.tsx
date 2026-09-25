@@ -512,10 +512,13 @@ describe("Note navigation persistence", () => {
         expect(container.querySelector(".app-frame")?.classList.contains("is-outline-hidden")).toBe(previousOutlineHidden);
         expect(container.querySelector(".app-frame")?.classList.contains("is-single-col")).toBe(previousNavigation === "single-pane");
         const useLayout = findThemeLayoutAction();
-        if (useLayout) await chooseThemeDefaults(container);
+        if (useLayout) {
+          await chooseThemeDefaults(container);
+          previousNavigation = theme.navigationStyle!;
+          previousOutlineHidden = theme.rightSidebarOpen === undefined ? previousOutlineHidden : !theme.rightSidebarOpen;
+        }
+        // Sidebar visibility alone no longer offers a reset or changes the current layout.
         expect(findThemeLayoutAction()).toBeUndefined();
-        previousNavigation = theme.navigationStyle!;
-        previousOutlineHidden = theme.rightSidebarOpen === undefined ? previousOutlineHidden : !theme.rightSidebarOpen;
         expect(container.querySelector(".app-frame")?.classList.contains("is-single-col")).toBe(previousNavigation === "single-pane");
         expect(container.querySelector(".app-frame")?.classList.contains("is-outline-hidden")).toBe(previousOutlineHidden);
         expect(container.querySelector('[data-theme-styles="notebook"]')?.textContent).toContain(`--tigrana-accent:${theme.dark.accent}`);
@@ -545,10 +548,10 @@ describe("Note navigation persistence", () => {
       await act(async () => { colors.value = "nord"; colors.dispatchEvent(new Event("change", { bubbles: true })); });
       expect(container.querySelector('[data-theme-styles="notebook"]')?.textContent).toContain("--tigrana-accent:#88c0d0");
       expect(container.querySelector(".app-frame")?.classList.contains("is-single-col")).toBe(false);
-      expect(container.querySelector(".app-frame")?.classList.contains("is-outline-hidden")).toBe(true);
+      expect(container.querySelector(".app-frame")?.classList.contains("is-outline-hidden")).toBe(false);
       if (findThemeLayoutAction()) await chooseThemeDefaults(container);
       expect(container.querySelector(".app-frame")?.classList.contains("is-single-col")).toBe(false);
-      expect(container.querySelector(".app-frame")?.classList.contains("is-outline-hidden")).toBe(true);
+      expect(container.querySelector(".app-frame")?.classList.contains("is-outline-hidden")).toBe(false);
       expect(document.documentElement.style.getPropertyValue("--editor-font-family")).toContain("Inter");
       expect(container.querySelector(".app-frame")?.getAttribute("data-theme-api")).toBe("1");
     } finally { await act(async () => root.unmount()); }

@@ -28,6 +28,8 @@ export function themeVariables(theme: ThemeDocument, mode: "light" | "dark", reg
     "--tigrana-surface": p.surface,
     "--tigrana-text": p.text,
     "--tigrana-editor-text": p.editorText ?? "var(--tigrana-text)",
+    "--tigrana-selection-background": p.selectionBackground ?? p.accent,
+    "--tigrana-selection-text": p.selectionText ?? readableThemeText(p.selectionBackground ?? p.accent, selectionBackgroundOpacity),
     "--tigrana-selected-text": p.selectedText ?? readableThemeText(p.accent),
     "--tigrana-highlight-text": p.highlightText ?? "#000000",
     "--tigrana-highlight-background": p.highlightBackground ?? "#ffff00",
@@ -52,7 +54,7 @@ export function themeVariables(theme: ThemeDocument, mode: "light" | "dark", reg
     "--accent-soft": `color-mix(in srgb, ${p.accent} 25%, transparent)`,
     "--accent-active": p.accent,
     "--accent-strong": p.text,
-    "--link-color":
+    "--link-color": p.linkColor ??
       "color-mix(in srgb, var(--tigrana-accent) 45%, var(--tigrana-editor-text) 55%)",
     "--titlebar-bg": p.titlebar,
     "--titlebar-contrast": readableThemeText(p.titlebar),
@@ -62,19 +64,25 @@ export function themeVariables(theme: ThemeDocument, mode: "light" | "dark", reg
     "--editor-font-size": `${theme.editorFontSize}px`,
   };
 }
-/** Choose the higher-contrast foreground, including pale accent colors. */
-export function readableThemeText(hex: string) {
-  const luminance = (color: string) => {
-    const c = [1, 3, 5].map(i => {
-      const v = parseInt(color.slice(i, i + 2), 16) / 255;
-      return v <= 0.04045 ? v / 12.92 : ((v + 0.055) / 1.055) ** 2.4;
+/** Choose the higher-contrast foreground. For translucent colors, compare the
+ * worst-case black and white backdrops so notebook images cannot break contrast. */
+export function readableThemeText(hex: string, opacity = 1) {
+  const channels = [1, 3, 5].map(index => parseInt(hex.slice(index, index + 2), 16) / 255);
+  const luminanceOver = (backdrop: number) => {
+    const linear = channels.map(channel => {
+      const value = channel * opacity + backdrop * (1 - opacity);
+      return value <= 0.04045 ? value / 12.92 : ((value + 0.055) / 1.055) ** 2.4;
     });
-    return c[0] * 0.2126 + c[1] * 0.7152 + c[2] * 0.0722;
+    return linear[0] * 0.2126 + linear[1] * 0.7152 + linear[2] * 0.0722;
   };
-  const background = luminance(hex);
-  return (background + 0.05) / (luminance("#000000") + 0.05) > 1.05 / (background + 0.05)
-    ? "#000000" : "#ffffff";
+  const blackContrast = (luminanceOver(0) + 0.05) / 0.05;
+  const whiteContrast = 1.05 / (luminanceOver(1) + 0.05);
+  return blackContrast > whiteContrast ? "#000000" : "#ffffff";
 }
+
+// Less than fully opaque prevents WebKit's automatic highlight darkening.
+export const selectionBackgroundOpacity = 0.99;
+
 export function themeStylesheet(
   theme: ThemeDocument,
   mode: "light" | "dark",
@@ -85,7 +93,7 @@ export function themeStylesheet(
   const tokens = `[data-theme-region="${region}"]{${Object.entries(variables)
     .map(([key, value]) => `${key}:${value}`)
     .join(";")}}`;
-  return tokens + surfaceStyles(theme, region) + (theme.design ? compileThemeCss(theme.design, region) : "");
+  return tokens + surfaceStyles(theme, region) + (theme.design ? compileThemeCss(theme.design, region) : "") + explicitEditorColors(theme, mode, region);
 }
 
 /** Share the packaged landscape with the GPU without external image requests. */
@@ -112,4 +120,22 @@ ${root} .main-pane { background-color: color-mix(in srgb,var(--app-bg) ${s.edito
 ${root} .right-sidebar { background-color: color-mix(in srgb,var(--surface) ${s.outline}%,transparent); }
 ${root}.app-titlebar { background-color: color-mix(in srgb,${theme.accentTitlebar ? "var(--titlebar-bg)" : "var(--surface)"} ${s.titlebar}%,transparent); }
 `;
+}
+
+/** Explicit editor colors take precedence over theme-authored defaults. */
+function explicitEditorColors(theme: ThemeDocument, mode: "light" | "dark", region: string) {
+  const p = theme[mode];
+  const root = `[data-theme-region="${region}"]`;
+  // Repeat the region selector so these explicit palette choices also beat
+  // mode-specific custom CSS without overriding the app's selection guards.
+  const scope = `${root}${root}${root}${root}`;
+  // WebKit darkens fully opaque ::selection backgrounds without updating the
+  // foreground. A 0.99 alpha preserves the intended color/contrast pairing.
+  const background = p.selectionBackground ?? p.accent;
+  const channels = [1, 3, 5].map(index => parseInt(background.slice(index, index + 2), 16));
+  const selectionBackground = `rgba(${channels.join(', ')}, ${selectionBackgroundOpacity})`;
+  const selection = ['.ProseMirror', '.ProseMirror *', '.note-title-input', '.raw-markdown-input']
+    .map(selector => `${scope} ${selector}::selection`).join(',');
+  return (p.linkColor ? `${scope} .ProseMirror a { color: ${p.linkColor}; }` : '')
+    + (p.selectionBackground || p.selectionText ? `${selection} { background-color: ${selectionBackground}; color: ${p.selectionText ?? readableThemeText(p.selectionBackground ?? p.accent, selectionBackgroundOpacity)}; }` : '');
 }

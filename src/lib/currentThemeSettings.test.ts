@@ -25,7 +25,8 @@ describe('saving current appearance as a theme', () => {
     expect(copy.light.accent).toBe('#123456'); expect(copy.dark.accent).toBe('#123456');
     expect(copy.navigationStyle).toBe('dual-pane'); expect(copy.rightSidebarOpen).toBe(false);
     expect(copy.plasma).toEqual({ enabled: true, frost: 35, backgroundBlur: 9, flow: 12 });
-    expect(copy.design).toBe(source.design);
+    expect(copy.design?.css).toContain(source.design!.css.trimEnd());
+    expect(copy.design?.css).toContain(".note-tab.is-active");
     expect(JSON.stringify(source)).toBe(before);
     expect(() => parseTheme(copy)).not.toThrow();
   });

@@ -5185,11 +5185,13 @@ html[data-theme="dark"] .settings-number-input::-webkit-outer-spin-button {
 }
 
 .setting-row strong,
-.setting-row small {
+.setting-row small,
+.setting-help-text {
   display: block;
 }
 
-.setting-row small {
+.setting-row small,
+.setting-help-text {
   margin-top: 3px;
   color: #817a70;
   font-size: 13px;
@@ -5368,6 +5370,7 @@ html[data-theme="light"]:not([data-theme-preset="default"]) kbd {
 
 html[data-theme="light"]:not([data-theme-preset="default"]) .save-state,
 html[data-theme="light"]:not([data-theme-preset="default"]) .setting-row small,
+html[data-theme="light"]:not([data-theme-preset="default"]) .setting-help-text,
 html[data-theme="light"]:not([data-theme-preset="default"]) .icon-choice span,
 html[data-theme="light"]:not([data-theme-preset="default"]) .dialog-header p,
 html[data-theme="light"]:not([data-theme-preset="default"]) .settings-title p,
@@ -5647,6 +5650,7 @@ html[data-theme="dark"] .dialog-header p,
 html[data-theme="dark"] .settings-title p,
 html[data-theme="dark"] .settings-content-header p,
 html[data-theme="dark"] .setting-row small,
+html[data-theme="dark"] .setting-help-text,
 html[data-theme="dark"] .app-menu button small,
 html[data-theme="dark"] .slash-item small,
 html[data-theme="dark"] .note-card small,
@@ -5877,6 +5881,7 @@ html[data-theme="dark"]:not([data-theme-preset="default"]) .app-menu {
 html[data-theme="dark"]:not([data-theme-preset="default"]) .eyebrow,
 html[data-theme="dark"]:not([data-theme-preset="default"]) .save-state,
 html[data-theme="dark"]:not([data-theme-preset="default"]) .setting-row small,
+html[data-theme="dark"]:not([data-theme-preset="default"]) .setting-help-text,
 html[data-theme="dark"]:not([data-theme-preset="default"]) .app-menu button small,
 html[data-theme="dark"]:not([data-theme-preset="default"]) .slash-item small,
 html[data-theme="dark"]:not([data-theme-preset="default"]) .note-card small,
@@ -6658,3 +6663,33 @@ html[data-theme="dark"] .settings-theme-section { background: rgb(0 0 0 / 16%); 
 .writing-style-story .ProseMirror > p[data-story-indent="none"] { text-indent: 0; }
 
 .setting-description { display: block; margin-top: 4px; color: var(--text-muted); font-size: 12px; }
+
+/* Keep the image recognizable without exposing the browser's native file field. */
+.quick-background-control { padding-bottom: 12px; }
+.quick-background-control > .setting-row { flex-wrap: wrap; }
+.quick-background-details { display: flex; align-items: center; gap: 16px; margin: 0 0 12px; }
+.quick-background-preview { display: flex; align-items: center; justify-content: center; flex: 0 0 104px; height: 60px; overflow: hidden; border: 1px solid var(--border); border-radius: 6px; background: var(--surface); color: var(--text-muted); }
+.quick-background-preview img { display: block; width: 100%; height: 100%; object-fit: cover; }
+.quick-background-info { min-width: 0; }
+.quick-background-reset { display: block; margin-top: 7px; padding: 0; border: 0; background: transparent; color: inherit; font: inherit; font-size: 12px; text-decoration: underline; text-underline-offset: 3px; cursor: pointer; }
+.quick-background-reset:hover { color: var(--text-muted); }
+
+.quick-appearance-more > summary { padding: 8px 0; cursor: pointer; font-size: 13px; color: var(--text-muted); }
+.quick-appearance-more > summary:hover { color: var(--text); }
+
+
+.notebook-wallpaper-dialog { width: min(520px, calc(100vw - 48px)); max-height: min(560px, calc(100dvh - 48px)); box-sizing: border-box; overflow-y: auto; padding: 20px; border: 1px solid var(--border); border-radius: 10px; background: var(--surface-strong); color: var(--text); box-shadow: var(--shadow-modal-strong); }
+.notebook-wallpaper-dialog::backdrop { background: rgb(0 0 0 / 45%); }
+.notebook-wallpaper-dialog header { display: flex; align-items: center; justify-content: space-between; gap: 16px; margin-bottom: 16px; }
+.notebook-wallpaper-dialog h2 { margin: 0; font-size: 17px; }
+.notebook-wallpaper-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(120px, 1fr)); gap: 16px; }
+.notebook-wallpaper-choice { display: flex; flex-direction: column; gap: 6px; min-width: 0; padding: 0; border: 0; background: transparent; color: inherit; font: inherit; cursor: pointer; text-align: left; }
+.notebook-wallpaper-choice img { width: 100%; height: 90px; object-fit: cover; border: 1px solid var(--border); border-radius: 5px; }
+.notebook-wallpaper-choice span { width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 12px; }
+.notebook-wallpaper-choice:hover img { border-color: var(--accent); }
+.notebook-wallpaper-choice:focus-visible { outline: 2px solid var(--accent); outline-offset: 4px; border-radius: 5px; }
+.notebook-wallpaper-item { position: relative; min-width: 0; }
+.notebook-wallpaper-item .notebook-wallpaper-choice { width: 100%; }
+.notebook-wallpaper-delete { position: absolute; top: 4px; right: 4px; border-radius: 4px; background: var(--surface-strong); }
+.notebook-wallpaper-delete .icon-button { width: 26px; height: 26px; }
+.notebook-wallpaper-delete .icon-button:disabled { opacity: 0.45; cursor: not-allowed; pointer-events: none; }
