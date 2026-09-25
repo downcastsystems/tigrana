@@ -1,0 +1,5 @@
+<link rel="stylesheet" href="/src/styles/app.css"><style>body{padding:40px}.ProseMirror{font:24px/1.7 Arial;color:#222;max-width:900px}</style><div id="editor"></div><script type="module">
+import {Editor} from '@tiptap/core';import StarterKit from '@tiptap/starter-kit';import {BulletMethodMarkers} from '/src/editor/bulletMethodMarkers.ts';
+window.editor=new Editor({element:document.querySelector('#editor'),extensions:[StarterKit,BulletMethodMarkers],content:'<ul><li><p>DONE: Prepare meeting</p></li><li><p>TODO: Look at report</p></li></ul>'});
+editor.view.dispatch(editor.state.tr.setMeta("bulletMethodDisplay",{enabled:true,replaceBullets:true,dimCompleted:true}));
+</script>

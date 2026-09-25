@@ -1,11 +1,30 @@
 import { Mark, type Editor } from "@tiptap/core";
 import { Highlight } from "@tiptap/extension-highlight";
+import { Plugin } from "@tiptap/pm/state";
 import { inlineColors, inlineColorStyle, inlineColorValue, normalizeInlineColor, type InlineColorCommand } from "../lib/inlineColors";
 
 export const TextColor = Mark.create({
   name: "textColor",
   inclusive: true,
   keepOnSplit: true,
+  addProseMirrorPlugins() {
+    return [new Plugin({
+      props: {
+        transformPastedHTML(html) {
+          const document = new DOMParser().parseFromString(html, "text/html");
+          // Browser clipboard HTML can contain computed foreground colors
+          // that are unreadable in another theme. Only Tigrana's explicit
+          // color marks should carry a foreground across a paste.
+          document.body.querySelectorAll<HTMLElement>("[style]").forEach(element => {
+            if (!normalizeInlineColor(element.getAttribute("data-text-color"))) {
+              element.style.removeProperty("color");
+            }
+          });
+          return document.body.innerHTML;
+        },
+      },
+    })];
+  },
   addAttributes() {
     return { color: { default: null, parseHTML: element => inlineColorValue(element, "text"), rendered: false } };
   },

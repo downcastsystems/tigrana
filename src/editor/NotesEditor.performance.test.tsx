@@ -42,6 +42,57 @@ function setReactInputValue(input: HTMLInputElement, value: string) {
 describe("Note editor typing performance", () => {
   const mounted: Array<{ container: HTMLElement; root: Root }> = [];
 
+  it("keeps current Bullet Method settings after fresh loads, cached switches, and reloads", async () => {
+    const container = document.createElement("div"); document.body.append(container);
+    const root = createRoot(container); mounted.push({ container, root });
+    const display = { enabled: true, replaceBullets: true, dimCompleted: true };
+    const off = { ...display, enabled: false };
+    const render = (path: string, settings = display, reloadRequest = 0) => <NotesEditor
+      content={"- DONE: Finished\n- TODO: Work"} bulletMethodDisplay={settings}
+      commandRequest={null} editable findRequest={0} focusAtEndRequest={0} focusRequest={0}
+      historyKey={path} notePath={path} onChange={() => undefined} onLoadError={error => { throw error; }}
+      onPendingChange={() => undefined} onPositionChange={() => undefined} reloadRequest={reloadRequest}
+      restorePosition={null} spellcheckEnabled workspace="/Notebook" />;
+    const count = () => container.querySelectorAll('.bullet-method-marker-button').length;
+    await act(async () => root.render(render('A.md', off)));
+    await act(async () => root.render(render('A.md')));
+    expect(count()).toBe(2);
+    await act(async () => root.render(render('B.md')));
+    expect(count()).toBe(2);
+    await act(async () => root.render(render('A.md')));
+    expect(count()).toBe(2);
+    await act(async () => root.render(render('A.md', off)));
+    await act(async () => root.render(render('B.md', off)));
+    expect(count()).toBe(0);
+    await act(async () => root.render(render('B.md')));
+    await act(async () => root.render(render('A.md')));
+    expect(count()).toBe(2);
+    await act(async () => root.render(render('A.md', display, 1)));
+    expect(count()).toBe(2);
+  });
+
+  it("allows native selection to start in the blank space below the last line", async () => {
+    const container = document.createElement("div"); document.body.appendChild(container);
+    const root = createRoot(container); mounted.push({ container, root });
+    const onChange = vi.fn();
+    await act(async () => root.render(<NotesEditor content={"DONE: Yo\n\nTODO: Testing\n\nSomething else"} editable findRequest={0}
+      focusAtEndRequest={0} focusRequest={0} historyKey="selection" notePath="Selection.md"
+      onChange={onChange} onLoadError={error => { throw error; }}
+      onPendingChange={() => undefined} onPositionChange={() => undefined}
+      restorePosition={null} spellcheckEnabled workspace="/Notebook" />));
+    const pm = container.querySelector<HTMLElement>(".ProseMirror")!;
+    const editor = (pm as HTMLElement & { editor: import("@tiptap/core").Editor }).editor;
+    // jsdom has no layout hit-testing. A press below the final block maps
+    // to the end of the document in the browser.
+    vi.spyOn(editor.view, "posAtCoords").mockReturnValue({ pos: editor.state.doc.content.size - 1, inside: -1 });
+    vi.spyOn(pm.lastElementChild!, "getBoundingClientRect").mockReturnValue(new DOMRect(0, 80, 300, 20));
+    const down = new MouseEvent("mousedown", { bubbles: true, cancelable: true, button: 0, clientX: 50, clientY: 200 });
+    await act(async () => { pm.dispatchEvent(down); });
+    expect(down.defaultPrevented).toBe(false);
+    await act(async () => { pm.dispatchEvent(new MouseEvent("mouseup", { bubbles: true, clientX: 50, clientY: 200 })); });
+    expect(onChange).not.toHaveBeenCalled();
+  });
+
   afterEach(async () => {
     vi.useRealTimers();
     await Promise.all(mounted.splice(0).map(async ({ container, root }) => {

@@ -29,6 +29,37 @@ function type(editor: Editor, text: string) {
 }
 
 describe("portable inline colors", () => {
+  it("uses the note foreground for external rich-text paste while retaining nested formatting", () => {
+    const editor = makeEditor("");
+    editor.view.pasteHTML('<ul><li><p>Git worktrees</p><ul><li><p><strong>The AI benefit:</strong> <span style="color: rgb(0, 0, 0)">agents can edit independently</span></p></li></ul></li></ul>', new Event("paste") as ClipboardEvent);
+    expect(save(editor)).toContain("**The AI benefit:** agents can edit independently");
+    expect(save(editor)).not.toContain("span");
+    expect(editor.getHTML()).toContain("<ul>");
+  });
+
+  it("retains explicit Tigrana colors when pasting between notes", () => {
+    const source = makeEditor("Colored");
+    applyInlineColor(source, "textColor_red");
+    applyInlineColor(source, "highlightColor_green");
+    const target = makeEditor("");
+    target.view.pasteHTML(source.getHTML(), new Event("paste") as ClipboardEvent);
+    expect(save(target)).toBe(save(source));
+  });
+
+  it.each(["black", "white", "#ffffff", "rgb(0, 0, 0)", "red"])("drops external %s foreground without losing highlights or links", color => {
+    const editor = makeEditor("");
+    editor.view.pasteHTML(`<p><span style="color: ${color}; background-color: #ffff00"><a href="https://example.com"><em>Linked</em></a></span></p>`, new Event("paste") as ClipboardEvent);
+    expect(editor.getHTML()).not.toContain("data-text-color");
+    expect(editor.getHTML()).toContain('data-highlight-color="#ffff00"');
+    expect(save(editor)).toContain("https://example.com");
+    expect(editor.getHTML()).toContain("<em>");
+  });
+
+  it("preserves stored literal colors when loading a note", () => {
+    const markdown = '<span style="color: #000000">Explicit black</span>';
+    expect(save(makeEditor(markdown))).toBe(markdown);
+  });
+
   it.each(inlineColors)("round-trips $label text and highlights through the real editor", color => {
     const editor = makeEditor();
     const original = editor.getJSON();

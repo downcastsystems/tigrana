@@ -1,0 +1,9 @@
+<link rel="stylesheet" href="/src/styles/app.css">
+<div data-theme-region="notebook" id="notebook"><div class="ProseMirror"><p><a href="#">Normal</a></p><p data-bullet-method-dim="true" style="--bullet-dim-light:65%;--bullet-dim-dark:80%"><a href="#">Completed</a><a href="#"><span style="color:rgb(200,20,20)">Custom red</span></a></p></div></div>
+<style id="theme"></style>
+<script type="module">
+import {allBuiltInThemes} from '/src/lib/bundledThemes.ts';
+import {themeStylesheet} from '/src/lib/themeRuntime.ts';
+window.themes=allBuiltInThemes.map(t=>({id:t.id,name:t.name}));
+window.showTheme=(id,mode)=>{document.documentElement.dataset.theme=mode;document.querySelector('#notebook').className='theme-'+mode;document.querySelector('#theme').textContent=themeStylesheet(allBuiltInThemes.find(t=>t.id===id),mode,'notebook')};
+</script>

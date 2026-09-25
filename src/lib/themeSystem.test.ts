@@ -120,3 +120,10 @@ describe('theme authoring and recovery', () => {
     expect(JSON.stringify(theme)).toBe(before);
   });
 });
+
+it('applies completion dimming to Old Basement PC theme-authored link colors', async () => {
+  const source = await import('../themes/old-basement-pc.json');
+  const css = themeStylesheet(parseTheme(source.default), 'light', 'notebook');
+  expect(css.replace(/\s/g, '').includes('color-mix(insrgb,var(--tigrana-accent)var(--bullet-link-opacity,100%),transparent)')).toBe(true);
+  expect(css).not.toMatch(/\.ProseMirror a\{color:var\(--tigrana-accent\)/);
+});

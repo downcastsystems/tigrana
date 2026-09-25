@@ -217,11 +217,45 @@ command executor.
 
 ### Selection sorting
 
+The floating formatting bar includes a Bullet Method sort button beside the list controls. It uses the same selection sort and saved status order as the native menu, and supports a single undo.
+
 Edit > Sort Lines sorts the whole lines or sibling list items touched by the
 rich-editor selection. A-Z and Z-A compare lowercase keys; the Case Sensitive
 variants compare the original strings in Unicode order. Equal keys retain their
 order. Nested lists stay with their parent item and selected sublists sort
 independently. Inline formatting and task checkbox state travel with the content.
+
+Bullet Method sorts by a leading, case-insensitive status followed by a colon:
+CLOSED, DONE, TODO, IN PROGRESS, then unmarked text. Items within each status
+retain their order. Selected sibling tasks carry continuation paragraphs unchanged and sort their nested lists recursively; headings separate groups. Use Edit > Sort Lines > Bullet
+Method or Command+Option+period on macOS, Ctrl+Alt+period elsewhere. Like the
+other sort commands, it sorts selected rich-editor text. With a collapsed cursor, Bullet Method instead sorts the outermost containing bullet, numbered, or task list and all its descendant lists, preserving item contents and the cursor’s position within its moved item. Outside a list it does nothing.
+
+Ordinary bullet lists display Lucide status markers: circle-slash for CLOSED, circle-check for DONE,
+circle for TODO, and circle-dot for IN PROGRESS. These ProseMirror decorations
+follow the built-in status identities when renamed; custom and unrecognized
+statuses retain ordinary bullets. Markers never enter saved HTML or Markdown.
+Typing rechecks changed items and their ancestors rather than rescanning the Note.
+Numbered lists and task checkboxes keep their existing markers. Marker buttons
+cycle TODO → IN PROGRESS → DONE → CLOSED → TODO, replacing only the prefix
+as one undoable edit. Removed statuses are skipped; custom statuses with icons
+follow CLOSED in settings order. Circle icon choices are stored with each status
+and can be changed in Settings > Bullet Method.
+
+Settings > Bullet Method explains the workflow and lets users reorder statuses
+(including No status) and add/remove prefixes. A fixed guide explains the default
+statuses with examples; status meanings are not editable. Drag handles
+use pointer events and hit testing, like bookmark/sidebar reordering, rather than
+HTML drag/drop that native WebKit can intercept as a copy operation. Drop targets
+show before/after placement; cancellation, window blur, and unmount clean up the
+gesture without changing the order. Changes are
+applied with Save changes; Restore defaults immediately restores the original
+configuration. No status is permanent and catches unknown prefixes. Names must
+be nonempty, unique ignoring case, and contain no colons or line breaks.
+Renaming/removing a prefix never rewrites notes. Configuration is app-local in
+`tigrana.bulletMethod.v1` localStorage and storage events synchronize open windows.
+Invalid stored configuration falls back to defaults. The editor receives the
+saved configuration without recreating its instance or reloading note content.
 
 Tables sort selected body rows by the first column, keeping header rows fixed.
 Tables containing merged cells are left unchanged. Sorting is disabled in raw
@@ -365,3 +399,28 @@ Story handling stays local to the editor transaction; typing uses the existing
 deferred serialization path. Regression coverage lives in
 `storyParagraphs.test.ts`, `writingStyle.test.ts`, and the NotesEditor performance
 tests, which exercise both styles for short and long typing bursts.
+
+Bullet Method display preferences are stored separately in
+`tigrana.bulletMethod.display.v1` and synchronized across windows. Both replacing
+bullets and subtly dimming DONE/CLOSED paragraphs default on and can be toggled
+independently. Dimming defaults to inherited text color at 65% alpha in light mode and 70% in dark mode, not element opacity,
+so explicit text colors take precedence and nested tasks dim with a completed parent without accumulating extra dimming.
+The COMPLETE prefix also dims its item and descendants.
+The appearance decorations do not enter the saved Markdown.
+
+The Bullet Method dimming slider adjusts the current rendering mode independently,
+persisting whole percentages from 40 to 90. Status meanings live in a disclosure
+that starts collapsed.
+
+Bullet Method is opt-in. Its master switch defaults off, including for older saved
+settings without an enabled flag. While off, the native sort menu entry and toolbar
+button are omitted, sort commands are ignored, and all status decorations are
+removed. The display controls and sort instructions appear only while enabled;
+individual display choices remain saved when disabling the master switch.
+
+Each status row has a Dim checkbox. Missing saved dim choices default to true
+for DONE/CLOSED identities and false otherwise. Choices travel with a status
+when renamed or reordered. Valid edits save automatically; invalid names remain
+local until corrected. The dimming label lists the checked statuses live. Dim selected statuses
+is the global dimming switch. Selecting No status dims unmatched/unmarked bullets.
+COMPLETE uses the DONE choice unless configured as its own status.

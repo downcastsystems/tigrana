@@ -19,6 +19,7 @@ import { applyQuickAppearance, quickAppearanceStyles, quickAppearanceResetPatch 
 import { QuickAppearanceControls } from "./components/QuickAppearanceControls";
 import { ThemeStyles } from "./components/ThemeStyles";
 import "./styles/theme-api.css";
+import { bulletMethodDisplayKey, readBulletMethodDisplay, writeBulletMethodDisplay, bulletMethodSettingsKey, readBulletMethodStatuses, writeBulletMethodStatuses } from "./lib/bulletMethod";
 import SettingsModal, { type SettingsSection } from "./components/SettingsModal";
 import { ThemeBuilder, ThemeReconciliation } from "./components/ThemeBuilder";
 import { listThemes, readTheme, themeAppearance, type ThemeDocument } from "./lib/themes";
@@ -547,6 +548,16 @@ export default function App() {
   const [noteFindRequest, setNoteFindRequest] = useState(0);
   const [appError, setAppError] = useState<string | null>(null);
   const [settingsOpen, setSettingsOpen] = useState(false);
+  const [bulletMethodDisplay, setBulletMethodDisplay] = useState(readBulletMethodDisplay);
+  const [bulletMethodStatuses, setBulletMethodStatuses] = useState(readBulletMethodStatuses);
+  useEffect(() => {
+    const syncBulletMethod = (event: StorageEvent) => {
+      if (event.key === bulletMethodDisplayKey || event.key === null) setBulletMethodDisplay(readBulletMethodDisplay());
+      if (event.key === bulletMethodSettingsKey || event.key === null) setBulletMethodStatuses(readBulletMethodStatuses());
+    };
+    window.addEventListener("storage", syncBulletMethod);
+    return () => window.removeEventListener("storage", syncBulletMethod);
+  }, []);
   const [settingsSection, setSettingsSection] = useState<SettingsSection>("general");
   const [notebooksManageOpen, setNotebooksManageOpen] = useState(false);
   const [recentlyDeletedOpen, setRecentlyDeletedOpen] = useState(false);
@@ -1303,6 +1314,7 @@ export default function App() {
       hasOpenNote,
       activeNoteEditable,
       hasEditorSelection,
+      bulletMethodEnabled: Boolean(bulletMethodDisplay.enabled),
       titleFocused,
       contentsActive,
       hasUnsavedChanges,
@@ -1324,6 +1336,7 @@ export default function App() {
     return () => window.clearTimeout(handle);
   }, [
     activeNoteEditable,
+    bulletMethodDisplay.enabled,
     hasEditorSelection,
     titleFocused,
     contentsActive,
@@ -2123,7 +2136,8 @@ export default function App() {
   async function handleMenuCommand(command: string) {
     if (userPathMutationRef.current) return;
     if (isSortCommand(command)) {
-      if (activeNoteEditable && !rawMarkdownVisible && !frontmatterError && hasEditorSelection) requestEditorCommand(command);
+      if (command === "sort_bullet_method" && !bulletMethodDisplay.enabled) return;
+      if (activeNoteEditable && !rawMarkdownVisible && !frontmatterError && (hasEditorSelection || command === "sort_bullet_method")) requestEditorCommand(command);
       return;
     }
     if (command.startsWith("open_recent_note:")) {
@@ -5409,6 +5423,8 @@ export default function App() {
             ) : (
               <EditorErrorBoundary resetKey={activePath ?? "pending-note"} onError={handleNoteLoadError}>
                 <NotesEditor
+                  bulletMethodDisplay={bulletMethodDisplay}
+                  bulletMethodStatuses={bulletMethodStatuses}
                   writingStyle={writingStyle}
                   colorToolbarElement={colorToolbarElement}
                   colorsDisabled={titleFocused}
@@ -5718,6 +5734,11 @@ export default function App() {
       <ThemeStyles theme={renderedTheme} mode={resolvedTheme} onReset={resetThemeAppearance} />
       {settingsOpen ? (
           <SettingsModal
+            colorMode={renderedColorMode}
+            bulletMethodDisplay={bulletMethodDisplay}
+                  bulletMethodStatuses={bulletMethodStatuses}
+            onBulletMethodDisplayChange={display => setBulletMethodDisplay(writeBulletMethodDisplay(display))}
+            onBulletMethodStatusesChange={statuses => setBulletMethodStatuses(writeBulletMethodStatuses(statuses))}
             newNoteWritingStyle={newNoteWritingStyle}
             lastWritingStyle={lastWritingStyle}
             onNewNoteWritingStyleChange={value => updateMetadata(current => ({ ...current, newNoteWritingStyle: value }))}

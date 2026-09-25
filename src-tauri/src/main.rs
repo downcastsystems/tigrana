@@ -58,7 +58,7 @@ use std::process::Command;
 use std::sync::Mutex;
 use std::{collections::hash_map::DefaultHasher, process};
 use tauri::menu::{
-    AboutMetadataBuilder, CheckMenuItem, Menu, MenuItem, PredefinedMenuItem, Submenu,
+    AboutMetadataBuilder, CheckMenuItem, IconMenuItem, Menu, MenuItem, PredefinedMenuItem, Submenu,
 };
 use tauri::{AppHandle, Emitter, Manager, WebviewWindow, WindowEvent, Wry};
 use tauri_plugin_dialog::DialogExt;
@@ -222,6 +222,8 @@ struct AppMenuState {
     #[serde(default)]
     has_editor_selection: bool,
     #[serde(default)]
+    bullet_method_enabled: bool,
+    #[serde(default)]
     title_focused: bool,
     #[serde(default)]
     contents_active: bool,
@@ -246,6 +248,7 @@ impl Default for AppMenuState {
             has_open_note: false,
             active_note_editable: false,
             has_editor_selection: false,
+            bullet_method_enabled: false,
             title_focused: false,
             contents_active: false,
             has_unsaved_changes: false,
@@ -1465,7 +1468,7 @@ fn build_app_menu(
     let search_notebook = MenuItem::with_id(
         handle,
         "search_notebook",
-        "Search Notebook",
+        "Search Across All Notes",
         has_workspace,
         Some("Cmd+K"),
     )?;
@@ -1842,17 +1845,29 @@ fn build_app_menu(
         && state.active_note_editable
         && state.has_editor_selection
         && !state.raw_markdown_visible;
-    let sort_az = MenuItem::with_id(handle, "sort_az", "A-Z", can_sort, None::<&str>)?;
-    let sort_za = MenuItem::with_id(handle, "sort_za", "Z-A", can_sort, None::<&str>)?;
-    let sort_az_case = MenuItem::with_id(
-        handle, "sort_az_case", "A-Z (Case Sensitive)", can_sort, None::<&str>,
+    let can_sort_bullet_method = state.has_open_note
+        && state.active_note_editable
+        && state.bullet_method_enabled
+        && !state.raw_markdown_visible;
+    // Rendered at 2x the native macOS menu icon height for Retina displays.
+    let az_icon = tauri::image::Image::new(include_bytes!("../icons/menu/arrow-down-a-z.rgba"), 36, 36);
+    let za_icon = tauri::image::Image::new(include_bytes!("../icons/menu/arrow-down-z-a.rgba"), 36, 36);
+    let bullet_icon = tauri::image::Image::new(include_bytes!("../icons/menu/bullet-method.rgba"), 36, 36);
+    let sort_az = IconMenuItem::with_id(handle, "sort_az", "A-Z", can_sort, Some(az_icon.clone()), None::<&str>)?;
+    let sort_za = IconMenuItem::with_id(handle, "sort_za", "Z-A", can_sort, Some(za_icon.clone()), None::<&str>)?;
+    let sort_az_case = IconMenuItem::with_id(
+        handle, "sort_az_case", "A-Z (Case Sensitive)", can_sort, Some(az_icon), None::<&str>,
     )?;
-    let sort_za_case = MenuItem::with_id(
-        handle, "sort_za_case", "Z-A (Case Sensitive)", can_sort, None::<&str>,
+    let sort_za_case = IconMenuItem::with_id(
+        handle, "sort_za_case", "Z-A (Case Sensitive)", can_sort, Some(za_icon), None::<&str>,
+    )?;
+    let sort_bullet_method = IconMenuItem::with_id(
+        handle, "sort_bullet_method", "Bullet Method", can_sort_bullet_method, Some(bullet_icon), Some("CmdOrCtrl+Alt+Period"),
     )?;
     let sort_lines = Submenu::with_items(
-        handle, "Sort Lines", can_sort, &[&sort_az, &sort_za, &sort_az_case, &sort_za_case],
+        handle, "Sort Lines", can_sort || can_sort_bullet_method, &[&sort_az, &sort_za, &sort_az_case, &sort_za_case],
     )?;
+    if state.bullet_method_enabled { sort_lines.append(&sort_bullet_method)?; }
     // Share labels and ordering with the editor's palette.
     #[derive(serde::Deserialize)]
     struct InlineColorEntry {
@@ -1901,14 +1916,22 @@ fn build_app_menu(
             &text_colors,
             &highlight_colors,
             &PredefinedMenuItem::separator(handle)?,
+            &start_dictation,
+            &PredefinedMenuItem::separator(handle)?,
+            &spellcheck,
+        ],
+    )?;
+    let find_menu = Submenu::with_items(
+        handle,
+        "Find",
+        true,
+        &[
             &find_note,
             &find_next,
             &find_previous,
             &replace_note,
-            &start_dictation,
-            &search_notebook,
             &PredefinedMenuItem::separator(handle)?,
-            &spellcheck,
+            &search_notebook,
         ],
     )?;
     let view_menu = Submenu::with_items(
@@ -1986,6 +2009,7 @@ fn build_app_menu(
             &tigrana_menu,
             &file_menu,
             &edit_menu,
+            &find_menu,
             &view_menu,
             &format_menu,
             &window_menu,
@@ -2039,22 +2063,22 @@ fn rebuild_app_menu(app: &AppHandle, state: &NotebookWindowState) -> Result<(), 
     } else {
         app.set_menu(menu).map_err(|error| error.to_string())?;
     }
-    remove_macos_system_dictation_menu_item(app);
+    configure_macos_menu(app);
     Ok(())
 }
 
 #[cfg(target_os = "macos")]
-fn remove_macos_system_dictation_menu_item(app: &AppHandle) {
+fn configure_macos_menu(app: &AppHandle) {
     let _ = app.run_on_main_thread(|| {
-        remove_macos_system_dictation_menu_item_on_main_thread();
+        configure_macos_menu_on_main_thread();
     });
 }
 
 #[cfg(not(target_os = "macos"))]
-fn remove_macos_system_dictation_menu_item(_app: &AppHandle) {}
+fn configure_macos_menu(_app: &AppHandle) {}
 
 #[cfg(target_os = "macos")]
-fn remove_macos_system_dictation_menu_item_on_main_thread() {
+fn configure_macos_menu_on_main_thread() {
     use objc2::MainThreadMarker;
     use objc2_app_kit::NSApplication;
 
@@ -2067,6 +2091,16 @@ fn remove_macos_system_dictation_menu_item_on_main_thread() {
     let Some(edit_menu) = find_macos_submenu(&main_menu, "Edit") else {
         return;
     };
+
+    // Template images let AppKit choose the foreground for light/dark menus,
+    // disabled items, and the highlighted menu row.
+    if let Some(sort_menu) = find_macos_submenu(&edit_menu, "Sort Lines") {
+        for index in 0..sort_menu.numberOfItems() {
+            if let Some(image) = sort_menu.itemAtIndex(index).and_then(|item| item.image()) {
+                image.setTemplate(true);
+            }
+        }
+    }
 
     let count = edit_menu.numberOfItems();
     let mut lower_system_cluster_start = None;
@@ -2324,7 +2358,7 @@ pub fn run() {
         .setup(|app| {
             #[cfg(target_os = "macos")]
             macos_shortcuts::install(app.handle())?;
-            remove_macos_system_dictation_menu_item(app.handle());
+            configure_macos_menu(app.handle());
             Ok(())
         })
         .on_window_event(|window, event| {
@@ -2371,7 +2405,7 @@ pub fn run() {
             "export_markdown" => emit_menu_command(app, "export_markdown"),
             "export_html" => emit_menu_command(app, "export_html"),
             "print_note" => emit_menu_command(app, "print_note"),
-            "sort_az" | "sort_za" | "sort_az_case" | "sort_za_case" => {
+            "sort_az" | "sort_za" | "sort_az_case" | "sort_za_case" | "sort_bullet_method" => {
                 emit_menu_command(app, event.id().as_ref());
             }
             "find_note" => emit_menu_command(app, "find_note"),

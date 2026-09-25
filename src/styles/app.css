@@ -3856,7 +3856,7 @@ html[data-theme="dark"] .tab-list-separator {
 }
 
 .ProseMirror a {
-  color: var(--link-color);
+  color: color-mix(in srgb, var(--link-color) var(--bullet-link-opacity, 100%), transparent);
   text-decoration: underline;
   text-underline-offset: 2px;
   cursor: pointer;
@@ -3882,9 +3882,58 @@ html[data-theme="dark"] .tab-list-separator {
   padding-left: 1.35em;
 }
 
+.ProseMirror li {
+  margin-top: 4px;
+}
+
+.ProseMirror ul:not([data-type="taskList"]) > li,
+.ProseMirror ol > li {
+  padding-inline-start: 2px;
+}
+
 .ProseMirror li[data-separator-after="true"] {
   margin-bottom: 0.6em;
 }
+
+/* Lucide status markers are view decorations; serialized lists stay Markdown. */
+.ProseMirror ul:not([data-type="taskList"]) > li[data-bullet-method-marker] {
+  position: relative;
+  list-style-type: none;
+  /* Keep WebKit's text selection inside each paragraph, not its block gaps. */
+  display: flex;
+  flex-direction: column;
+}
+/* Positioned status rows otherwise paint a thin selection strip in the list
+   gutter. Paragraphs and inline content retain the theme's selection colors. */
+.ProseMirror ul:has(> li[data-bullet-method-marker])::selection,
+.ProseMirror li[data-bullet-method-marker]::selection {
+  background: transparent !important;
+}
+.ProseMirror .bullet-method-marker-button {
+  user-select: none;
+  -webkit-user-select: none;
+  padding: 0;
+  border: 0;
+  border-radius: 50%;
+  color: inherit;
+  cursor: pointer;
+  font: inherit;
+  background: transparent;
+  position: absolute;
+  inset-inline-start: -1.25em;
+  top: calc((1lh - 0.95em) / 2);
+  width: 0.95em;
+  height: 0.95em;
+}
+.ProseMirror .bullet-method-marker-button::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background-color: currentColor;
+  mask: var(--bullet-method-marker) center / contain no-repeat;
+  -webkit-mask: var(--bullet-method-marker) center / contain no-repeat;
+}
+.ProseMirror .bullet-method-marker-button:focus-visible { outline: 2px solid currentColor; outline-offset: 3px; }
 
 .ProseMirror ul[data-type="taskList"] {
   padding-left: 0;
@@ -6417,9 +6466,12 @@ html[data-theme] .theme-conflict .theme-actions .toolbar-button.is-recommended:h
 .settings-appearance-divider { width: 100%; border: 0; border-top: 1px solid var(--border); margin: 12px 0; }
 /* Reserve space inside the scroller for the Theme background to extend past
    the shared text edge without being clipped by overflow. */
-.settings-scroll:has(.settings-appearance):not(:has(.theme-editor)) { margin-left: -12px; padding-left: 12px; }
-.settings-theme-section { margin-inline: -12px; padding: 14px 12px; border-radius: 8px; background: rgb(0 0 0 / 4%); }
-html[data-theme="dark"] .settings-theme-section { background: rgb(0 0 0 / 16%); }
+.settings-scroll:has(.settings-appearance):not(:has(.theme-editor)),
+.settings-scroll:has(.bullet-method-settings) { margin-left: -12px; padding-left: 12px; }
+.settings-theme-section,
+.bullet-method-order-section { margin-inline: -12px; padding: 14px 12px; border-radius: 8px; background: rgb(0 0 0 / 4%); }
+html[data-theme="dark"] .settings-theme-section,
+html[data-theme="dark"] .bullet-method-order-section { background: rgb(0 0 0 / 16%); }
 .settings-theme-section > .setting-row { padding-top: 0; }
 .theme-color-presets { margin-top: 6px; }
 .settings-theme-section > .theme-actions:last-child { margin-bottom: 0; }
@@ -6693,3 +6745,84 @@ html[data-theme="dark"] .settings-theme-section { background: rgb(0 0 0 / 16%); 
 .notebook-wallpaper-delete { position: absolute; top: 4px; right: 4px; border-radius: 4px; background: var(--surface-strong); }
 .notebook-wallpaper-delete .icon-button { width: 26px; height: 26px; }
 .notebook-wallpaper-delete .icon-button:disabled { opacity: 0.45; cursor: not-allowed; pointer-events: none; }
+
+
+@layer tigrana-base {
+.bullet-method-settings { max-width: 760px; }
+.bullet-method-heading { display: flex; align-items: center; gap: 12px; }
+.bullet-method-settings p { color: var(--text-muted); line-height: 1.55; margin: 0 0 16px; }
+.bullet-method-settings h3 { margin: 24px 0 8px; font-size: 15px; }
+.bullet-method-order-section > h3:first-child { margin-top: 0; }
+.bullet-method-settings code { color: var(--text); }
+.bullet-method-guide { margin: 0 0 20px; padding-left: 24px; color: var(--text-muted); line-height: 1.55; }
+.bullet-method-guide li + li { margin-top: 8px; }
+.bullet-method-guide strong { color: var(--text); }
+.bullet-method-statuses { list-style: none; margin: 12px 0; padding: 0; }
+.bullet-method-status { display: flex; align-items: center; gap: 8px; padding: 12px 0; border-top: 2px solid var(--border); }
+.bullet-method-status.is-drop-before { border-top-color: var(--settings-focus); }
+.bullet-method-status.is-drop-after { box-shadow: 0 2px 0 var(--settings-focus); }
+.bullet-method-status.is-dragging { opacity: .5; }
+body.is-dragging-bullet-status, body.is-dragging-bullet-status * { cursor: grabbing !important; user-select: none !important; }
+.bullet-method-grip { touch-action: none; user-select: none; -webkit-user-drag: none; }
+.bullet-method-position { width: 14px; color: var(--text-muted); font-size: 12px; }
+.bullet-method-grip { cursor: grab; color: var(--text-muted); display: flex; }
+.bullet-method-grip:active { cursor: grabbing; }
+.bullet-method-fields { display: flex; flex: 1; min-width: 0; flex-direction: column; gap: 6px; }
+.bullet-method-fields .settings-text-input { box-sizing: border-box; width: 100%; min-width: 0; padding: 7px 8px; border: 1px solid var(--border); border-radius: 5px; color: var(--text); background: var(--surface); font: inherit; }
+.bullet-method-unmarked { padding: 7px 8px; font-size: 14px; }
+.bullet-method-row-actions { display: flex; gap: 2px; }
+.bullet-method-settings .toolbar-button { display: inline-flex; align-items: center; gap: 6px; }
+.bullet-method-settings .bullet-method-help { margin-top: 16px; font-size: 12px; }
+.bullet-method-actions { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; }
+.bullet-method-actions [role="status"] { font-size: 12px; color: var(--text-muted); }
+.bullet-method-settings button:disabled { opacity: .4; cursor: default; }
+.bullet-method-settings [role="alert"] { color: var(--text); border-left: 3px solid var(--settings-focus); padding-left: 10px; }
+@media (max-width: 650px) { .bullet-method-row-actions { flex-direction: column; } }
+}
+
+.bullet-method-icon-picker { display: flex; align-items: center; gap: 6px; }
+
+.bullet-method-icon-preview { display: block; width: 22px; height: 22px; background: currentColor; mask-size: contain; mask-repeat: no-repeat; mask-position: center; -webkit-mask-size: contain; -webkit-mask-repeat: no-repeat; -webkit-mask-position: center; }
+.bullet-method-icon-menu { position: fixed; z-index: 2000; display: grid; grid-template-columns: repeat(6, 36px); gap: 4px; padding: 8px; max-height: calc(100vh - 24px); overflow: auto; border: 1px solid var(--border); border-radius: 9px; background: var(--surface); color: var(--text); box-shadow: 0 6px 24px #0004; }
+.bullet-method-icon-menu button { display: grid; place-items: center; width: 36px; height: 36px; padding: 6px; border: 1px solid transparent; border-radius: 5px; background: transparent; color: inherit; cursor: pointer; }
+.bullet-method-icon-menu button:hover, .bullet-method-icon-menu button[aria-checked="true"] { background: color-mix(in srgb, currentColor 12%, transparent); }
+.bullet-method-icon-menu button[aria-checked="true"] { border-color: currentColor; }
+.bullet-method-icon-menu button:focus-visible { outline: 2px solid var(--settings-focus, currentColor); outline-offset: -2px; }
+
+/* Dim inherited text only, so explicit colors keep their original appearance.
+   Apply color to paragraphs and markers, not list containers, so nesting never compounds dimming. */
+.ProseMirror li[data-bullet-method-completed="true"] p, .ProseMirror p[data-bullet-method-dim="true"] { --bullet-link-opacity: var(--bullet-dim-dark, 70%); color: color-mix(in srgb, currentColor var(--bullet-dim-dark, 70%), transparent); }
+html[data-theme="light"] .ProseMirror li[data-bullet-method-completed="true"] p, html[data-theme="light"] .ProseMirror p[data-bullet-method-dim="true"] { --bullet-link-opacity: var(--bullet-dim-light, 65%); color: color-mix(in srgb, currentColor var(--bullet-dim-light, 65%), transparent); }
+.bullet-method-display-options { display: flex; flex-direction: column; gap: 10px; margin-bottom: 20px; }
+.bullet-method-display-options label { display: flex; align-items: center; gap: 8px; }
+.bullet-method-display-options p { margin: 0; color: var(--text-muted); font-size: 13px; }
+
+.bullet-method-display-options { border-top: 1px solid var(--border); padding-top: 18px; }
+.bullet-method-dim-slider { margin-left: 32px; display: flex; gap: 12px; align-items: center; }
+.bullet-method-dim-slider input { width: 180px; max-width: 40vw; }
+.bullet-method-dim-slider output { min-width: 3ch; font-variant-numeric: tabular-nums; }
+.bullet-method-status-section { border-top: 1px solid var(--border); padding-top: 18px; margin-top: 20px; }
+.bullet-method-settings .bullet-method-status-section > h3 { margin-top: 0; font-weight: 700; }
+.bullet-method-meanings { margin: 14px 0 18px; }
+.bullet-method-meanings summary { cursor: pointer; font-weight: 600; }
+.bullet-method-meanings[open] > summary { margin-bottom: 10px; }
+
+.ProseMirror li[data-bullet-method-completed="true"] li::marker,
+.ProseMirror li[data-bullet-method-completed="true"]::marker,
+.ProseMirror li[data-bullet-method-completed="true"] .bullet-method-marker-button {
+  color: color-mix(in srgb, currentColor var(--bullet-dim-dark, 70%), transparent);
+}
+html[data-theme="light"] .ProseMirror li[data-bullet-method-completed="true"] li::marker,
+html[data-theme="light"] .ProseMirror li[data-bullet-method-completed="true"]::marker,
+html[data-theme="light"] .ProseMirror li[data-bullet-method-completed="true"] .bullet-method-marker-button {
+  color: color-mix(in srgb, currentColor var(--bullet-dim-light, 65%), transparent);
+}
+
+.bullet-method-settings .bullet-method-enable label { display: flex; align-items: flex-start; gap: 12px; margin-bottom: 16px; }
+.bullet-method-enable small { display: block; margin-top: 2px; font-size: 12px; line-height: 1.4; color: var(--text-muted); }
+
+.bullet-method-dim-reset-slot { display: inline-flex; align-items: center; justify-content: center; flex: 0 0 30px; width: 30px; height: 30px; }
+
+.settings-modal .bullet-method-dim-choice { flex: 0 0 auto; gap: 6px; white-space: nowrap; }
+
+.bullet-method-status-icon-slot { display: flex; align-items: center; justify-content: center; flex: 0 0 30px; width: 30px; }
