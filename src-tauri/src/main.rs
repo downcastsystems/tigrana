@@ -1,9 +1,12 @@
 use fs2::FileExt;
 mod assets;
+mod document_import;
 mod link_index;
 mod menu_selection;
 #[cfg(target_os = "macos")]
 mod macos_shortcuts;
+#[cfg(target_os = "macos")]
+mod macos_print;
 mod note_history;
 mod notebook_metadata;
 mod notebook_paths;
@@ -218,6 +221,10 @@ struct RecentMenuNote {
 struct AppMenuState {
     has_workspace: bool,
     has_open_note: bool,
+    #[serde(default)]
+    has_export_folder: bool,
+    #[serde(default)]
+    has_export_section: bool,
     active_note_editable: bool,
     #[serde(default)]
     has_editor_selection: bool,
@@ -246,6 +253,8 @@ impl Default for AppMenuState {
         Self {
             has_workspace: false,
             has_open_note: false,
+            has_export_folder: false,
+            has_export_section: false,
             active_note_editable: false,
             has_editor_selection: false,
             bullet_method_enabled: false,
@@ -400,6 +409,22 @@ async fn create_note(
         }
     })
     .await
+}
+
+#[tauri::command]
+async fn read_document_import_file(path: String) -> Result<tauri::ipc::Response, String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        document_import::read_import_file(Path::new(&path)).map(tauri::ipc::Response::new)
+    }).await.map_err(|error| error.to_string())?
+}
+
+#[tauri::command]
+async fn import_document_note(
+    state: tauri::State<'_, NotebookWriteCoordinator>,
+    payload: document_import::ImportNotePayload,
+) -> Result<NoteEntry, String> {
+    let workspace = payload.workspace.clone();
+    run_notebook_write(state, workspace, move |root| document_import::import_note(root, payload)).await
 }
 
 #[tauri::command]
@@ -1069,11 +1094,16 @@ fn write_theme_package(path: String, contents: Vec<u8>) -> Result<(), String> {
 }
 
 #[tauri::command]
-fn print_current_webview(app: AppHandle) -> Result<(), String> {
-    let Some(window) = active_menu_window(&app) else {
-        return Err("No active window to print.".to_string());
-    };
-    window.print().map_err(|error| error.to_string())
+fn print_current_webview(window: WebviewWindow) -> Result<(), String> {
+    #[cfg(target_os = "macos")]
+    { macos_print::print(&window) }
+    #[cfg(not(target_os = "macos"))]
+    { window.print().map_err(|error| error.to_string()) }
+}
+
+#[tauri::command]
+fn write_export_binary_file(path: String, contents: Vec<u8>) -> Result<(), String> {
+    fs::write(path, contents).map_err(|error| error.to_string())
 }
 
 #[tauri::command]
@@ -1408,27 +1438,30 @@ fn build_app_menu(
         editable_note && state.has_unsaved_changes,
         Some("Cmd+S"),
     )?;
-    let export_markdown = MenuItem::with_id(
-        handle,
-        "export_markdown",
-        "Export Current Note as Markdown...",
-        has_open_note,
-        None::<&str>,
-    )?;
-    let export_html = MenuItem::with_id(
-        handle,
-        "export_html",
-        "Export Current Note as HTML...",
-        has_open_note,
-        None::<&str>,
-    )?;
-    let print_note = MenuItem::with_id(
-        handle,
-        "print_note",
-        "Print Current Note...",
-        has_open_note,
-        Some("Cmd+P"),
-    )?;
+    let import_pdf = MenuItem::with_id(handle, "import_pdf", "PDF...", has_workspace, None::<&str>)?;
+    let import_word = MenuItem::with_id(handle, "import_word", "Word document...", has_workspace, None::<&str>)?;
+    let import_menu = Submenu::with_items(handle, "Import", has_workspace, &[&import_pdf, &import_word])?;
+    let export_menu = Submenu::new(handle, "Export", has_workspace)?;
+    let mut document_groups = vec![("note", "Current Note", has_open_note), ("folder", "Current Folder", has_workspace && state.has_export_folder)];
+    if state.navigation_style == "section-view" {
+        document_groups.push(("section", "Current Section", has_workspace && state.has_export_section));
+    }
+    for (index, (scope, title, enabled)) in document_groups.iter().enumerate() {
+        if index > 0 { export_menu.append(&PredefinedMenuItem::separator(handle)?)?; }
+        for (format, label) in [("pdf", "PDF"), ("docx", "Word document"), ("markdown", "Markdown"), ("html", "HTML")] {
+            export_menu.append(&MenuItem::with_id(handle, format!("export_{scope}_{format}"), format!("{title} as {label}..."), *enabled, None::<&str>)?)?;
+        }
+    }
+    let print_menu = Submenu::new(handle, "Print", has_workspace)?;
+    for (scope, title, enabled) in &document_groups {
+        print_menu.append(&MenuItem::with_id(
+            handle,
+            format!("print_{scope}"),
+            format!("{title}..."),
+            *enabled,
+            if *scope == "note" { Some("Cmd+P") } else { None },
+        )?)?;
+    }
 
     let find_note = MenuItem::with_id(
         handle,
@@ -1832,9 +1865,9 @@ fn build_app_menu(
             &new_tab,
             &save_note,
             &PredefinedMenuItem::separator(handle)?,
-            &export_markdown,
-            &export_html,
-            &print_note,
+            &import_menu,
+            &export_menu,
+            &print_menu,
             &PredefinedMenuItem::separator(handle)?,
             &recently_deleted,
             &PredefinedMenuItem::separator(handle)?,
@@ -2402,9 +2435,10 @@ pub fn run() {
             "new_folder" => emit_menu_command(app, "new_folder"),
             "new_tab" => emit_menu_command(app, "new_tab"),
             "save_note" => emit_menu_command(app, "save_note"),
-            "export_markdown" => emit_menu_command(app, "export_markdown"),
-            "export_html" => emit_menu_command(app, "export_html"),
-            "print_note" => emit_menu_command(app, "print_note"),
+            "import_pdf" => emit_menu_command(app, "import_pdf"),
+            "import_word" => emit_menu_command(app, "import_word"),
+            id if id.starts_with("export_note_") || id.starts_with("export_folder_") || id.starts_with("export_section_") => emit_menu_command(app, id),
+            "print_note" | "print_folder" | "print_section" => emit_menu_command(app, event.id().as_ref()),
             "sort_az" | "sort_za" | "sort_az_case" | "sort_za_case" | "sort_bullet_method" => {
                 emit_menu_command(app, event.id().as_ref());
             }
@@ -2529,6 +2563,9 @@ pub fn run() {
             reveal_path,
             open_external,
             write_export_text_file,
+            write_export_binary_file,
+            import_document_note,
+            read_document_import_file,
             write_theme_package,
             print_current_webview
         ])

@@ -1,3 +1,8 @@
+import { documentExportTargets, type DocumentExportFormat, type DocumentExportTarget } from "./lib/documentExportTargets";
+import { useDocumentOperation, runDocumentWorker, cancelled } from "./lib/documentOperation";
+import { DocumentProgressDialog } from "./components/DocumentProgressDialog";
+import type { ImportedDocument } from "./lib/documentImport";
+import { commitDocumentImport } from "./lib/commitDocumentImport";
 import "./styles/responsive-panes.css";
 import "./styles/theme-api.css";
 import { invoke } from "@tauri-apps/api/core";
@@ -105,7 +110,7 @@ import {
   exportTextFile,
   focusNotebookWindow,
   isTauri,
-  printCurrentWebview,
+  exportBinaryFile,
   readAppPreferences,
   registerNotebookWindow,
   setCurrentWebviewZoom,
@@ -115,7 +120,9 @@ import {
 } from "./lib/desktop";
 import { shouldDockNoteTitle } from "./lib/dockedTitle";
 import { DraftSaveRevisions, type DraftSaveRevision } from "./lib/draftSaveRevisions";
-import { buildNoteExportHtml, noteExportFileStem } from "./lib/exportNote";
+import { noteExportFileStem } from "./lib/exportNote";
+import { buildNotebookExportHtml, buildNotebookExportMarkdown, collectExportNotes, type ExportNote } from "./lib/notebookExport";
+import { printDocument } from "./lib/printDocument";
 import { toggleFocusMode, type PaneVisibility } from "./lib/focusMode";
 import { isInlineColorCommand } from "./lib/inlineColors";
 import { normalizeMarkdownImageLines } from "./lib/markdown";
@@ -637,6 +644,7 @@ export default function App() {
     toggleRightSidebar: () => {},
   });
 
+  const documentOperation = useDocumentOperation();
   const activeNote = notes.find((note) => note.path === activePath) ?? null;
   const activeNoteLifecycleRef = useRef<ActiveNoteLifecycle | null>(null);
   if (!activeNoteLifecycleRef.current) {
@@ -783,6 +791,8 @@ export default function App() {
     if (!activePath) return null;
     return notes.find((note) => note.path === activePath)?.parent_path ?? null;
   }, [activePath, notes]);
+  const fileExportTargets = useMemo(() => documentExportTargets(workspace, navigationStyle, selectedFolder, hasOpenNote ? activeNote : undefined, folders),
+    [workspace, navigationStyle, selectedFolder, hasOpenNote, activeNote, folders]);
   const mainCreationFolderPath = navigationStyle === "section-view" ? selectedSection : selectedFolder;
   const currentCreationFolderPath = activeNote?.parent_path ?? selectedFolder;
   const noteCreationTargets = useMemo(
@@ -1171,6 +1181,8 @@ export default function App() {
     const state: AppMenuState = {
       hasWorkspace: Boolean(workspace),
       hasOpenNote,
+      hasExportFolder: Boolean(fileExportTargets.folder),
+      hasExportSection: Boolean(fileExportTargets.section),
       activeNoteEditable,
       hasEditorSelection,
       bulletMethodEnabled: Boolean(bulletMethodDisplay.enabled),
@@ -1194,6 +1206,7 @@ export default function App() {
     }, 50);
     return () => window.clearTimeout(handle);
   }, [
+    fileExportTargets,
     activeNoteEditable,
     bulletMethodDisplay.enabled,
     hasEditorSelection,
@@ -1596,7 +1609,7 @@ export default function App() {
 
   const loadExistingNoteIntoEditor = useCallback(async (
     path: string,
-    options: { preserveSelectedFolder?: boolean; navigationToken?: number } = {},
+    options: { preserveSelectedFolder?: boolean; navigationToken?: number; note?: NoteEntry } = {},
   ) => {
     const navigationToken = options.navigationToken ?? beginNoteNavigation(path);
     if (!setNoteNavigationTarget(navigationToken, path)) return;
@@ -1604,7 +1617,7 @@ export default function App() {
     try {
       const content = pendingNoteContentsRef.current.read(path, contents.get(path) ?? (await readNote(workspace, path)));
       if (!isCurrentNoteLoad(token) || !isCurrentNoteNavigation(navigationToken)) return;
-      const note = notes.find((entry) => entry.path === path);
+      const note = options.note ?? notes.find((entry) => entry.path === path);
       const restorePosition = getRestorableNotePosition(metadataRef.current, path, content);
       const access = await acquireActiveNoteLock(path);
       if (!isCurrentNoteLoad(token) || !isCurrentNoteNavigation(navigationToken)) {
@@ -1955,60 +1968,102 @@ export default function App() {
     }
   }
 
-  async function exportCurrentNote(format: "markdown" | "html") {
-    if (!noteOpen) return;
-    try {
-      const markdown = (await persistDraft()) ?? currentMarkdownSnapshot();
-      const stem = noteExportFileStem(titleDraft);
+  async function outputDocument(target: DocumentExportTarget, format: "print" | DocumentExportFormat) {
+    if (!workspace || userPathMutationRef.current) return;
+    setWidthMenuOpen(false);
+    setContextMenu(null);
+    await documentOperation.run(format === "print" ? "Preparing print" : "Export document", async control => {
+      const uncategorized = target.kind === "folder" && target.path === "" && target.source === "sections-pane";
+      const selected = target.kind === "note"
+        ? notes.filter(note => note.path === target.path)
+        : collectExportNotes(target.path, notes, folders, metadata, { alphabetical: navigationStyle === "single-pane", includeDescendants: !uncategorized });
+      if (!selected.length) throw new Error("There are no notes to print or export.");
+      // Capture drafts synchronously so navigation during preparation cannot change this document.
+      const snapshots = selected.map(note => ({ note, markdown: note.path === activePath
+        ? currentMarkdownSnapshot()
+        : pendingNoteContentsRef.current.read(note.path, contents.get(note.path)) }));
+      const exportNotes: ExportNote[] = [];
+      const rawNotes: string[] = [];
+      for (const { note, markdown } of snapshots) {
+        await control.progress(`Reading note ${exportNotes.length + 1} of ${snapshots.length}…`, exportNotes.length, snapshots.length);
+        const title = note.path === activePath ? titleDraft : note.title;
+        const raw = markdown ?? await readNote(workspace, note.path);
+        rawNotes.push(raw);
+        const document = readNoteDocument(raw, title);
+        exportNotes.push({ title, markdown: document.body, writingStyle: readWritingStyle(document.frontmatter) });
+      }
+      const title = target.kind === "note" ? exportNotes[0].title : uncategorized ? "Uncategorized" : displayFolderName(target.path, folders, workspace);
       if (format === "markdown") {
-        await exportTextFile(`${stem}.md`, markdown, [{ name: "Markdown", extensions: ["md"] }]);
+        const markdown = target.kind === "note" ? rawNotes[0] : buildNotebookExportMarkdown(exportNotes);
+        await control.commit("Choose where to save the document…");
+        await exportTextFile(`${noteExportFileStem(title)}.md`, markdown, [{ name: "Markdown", extensions: ["md"] }]);
         return;
       }
-      const document = readNoteDocument(markdown, titleDraft);
-      const html = await buildNoteExportHtml(titleDraft, document.body, {
-        writingStyle: readWritingStyle(document.frontmatter),
-        resolveImageSrc: async (src) => {
-          if (!workspace) return src;
-          if (/^(https?:|data:|blob:)/i.test(src)) return src;
-          return readAssetDataUrl(workspace, src);
-        },
+      await control.progress("Preparing document…");
+      const html = await buildNotebookExportHtml(exportNotes, async src => {
+        if (/^(https?:|data:|blob:)/i.test(src)) return src;
+        return readAssetDataUrl(workspace, src);
       });
-      await exportTextFile(`${stem}.html`, html, [{ name: "HTML", extensions: ["html", "htm"] }]);
-    } catch (error) {
-      setAppError(error instanceof Error ? error.message : String(error));
-    }
+      if (format === "html") {
+        await control.commit("Choose where to save the document…");
+        await exportTextFile(`${noteExportFileStem(title)}.html`, html, [{ name: "HTML", extensions: ["html", "htm"] }]);
+      }
+      else if (format === "print") { await control.commit("Opening print preview…"); await printDocument(html); }
+      else {
+        const { prepareExportHtml } = await import("./lib/exportFormats");
+        const prepared = await prepareExportHtml(html, control);
+        await control.progress(`Creating ${format === "pdf" ? "PDF" : "Word document"}…`);
+        const bytes = await runDocumentWorker<Uint8Array>(new Worker(new URL("./lib/exportDocument.worker.ts", import.meta.url), { type: "module" }), { html: prepared, title, format }, control);
+        await control.commit("Choose where to save the document…");
+        await exportBinaryFile(`${noteExportFileStem(title)}.${format}`, format, bytes);
+      }
+    });
+  }
+
+  async function requestDocumentImport(format: "pdf" | "docx") {
+    if (!workspace || userPathMutationRef.current) return;
+    const destination = { workspace, parentPath: selectedFolder };
+    await documentOperation.run("Import document", async control => {
+      const path = await open({ title: "Import document", multiple: false, directory: false,
+        filters: [{ name: format === "pdf" ? "PDF" : "Word document", extensions: [format] }],
+      });
+      if (!path || Array.isArray(path)) return;
+      await control.progress("Reading document…");
+      const bytes = await invoke<ArrayBuffer>("read_document_import_file", { path });
+      cancelled(control.signal);
+      const fileName = path.split(/[\\/]/).pop() || `Imported document.${format}`;
+      const imported = /\.pdf$/i.test(fileName)
+        ? await (await import("./lib/importPdf")).importPdf(bytes, control)
+        : await runDocumentWorker<ImportedDocument>(new Worker(new URL("./lib/importWord.worker.ts", import.meta.url), { type: "module" }), bytes, control);
+      await control.progress("Preparing note…");
+      const markdown = await runDocumentWorker<string>(new Worker(new URL("./lib/importMarkdown.worker.ts", import.meta.url), { type: "module" }), imported.html, control);
+      if (!markdown.trim()) throw new Error("No readable content was found in this document.");
+      cancelled(control.signal);
+      if (!isWorkspaceActive(destination.workspace)) throw new Error("The notebook changed during import. Please import the document again.");
+      if (!await persistDraftForNavigation()) throw new Error("Save the current note before importing a document.");
+      await control.commit("Saving the imported note…");
+      const note = await commitDocumentImport(destination.workspace, destination.parentPath, fileName, markdown, imported);
+      if (isWorkspaceActive(destination.workspace)) {
+        updateMetadata(current => addToOrder(current, note.parent_path, note.path));
+        await refreshWorkspace(destination.workspace);
+        await selectNote(note.path, { skipPersist: true, note });
+      }
+      return imported.warnings.length ? `Imported ${note.title}.\n\n${imported.warnings.join("\n")}` : undefined;
+    });
   }
 
   async function printCurrentNote() {
-    if (!noteOpen) return;
-    try {
-      const markdown = (await persistDraft()) ?? currentMarkdownSnapshot();
-      const document = readNoteDocument(markdown, titleDraft);
-      const html = await buildNoteExportHtml(titleDraft, document.body, {
-        writingStyle: readWritingStyle(document.frontmatter),
-        resolveImageSrc: async (src) => {
-          if (!workspace) return src;
-          if (/^(https?:|data:|blob:)/i.test(src)) return src;
-          return readAssetDataUrl(workspace, src);
-        },
-      });
-      const printWindow = window.open("", "_blank", "noopener,noreferrer,width=820,height=920");
-      if (printWindow) {
-        printWindow.document.open();
-        printWindow.document.write(html);
-        printWindow.document.close();
-        printWindow.focus();
-        printWindow.setTimeout(() => printWindow.print(), 100);
-      } else {
-        await printCurrentWebview();
-      }
-    } catch (error) {
-      setAppError(error instanceof Error ? error.message : String(error));
-    }
+    if (noteOpen && activePath) await outputDocument({ kind: "note", path: activePath }, "print");
   }
 
   async function handleMenuCommand(command: string) {
-    if (userPathMutationRef.current) return;
+    if (documentOperation.state || userPathMutationRef.current) return;
+    const exportCommand = /^export_(note|folder|section)_(pdf|docx|markdown|html)$/.exec(command);
+    if (exportCommand) {
+      const target = fileExportTargets[exportCommand[1] as keyof typeof fileExportTargets];
+      if (target) await outputDocument(target, exportCommand[2] as DocumentExportFormat);
+      return;
+    }
     if (isSortCommand(command)) {
       if (command === "sort_bullet_method" && !bulletMethodDisplay.enabled) return;
       if (activeNoteEditable && !rawMarkdownVisible && !frontmatterError && (hasEditorSelection || command === "sort_bullet_method")) requestEditorCommand(command);
@@ -2045,14 +2100,24 @@ export default function App() {
         await persistDraft();
         break;
       case "export_markdown":
-        await exportCurrentNote("markdown");
+        if (fileExportTargets.note) await outputDocument(fileExportTargets.note, "markdown");
+        break;
+      case "import_pdf":
+        await requestDocumentImport("pdf");
+        break;
+      case "import_word":
+        await requestDocumentImport("docx");
         break;
       case "export_html":
-        await exportCurrentNote("html");
+        if (fileExportTargets.note) await outputDocument(fileExportTargets.note, "html");
         break;
       case "print_note":
-        await printCurrentNote();
+      case "print_folder":
+      case "print_section": {
+        const target = fileExportTargets[command.slice("print_".length) as keyof typeof fileExportTargets];
+        if (target) await outputDocument(target, "print");
         break;
+      }
       case "find_note":
         if (rawMarkdownVisible || frontmatterError) setRawFindOpen((value) => !value);
         else setNoteFindRequest((value) => value + 1);
@@ -2542,7 +2607,7 @@ export default function App() {
 
   async function selectNote(
     path: string,
-    options: { preserveSelectedFolder?: boolean; skipPersist?: boolean; navigationToken?: number } = {},
+    options: { preserveSelectedFolder?: boolean; skipPersist?: boolean; navigationToken?: number; note?: NoteEntry } = {},
   ) {
     if (!workspace) return;
     const operationWorkspace = workspace;
@@ -2552,6 +2617,7 @@ export default function App() {
     placePathInActiveTab(path);
     await loadExistingNoteIntoEditor(path, {
       preserveSelectedFolder: options.preserveSelectedFolder,
+      note: options.note,
       navigationToken,
     });
     if (!isWorkspaceActive(operationWorkspace) || !isCurrentNoteNavigation(navigationToken)) return;
@@ -3035,7 +3101,7 @@ export default function App() {
     // Handle sidebar shortcuts before editor key handlers see them. Plain
     // slashes still reach the editor for typing and slash commands.
     const onShortcutCapture = (event: KeyboardEvent) => {
-      if (userPathMutationRef.current || event.isComposing || event.defaultPrevented) return;
+      if (document.querySelector(".document-progress-dialog") || userPathMutationRef.current || event.isComposing || event.defaultPrevented) return;
       if (!(event.metaKey || event.ctrlKey) || event.shiftKey || event.altKey) return;
       if (event.key !== "/" && event.key !== "\\") return;
       event.preventDefault();
@@ -3049,7 +3115,7 @@ export default function App() {
 
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
-      if (userPathMutationRef.current) return;
+      if (document.querySelector(".document-progress-dialog") || userPathMutationRef.current) return;
       const actions = keyboardActionsRef.current;
       const command = event.metaKey || event.ctrlKey;
       const key = event.key.toLowerCase();
@@ -4814,6 +4880,7 @@ export default function App() {
       <div ref={responsivePanes.frameRef} onPointerDownCapture={(event) => {
         if (responsivePanes.overlay && event.target instanceof Element && event.target.closest(".main-pane") && !event.target.closest(".sidebar-toggle, .outline-toggle")) setPaneOverlay(null);
       }} data-theme-region="notebook" data-theme-api={renderedTheme.design ? "1" : undefined} className={`app-frame${responsivePanes.visibleOverlay ? ` has-${responsivePanes.visibleOverlay}-overlay${responsivePanes.closing ? " is-overlay-closing" : ""}` : ""} theme-${renderedColorMode} ${plasmaEnabled ? "theme-plasma" : "theme-standard"} ${responsivePanes.docked.leftVisible ? "" : "is-left-hidden"} ${responsivePanes.docked.outlineVisible ? "" : "is-outline-hidden"} ${navigationStyle === "single-pane" ? "is-single-col" : ""}`} style={{ ...frameStyle, ...quickStyles.palette }}>
+      {documentOperation.state && <DocumentProgressDialog state={documentOperation.state} onCancel={documentOperation.cancel} onClose={documentOperation.close} />}
       {!responsivePanes.docked.leftVisible && !responsivePanes.overlay && <div className="sidebar-hover-edge is-left" data-sidebar-peek="left" data-sidebar-peek-edge aria-hidden="true" />}
       {responsivePanes.hoverSide && <div key={responsivePanes.hoverRevision} className={`sidebar-hover-glow is-${responsivePanes.hoverSide}`} aria-hidden="true" />}
       {leftVisible ? (
@@ -5077,6 +5144,15 @@ export default function App() {
                         onClick={() => { requestEditorCommand("equation"); setWidthMenuOpen(false); }}>
                         <span><strong>Equation</strong></span><Sigma size={16} />
                       </button>
+                    </EditorOptionsSubmenu>
+                    <button type="button" role="menuitem" disabled={!noteOpen} onClick={() => void printCurrentNote()}>
+                      <span><strong>Print…</strong></span>
+                    </button>
+                    <EditorOptionsSubmenu label="Export" disabled={!noteOpen}>
+                      <button type="button" role="menuitem" onClick={() => { if (activePath) void outputDocument({ kind: "note", path: activePath }, "pdf"); }}><span><strong>PDF…</strong></span></button>
+                      <button type="button" role="menuitem" onClick={() => { if (activePath) void outputDocument({ kind: "note", path: activePath }, "docx"); }}><span><strong>Word document…</strong></span></button>
+                      <button type="button" role="menuitem" onClick={() => { if (activePath) void outputDocument({ kind: "note", path: activePath }, "markdown"); }}><span><strong>Markdown…</strong></span></button>
+                      <button type="button" role="menuitem" onClick={() => { if (activePath) void outputDocument({ kind: "note", path: activePath }, "html"); }}><span><strong>HTML…</strong></span></button>
                     </EditorOptionsSubmenu>
                     <div className="note-view-menu-divider" />
                     <button
@@ -5491,6 +5567,8 @@ export default function App() {
           onOpenInNewTab={() => {
             if (contextMenu.kind === "note") void openNoteInNewTab(contextMenu.path);
           }}
+          onPrint={() => { if (contextMenu.kind !== "empty") void outputDocument(contextMenu, "print"); }}
+          onExport={format => { if (contextMenu.kind !== "empty") void outputDocument(contextMenu, format); }}
           onReveal={() => {
             if (contextMenu.kind !== "empty") void revealTarget({ kind: contextMenu.kind, path: contextMenu.path });
           }}

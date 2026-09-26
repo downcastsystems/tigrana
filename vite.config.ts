@@ -1,5 +1,5 @@
 import { createHash } from "node:crypto";
-import { readFileSync } from "node:fs";
+import { readFileSync, readdirSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { defineConfig, type Plugin } from "vite";
 import react from "@vitejs/plugin-react";
@@ -22,8 +22,33 @@ function plasmaPatchVersion(): Plugin {
   };
 }
 
+function pdfImportResources(): Plugin {
+  const root = fileURLToPath(new URL("./node_modules/pdfjs-dist/", import.meta.url));
+  return {
+    name: "pdf-import-resources",
+    configureServer(server) {
+      server.middlewares.use((req, res, next) => {
+        const match = /^\/pdfjs\/(cmaps|wasm)\/([a-zA-Z0-9_.-]+)$/.exec(req.url ?? "");
+        if (!match) { next(); return; }
+        try {
+          res.setHeader("Content-Type", match[2].endsWith(".js") ? "text/javascript" : "application/octet-stream");
+          res.end(readFileSync(`${root}${match[1]}/${match[2]}`));
+        } catch { res.statusCode = 404; res.end(); }
+      });
+    },
+    generateBundle() {
+      for (const directory of ["cmaps", "wasm"]) {
+        for (const name of readdirSync(`${root}${directory}`)) {
+          this.emitFile({ type: "asset", fileName: `pdfjs/${directory}/${name}`, source: readFileSync(`${root}${directory}/${name}`) });
+        }
+      }
+    },
+  };
+}
+
 export default defineConfig({
-  plugins: [react(), plasmaPatchVersion()],
+  plugins: [react(), plasmaPatchVersion(), pdfImportResources()],
+  worker: { format: "es" },
   clearScreen: false,
   server: {
     port: 1422,

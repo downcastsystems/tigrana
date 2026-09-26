@@ -10,7 +10,7 @@ export class PendingNoteContents {
     this.contents.set(path, content);
   }
 
-  read(path: string, fallback: string) {
+  read<T extends string | undefined>(path: string, fallback: T): string | T {
     return this.contents.get(path) ?? fallback;
   }
 

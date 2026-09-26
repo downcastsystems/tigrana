@@ -6904,3 +6904,17 @@ html[data-theme="light"] .ProseMirror li[data-bullet-method-completed="true"] .b
 @media (prefers-reduced-motion: reduce) {
   .ProseMirror .bullet-method-moved { animation: none; background-color: color-mix(in srgb, var(--accent) 28%, transparent); }
 }
+
+.document-progress-backdrop { z-index: 10000; }
+.document-progress-dialog { width: min(440px, calc(100vw - 40px)); padding: 24px; }
+.document-progress-dialog p { white-space: pre-line; overflow-wrap: anywhere; line-height: 1.5; }
+.document-progress-dialog progress { width: 100%; accent-color: var(--accent); margin: 12px 0; }
+
+.context-submenu-arrow { margin-left: auto; }
+.context-document-submenu-panel { max-width: calc(100vw - 16px); }
+.context-menu button:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
+.context-document-submenu { position: relative; }
+.context-document-submenu::before,
+.context-document-submenu::after { content: ""; position: absolute; top: 0; width: 8px; height: 100%; }
+.context-document-submenu::before { left: 100%; }
+.context-document-submenu::after { right: 100%; }

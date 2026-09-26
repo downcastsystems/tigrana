@@ -37,6 +37,15 @@ Do not add features that make Markdown unreadable outside the app unless explici
 - `src-tauri/capabilities/default.json`: Tauri permissions
 - `docs/architecture.md`: architecture notes
 
+## Component and module organization
+
+When adding features, prefer separate, focused components, hooks, and modules
+where practical. Do not default to putting new UI, state, and feature logic into
+`src/App.tsx`. Keep `App.tsx` focused on composing the app and coordinating shared
+state; place feature-specific UI and behavior in the relevant components or
+modules and connect them through clear props and interfaces. Reuse existing
+components when they fit, without forcing abstractions for trivial changes.
+
 ## Notebook File Contract
 
 Notebook folders should look like:

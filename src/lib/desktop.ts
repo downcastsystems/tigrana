@@ -11,6 +11,8 @@ export type AppPreferences = {
 export type AppMenuState = {
   hasWorkspace: boolean;
   hasOpenNote: boolean;
+  hasExportFolder: boolean;
+  hasExportSection: boolean;
   activeNoteEditable: boolean;
   hasEditorSelection: boolean;
   bulletMethodEnabled?: boolean;
@@ -117,5 +119,20 @@ export async function exportThemePackageFile(name: string, contents: Uint8Array)
   }
   const url = URL.createObjectURL(new Blob([new Uint8Array(contents)], { type: "application/zip" }));
   const link = document.createElement("a"); link.href = url; link.download = name; link.click();
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
+}
+
+export async function exportBinaryFile(defaultFileName: string, format: "pdf" | "docx", contents: Uint8Array) {
+  if (isTauri()) {
+    const path = await save({ title: "Export document", defaultPath: defaultFileName,
+      filters: [{ name: format === "pdf" ? "PDF" : "Word document", extensions: [format] }] });
+    if (path) await invoke("write_export_binary_file", { path, contents: Array.from(contents) });
+    return;
+  }
+  const mime = format === "pdf" ? "application/pdf" : "application/vnd.openxmlformats-officedocument.wordprocessingml.document";
+  const url = URL.createObjectURL(new Blob([new Uint8Array(contents)], { type: mime }));
+  const link = document.createElement("a");
+  link.href = url; link.download = defaultFileName;
+  document.body.append(link); link.click(); link.remove();
   setTimeout(() => URL.revokeObjectURL(url), 1000);
 }

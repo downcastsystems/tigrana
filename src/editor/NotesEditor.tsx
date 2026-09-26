@@ -103,6 +103,7 @@ import {
   setEditorSpellcheck,
   type ListItemRange,
 } from "./notesEditorBehavior";
+import { handleListTextReplacement, prepareListTextReplacement } from "./listTextReplacement";
 import { SearchHighlight, getEditorMatches, scrollEditorPositionIntoView, searchHighlightKey } from "./searchHighlight";
 import { ensureParagraphAfterCurrentTable, filterSlashCommands, markCurrentTableAsTigranaHtml } from "./slashCommands";
 import { isSortCommand, sortSelectedLines, type SortCommand } from "./sortLines";
@@ -333,7 +334,9 @@ export function NotesEditor({ bulletMethodDisplay = defaultBulletMethodDisplay, 
         return false;
       },
       handleDOMEvents: {
+        beforeinput: handleListTextReplacement,
         keydown(_view, event) {
+          prepareListTextReplacement(_view, event);
           if (handleNestedListBoundaryDelete(_view, event)) return true;
           if (handleSameLevelListItemBackspace(_view, event)) return true;
           if (handleEmptyListItemBackspace(_view, event)) return true;

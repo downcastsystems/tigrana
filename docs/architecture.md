@@ -481,3 +481,70 @@ when renamed or reordered. Valid edits save automatically; invalid names remain
 local until corrected. The dimming label lists the checked statuses live. Dim selected statuses
 is the global dimming switch. Selecting No status dims unmatched/unmarked bullets.
 COMPLETE uses the DONE choice unless configured as its own status.
+
+### Printing and document exports
+
+Note actions offer Print, PDF, and Word (`.docx`). Folder and section context
+menus use the same document pipeline, including collapsed descendants. Traversal
+matches the navigation tree: child folders first in sidebar order, then each
+folder's pinned and manually ordered notes. Single-pane navigation uses its
+visible alphabetical order. The Uncategorized section includes only root notes.
+Every note starts on a fresh page; long notes can occupy multiple pages.
+
+`App.tsx` snapshots pending drafts before output, and `notebookExport.ts` prepares
+the selected content as one document.
+`printDocument.ts` isolates that content in a print-only shadow root so native
+printing cannot include the app chrome. The native print command uses the
+invoking window, including when several notebook windows are open. On macOS,
+`macos_print.rs` sets 18 mm physical margins in a copy of `NSPrintInfo` and disables
+centering. Each job starts at 100% scale to avoid inheriting scaling that changes
+WebKit's page boundaries. Tauri's default native print path zeroes the native
+margins, which lets print scaling reduce the CSS-only margin. Printer and paper
+choices are preserved.
+`exportFormats.ts` lazily loads PDF and Word writers. Local images are embedded,
+frontmatter is excluded, and equations are rendered as MathML in print or readable
+LaTeX text in PDF/Word. Export uses a neutral paper layout rather than app themes.
+
+### Document import and conversion progress
+
+File → Import is the only entry point for importing PDF or Word
+`.docx` documents into a single new Markdown note. The filename supplies a
+portable title, with a suffix when a note already has that title. A native file
+picker selects the source; a bounded binary read supplies its contents. Word import
+reads OOXML styles, lists, tables, links and embedded raster images in a
+terminable worker. Heading styles become Tigrana headings; inline text and
+highlight colors map to the supported palette. Headers, footers, page geometry,
+and tab indent settings are omitted. Older binary `.doc` files are not supported.
+
+PDF.js extracts selectable text, estimates headings and table cells from layout,
+and rasterizes embedded images. Image-only pages remain page images, with an
+explanatory completion message (no OCR). PDF layout, complex multi-column tables,
+vector artwork and unusual Word drawing formats are best-effort. The PDF.js
+worker, character maps and image decoders are bundled locally. Imports reject
+input files above 50 MB and extracted assets/Word packages above 200 MB.
+
+`useDocumentOperation` supplies shared progress, cancellation and error state.
+Word parsing and PDF/Word encoding run in disposable workers; PDF rendering
+cancels through PDF.js. The final save step is non-cancellable. The native
+`import_document_note` command serializes writes through the notebook coordinator,
+saves images under `.assets`, creates the note without overwriting existing
+notes, and removes newly saved assets if note creation fails. Demo imports embed
+image data URLs. No notebook changes occur during conversion.
+
+All Export submenus offer PDF, Word, Markdown and HTML. File → Export groups
+those formats under current-note and current-folder actions, separated by a
+menu divider. Section view adds a current-section group. Missing selections
+leave their actions disabled; top-level sections are not also treated as folders.
+In section view an open nested note supplies the current folder, while the
+current section includes its full tree. Uncategorized exports only root notes.
+
+All formats share the same ordered note collection and draft snapshots.
+Single-note Markdown preserves the original document, including frontmatter.
+Collection Markdown uses note titles and horizontal dividers, without repeating
+managed frontmatter; attachment references remain notebook-relative. HTML
+collections contain the rendered notes and embedded local images.
+
+File → Print shares Export's current-note, current-folder and current-section
+selection rules. Section printing appears only in section view; unavailable
+selections are disabled. Cmd+P continues to print the current note. Collections
+use the same ordered aggregation and per-note page boundaries as PDF export.

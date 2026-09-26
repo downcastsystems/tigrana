@@ -41,6 +41,12 @@
 [data-theme-region] .ProseMirror blockquote { color: var(--tigrana-editor-text, var(--text)); }
 [data-theme-region] .ProseMirror mark { color: var(--tigrana-highlight-text, #000000); background-color: var(--tigrana-highlight-background, #ffff00); }
 [data-theme-region] :is(.ProseMirror, .ProseMirror *, .note-title-input, .raw-markdown-input)::selection { background: var(--accent); color: var(--accent-contrast); }
+/* Show explicit text colors immediately, even while the range stays selected.
+   Keep the theme's selection background and ordinary selected text unchanged. */
+[data-theme-region] .ProseMirror [data-text-color]::selection,
+[data-theme-region] .ProseMirror [data-text-color] *::selection {
+  color: currentColor !important;
+}
 /* WebKit can leave list-marker highlights behind after selected items are
    reordered. Keep markers unpainted in every theme, including imported themes.
    Theme CSS cannot use !important; this guard must win over selection overrides.

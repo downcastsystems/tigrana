@@ -24,3 +24,20 @@ from the bundled TTF name tables, retaining every reserved font name and
 copyright notice. The renderer uses the separate [MIT license](KaTeX-MIT.txt).
 Source: https://github.com/KaTeX/KaTeX/tree/v0.18.9/fonts. They are app assets,
 not embedded theme fonts, and are used only for rendered equations.
+
+## PDF export fonts
+
+PDF export embeds Roboto Regular, Medium, Italic and Medium Italic version 3.014
+from `pdfmake@0.3.7` (`build/vfs_fonts.js`). The font metadata identifies the
+Roboto Project Authors and SIL OFL 1.1. The complete copyright and license are
+in `Roboto-OFL.txt`, sourced from
+https://github.com/googlefonts/roboto-3-classic/blob/main/OFL.txt.
+These fonts are used by the document exporter, not by a theme.
+
+## PDF import resources
+
+PDF import uses `pdfjs-dist` 6.3.289 (Mozilla PDF.js, Apache-2.0).
+The Vite build copies its CMaps and WASM decoders into `pdfjs/` alongside all
+upstream `LICENSE*` notices. These are decoding resources, not bundled fonts;
+PDF import uses document-embedded and system fonts. Source:
+https://github.com/mozilla/pdfjs-dist/tree/v6.3.289

@@ -27,7 +27,10 @@ pub fn save_asset(root: &Path, payload: SaveAssetPayload) -> Result<String, Stri
         payload.mime_type.as_deref(),
     );
     let path = assets_dir.join(clean_name);
-    fs::write(&path, payload.bytes).map_err(|error| error.to_string())?;
+    if let Err(error) = fs::write(&path, payload.bytes) {
+        let _ = fs::remove_file(&path);
+        return Err(error.to_string());
+    }
     relative_asset_path(root, &path)
 }
 
@@ -104,7 +107,10 @@ fn save_tiff_asset_as_png(
 ) -> Result<String, String> {
     let temp_name = unique_asset_name(assets_dir, &payload.file_name, payload.mime_type.as_deref());
     let temp_path = assets_dir.join(temp_name);
-    fs::write(&temp_path, &payload.bytes).map_err(|error| error.to_string())?;
+    if let Err(error) = fs::write(&temp_path, &payload.bytes) {
+        let _ = fs::remove_file(&temp_path);
+        return Err(error.to_string());
+    }
 
     convert_tiff_file_to_png(root, assets_dir, &temp_path)
 }

@@ -92,6 +92,11 @@ describe('built-in theme catalog', () => {
     }
     expect(normalizeLineEndings(readNotice('public/licenses/KaTeX-MIT.txt'))).toBe(normalizeLineEndings(readFileSync('node_modules/katex/LICENSE', 'utf8')));
     expect(readNotice('public/licenses/KaTeX-MIT.txt')).toContain('Permission is hereby granted');
+    const exportFontLicense = readNotice('public/licenses/Roboto-OFL.txt');
+    expect(exportFontLicense).toContain('Copyright 2011 The Roboto Project Authors');
+    expect(exportFontLicense).toContain('SIL OPEN FONT LICENSE Version 1.1');
+    const exportFonts = JSON.parse(readFileSync('node_modules/pdfmake/package.json', 'utf8'));
+    expect(exportFonts.version).toBe('0.3.7');
     const equationFonts = readNotice('public/licenses/KaTeX-Fonts-OFL.txt');
     expect(equationFonts).toContain('SIL OPEN FONT LICENSE Version 1.1');
     for (const family of ['AMS', 'Caligraphic', 'Fraktur', 'Main', 'Math', 'SansSerif', 'Script', 'Size1', 'Size2', 'Size3', 'Size4', 'Typewriter']) {
