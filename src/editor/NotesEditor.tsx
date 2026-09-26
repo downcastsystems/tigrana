@@ -1,3 +1,4 @@
+import { SearchResultReveal, useSearchResultReveal } from "./searchResultReveal";
 import { TaskItem, TaskList } from "@tiptap/extension-list";
 import { TableRow } from "@tiptap/extension-table";
 import { Placeholder } from "@tiptap/extensions";
@@ -123,7 +124,7 @@ const markdownCommitDelayMs = 80;
 
 const noteHistoryCacheLimit = 30;
 
-export function NotesEditor({ bulletMethodDisplay = defaultBulletMethodDisplay, bulletMethodStatuses = defaultBulletMethodStatuses, writingStyle = "notes", colorsDisabled = false, colorToolbarElement, content, commandRequest, focusRequest, focusAtEndRequest, findRequest, historyKey, reloadRequest, notePath, restorePosition, editable, spellcheckEnabled, workspace, onChange, onPendingChange, onPersistenceReady, onLoadError, onPositionChange, onInternalLinkClick, onRequestEmoji, onRequestLink, onRequestImage }: NotesEditorProps) {
+export function NotesEditor({ bulletMethodDisplay = defaultBulletMethodDisplay, bulletMethodStatuses = defaultBulletMethodStatuses, writingStyle = "notes", colorsDisabled = false, colorToolbarElement, content, commandRequest, focusRequest, focusAtEndRequest, findRequest, searchRevealRequest, historyKey, reloadRequest, notePath, restorePosition, editable, spellcheckEnabled, workspace, onChange, onPendingChange, onPersistenceReady, onLoadError, onPositionChange, onInternalLinkClick, onRequestEmoji, onRequestLink, onRequestImage }: NotesEditorProps) {
   const writingStyleRef = useRef(writingStyle);
   writingStyleRef.current = writingStyle;
   const [slash, setSlash] = useState<SlashState | null>(null);
@@ -226,6 +227,7 @@ export function NotesEditor({ bulletMethodDisplay = defaultBulletMethodDisplay, 
       BlockMath,
       EmojiText,
       SearchHighlight,
+      SearchResultReveal,
       EmSpaceIndent,
       ListItemSeparator,
       MarkdownImage.configure({
@@ -843,6 +845,8 @@ export function NotesEditor({ bulletMethodDisplay = defaultBulletMethodDisplay, 
     const activeIndex = findMatches.length ? Math.min(findIndex, findMatches.length - 1) : 0;
     editor.view.dispatch(editor.state.tr.setMeta(searchHighlightKey, { query, activeIndex }));
   }, [editor, findIndex, findMatches.length, findOpen, findQuery]);
+
+  useSearchResultReveal(editor, searchRevealRequest, workspace, notePath, reloadRequest);
 
   const commands = slash ? filterSlashCommands(slash.query) : [];
   const selectedSlashIndex = slash?.selected ?? -1;

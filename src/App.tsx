@@ -1,3 +1,5 @@
+import { useRawSearchResultReveal } from "./editor/useRawSearchResultReveal";
+import type { SearchRevealRequest } from "./editor/searchResultReveal";
 import { documentExportTargets, type DocumentExportFormat, type DocumentExportTarget } from "./lib/documentExportTargets";
 import { useDocumentOperation, runDocumentWorker, cancelled } from "./lib/documentOperation";
 import { DocumentProgressDialog } from "./components/DocumentProgressDialog";
@@ -410,6 +412,7 @@ export default function App() {
   const [searchOpen, setSearchOpen] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
   const [searchFocusRequest, setSearchFocusRequest] = useState(0);
+  const [searchRevealRequest, setSearchRevealRequest] = useState<SearchRevealRequest | null>(null);
   const [noteFindRequest, setNoteFindRequest] = useState(0);
   const [appError, setAppError] = useState<string | null>(null);
   const [settingsOpen, setSettingsOpen] = useState(false);
@@ -440,6 +443,7 @@ export default function App() {
   const [noteScrollFades, setNoteScrollFades] = useState<ScrollFadeVisibility>({ top: false, bottom: false });
   const [dockedTitleState, setDockedTitleState] = useState({ visible: false, animate: false });
   const [rightSidebarMode, setRightSidebarMode] = useState<RightSidebarMode>("outline");
+  const outlineScrollPositions = useRef(new Map<string, number>());
   const [linkIndex, setLinkIndex] = useState<LinkIndex | null>(null);
   const [rawMarkdownVisible, setRawMarkdownVisible] = useState(false);
   const [editorWidthMode, setEditorWidthMode] = useState<EditorWidthMode>(() => readStoredEditorWidthMode());
@@ -1554,6 +1558,7 @@ export default function App() {
   }, []);
 
   const beginNoteNavigation = useCallback((path: string | null = null) => {
+    setSearchRevealRequest(null);
     setWidthMenuOpen(false);
     armedTitleFocusRequestRef.current = 0;
     titleCommitInFlightRef.current = false;
@@ -1946,6 +1951,7 @@ export default function App() {
   }
 
   function requestEditorCommand(command: EditorCommand, payload: Partial<EditorCommandRequest> = {}) {
+    setSearchRevealRequest(null);
     if (isInlineColorCommand(command) && (titleFocused || document.activeElement === titleInputRef.current)) return;
     setEditorCommandRequest({ id: Date.now() + Math.random(), command, ...payload });
   }
@@ -2379,6 +2385,8 @@ export default function App() {
     return position;
   }
 
+  useRawSearchResultReveal(rawMarkdownInputRef, rawMarkdownVisible || Boolean(frontmatterError), searchRevealRequest, workspace, activePath);
+
   const updateNoteScrollFades = useCallback(() => {
     const scrollElement = rawMarkdownVisible || frontmatterError
       ? rawMarkdownInputRef.current
@@ -2623,6 +2631,7 @@ export default function App() {
     if (!isWorkspaceActive(operationWorkspace) || !isCurrentNoteNavigation(navigationToken)) return;
     setSearchQuery("");
     setPaneOverlay(null);
+    return true;
   }
 
   function findLastOpenedNoteInSection(sectionPath: string) {
@@ -4714,6 +4723,7 @@ export default function App() {
   }
 
   function handleOutlineSelect(id: string) {
+    setSearchRevealRequest(null);
     setPaneOverlay(null);
     const index = Number(id.replace("heading-", ""));
     if (index === 0) {
@@ -5133,28 +5143,6 @@ export default function App() {
                 </button>
                 {widthMenuOpen ? (
                   <div className="note-view-dropdown" role="menu" aria-label="Editor options">
-                    <EditorOptionsSubmenu label="Insert" disabled={!contentsActive || !activeNoteEditable || rawMarkdownVisible || Boolean(frontmatterError)}>
-                      <button type="button" role="menuitem"
-                        onMouseDown={event => event.preventDefault()}
-                        onClick={() => { void handleMenuCommand("format_image"); setWidthMenuOpen(false); }}>
-                        <span><strong>Image</strong></span><ImageIcon size={16} />
-                      </button>
-                      <button type="button" role="menuitem"
-                        onMouseDown={event => event.preventDefault()}
-                        onClick={() => { requestEditorCommand("equation"); setWidthMenuOpen(false); }}>
-                        <span><strong>Equation</strong></span><Sigma size={16} />
-                      </button>
-                    </EditorOptionsSubmenu>
-                    <button type="button" role="menuitem" disabled={!noteOpen} onClick={() => void printCurrentNote()}>
-                      <span><strong>Print…</strong></span>
-                    </button>
-                    <EditorOptionsSubmenu label="Export" disabled={!noteOpen}>
-                      <button type="button" role="menuitem" onClick={() => { if (activePath) void outputDocument({ kind: "note", path: activePath }, "pdf"); }}><span><strong>PDF…</strong></span></button>
-                      <button type="button" role="menuitem" onClick={() => { if (activePath) void outputDocument({ kind: "note", path: activePath }, "docx"); }}><span><strong>Word document…</strong></span></button>
-                      <button type="button" role="menuitem" onClick={() => { if (activePath) void outputDocument({ kind: "note", path: activePath }, "markdown"); }}><span><strong>Markdown…</strong></span></button>
-                      <button type="button" role="menuitem" onClick={() => { if (activePath) void outputDocument({ kind: "note", path: activePath }, "html"); }}><span><strong>HTML…</strong></span></button>
-                    </EditorOptionsSubmenu>
-                    <div className="note-view-menu-divider" />
                     <button
                       type="button"
                       className={focusModeActive ? "is-active" : ""}
@@ -5243,6 +5231,28 @@ export default function App() {
                       </button>
                     ))}
                     </EditorOptionsSubmenu>
+                    <div className="note-view-menu-divider" />
+                    <EditorOptionsSubmenu label="Insert" disabled={!contentsActive || !activeNoteEditable || rawMarkdownVisible || Boolean(frontmatterError)}>
+                      <button type="button" role="menuitem"
+                        onMouseDown={event => event.preventDefault()}
+                        onClick={() => { void handleMenuCommand("format_image"); setWidthMenuOpen(false); }}>
+                        <span><strong>Image</strong></span><ImageIcon size={16} />
+                      </button>
+                      <button type="button" role="menuitem"
+                        onMouseDown={event => event.preventDefault()}
+                        onClick={() => { requestEditorCommand("equation"); setWidthMenuOpen(false); }}>
+                        <span><strong>Equation</strong></span><Sigma size={16} />
+                      </button>
+                    </EditorOptionsSubmenu>
+                    <EditorOptionsSubmenu label="Export" disabled={!noteOpen}>
+                      <button type="button" role="menuitem" onClick={() => { if (activePath) void outputDocument({ kind: "note", path: activePath }, "pdf"); }}><span><strong>PDF…</strong></span></button>
+                      <button type="button" role="menuitem" onClick={() => { if (activePath) void outputDocument({ kind: "note", path: activePath }, "docx"); }}><span><strong>Word document…</strong></span></button>
+                      <button type="button" role="menuitem" onClick={() => { if (activePath) void outputDocument({ kind: "note", path: activePath }, "markdown"); }}><span><strong>Markdown…</strong></span></button>
+                      <button type="button" role="menuitem" onClick={() => { if (activePath) void outputDocument({ kind: "note", path: activePath }, "html"); }}><span><strong>HTML…</strong></span></button>
+                    </EditorOptionsSubmenu>
+                    <button type="button" role="menuitem" disabled={!noteOpen} onClick={() => void printCurrentNote()}>
+                      <span><strong>Print…</strong></span>
+                    </button>
                   </div>
                 ) : null}
               </div>
@@ -5426,6 +5436,7 @@ export default function App() {
                   focusRequest={editorFocusRequest}
                   focusAtEndRequest={editorFocusAtEndRequest}
                   findRequest={noteFindRequest}
+                  searchRevealRequest={searchRevealRequest}
                   historyKey={activeNoteHistoryKey}
                   reloadRequest={editorReloadRequest}
                   commandRequest={editorCommandRequest}
@@ -5481,6 +5492,8 @@ export default function App() {
           frontmatterError={frontmatterError}
           mode={rightSidebarMode}
           outline={noteOpen ? outline : []}
+          noteIdentity={noteOpen ? activeNoteHistoryKey : null}
+          outlineScrollPositions={outlineScrollPositions.current}
           pendingNote={pendingNote}
           workspace={workspace}
           linkIndex={linkIndex}
@@ -5511,10 +5524,17 @@ export default function App() {
             setSearchQuery("");
           }}
           onQueryChange={setSearchQuery}
-          onSelect={(path) => {
+          onSelect={(path, query) => {
+            const operationWorkspace = workspace;
+            const navigationToken = beginNoteNavigation(path);
             setSearchOpen(false);
             setSearchQuery("");
-            void selectNote(path);
+            void selectNote(path, { navigationToken }).then((opened) => {
+              if (opened && query.trim() && isWorkspaceActive(operationWorkspace) && isCurrentNoteNavigation(navigationToken)
+                && activeDraftStateRef.current.activePath === path) {
+                setSearchRevealRequest({ id: navigationToken, workspace: operationWorkspace, notePath: path, query });
+              }
+            });
           }}
         />
       ) : null}
@@ -5834,6 +5854,7 @@ export default function App() {
 
       {versionHistory ? (
         <VersionHistoryDialog
+          key={JSON.stringify([workspace, versionHistory.path])}
           activeNoteEditable={versionHistory.path !== activePath || activeNoteEditable}
           note={versionHistory}
           workspace={workspace}

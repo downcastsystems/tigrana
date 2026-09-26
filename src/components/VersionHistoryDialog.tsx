@@ -3,6 +3,7 @@ import { useEffect, useState } from "react";
 import type { NoteVersionEntry } from "../lib/notebookStorage";
 import { notebookStorage } from "../lib/notebookStorage";
 const { listNoteVersions, readNoteVersion } = notebookStorage;
+const historyRequestTimeoutMs = 15_000;
 
 export type VersionHistoryState = {
   path: string;
@@ -27,13 +28,22 @@ export function VersionHistoryDialog({
   const [preview, setPreview] = useState("");
   const [loading, setLoading] = useState(false);
   const [previewLoading, setPreviewLoading] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  const [error, setError] = useState<{ kind: "list" | "preview"; message: string } | null>(null);
+  const [listAttempt, setListAttempt] = useState(0);
+  const [previewAttempt, setPreviewAttempt] = useState(0);
 
   useEffect(() => {
     if (!workspace) return;
     let cancelled = false;
     setLoading(true);
     setError(null);
+    setVersions([]);
+    setSelectedId(null);
+    const timeout = window.setTimeout(() => {
+      cancelled = true;
+      setLoading(false);
+      setError({ kind: "list", message: "Version history is taking longer than expected. The notebook may be busy or waiting for file sync. Try again." });
+    }, historyRequestTimeoutMs);
     void listNoteVersions(workspace, note.path)
       .then((entries) => {
         if (cancelled) return;
@@ -41,38 +51,49 @@ export function VersionHistoryDialog({
         setSelectedId(entries[0]?.id ?? null);
       })
       .catch((loadError) => {
-        if (!cancelled) setError(loadError instanceof Error ? loadError.message : String(loadError));
+        if (!cancelled) setError({ kind: "list", message: loadError instanceof Error ? loadError.message : String(loadError) });
       })
       .finally(() => {
+        window.clearTimeout(timeout);
         if (!cancelled) setLoading(false);
       });
     return () => {
       cancelled = true;
+      window.clearTimeout(timeout);
     };
-  }, [note.path, workspace]);
+  }, [listAttempt, note.path, workspace]);
 
   useEffect(() => {
     if (!workspace || !selectedId) {
       setPreview("");
+      setPreviewLoading(false);
       return;
     }
     let cancelled = false;
     setPreviewLoading(true);
-    setError(null);
+    setPreview("");
+    setError(current => current?.kind === "preview" ? null : current);
+    const timeout = window.setTimeout(() => {
+      cancelled = true;
+      setPreviewLoading(false);
+      setError({ kind: "preview", message: "This version is taking longer than expected to load. Try again." });
+    }, historyRequestTimeoutMs);
     void readNoteVersion(workspace, note.path, selectedId)
       .then((content) => {
         if (!cancelled) setPreview(content);
       })
       .catch((loadError) => {
-        if (!cancelled) setError(loadError instanceof Error ? loadError.message : String(loadError));
+        if (!cancelled) setError({ kind: "preview", message: loadError instanceof Error ? loadError.message : String(loadError) });
       })
       .finally(() => {
+        window.clearTimeout(timeout);
         if (!cancelled) setPreviewLoading(false);
       });
     return () => {
       cancelled = true;
+      window.clearTimeout(timeout);
     };
-  }, [note.path, selectedId, workspace]);
+  }, [note.path, previewAttempt, selectedId, workspace]);
 
   const selected = versions.find((entry) => entry.id === selectedId) ?? null;
   const formatDate = (millis: number) => {
@@ -104,7 +125,7 @@ export function VersionHistoryDialog({
         <div className="version-history-body">
           <aside className="version-history-list">
             {loading && !versions.length ? <p className="empty-sidebar-note">Loading…</p> : null}
-            {!loading && !versions.length ? <p className="empty-sidebar-note">No saved versions yet.</p> : null}
+            {!loading && !error && !versions.length ? <p className="empty-sidebar-note">No saved versions yet.</p> : null}
             {versions.map((entry) => (
               <button
                 key={entry.id}
@@ -119,7 +140,13 @@ export function VersionHistoryDialog({
             ))}
           </aside>
           <div className="version-preview">
-            {error ? <p className="app-error">{error}</p> : null}
+            {error ? <div role="alert">
+              <p className="app-error">{error.message}</p>
+              <button type="button" className="secondary-button" onClick={() => {
+                if (error.kind === "list") setListAttempt(value => value + 1);
+                else setPreviewAttempt(value => value + 1);
+              }}>Retry</button>
+            </div> : null}
             {!selected ? (
               <p className="empty-sidebar-note">Select a version to preview it.</p>
             ) : previewLoading ? (
@@ -139,7 +166,7 @@ export function VersionHistoryDialog({
           <button
             type="button"
             className="primary-button"
-            disabled={!selected || !activeNoteEditable}
+            disabled={!selected || !activeNoteEditable || loading || previewLoading || Boolean(error)}
             onClick={() => {
               if (!selected) return;
               if (window.confirm("Restore this version? The current note will be saved as a version first.")) {

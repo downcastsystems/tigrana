@@ -70,7 +70,15 @@ fn write_note_history_index(workspace: &Path, index: &NoteHistoryIndex) -> Resul
     let root = note_history_root(workspace);
     fs::create_dir_all(&root).map_err(|error| error.to_string())?;
     let json = serde_json::to_vec_pretty(index).map_err(|error| error.to_string())?;
-    fs::write(note_history_index_path(workspace), json).map_err(|error| error.to_string())
+    // Readers do not take the notebook write lane. Publish a complete index
+    // with a same-directory rename so they never see a partially written JSON file.
+    let temporary = root.join(format!(".index-{}.tmp", Uuid::new_v4()));
+    let result = fs::write(&temporary, json)
+        .and_then(|_| fs::rename(&temporary, note_history_index_path(workspace)));
+    if result.is_err() {
+        let _ = fs::remove_file(&temporary);
+    }
+    result.map_err(|error| error.to_string())
 }
 
 fn note_content_hash(content: &str) -> String {
@@ -249,13 +257,15 @@ pub fn list_note_versions(
     let current_id = note_id_from_content(&current_content)
         .or_else(|| read_link_index_file(root).path_to_id.get(path).cloned());
     let key = note_history_key(path, current_id.as_deref());
-    let mut index = read_note_history_index(root).unwrap_or_default();
-    cleanup_note_history(root, &mut index);
-    let _ = write_note_history_index(root, &index);
+    // Browsing history is read-only. Retention cleanup runs when a snapshot is
+    // created, under the write lane; expired entries stay hidden between saves.
+    let index = read_note_history_index(root)?;
+    let now = now_millis();
     let mut entries = index
         .entries
         .into_iter()
-        .filter(|entry| note_history_entry_key(entry) == key)
+        .filter(|entry| note_history_entry_key(entry) == key
+            && now.saturating_sub(entry.created_at) <= NOTE_HISTORY_KEEP_DAILY_MS)
         .collect::<Vec<_>>();
     entries.sort_by(|a, b| b.created_at.cmp(&a.created_at));
     Ok(entries)
@@ -278,7 +288,7 @@ pub fn earliest_note_history_times(root: &Path) -> HashMap<String, u64> {
 }
 
 pub fn read_note_version(root: &Path, id: &str) -> Result<String, String> {
-    let index = read_note_history_index(root).unwrap_or_default();
+    let index = read_note_history_index(root)?;
     let entry = index
         .entries
         .iter()
@@ -345,4 +355,64 @@ fn now_millis() -> u64 {
         .duration_since(SystemTime::UNIX_EPOCH)
         .map(|duration| duration.as_millis() as u64)
         .unwrap_or(0)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::notebook_storage::{duplicate_note, save_note};
+
+    struct TestNotebook(PathBuf);
+    impl TestNotebook {
+        fn new() -> Self {
+            let root = std::env::temp_dir().join(format!("tigrana-history-test-{}", Uuid::new_v4()));
+            fs::create_dir_all(&root).unwrap();
+            Self(root)
+        }
+    }
+    impl Drop for TestNotebook {
+        fn drop(&mut self) { let _ = fs::remove_dir_all(&self.0); }
+    }
+
+    #[test]
+    fn duplicate_large_note_edit_and_history_preserve_the_complete_version() {
+        let notebook = TestNotebook::new();
+        let content = set_tigrana_managed_fields_in_content(
+            &"A large note paragraph with context.\n\n".repeat(100_000),
+            &Uuid::new_v4().to_string(), "2026-09-26T00:00:00Z",
+        );
+        fs::write(notebook.0.join("Large.md"), content).unwrap();
+        let copy = duplicate_note(&notebook.0, "Large.md").unwrap();
+        let copy_path = notebook.0.join(&copy.path);
+        let before = fs::read_to_string(&copy_path).unwrap();
+        save_note(&notebook.0, &copy.path, &format!("{before}\nSmall edit\n")).unwrap();
+        let versions = list_note_versions(&notebook.0, &copy.path, &copy_path).unwrap();
+        assert_eq!(versions.len(), 1);
+        assert_eq!(read_note_version(&notebook.0, &versions[0].id).unwrap(), before);
+        assert!(list_note_versions(&notebook.0, "Large.md", &notebook.0.join("Large.md")).unwrap().is_empty());
+    }
+
+    #[test]
+    fn listing_history_does_not_write_the_index_or_delete_snapshots() {
+        let notebook = TestNotebook::new();
+        let content = "---\nid: note-id\n---\n\nBefore";
+        let note_path = notebook.0.join("Note.md");
+        fs::write(&note_path, content).unwrap();
+        let entry = create_note_version_snapshot(&notebook.0, "Note.md", content, "After", "save", NoteSnapshotMode::Force).unwrap().unwrap();
+        let mut index = read_note_history_index(&notebook.0).unwrap();
+        index.entries[0].created_at = 1;
+        write_note_history_index(&notebook.0, &index).unwrap();
+        let index_before = fs::read(note_history_index_path(&notebook.0)).unwrap();
+        assert!(list_note_versions(&notebook.0, "Note.md", &note_path).unwrap().is_empty());
+        assert_eq!(fs::read(note_history_index_path(&notebook.0)).unwrap(), index_before);
+        assert!(note_history_items_dir(&notebook.0).join(entry.file_name).exists());
+    }
+
+    #[test]
+    fn history_read_errors_are_reported_instead_of_looking_like_empty_history() {
+        let notebook = TestNotebook::new();
+        fs::create_dir_all(note_history_root(&notebook.0)).unwrap();
+        fs::write(note_history_index_path(&notebook.0), "invalid json").unwrap();
+        assert!(list_note_versions(&notebook.0, "Note.md", &notebook.0.join("Note.md")).is_err());
+    }
 }

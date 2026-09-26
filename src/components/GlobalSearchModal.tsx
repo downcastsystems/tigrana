@@ -1,6 +1,6 @@
 import { ArrowDownUp, CalendarDays, Check, FileText, Folder, Search, Type, X } from "lucide-react";
 import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
-import { noteSearchPreview, recentNotes, searchNotes, type SearchDateRange, type SearchSort } from "../lib/search";
+import { findSearchMatch, noteSearchPreview, recentNotes, searchNotes, type SearchDateRange, type SearchSort } from "../lib/search";
 import type { FolderEntry, NoteEntry, SearchResult, WorkspaceMetadata } from "../types";
 
 type GlobalSearchModalProps = {
@@ -12,7 +12,7 @@ type GlobalSearchModalProps = {
   query: string;
   onClose: () => void;
   onQueryChange: (query: string) => void;
-  onSelect: (path: string) => void;
+  onSelect: (path: string, matchedQuery: string) => void;
 };
 
 export function GlobalSearchModal({
@@ -32,14 +32,25 @@ export function GlobalSearchModal({
   const [dateRange, setDateRange] = useState<SearchDateRange>("any");
   const [sort, setSort] = useState<SearchSort>("relevance");
   const [selectedIndex, setSelectedIndex] = useState(0);
-  const searching = Boolean(query.trim());
+  const [debouncedQuery, setDebouncedQuery] = useState(query);
+  // Clearing is immediate; ordinary typing waits for a short pause.
+  const resultQuery = query.trim() ? debouncedQuery : "";
+  const searching = Boolean(resultQuery.trim());
+  useEffect(() => {
+    if (!query.trim()) {
+      setDebouncedQuery("");
+      return;
+    }
+    const timer = window.setTimeout(() => setDebouncedQuery(query), 120);
+    return () => window.clearTimeout(timer);
+  }, [query]);
   const options = useMemo(
     () => ({ titleOnly, folderPath, dateRange, sort, limit: 60 }),
     [dateRange, folderPath, sort, titleOnly],
   );
   const results = useMemo(
-    () => searchNotes(notes, contents, query, options),
-    [contents, notes, options, query],
+    () => searchNotes(notes, contents, resultQuery, options),
+    [contents, notes, options, resultQuery],
   );
   const recents = useMemo(
     () => recentNotes(notes, contents, metadata.notePositions, { ...options, limit: 24 }),
@@ -48,7 +59,10 @@ export function GlobalSearchModal({
   const displayed = searching ? results : recents.results;
   const activeIndex = Math.min(selectedIndex, Math.max(0, displayed.length - 1));
   const selected = displayed[activeIndex] ?? null;
-  const preview = selected ? noteSearchPreview(contents.get(selected.path) ?? "") : "";
+  const preview = useMemo(
+    () => selected ? noteSearchPreview(searching ? selected.snippet : contents.get(selected.path) ?? "") : "",
+    [contents, searching, selected],
+  );
   const selectedFolderName = folderPath === null ? "Anywhere" : folderPath || "Notebook root";
 
   useEffect(() => {
@@ -60,7 +74,7 @@ export function GlobalSearchModal({
 
   useEffect(() => {
     setSelectedIndex(0);
-  }, [dateRange, folderPath, query, sort, titleOnly]);
+  }, [dateRange, folderPath, resultQuery, sort, titleOnly]);
 
   const moveSelection = (delta: number) => {
     if (!displayed.length) return;
@@ -68,7 +82,14 @@ export function GlobalSearchModal({
   };
 
   const openSelected = () => {
-    if (selected) onSelect(selected.path);
+    if (query !== resultQuery && query.trim()) {
+      // Enter should use the input now, never open a stale result.
+      const first = searchNotes(notes, contents, query, options)[0];
+      setDebouncedQuery(query);
+      if (first) onSelect(first.path, query);
+      return;
+    }
+    if (selected) onSelect(selected.path, resultQuery);
   };
 
   return (
@@ -191,11 +212,11 @@ export function GlobalSearchModal({
                   key={result.path}
                   active={index === activeIndex}
                   lastOpenedAt={metadata.notePositions[result.path]?.lastOpenedAt}
-                  query={query}
+                  query={resultQuery}
                   result={result}
                   searching={searching}
                   onHover={() => setSelectedIndex(index)}
-                  onSelect={() => onSelect(result.path)}
+                  onSelect={() => onSelect(result.path, resultQuery)}
                 />
               ))}
               {!displayed.length ? (
@@ -220,7 +241,7 @@ export function GlobalSearchModal({
                 </div>
                 <div className="search-preview-paper">
                   <h2>{selected.title}</h2>
-                  <p>{preview || "This note has no text content yet."}</p>
+                  <p>{preview ? highlight(preview, searching ? resultQuery : "") : "This note has no text content yet."}</p>
                 </div>
                 <div className="search-preview-meta">{formatEditedDate(selected.updated_at)}</div>
               </>
@@ -282,11 +303,9 @@ function SearchResultRow({
 }
 
 function highlight(text: string, query: string): ReactNode {
-  const normalized = query.trim().replace(/^"|"$/g, "");
-  if (!normalized) return text;
-  const index = text.toLowerCase().indexOf(normalized.toLowerCase());
-  if (index === -1) return text;
-  return <>{text.slice(0, index)}<mark>{text.slice(index, index + normalized.length)}</mark>{text.slice(index + normalized.length)}</>;
+  const match = findSearchMatch(text, query);
+  if (!match) return text;
+  return <>{text.slice(0, match.start)}<mark>{text.slice(match.start, match.end)}</mark>{text.slice(match.end)}</>;
 }
 
 function dateRangeLabel(range: SearchDateRange) {

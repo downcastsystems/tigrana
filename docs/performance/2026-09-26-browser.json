@@ -1,0 +1,221 @@
+{
+  "date": "2026-09-26T20:27:19.796Z",
+  "engine": "Playwright WebKit, Vite development build",
+  "host": {
+    "platform": "darwin",
+    "arch": "arm64",
+    "cpu": "Apple M5 Pro",
+    "ramGiB": 48
+  },
+  "documents": [
+    {
+      "pages": 100,
+      "words": 50000,
+      "bytes": 322241,
+      "parseMs": 0,
+      "openMs": 68,
+      "tenTransactionsMs": [
+        5,
+        4,
+        8
+      ],
+      "captureMs": [
+        4,
+        2,
+        3
+      ]
+    },
+    {
+      "pages": 1000,
+      "words": 500000,
+      "bytes": 3222994,
+      "parseMs": 3,
+      "openMs": 663,
+      "tenTransactionsMs": [
+        27,
+        21,
+        25
+      ],
+      "captureMs": [
+        28,
+        20,
+        20
+      ]
+    },
+    {
+      "pages": 2000,
+      "words": 1000000,
+      "bytes": 6447057,
+      "parseMs": 1,
+      "openMs": 2313,
+      "tenTransactionsMs": [
+        50,
+        49,
+        48
+      ],
+      "captureMs": [
+        47,
+        39,
+        39
+      ]
+    },
+    {
+      "pages": 5000,
+      "words": 2500000,
+      "bytes": 16119277,
+      "parseMs": 4,
+      "openMs": 14475,
+      "tenTransactionsMs": [
+        162,
+        154,
+        169
+      ],
+      "captureMs": [
+        132,
+        98,
+        98
+      ]
+    }
+  ],
+  "notebooks": [
+    {
+      "count": 1000,
+      "searches": [
+        {
+          "query": "stressneedle01000",
+          "ms": [
+            140,
+            137,
+            127
+          ],
+          "results": 50
+        },
+        {
+          "query": "notebook",
+          "ms": [
+            63,
+            47,
+            45
+          ],
+          "results": 50
+        },
+        {
+          "query": "zzzznomatch",
+          "ms": [
+            133,
+            128,
+            130
+          ],
+          "results": 0
+        }
+      ],
+      "mountMs": 149,
+      "selectionMs": 32,
+      "domElements": 16021
+    },
+    {
+      "count": 5000,
+      "searches": [
+        {
+          "query": "stressneedle01000",
+          "ms": [
+            711,
+            684,
+            676
+          ],
+          "results": 50
+        },
+        {
+          "query": "notebook",
+          "ms": [
+            236,
+            224,
+            222
+          ],
+          "results": 50
+        },
+        {
+          "query": "zzzznomatch",
+          "ms": [
+            620,
+            623,
+            617
+          ],
+          "results": 0
+        }
+      ],
+      "mountMs": 656,
+      "selectionMs": 149,
+      "domElements": 80021
+    },
+    {
+      "count": 10000,
+      "searches": [
+        {
+          "query": "stressneedle01000",
+          "ms": [
+            1484,
+            1432,
+            1423
+          ],
+          "results": 50
+        },
+        {
+          "query": "notebook",
+          "ms": [
+            466,
+            455,
+            457
+          ],
+          "results": 50
+        },
+        {
+          "query": "zzzznomatch",
+          "ms": [
+            1270,
+            1259,
+            1249
+          ],
+          "results": 0
+        }
+      ],
+      "mountMs": 1302,
+      "selectionMs": 293,
+      "domElements": 160021
+    }
+  ],
+  "mixed": [
+    {
+      "count": 1002,
+      "searches": [
+        {
+          "query": "stressneedle01000",
+          "ms": [
+            315,
+            303,
+            292
+          ],
+          "results": 50
+        },
+        {
+          "query": "notebook",
+          "ms": [
+            103,
+            91,
+            92
+          ],
+          "results": 50
+        },
+        {
+          "query": "zzzznomatch",
+          "ms": [
+            255,
+            243,
+            246
+          ],
+          "results": 0
+        }
+      ]
+    }
+  ]
+}

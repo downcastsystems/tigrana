@@ -17,10 +17,11 @@ function contrast(a: string, b: string) {
   return (values[0] + .05) / (values[1] + .05);
 }
 describe('built-in theme catalog', () => {
-  it.each(['dracula', 'plasma-ooze', 'plasma-undertow', 'plasma-witches-brew'])('keeps %s identical in light and dark mode, including Plasma lighting', (id) => {
+  it.each(['dracula', 'plasma-ooze', 'plasma-undertow', 'plasma-witches-brew'])('uses a lighter accent for %s in light mode', (id) => {
     const vampire = classicThemes.find(theme => theme.id === id)!;
-    expect(vampire.light).toEqual(vampire.dark);
-    expect(themeStylesheet(vampire, 'light', 'notebook')).toBe(themeStylesheet(vampire, 'dark', 'notebook'));
+    expect(vampire.light.accent).not.toBe(vampire.dark.accent);
+    expect({ ...vampire.light, accent: vampire.dark.accent, selectedText: vampire.dark.selectedText }).toEqual(vampire.dark);
+    expect(contrast(vampire.light.accent, vampire.light.selectedText!)).toBeGreaterThanOrEqual(4.5);
     expect(themeRenderingMode(vampire, 'light')).toBe('dark');
     expect(themeRenderingMode(vampire, 'dark')).toBe('dark');
     for (const theme of allBuiltInThemes.filter(theme => theme.id !== 'dracula' && !theme.id.startsWith('plasma-'))) {

@@ -1,0 +1,74 @@
+[
+  {
+    "jsonBytes": 5273244,
+    "jsonMs": 2.280834,
+    "notes": 1000,
+    "pass": "first-index",
+    "snapshotMs": 72.727583
+  },
+  {
+    "jsonBytes": 5273244,
+    "jsonMs": 2.232666,
+    "notes": 1000,
+    "pass": "existing-index",
+    "snapshotMs": 72.634375
+  },
+  {
+    "notes": 1000,
+    "saveMs": 2.6535
+  },
+  {
+    "jsonBytes": 26405244,
+    "jsonMs": 10.72375,
+    "notes": 5000,
+    "pass": "first-index",
+    "snapshotMs": 376.860541
+  },
+  {
+    "jsonBytes": 26405244,
+    "jsonMs": 11.230875,
+    "notes": 5000,
+    "pass": "existing-index",
+    "snapshotMs": 382.657167
+  },
+  {
+    "notes": 5000,
+    "saveMs": 11.935459
+  },
+  {
+    "jsonBytes": 52820244,
+    "jsonMs": 21.128917,
+    "notes": 10000,
+    "pass": "first-index",
+    "snapshotMs": 861.4946249999999
+  },
+  {
+    "jsonBytes": 52820244,
+    "jsonMs": 22.408292,
+    "notes": 10000,
+    "pass": "existing-index",
+    "snapshotMs": 882.6676669999999
+  },
+  {
+    "notes": 10000,
+    "saveMs": 25.956166999999997
+  },
+  {
+    "bytes": 599967,
+    "pages": 100,
+    "saveMs": 2.183042,
+    "snapshotMs": 1.877583
+  },
+  {
+    "bytes": 5999068,
+    "pages": 1000,
+    "saveMs": 18.022791,
+    "snapshotMs": 14.145208
+  },
+  {
+    "bytes": 29999068,
+    "pages": 5000,
+    "saveMs": 91.954542,
+    "snapshotMs": 64.076291
+  }
+]

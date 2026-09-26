@@ -1,3 +1,4 @@
+import type { SearchRevealRequest } from "./searchResultReveal";
 import type { BulletMethodDisplay, BulletMethodStatus } from "../lib/bulletMethod";
 import type { InlineColorCommand } from "../lib/inlineColors";
 import type { WritingStyle } from "../lib/writingStyle";
@@ -15,6 +16,7 @@ export type NotesEditorProps = {
   focusRequest: number;
   focusAtEndRequest: number;
   findRequest: number;
+  searchRevealRequest?: SearchRevealRequest | null;
   historyKey: string | null;
   reloadRequest?: number;
   notePath: string | null;

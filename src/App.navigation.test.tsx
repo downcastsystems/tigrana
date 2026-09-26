@@ -716,6 +716,12 @@ describe("Note navigation persistence", () => {
         const palette = classicThemes.find(theme => theme.id === id)!;
         expect(appearance().plasma).toEqual(vampire.plasma);
         expect(document.documentElement.style.getPropertyValue('--accent')).toBe(palette.dark.accent);
+        const mode = container.querySelector<HTMLSelectElement>('[aria-label="Mode"]')!;
+        await act(async () => { mode.value = 'light'; mode.dispatchEvent(new Event('change', { bubbles: true })); });
+        expect(document.documentElement.dataset.theme).toBe('dark');
+        expect(container.querySelector('.app-frame')?.classList.contains('theme-dark')).toBe(true);
+        expect(document.documentElement.style.getPropertyValue('--accent')).toBe(palette.light.accent);
+        await act(async () => { mode.value = 'dark'; mode.dispatchEvent(new Event('change', { bubbles: true })); });
         expect(container.querySelector<HTMLSelectElement>('[aria-label="Theme"]')!.value).toBe('builtin:dracula');
       }
       await act(async () => root.unmount()); root = createRoot(container);

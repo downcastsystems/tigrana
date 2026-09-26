@@ -89,7 +89,7 @@ function buildSearchDecorations(doc: ProseMirrorNode, query: string, activeIndex
   return DecorationSet.create(doc, decorations);
 }
 
-export function scrollEditorPositionIntoView(editor: Editor, position: number) {
+export function scrollEditorPositionIntoView(editor: Editor, position: number, behavior: ScrollBehavior = "smooth") {
   const scrollContainer = editor.view.dom.closest<HTMLElement>(".note-surface");
   if (!scrollContainer) return;
   const coords = editor.view.coordsAtPos(position);
@@ -97,6 +97,6 @@ export function scrollEditorPositionIntoView(editor: Editor, position: number) {
   const targetTop = scrollContainer.scrollTop + coords.top - containerRect.top - containerRect.height * 0.42;
   scrollContainer.scrollTo({
     top: Math.max(0, targetTop),
-    behavior: "smooth",
+    behavior,
   });
 }

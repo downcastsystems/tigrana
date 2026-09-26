@@ -632,13 +632,26 @@ async fn rebuild_link_index(
 
 // ---------- Note Version History ----------
 
+async fn run_history_read<T, F>(workspace: String, operation: F) -> Result<T, String>
+where
+    T: Send + 'static,
+    F: FnOnce(&Path) -> Result<T, String> + Send + 'static,
+{
+    // History reads must not wait behind notebook scans, saves, or path rewrites.
+    tauri::async_runtime::spawn_blocking(move || {
+        let root = safe_workspace(&workspace)?;
+        operation(&root)
+    })
+    .await
+    .map_err(|error| error.to_string())?
+}
+
 #[tauri::command]
 async fn list_note_versions(
-    state: tauri::State<'_, NotebookWriteCoordinator>,
     payload: NoteVersionsPayload,
 ) -> Result<Vec<NoteVersionEntry>, String> {
     let workspace = payload.workspace.clone();
-    run_notebook_write(state, workspace, move |root| {
+    run_history_read(workspace, move |root| {
         let note_path = safe_note_path(&payload.workspace, &payload.path)?;
         list_note_versions_for_note(root, &payload.path, &note_path)
     })
@@ -647,11 +660,10 @@ async fn list_note_versions(
 
 #[tauri::command]
 async fn read_note_version(
-    state: tauri::State<'_, NotebookWriteCoordinator>,
     payload: NoteVersionPayload,
 ) -> Result<String, String> {
     let workspace = payload.workspace.clone();
-    run_notebook_write(state, workspace, move |root| {
+    run_history_read(workspace, move |root| {
         read_note_version_content(root, &payload.id)
     })
     .await
@@ -2575,4 +2587,35 @@ pub fn run() {
 
 fn main() {
     run();
+}
+
+#[cfg(test)]
+mod history_command_tests {
+    use super::*;
+
+    #[test]
+    fn history_commands_complete_while_the_notebook_write_lane_is_held() {
+        let root = std::env::temp_dir().join(format!("tigrana-history-command-{}", uuid::Uuid::new_v4()));
+        fs::create_dir_all(&root).unwrap();
+        let result = (|| -> Result<(), String> {
+            let content = "---\nid: history-test\n---\n\nBefore";
+            fs::write(root.join("Note.md"), content).map_err(|error| error.to_string())?;
+            note_history::create_note_version_snapshot(&root, "Note.md", content, "After", "save", note_history::NoteSnapshotMode::Force)?;
+            let coordinator = NotebookWriteCoordinator::default();
+            coordinator.run(&root, || {
+                let workspace = root.to_string_lossy().to_string();
+                let versions = tauri::async_runtime::block_on(list_note_versions(NoteVersionsPayload {
+                    workspace: workspace.clone(), path: "Note.md".into(),
+                }))?;
+                assert_eq!(versions.len(), 1);
+                let preview = tauri::async_runtime::block_on(read_note_version(NoteVersionPayload {
+                    workspace, path: "Note.md".into(), id: versions[0].id.clone(),
+                }))?;
+                assert_eq!(preview, content);
+                Ok(())
+            })
+        })();
+        let _ = fs::remove_dir_all(root);
+        result.unwrap();
+    }
 }

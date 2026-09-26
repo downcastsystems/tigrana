@@ -2,7 +2,7 @@ import type { DraftNote } from "../lib/notebookNavigation";
 import { Braces, Check, Copy, FileText, LayoutList, Link2 } from "lucide-react";
 import { notebookFilePath } from "../lib/filePaths";
 import type { ReactNode } from "react";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { createNoteDocument, updateNoteDocumentFrontmatterField, type FrontmatterField } from "../lib/noteDocument";
 import { getNotebookName } from "../lib/notebookMetadata";
 import type { FolderEntry, LinkIndex, NoteEntry, WorkspaceMetadata } from "../types";
@@ -18,6 +18,8 @@ export function RightSidebar({
   frontmatterError,
   mode,
   outline,
+  noteIdentity,
+  outlineScrollPositions,
   pendingNote,
   workspace,
   linkIndex,
@@ -38,6 +40,8 @@ export function RightSidebar({
   frontmatterError: string | null;
   mode: RightSidebarMode;
   outline: Array<{ id: string; text: string; level: number }>;
+  noteIdentity: string | null;
+  outlineScrollPositions: Map<string, number>;
   pendingNote: DraftNote | null;
   workspace: string;
   linkIndex: LinkIndex | null;
@@ -51,6 +55,7 @@ export function RightSidebar({
   onSelectOutline: (id: string) => void;
   onSelectBacklink: (path: string) => void;
 }) {
+  const outlineScrollKey = noteIdentity ? JSON.stringify([workspace, noteIdentity]) : null;
   const title =
     mode === "outline"
       ? "Outline"
@@ -80,14 +85,8 @@ export function RightSidebar({
         </div>
       </div>
       {mode === "outline" ? (
-        <div className="outline-list">
-          {outline.map((item) => (
-            <button className={`outline-item level-${item.level}`} key={item.id} type="button" onClick={() => onSelectOutline(item.id)}>
-              {item.text}
-            </button>
-          ))}
-          {!outline.length ? <p className="empty-sidebar-note">No headings yet</p> : null}
-        </div>
+        <NoteOutlineList key={outlineScrollKey} outline={outline} scrollKey={outlineScrollKey}
+          positions={outlineScrollPositions} onSelect={onSelectOutline} />
       ) : mode === "frontmatter" ? (
         <FrontmatterPane
           activeNote={activeNote}
@@ -110,6 +109,32 @@ export function RightSidebar({
       )}
     </aside>
   );
+}
+
+function NoteOutlineList({ outline, scrollKey, positions, onSelect }: {
+  outline: Array<{ id: string; text: string; level: number }>;
+  scrollKey: string | null;
+  positions: Map<string, number>;
+  onSelect: (id: string) => void;
+}) {
+  const listRef = useRef<HTMLDivElement>(null);
+  useLayoutEffect(() => {
+    // useNoteOutline replaces the previous Note's headings in a layout effect.
+    // Retry when those headings arrive, after a short/empty list clamped scrollTop.
+    if (listRef.current) listRef.current.scrollTop = scrollKey ? positions.get(scrollKey) ?? 0 : 0;
+  }, [outline, positions, scrollKey]);
+  return <div className="outline-list" ref={listRef} onScroll={(event) => {
+    // Save actual scroll events, not effect cleanup: StrictMode cleanup can
+    // run while the incoming outline still contains the previous Note's rows.
+    if (scrollKey) positions.set(scrollKey, event.currentTarget.scrollTop);
+  }}>
+    {outline.map((item) => (
+      <button className={`outline-item level-${item.level}`} key={item.id} type="button" onClick={() => onSelect(item.id)}>
+        {item.text}
+      </button>
+    ))}
+    {!outline.length ? <p className="empty-sidebar-note">No headings yet</p> : null}
+  </div>;
 }
 
 function BacklinksPane({

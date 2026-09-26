@@ -1086,6 +1086,70 @@ mod tests {
         read_frontmatter_field(&split_frontmatter(&content).0, "id").unwrap()
     }
 
+    // Opt-in measurements, never part of the normal correctness suite. All writes
+    // stay in disposable local notebooks, not the user's synced notebook.
+    #[test]
+    #[ignore = "run explicitly with --release --ignored --nocapture"]
+    fn stress_notebook_capacity() {
+        use std::time::Instant;
+        for count in [1_000, 5_000, 10_000] {
+            let notebook = TestNotebook::new();
+            let body = "notebook observation recorded with context ".repeat(100);
+            for i in 0..count {
+                let content = set_tigrana_managed_fields_in_content(
+                    &format!("{body}\n\n[Next]({}.md)\n", (i + 1) % count),
+                    &Uuid::new_v4().to_string(), "2026-09-26T00:00:00Z",
+                );
+                fs::write(notebook.0.join(format!("{i}.md")), content).unwrap();
+            }
+            for pass in ["first-index", "existing-index"] {
+                let start = Instant::now();
+                let snapshot = read_notebook_snapshot(&notebook.0).unwrap();
+                let snapshot_ms = start.elapsed().as_secs_f64() * 1000.0;
+                assert_eq!(snapshot.notes.len(), count);
+                assert_eq!(snapshot.contents.len(), count);
+                let index = snapshot.link_index.as_ref().expect("index must rebuild");
+                assert_eq!(index.notes_by_id.len(), count);
+                let start = Instant::now();
+                let json = serde_json::to_vec(&snapshot).unwrap();
+                println!("STRESS {}", json!({ "notes": count, "pass": pass,
+                    "snapshotMs": snapshot_ms, "jsonMs": start.elapsed().as_secs_f64() * 1000.0,
+                    "jsonBytes": json.len() }));
+            }
+            let edited = format!("{}\nSaved edit\n", read_note(&notebook.0, "0.md").unwrap());
+            let start = Instant::now();
+            save_note(&notebook.0, "0.md", &edited).unwrap();
+            println!("STRESS {}", json!({ "notes": count, "saveMs": start.elapsed().as_secs_f64() * 1000.0 }));
+            assert_eq!(read_note(&notebook.0, "0.md").unwrap(), edited);
+        }
+        for pages in [100, 1_000, 5_000] {
+            let notebook = TestNotebook::new();
+            let mut body = String::new();
+            for page in 1..=pages {
+                body.push_str(&format!("## Page {page}\n\n"));
+                for words in [100, 100, 100, 100, 98] {
+                    body.push_str(&"observation ".repeat(words));
+                    body.push_str("\n\n");
+                }
+            }
+            let content = set_tigrana_managed_fields_in_content(
+                &body, &Uuid::new_v4().to_string(), "2026-09-26T00:00:00Z",
+            );
+            fs::write(notebook.0.join("Long.md"), &content).unwrap();
+            let start = Instant::now();
+            let snapshot = read_notebook_snapshot(&notebook.0).unwrap();
+            let snapshot_ms = start.elapsed().as_secs_f64() * 1000.0;
+            assert_eq!(snapshot.contents["Long.md"], content);
+            let edited = format!("{content}\nSaved edit\n");
+            let start = Instant::now();
+            save_note(&notebook.0, "Long.md", &edited).unwrap();
+            let save_ms = start.elapsed().as_secs_f64() * 1000.0;
+            assert_eq!(read_note(&notebook.0, "Long.md").unwrap(), edited);
+            println!("STRESS {}", json!({ "pages": pages, "bytes": content.len(),
+                "snapshotMs": snapshot_ms, "saveMs": save_ms }));
+        }
+    }
+
     #[test]
     fn renaming_a_note_commits_links_index_metadata_and_identity_together() {
         let notebook = TestNotebook::new();

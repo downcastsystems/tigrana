@@ -3,9 +3,12 @@ import { inlineColorVariables } from "./inlineColors";
 import type { ThemeDocument } from "./themes";
 import { defaultThemeDesign } from "./themeDesign";
 import { compileThemeCss } from "./themeCss";
-/** Identical palettes represent one appearance, including its glass lighting. */
+/** Accent variations do not change the lighting or controls of identical base palettes. */
 export function themeRenderingMode(theme: ThemeDocument, requested: "light" | "dark"): "light" | "dark" {
-  const keys = Object.keys({ ...theme.light, ...theme.dark }) as (keyof ThemeDocument["light"])[];
+  const keys: (keyof ThemeDocument["light"])[] = [
+    "background", "surface", "surfaceSoft", "surfaceStrong", "surfaceMuted",
+    "border", "text", "textMuted", "editorText",
+  ];
   if (keys.some(key => theme.light[key] !== theme.dark[key])) return requested;
   return readableThemeText(theme[requested].background) === "#ffffff" ? "dark" : "light";
 }

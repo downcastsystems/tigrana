@@ -38,10 +38,10 @@
     "text": "#f4eae4",
     "textMuted": "#bca39a",
     "background": "#100808",
-    "accent": "#5c0700",
+    "accent": "#fe958c",
     "titlebar": "#5c0700",
     "editorText": "#f4eae4",
-    "selectedText": "#ffffff",
+    "selectedText": "#140b0b",
     "highlightText": "#ffffff",
     "highlightBackground": "#5c0700"
   },
