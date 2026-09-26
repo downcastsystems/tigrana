@@ -1767,7 +1767,12 @@ describe("Note navigation persistence", () => {
     await act(async () => root.unmount());
   });
 
-  it.each(["metaKey", "ctrlKey"])("consumes %s + slash before the focused editor handles it", async (modifier) => {
+  it.each([
+    { modifier: "metaKey", key: "/", side: "left" },
+    { modifier: "ctrlKey", key: "/", side: "left" },
+    { modifier: "metaKey", key: "\\", side: "right" },
+    { modifier: "ctrlKey", key: "\\", side: "right" },
+  ])("uses $modifier + $key for the $side sidebar before the editor handles it", async ({ modifier, key, side }) => {
     const container = document.createElement("div");
     document.body.appendChild(container);
     containers.push(container);
@@ -1777,24 +1782,34 @@ describe("Note navigation persistence", () => {
       await waitFor(() => Boolean(container.querySelector(".note-title-input")));
       const frame = container.querySelector<HTMLElement>(".app-frame")!;
       await act(async () => triggerElementResize(frame, 1600));
-      const toggle = container.querySelector<HTMLButtonElement>(".outline-toggle")!;
+      const toggle = container.querySelector<HTMLButtonElement>(`button[data-sidebar-peek="${side}"]`)!;
+      const otherToggle = container.querySelector<HTMLButtonElement>(`button[data-sidebar-peek="${side === "left" ? "right" : "left"}"]`)!;
       const initiallyExpanded = toggle.getAttribute("aria-expanded");
+      const otherInitiallyExpanded = otherToggle.getAttribute("aria-expanded");
+      const shortcutModifier = /Mac|iPhone|iPad/.test(navigator.platform) ? "⌘" : "Ctrl+";
+      expect(toggle.title).toContain(`(${shortcutModifier}${key})`);
       const editor = container.querySelector<HTMLTextAreaElement>(".ProseMirror")!;
       const editorKeyDown = vi.fn();
       editor.addEventListener("keydown", editorKeyDown);
       await act(async () => editor.focus());
       for (const expected of [initiallyExpanded === "true" ? "false" : "true", initiallyExpanded]) {
-        const event = new KeyboardEvent("keydown", { key: "/", [modifier]: true, bubbles: true, cancelable: true });
+        const event = new KeyboardEvent("keydown", { key, [modifier]: true, bubbles: true, cancelable: true });
         await act(async () => { editor.dispatchEvent(event); });
         expect(event.defaultPrevented).toBe(true);
         expect(editorKeyDown).not.toHaveBeenCalled();
         expect(toggle.getAttribute("aria-expanded")).toBe(expected);
+        expect(otherToggle.getAttribute("aria-expanded")).toBe(otherInitiallyExpanded);
       }
-      const slash = new KeyboardEvent("keydown", { key: "/", bubbles: true, cancelable: true });
-      await act(async () => { editor.dispatchEvent(slash); });
-      expect(slash.defaultPrevented).toBe(false);
-      expect(editorKeyDown).toHaveBeenCalledOnce();
-      expect(toggle.getAttribute("aria-expanded")).toBe(initiallyExpanded);
+      // Ordinary typing, composition, and modified combinations stay with the editor.
+      for (const modifiers of [{}, { [modifier]: true, shiftKey: true }, { [modifier]: true, altKey: true }, { [modifier]: true, isComposing: true }]) {
+        editorKeyDown.mockClear();
+        const event = new KeyboardEvent("keydown", { key, ...modifiers, bubbles: true, cancelable: true });
+        await act(async () => { editor.dispatchEvent(event); });
+        expect(event.defaultPrevented).toBe(false);
+        expect(editorKeyDown).toHaveBeenCalledOnce();
+        expect(toggle.getAttribute("aria-expanded")).toBe(initiallyExpanded);
+        expect(otherToggle.getAttribute("aria-expanded")).toBe(otherInitiallyExpanded);
+      }
     } finally {
       await act(async () => root.unmount());
     }

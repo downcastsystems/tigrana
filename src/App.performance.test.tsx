@@ -16,7 +16,7 @@ vi.mock("./lib/noteDocument", async (importOriginal) => {
   };
 });
 
-const { NoteCard } = await import("./App");
+const { NoteCard } = await import("./components/navigation/NotesPane");
 const { readNotePreview } = await import("./lib/noteDocument");
 
 describe("Note card preview rendering", () => {

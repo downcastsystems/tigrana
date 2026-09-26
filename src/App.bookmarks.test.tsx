@@ -8,7 +8,7 @@ import type { BookmarkView } from "./lib/notebookMetadata";
 HTMLCanvasElement.prototype.getContext = (() => null) as typeof HTMLCanvasElement.prototype.getContext;
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 
-const { BookmarksSection } = await import("./App");
+const { BookmarksSection } = await import("./components/navigation/BookmarksSection");
 
 function pointerEvent(type: string, clientX: number, clientY: number) {
   return new MouseEvent(type, { bubbles: true, button: 0, cancelable: true, clientX, clientY });

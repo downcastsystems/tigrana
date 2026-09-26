@@ -4008,7 +4008,13 @@ html[data-theme="dark"] .tab-list-separator {
 .ProseMirror table {
   width: 100%;
   margin: 18px 0;
-  border-collapse: collapse;
+  /* WebKit can repaint collapsed translucent borders twice in some tiles,
+     leaving a visible contrast step across a cell. Paint each grid edge once:
+     the table owns the top/left edges, and cells own the bottom/right edges. */
+  border-collapse: separate;
+  border-spacing: 0;
+  border: solid rgba(52, 48, 43, 0.2);
+  border-width: 1px 0 0 1px;
   table-layout: fixed;
   overflow: hidden;
 }
@@ -4324,6 +4330,7 @@ html[data-theme="dark"] .tab-list-separator {
   min-width: 1em;
   padding: 6px 10px;
   border: 1px solid rgba(52, 48, 43, 0.2);
+  border-width: 0 1px 1px 0;
   vertical-align: top;
   position: relative;
 }
@@ -4364,6 +4371,7 @@ html[data-theme="dark"] .tab-list-separator {
   opacity: 1;
 }
 
+html[data-theme="dark"] .ProseMirror table,
 html[data-theme="dark"] .ProseMirror td,
 html[data-theme="dark"] .ProseMirror th {
   border-color: rgba(238, 232, 223, 0.15);

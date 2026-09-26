@@ -28,7 +28,7 @@ vi.mock("../lib/markdown", async (importOriginal) => {
   };
 });
 
-import type { EditorPersistenceHandle } from "./NotesEditor";
+import type { EditorPersistenceHandle } from "./editorContract";
 
 const { NotesEditor } = await import("./NotesEditor");
 const { htmlToMarkdown, markdownToHtml } = await import("../lib/markdown");

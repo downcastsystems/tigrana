@@ -32,6 +32,63 @@ rules that must remain consistent across UI flows.
 `App.tsx` composes these interfaces with view state. It should not duplicate
 their persistence, concurrency, or conversion rules.
 
+### UI ownership and change locations
+
+`App.tsx` owns Notebook orchestration: active selection, save/navigation ordering,
+metadata adoption, and durable mutation callbacks. Views receive data and callbacks;
+they do not import `App.tsx` or create another save queue. Keeping that ordering in
+one place avoids splitting a Note move, title save, and editor flush across hooks
+whose effects can race.
+
+| Change | Owning files |
+| --- | --- |
+| Folder navigation layouts | `components/navigation/FolderPane.tsx`, `SectionViewFolderPane.tsx`, `UnifiedTreePane.tsx` |
+| Note previews, bookmarks, and creation menus | `components/navigation/NotesPane.tsx`, `BookmarksSection.tsx`, `PaneCreateMenu.tsx` |
+| Navigation targets and shared drag/menu types | `lib/notebookNavigation.ts` |
+| Tab rendering and overflow | `components/NoteTabs.tsx` |
+| Editor heading, empty state, and error fallback | `components/NoteSurface.tsx` |
+| Outline, Backlinks, frontmatter, and properties | `components/NoteDetailsSidebar.tsx` |
+| Context menus, moves, Folder properties, and icons | `components/NotebookContextMenu.tsx`, `MoveDialog.tsx`, `NotebookPropertyDialog.tsx`, `IconBrowser.tsx` |
+| Recently Deleted and Note history dialogs | `components/RecentlyDeletedDialog.tsx`, `VersionHistoryDialog.tsx` |
+| Emoji, link, image, and dictation dialogs | `components/insertion/` |
+| Recent Notebooks, launch targets, and saved tabs | `lib/notebookSession.ts` |
+| Stored desktop window placement | `lib/windowGeometry.ts` |
+
+Local interaction state stays inside the view that owns it, including menu focus,
+tab overflow, picker searches, and dictation. Durable actions still return to the
+existing Notebook orchestration. Component tests import their owning view directly;
+App integration tests cover navigation and mutation ordering with those views
+composed together.
+
+Sidebar shortcuts follow their left-to-right positions on a US keyboard:
+Command+/ toggles the left sidebar, and Command+\ toggles the right sidebar.
+Control+/ and Control+\ perform the same actions. Native menu accelerators,
+button tooltips, and frontend key handling must use this mapping together.
+The macOS Control+/ event monitor also targets the left sidebar; it consumes
+that key before WebKit's native text-editing behavior can handle it.
+
+### Editor ownership
+
+`editor/editorContract.ts` is the shared type contract for commands, editor props,
+pending changes, and persistence capture. App and editor code use the same command
+union. Importing these types does not load the editor implementation.
+
+`NotesEditor.tsx` owns the stable editor instance, deferred serialization, Note
+switches, history, and command routing. Its extensions keep their implementation
+details in feature modules:
+
+- `tableControls.ts` owns table node views, row/column menus, resizing, and cell attributes.
+- `codeBlock.tsx` owns syntax highlighting and code-block controls.
+- `editorImages.tsx` owns image node views, clipboard assets, and preview hydration.
+- `searchHighlight.ts` owns match discovery, decorations, and match scrolling.
+- `textExtensions.ts` owns emoji input rules, manual spacing, and list separators.
+
+These modules do not import `NotesEditor.tsx`. Extension configuration remains in
+the editor's existing memoized initialization. Moving a feature into a module must
+not add transaction subscriptions, React updates, or Markdown conversions. Use
+the real-editor performance tests to verify that short and long Notes retain the
+same deferred work counts, editor identity, Undo history, and stale-update rejection.
+
 ## Notebook storage adapters
 
 The storage adapter is selected once when the frontend starts.

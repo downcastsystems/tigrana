@@ -1487,7 +1487,7 @@ fn build_app_menu(
         "Show Sidebar",
         true,
         state.left_visible,
-        Some("Cmd+\\"),
+        Some("CmdOrCtrl+/"),
     )?;
     let toggle_outline = CheckMenuItem::with_id(
         handle,
@@ -1495,7 +1495,7 @@ fn build_app_menu(
         "Show Right Sidebar",
         has_open_note,
         state.outline_visible,
-        Some("CmdOrCtrl+/"),
+        Some("CmdOrCtrl+\\"),
     )?;
     let toggle_focus = CheckMenuItem::with_id(
         handle,
