@@ -7,7 +7,8 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 HTMLCanvasElement.prototype.getContext = (() => null) as typeof HTMLCanvasElement.prototype.getContext;
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 
-const { EditorTopbar, PropertiesPane } = await import("./App");
+const { EditorTopbar } = await import("./components/NoteSurface");
+const { PropertiesPane } = await import("./components/NoteDetailsSidebar");
 const { updateNoteEntryAfterSave } = await import("./lib/updateNoteEntryAfterSave");
 
 describe("Editor topbar", () => {

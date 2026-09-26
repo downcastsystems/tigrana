@@ -27,6 +27,7 @@ fn is_control_slash(characters: &str, modifiers: NSEventModifierFlags) -> bool {
 
 /// Consume Control+/ before WebKit's native text editing interprets it. DOM
 /// preventDefault and menu accelerators cannot reliably suppress that path.
+/// Like Command+/, this toggles the left sidebar.
 /// The monitor is local to this process and only handles our webview windows.
 pub fn install(app: &AppHandle) -> Result<(), &'static str> {
     let mtm = MainThreadMarker::new().ok_or("Shortcuts must be installed on the main thread")?;
@@ -63,7 +64,7 @@ pub fn install(app: &AppHandle) -> Result<(), &'static str> {
             super::dispatch_frontend_menu_action(
                 &window,
                 "tigrana-menu-command",
-                serde_json::Value::String("toggle_outline".into()),
+                serde_json::Value::String("toggle_sidebar".into()),
             );
         }
         // Returning null prevents both WebKit and the JS shortcut handler from
