@@ -263,6 +263,7 @@ function SearchResultRow({
   return (
     <button
       className={`global-search-result${active ? " is-active" : ""}`}
+      data-copy-note-path={result.path}
       type="button"
       role="option"
       aria-selected={active}

@@ -1,17 +1,14 @@
-import { CodeBlockLowlight } from "@tiptap/extension-code-block-lowlight";
 import { DOMSerializer, type Node as ProseMirrorNode } from "@tiptap/pm/model";
 import { NodeSelection, Selection, TextSelection } from "@tiptap/pm/state";
-import { NodeViewContent, NodeViewWrapper, ReactNodeViewRenderer, type Editor } from "@tiptap/react";
-import { common, createLowlight } from "lowlight";
+import { NodeViewContent, NodeViewWrapper, type Editor } from "@tiptap/react";
+import { lowlight } from "./codeHighlighting";
 import { Check, Copy, Menu, Plus, Scissors, Trash2 } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { htmlToMarkdown, markdownToHtml } from "../lib/markdown";
 import { writeRichClipboard } from "../lib/richClipboard";
 import { normalizeTableClipboardHtml } from "./notesEditorBehavior";
 
-export const lowlight = createLowlight(common);
-
-function CodeBlockNodeView({
+export function CodeBlockNodeView({
   editor,
   getPos,
   node,
@@ -224,9 +221,3 @@ const CODE_LANGUAGES: string[] = (() => {
     return [];
   }
 })();
-
-export const CodeBlockWithControls = CodeBlockLowlight.extend({
-  addNodeView() {
-    return ReactNodeViewRenderer(CodeBlockNodeView);
-  },
-});

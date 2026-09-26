@@ -21,7 +21,13 @@ export type BulletMethodStatus = {
   description: string;
   icon?: BulletMethodIcon;
   dim?: boolean;
+  shortcut?: string;
 };
+
+const defaultShortcuts: Record<string, string> = { todo: "::", "in-progress": ".:" };
+export function statusShortcut(status: BulletMethodStatus): string {
+  return status.prefix === null ? "" : status.shortcut ?? (Object.prototype.hasOwnProperty.call(defaultShortcuts, status.id) ? defaultShortcuts[status.id] : "");
+}
 
 export const defaultBulletMethodStatuses: readonly BulletMethodStatus[] = [
   { id: "closed", prefix: "CLOSED", description: "No further action needed from you." },
@@ -36,11 +42,19 @@ export function validateBulletMethodStatuses(statuses: readonly BulletMethodStat
   if (statuses.filter(status => status.prefix === null).length !== 1) return "Keep exactly one No status row.";
   const prefixes = new Set<string>();
   const ids = new Set<string>();
+  const shortcuts = new Set<string>();
   for (const status of statuses) {
     if (!status.id || ids.has(status.id)) return "Each status must have a unique identity.";
     ids.add(status.id);
     if (status.dim !== undefined && typeof status.dim !== "boolean") return "Choose whether to dim each status.";
     if (status.icon !== undefined && !bulletMethodIcons.includes(status.icon)) return "Choose a supported circle icon.";
+    if (status.shortcut !== undefined && typeof status.shortcut !== "string") return "Shortcuts must be text.";
+    const shortcut = statusShortcut(status);
+    if (shortcut) {
+      if (!/^\S{1,8}:$/.test(shortcut)) return "Use 1–8 characters followed by a colon, without spaces, for each shortcut.";
+      if (shortcuts.has(shortcut)) return "Each shortcut must be unique.";
+      shortcuts.add(shortcut);
+    }
     if (status.prefix === null) continue;
     const prefix = status.prefix.trim();
     if (!prefix) return "Give each status a name.";
@@ -79,7 +93,7 @@ export function bulletMethodRank(text: string, statuses: readonly BulletMethodSt
   return index >= 0 ? index : statuses.findIndex(status => status.prefix === null);
 }
 
-export type BulletMethodDisplay = { enabled?: boolean; replaceBullets: boolean; dimCompleted: boolean; lightPercent?: number; darkPercent?: number };
+export type BulletMethodDisplay = { shortcutsEnabled?: boolean; enabled?: boolean; replaceBullets: boolean; dimCompleted: boolean; lightPercent?: number; darkPercent?: number };
 export const defaultBulletMethodDisplay: BulletMethodDisplay = { enabled: false, replaceBullets: true, dimCompleted: true };
 export const bulletMethodDisplayKey = "tigrana.bulletMethod.display.v1";
 export function bulletMethodDimPercent(display: BulletMethodDisplay, mode: "light" | "dark"): number {
@@ -91,6 +105,7 @@ export function readBulletMethodDisplay(): BulletMethodDisplay {
     const stored = JSON.parse(localStorage.getItem(bulletMethodDisplayKey) ?? "null");
     return {
       enabled: stored?.enabled === true,
+      ...(typeof stored?.shortcutsEnabled === "boolean" ? { shortcutsEnabled: stored.shortcutsEnabled } : {}),
       replaceBullets: typeof stored?.replaceBullets === "boolean" ? stored.replaceBullets : true,
       dimCompleted: typeof stored?.dimCompleted === "boolean" ? stored.dimCompleted : true,
       ...(stored?.lightPercent !== undefined ? { lightPercent: bulletMethodDimPercent(stored, "light") } : {}),

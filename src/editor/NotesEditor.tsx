@@ -107,6 +107,7 @@ import { SearchHighlight, getEditorMatches, scrollEditorPositionIntoView, search
 import { ensureParagraphAfterCurrentTable, filterSlashCommands, markCurrentTableAsTigranaHtml } from "./slashCommands";
 import { isSortCommand, sortSelectedLines, type SortCommand } from "./sortLines";
 import { refreshSortedSelectionPaint } from "./sortSelectionPaint";
+import { OrderedListWithGutter } from "./orderedList";
 import { StoryParagraphs, handleStoryParagraphKey, setParagraphIndent } from "./storyParagraphs";
 import { TableWithControls, TigranaTableCell, TigranaTableHeader, isTableChromeTarget } from "./tableControls";
 import { EM_SPACE, EmSpaceIndent, EmojiText, ListItemSeparator } from "./textExtensions";
@@ -192,6 +193,7 @@ export function NotesEditor({ bulletMethodDisplay = defaultBulletMethodDisplay, 
     () => [
       StarterKit.configure({
         codeBlock: false,
+        orderedList: false,
         heading: {
           levels: [1, 2, 3, 4, 5, 6],
         },
@@ -214,6 +216,7 @@ export function NotesEditor({ bulletMethodDisplay = defaultBulletMethodDisplay, 
         },
       }),
       StoryParagraphs,
+      OrderedListWithGutter,
       BulletMethodMarkers,
       CodeBlockWithControls.configure({ lowlight }),
       TextColor,

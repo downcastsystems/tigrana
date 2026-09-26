@@ -1,10 +1,11 @@
 import { bulletMethodIconUrl } from "../lib/bulletMethodIcons";
-import { Extension } from "@tiptap/core";
+import { Extension, InputRule } from "@tiptap/core";
 import type { Node as ProseMirrorNode } from "@tiptap/pm/model";
 import { closeHistory } from "@tiptap/pm/history";
+import { Mapping } from "@tiptap/pm/transform";
 import { Plugin, PluginKey } from "@tiptap/pm/state";
 import { Decoration, DecorationSet } from "@tiptap/pm/view";
-import { bulletMethodDimPercent, defaultBulletMethodDisplay, type BulletMethodDisplay, defaultBulletMethodStatuses, statusDims, statusIcon, nextBulletMethodStatus, type BulletMethodStatus } from "../lib/bulletMethod";
+import { bulletMethodDimPercent, defaultBulletMethodDisplay, type BulletMethodDisplay, defaultBulletMethodStatuses, statusShortcut, statusDims, statusIcon, nextBulletMethodStatus, type BulletMethodStatus } from "../lib/bulletMethod";
 
 type MarkerState = { decorations: DecorationSet; statuses: readonly BulletMethodStatus[]; display: BulletMethodDisplay };
 export const bulletMethodMarkersKey = new PluginKey<MarkerState>("bulletMethodMarkers");
@@ -83,6 +84,36 @@ function decorationsIn(doc: ProseMirrorNode, from: number, to: number, statuses:
 
 export const BulletMethodMarkers = Extension.create({
   name: "bulletMethodMarkers",
+  addInputRules() {
+    return [new InputRule({
+      find: /^(\S{1,8}:) $/,
+      handler: ({ state, range, match, chain }) => {
+        const settings = bulletMethodMarkersKey.getState(state);
+        if (!settings?.display.enabled || settings.display.shortcutsEnabled === false) return null;
+        const status = settings.statuses.find(row => statusShortcut(row) === match[1]);
+        if (!status?.prefix) return null;
+        const prefix = status.prefix.trim();
+        const { $from, empty } = state.selection;
+        if (!empty || $from.parent.type.name !== "paragraph" || $from.parentOffset !== $from.parent.content.size) return null;
+        const inBullet = $from.depth >= 3 && $from.node(-1).type.name === "listItem"
+          && $from.node(-2).type.name === "bulletList" && $from.index(-1) === 0;
+        if ($from.depth !== 1 && !inBullet) return null;
+        const conversion = chain().command(({ tr }) => {
+          tr.insertText(`${prefix}: `, range.from, range.to);
+          return true;
+        });
+        if (!inBullet) conversion.wrapInList("bulletList");
+        // Include the trailing paragraph in this transaction so the trailing-node
+        // plugin cannot clear the input rule's immediate Backspace undo record.
+        conversion.command(({ tr }) => {
+          if (tr.doc.lastChild?.type.name === "bulletList") {
+            tr.insert(tr.doc.content.size, state.schema.nodes.paragraph.create());
+          }
+          return true;
+        }).run();
+      },
+    })];
+  },
   addProseMirrorPlugins() {
     return [new Plugin<MarkerState>({
       key: bulletMethodMarkersKey,
@@ -101,7 +132,13 @@ export const BulletMethodMarkers = Extension.create({
             return { statuses: nextStatuses, display: nextDisplay, decorations: DecorationSet.create(tr.doc, decorationsIn(tr.doc, 0, tr.doc.content.size, nextStatuses, nextDisplay)) };
           }
           if (!tr.docChanged) return previous;
-          let decorations = previous.decorations.map(tr.mapping, tr.doc);
+          // Map against each intermediate document when undo unwraps a list;
+          // mapping nested dimming decorations straight to the final doc can
+          // leave ProseMirror checking a node boundary inside a text fragment.
+          let decorations = previous.decorations;
+          tr.mapping.maps.forEach((map, index) => {
+            decorations = decorations.map(new Mapping([map]), tr.docs[index + 1] ?? tr.doc);
+          });
           const positions = new Set<number>();
           // A paragraph decoration and its preceding widget share a start.
           const updated = new Map<string, Decoration>();

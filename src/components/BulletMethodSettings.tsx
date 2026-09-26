@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState, type PointerEvent as ReactPointerEvent } from "react";
 import { ArrowDown, ArrowUp, GripVertical, Plus, RotateCcw, Trash2 } from "lucide-react";
-import { bulletMethodDimPercent, defaultBulletMethodDisplay, type BulletMethodDisplay, statusDims, statusIcon, defaultBulletMethodStatuses, validateBulletMethodStatuses, type BulletMethodStatus } from "../lib/bulletMethod";
+import { bulletMethodDimPercent, defaultBulletMethodDisplay, type BulletMethodDisplay, statusDims, statusIcon, defaultBulletMethodStatuses, validateBulletMethodStatuses, type BulletMethodStatus, statusShortcut } from "../lib/bulletMethod";
 
 import { BulletMethodIconPicker } from "./BulletMethodIconPicker";
 
@@ -150,6 +150,10 @@ export default function BulletMethodSettings({ statuses, onChange, display = def
           try { onDisplayChange?.({ ...display, replaceBullets: event.target.checked }); setSaveError(null); }
           catch { setSaveError("Could not save display settings. Please try again."); }
         }} /> Replace bullets with status icons</label>
+        <label><input type="checkbox" checked={display.shortcutsEnabled !== false} onChange={event => {
+          try { onDisplayChange?.({ ...display, shortcutsEnabled: event.target.checked }); setSaveError(null); }
+          catch { setSaveError("Could not save shortcut settings. Please try again."); }
+        }} /> Enable status shortcuts</label>
         <label><input type="checkbox" checked={display.dimCompleted} onChange={event => {
           try { onDisplayChange?.({ ...display, dimCompleted: event.target.checked }); setSaveError(null); }
           catch { setSaveError("Could not save display settings. Please try again."); }
@@ -175,6 +179,7 @@ export default function BulletMethodSettings({ statuses, onChange, display = def
       </>}
       <section className="bullet-method-status-section" aria-labelledby="bullet-method-statuses-heading">
       <h3 id="bullet-method-statuses-heading">Statuses</h3>
+      <p>On a blank line in the rich editor, type a dash (<code>-</code>) followed by a space to create a bullet.</p>
       <details className="bullet-method-meanings">
         <summary>What the default statuses mean</summary>
       <ul className="bullet-method-guide">
@@ -189,6 +194,10 @@ export default function BulletMethodSettings({ statuses, onChange, display = def
       <section className="bullet-method-order-section" aria-labelledby="bullet-method-status-order-heading">
         <h3 id="bullet-method-status-order-heading">Status order</h3>
         <p>Drag a handle or use the arrows to reorder. Edit names or add your own statuses. Names match regardless of capitalization.</p>
+        <div className="bullet-method-status-table">
+        <div className="bullet-method-column-headings" aria-hidden="true">
+          <span /><span /><span>Status</span><span>Shortcut</span><span>Dim</span><span /><span />
+        </div>
         <ol ref={listRef} className="bullet-method-statuses" aria-label="Bullet Method status order">
           {draft.map((status, index) => {
             const name = status.prefix ?? "No status";
@@ -205,9 +214,13 @@ export default function BulletMethodSettings({ statuses, onChange, display = def
                       onChange={event => update(status.id, { prefix: event.target.value })} />
                   )}
                 </div>
+                <div className="bullet-method-fields">
+                  {status.prefix !== null ? <input className="settings-text-input" aria-label={`Shortcut for ${name}`} placeholder="None" value={statusShortcut(status)}
+                    onChange={event => update(status.id, { shortcut: event.target.value })} /> : <span className="bullet-method-no-shortcut" aria-label="No shortcut">—</span>}
+                </div>
                 <label className="bullet-method-dim-choice">
                   <input type="checkbox" aria-label={`Dim ${name}`} checked={statusDims(status)}
-                    onChange={event => update(status.id, { dim: event.target.checked })} /> Dim
+                    onChange={event => update(status.id, { dim: event.target.checked })} />
                 </label>
                 <div className="bullet-method-status-icon-slot">
                   {status.prefix !== null && <BulletMethodIconPicker name={name} value={statusIcon(status) ?? "circle"} onChange={icon => update(status.id, { icon })} />}
@@ -222,6 +235,7 @@ export default function BulletMethodSettings({ statuses, onChange, display = def
             );
           })}
         </ol>
+        </div>
         <button className="toolbar-button" onClick={() => {
           let name = "NEW STATUS", suffix = 2;
           while (draft.some(status => status.prefix?.trim().toUpperCase() === name)) name = `NEW STATUS ${suffix++}`;

@@ -11,6 +11,7 @@ import {
   PanelRightOpen,
   Pencil,
   Plus,
+  Settings,
   Trash2,
   X,
 } from "lucide-react";
@@ -50,11 +51,13 @@ function useClampedContextMenuPosition(x: number, y: number) {
 }
 
 export function TabContextMenu({
+  onCopyFilePath,
   state,
   onClose,
   onCloseAll,
   onCloseTab,
 }: {
+  onCopyFilePath?: () => void;
   state: TabContextMenuState;
   onClose: () => void;
   onCloseAll: () => void;
@@ -64,6 +67,7 @@ export function TabContextMenu({
 
   return (
     <div className="context-menu" ref={menuRef} style={menuStyle} onClick={onClose}>
+      {onCopyFilePath ? <button type="button" onClick={onCopyFilePath}><Copy size={14} /><span>Copy File Path</span></button> : null}
       <button type="button" onClick={onCloseTab}>
         <X size={14} />
         <span>Close Tab</span>
@@ -77,6 +81,7 @@ export function TabContextMenu({
 }
 
 export function ContextMenu({
+  onCopyFilePath,
   activeCreateNoteParentName,
   createFolderParentName,
   createNoteParentName,
@@ -102,6 +107,7 @@ export function ContextMenu({
   onToggleBookmark,
   onClose,
 }: {
+  onCopyFilePath: () => void;
   activeCreateNoteParentName?: string;
   createFolderParentName: string;
   createNoteParentName: string;
@@ -167,6 +173,7 @@ export function ContextMenu({
             <PanelRightOpen size={14} />
             <span>Open in New Window</span>
           </button>
+          <button type="button" onClick={onCopyFilePath}><Copy size={14} /><span>Copy File Path</span></button>
           <button type="button" onClick={onReveal}>
             <FolderOpen size={14} />
             <span>Reveal in Finder</span>
@@ -207,6 +214,7 @@ export function ContextMenu({
             <PanelRightOpen size={14} />
             <span>Open in New Window</span>
           </button>
+          <button type="button" onClick={onCopyFilePath}><Copy size={14} /><span>Copy File Path</span></button>
           <button type="button" onClick={onReveal}>
             <FolderOpen size={14} />
             <span>Reveal in Finder</span>
@@ -243,4 +251,26 @@ export function ContextMenu({
       ) : null}
     </div>
   );
+}
+
+export function FilePathContextMenu({ x, y, notebookActions, onCopy, onReveal, onClose }: {
+  x: number;
+  y: number;
+  notebookActions?: { onNew: () => void; onOpen: () => void; onManage: () => void };
+  onCopy: () => void;
+  onReveal?: () => void;
+  onClose: () => void;
+}) {
+  const { menuRef, menuStyle } = useClampedContextMenuPosition(x, y);
+  return <div className="context-menu file-path-context-menu" ref={menuRef} style={menuStyle} onClick={onClose}>
+    {notebookActions ? <>
+      <button type="button" onClick={notebookActions.onNew}><Plus size={14} /><span>New Notebook</span></button>
+      <button type="button" onClick={notebookActions.onOpen}><FolderOpen size={14} /><span>Open Notebook</span></button>
+      <div className="context-menu-separator" role="separator" />
+      <button type="button" onClick={notebookActions.onManage}><Settings size={14} /><span>Manage Notebooks</span></button>
+      <div className="context-menu-separator" role="separator" />
+    </> : null}
+    <button type="button" onClick={onCopy}><Copy size={14} /><span>Copy File Path</span></button>
+    {onReveal ? <button type="button" onClick={onReveal}><FolderOpen size={14} /><span>Reveal in Finder</span></button> : null}
+  </div>;
 }

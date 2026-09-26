@@ -42,6 +42,7 @@ export function NotebookFooter({
                 <button
                   className={workspace === notebook.path ? "is-active" : ""}
                   key={notebook.path}
+                  data-notebook-path={notebook.path}
                   type="button"
                   role="menuitem"
                   onClick={() => onSelectNotebook(notebook.path)}
@@ -100,7 +101,7 @@ function NotebookMenuButton({
   }, [notebookName]);
 
   return (
-    <button className="app-menu-button" type="button" aria-expanded={menuOpen} onClick={onToggleMenu}>
+    <button className="app-menu-button" type="button" data-notebook-path={workspace} aria-expanded={menuOpen} onClick={onToggleMenu}>
       {menuOpen ? <ChevronDown size={16} /> : <ChevronUp size={16} />}
       <strong ref={titleRef} className={titleOverflows ? "is-overflowing" : ""}>{notebookName}</strong>
     </button>

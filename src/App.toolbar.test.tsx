@@ -14,6 +14,24 @@ const { updateNoteEntryAfterSave } = await import("./lib/updateNoteEntryAfterSav
 describe("Editor topbar", () => {
   const containers: HTMLElement[] = [];
 
+  it("copies the full file path from Properties", async () => {
+    const writeText = vi.fn().mockResolvedValue(undefined);
+    const originalClipboard = Object.getOwnPropertyDescriptor(navigator, "clipboard");
+    Object.defineProperty(navigator, "clipboard", { configurable: true, value: { writeText } });
+    const container = document.createElement("div"); document.body.appendChild(container); containers.push(container);
+    const root = createRoot(container);
+    try {
+      await act(async () => root.render(<PropertiesPane activeNote={{ path: "Folder/Note.md", parent_path: "Folder", title: "Note" }} pendingNote={null} workspace="/My Notebook" />));
+      await act(async () => container.querySelector<HTMLButtonElement>('[aria-label="Copy File Path"]')!.click());
+      expect(writeText).toHaveBeenCalledWith("/My Notebook/Folder/Note.md");
+      expect(container.querySelector('[aria-label="Copy File Path"]')?.getAttribute("title")).toBe("Copied");
+    } finally {
+      await act(async () => root.unmount());
+      if (originalClipboard) Object.defineProperty(navigator, "clipboard", originalClipboard);
+      else Reflect.deleteProperty(navigator, "clipboard");
+    }
+  });
+
   afterEach(() => {
     containers.splice(0).forEach((container) => container.remove());
   });

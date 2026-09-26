@@ -306,6 +306,7 @@ export function TabListDropdown({
               className={`tab-overflow-item chrome-interactive ${activeTabId === tab.id ? "is-active" : ""}`}
               type="button"
               role="menuitem"
+              data-copy-note-path={tab.path ?? undefined}
               onMouseDown={stopChromeMouseDown}
               onClick={() => {
                 setOpen(false);

@@ -1,5 +1,6 @@
 import type { DraftNote } from "../lib/notebookNavigation";
-import { Braces, FileText, LayoutList, Link2 } from "lucide-react";
+import { Braces, Check, Copy, FileText, LayoutList, Link2 } from "lucide-react";
+import { notebookFilePath } from "../lib/filePaths";
 import type { ReactNode } from "react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { createNoteDocument, updateNoteDocumentFrontmatterField, type FrontmatterField } from "../lib/noteDocument";
@@ -171,6 +172,7 @@ function BacklinksPane({
       {rows.map((row) => (
         <button
           className="backlinks-item"
+          data-copy-note-path={row.path}
           key={row.sourceId}
           type="button"
           title={row.path}
@@ -265,8 +267,19 @@ function FrontmatterPane({
 }
 
 export function PropertiesPane({ activeNote, pendingNote, workspace }: { activeNote: NoteEntry | null; pendingNote: DraftNote | null; workspace: string }) {
+  const [copiedPath, setCopiedPath] = useState<string | null>(null);
+  const [copyError, setCopyError] = useState<string | null>(null);
   const notebookName = getNotebookName(workspace);
-  const filePath = activeNote ? activeNote.path : pendingNote ? "Unsaved note" : "No note open";
+  const filePath = activeNote ? notebookFilePath(workspace, activeNote.path) : pendingNote ? "Unsaved note" : "No note open";
+  useEffect(() => {
+    setCopyError(null);
+    setCopiedPath(null);
+  }, [filePath]);
+  useEffect(() => {
+    if (!copiedPath) return;
+    const timer = window.setTimeout(() => setCopiedPath(null), 1500);
+    return () => window.clearTimeout(timer);
+  }, [copiedPath]);
   const folderPath = activeNote ? activeNote.parent_path || notebookName : pendingNote ? pendingNote.parentPath || notebookName : "None";
   const createdAt = activeNote
     ? activeNote.created_at != null ? new Date(activeNote.created_at * 1000).toLocaleString() : "Not available"
@@ -277,18 +290,33 @@ export function PropertiesPane({ activeNote, pendingNote, workspace }: { activeN
 
   return (
     <div className="properties-list">
-      <PropertyRow label="File path" value={filePath} code />
-      <PropertyRow label="Folder" value={folderPath} code />
-      <PropertyRow label="Notebook" value={workspace || "No notebook open"} code />
+      <div className="property-row" data-copy-note-path={activeNote?.path}>
+        <span>File path</span>
+        <div className="property-path-value">
+          <code>{filePath}</code>
+          {activeNote && workspace ? <button className="icon-button" type="button" title={copiedPath === filePath ? "Copied" : "Copy File Path"} aria-label="Copy File Path" onClick={async () => {
+            try {
+              await navigator.clipboard.writeText(filePath);
+              setCopiedPath(filePath);
+              setCopyError(null);
+            } catch {
+              setCopyError("Could not copy the file path.");
+            }
+          }}>{copiedPath === filePath ? <Check size={14} /> : <Copy size={14} />}</button> : null}
+        </div>
+        {copyError ? <p role="alert">{copyError}</p> : null}
+      </div>
+      <PropertyRow label="Folder" value={folderPath} code copyPath={activeNote ? notebookFilePath(workspace, activeNote.parent_path) : undefined} />
+      <PropertyRow label="Notebook" value={workspace || "No notebook open"} code copyPath={workspace || undefined} />
       <PropertyRow label="Created" value={createdAt} />
       <PropertyRow label="Updated" value={updatedAt} />
     </div>
   );
 }
 
-function PropertyRow({ code, label, value }: { code?: boolean; label: string; value: string }) {
+function PropertyRow({ code, label, value, copyPath }: { code?: boolean; label: string; value: string; copyPath?: string }) {
   return (
-    <div className="property-row">
+    <div className="property-row" data-notebook-path={copyPath}>
       <span>{label}</span>
       {code ? <code>{value}</code> : <strong>{value}</strong>}
     </div>

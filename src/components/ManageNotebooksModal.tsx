@@ -31,7 +31,7 @@ export function ManageNotebooksModal({
         </div>
         <div className="manage-notebooks-list">
           {notebooks.map((notebook) => (
-            <div className="manage-notebook-row" key={notebook.path}>
+            <div className="manage-notebook-row" key={notebook.path} data-notebook-path={notebook.path}>
               <button className={activeWorkspace === notebook.path ? "is-active" : ""} type="button" onClick={() => onSelect(notebook.path)}>
                 <BookOpen size={15} />
                 <span>

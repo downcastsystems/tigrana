@@ -126,9 +126,13 @@ vi.mock("./editor/NotesEditor", () => ({
     notePath,
     onChange,
     colorsDisabled,
+    focusAtEndRequest,
+    focusRequest,
   }: {
     content: string;
     colorsDisabled?: boolean;
+    focusAtEndRequest?: number;
+    focusRequest?: number;
     notePath: string | null;
     onChange: (markdown: string, sourceNotePath: string | null) => void;
   }) => (
@@ -136,6 +140,8 @@ vi.mock("./editor/NotesEditor", () => ({
       className="ProseMirror"
       aria-label="Test note body"
       data-colors-disabled={colorsDisabled}
+      data-focus-at-end-request={focusAtEndRequest}
+      data-focus-request={focusRequest}
       value={content}
       onChange={(event) => onChange(event.target.value, notePath)}
     />
@@ -180,6 +186,36 @@ async function waitFor(check: () => boolean, timeoutMs = 1_500) {
 
 describe("Note navigation persistence", () => {
   const containers: HTMLElement[] = [];
+
+  it.each([
+    ['.app-menu-button', '/demo/Tigrana'],
+    ['[data-folder-path="Projects"]', '/demo/Tigrana/Projects'],
+    ['[data-folder-path="Projects/Nested"]', '/demo/Tigrana/Projects/Nested'],
+    ['[data-note-path="Projects/Welcome.md"]', '/demo/Tigrana/Projects/Welcome.md'],
+  ])("copies the full filesystem path from %s", async (selector, expected) => {
+    demoPersistence.set("tigrana-demo-v5", JSON.stringify({ folders: ["Projects", "Projects/Nested"], notes: { "Projects/Welcome.md": "Hello" } }));
+    demoPersistence.set("tigrana-meta:/demo/Tigrana", JSON.stringify({ revision: 0, navigationStyle: "section-view", welcomeNoteAdded: true }));
+    localStorage.setItem("tigrana-session:/demo/Tigrana", JSON.stringify({ openTabs: ["Projects/Welcome.md"], activeTab: "Projects/Welcome.md" }));
+    const writeText = vi.fn().mockResolvedValue(undefined);
+    const originalClipboard = Object.getOwnPropertyDescriptor(navigator, "clipboard");
+    Object.defineProperty(navigator, "clipboard", { configurable: true, value: { writeText } });
+    const container = document.createElement("div"); document.body.appendChild(container); containers.push(container);
+    const root = createRoot(container);
+    try {
+      await act(async () => root.render(<App />));
+      await waitFor(() => Boolean(container.querySelector(selector)));
+      await act(async () => container.querySelector(selector)!.dispatchEvent(new MouseEvent("contextmenu", { bubbles: true, cancelable: true, clientX: 50, clientY: 50 })));
+      const copy = Array.from(container.querySelectorAll<HTMLButtonElement>(".context-menu button")).find(button => button.textContent === "Copy File Path");
+      expect(copy).toBeDefined();
+      await act(async () => copy!.click());
+      expect(writeText).toHaveBeenCalledWith(expected);
+      expect(container.querySelector(".context-menu")).toBeNull();
+    } finally {
+      await act(async () => root.unmount());
+      if (originalClipboard) Object.defineProperty(navigator, "clipboard", originalClipboard);
+      else Reflect.deleteProperty(navigator, "clipboard");
+    }
+  });
 
   afterEach(() => {
     delayedSaves.enabled = false;
@@ -1611,7 +1647,7 @@ describe("Note navigation persistence", () => {
     await act(async () => root.unmount());
   });
 
-  it.fails("does not navigate away when title validation prevents unsaved body content from being saved", async () => {
+  it("does not navigate away when title validation prevents unsaved body content from being saved", async () => {
     demoPersistence.set("tigrana-demo-v5", JSON.stringify({
       folders: [],
       notes: {
@@ -2147,6 +2183,22 @@ describe("Note navigation persistence", () => {
     expect(container.querySelector('textarea[aria-label="Raw Markdown"]')).toBeNull();
     expect(container.querySelector('textarea[aria-label="Test note body"]')).not.toBeNull();
     expect(container.querySelector('button[aria-label="Show raw Markdown"]')).toBeNull();
+
+    const surface = container.querySelector<HTMLElement>(".note-surface")!;
+    await act(async () => surface.dispatchEvent(new MouseEvent("mousedown", { bubbles: true })));
+    expect(Number(container.querySelector('[aria-label="Test note body"]')?.getAttribute("data-focus-at-end-request"))).toBeGreaterThan(0);
+    await act(async () => editorOptions?.click());
+    const rawOption = Array.from(container.querySelectorAll<HTMLButtonElement>('[role="menuitemcheckbox"]'))
+      .find(button => button.textContent?.includes("Show raw Markdown"))!;
+    await act(async () => rawOption.click());
+    surface.scrollTop = 500;
+    const returnButton = Array.from(container.querySelectorAll<HTMLButtonElement>("button"))
+      .find(button => button.textContent === "Return to Rich Editor")!;
+    await act(async () => returnButton.click());
+    expect(surface.scrollTop).toBe(0);
+    const returnedEditor = container.querySelector('[aria-label="Test note body"]')!;
+    expect(returnedEditor.getAttribute("data-focus-at-end-request")).toBe("0");
+    expect(Number(returnedEditor.getAttribute("data-focus-request"))).toBeGreaterThan(0);
 
     await act(async () => root.unmount());
   });

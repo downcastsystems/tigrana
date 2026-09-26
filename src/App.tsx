@@ -27,6 +27,7 @@ import {
 } from "lucide-react";
 import type { CSSProperties } from "react";
 import { startTransition, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { closeAfterSaving } from "./lib/closeAfterSaving";
 import { flushSync } from "react-dom";
 import { EditorOptionsSubmenu } from "./components/EditorOptionsSubmenu";
 import { GlobalSearchModal } from "./components/GlobalSearchModal";
@@ -36,7 +37,8 @@ import { MoveDialog } from "./components/MoveDialog";
 import { RightSidebar, type RightSidebarMode } from "./components/NoteDetailsSidebar";
 import { EditorErrorBoundary, EditorTopbar, EmptyNoteSurface } from "./components/NoteSurface";
 import { NoteTabs, TabHistoryControls, TabListDropdown } from "./components/NoteTabs";
-import { ContextMenu, TabContextMenu } from "./components/NotebookContextMenu";
+import { ContextMenu, FilePathContextMenu, TabContextMenu } from "./components/NotebookContextMenu";
+import { notebookFilePath } from "./lib/filePaths";
 import { PropertyDialog, type PropertyDialogState } from "./components/NotebookPropertyDialog";
 import { PaneResizer, SidebarOverlayActions, stopChromeMouseDown } from "./components/PaneChrome";
 import PlasmaTheme from "./components/PlasmaTheme";
@@ -450,6 +452,7 @@ export default function App() {
 
   const [contextMenu, setContextMenu] = useState<ContextMenuState | null>(null);
   const [tabContextMenu, setTabContextMenu] = useState<TabContextMenuState | null>(null);
+  const [filePathMenu, setFilePathMenu] = useState<{ x: number; y: number; path: string; isNotebookTitle: boolean } | null>(null);
   const [folderDialogParent, setFolderDialogParent] = useState<string | null>(null);
   const [folderName, setFolderName] = useState("");
   const [propertyDialog, setPropertyDialog] = useState<PropertyDialogState | null>(null);
@@ -1377,10 +1380,16 @@ export default function App() {
     const win = getCurrentWindow();
     let unlisten: (() => void) | null = null;
     let disposed = false;
+    let closing = false;
     void win
       .onCloseRequested(async (event) => {
         const workspacePath = workspaceRef.current;
         event.preventDefault();
+        if (closing) return;
+        closing = true;
+        const shell = appShellRef.current;
+        const wasInert = shell?.inert ?? false;
+        if (shell) shell.inert = true;
         const flushMetadata = async () => {
           if (!workspacePath) return;
           if (positionWriteTimerRef.current !== null) {
@@ -1389,11 +1398,18 @@ export default function App() {
           }
           await notebookMetadataPersistence.flush(workspacePath);
         };
-        await Promise.allSettled([
-          flushPendingSavesRef.current(),
-          flushMetadata(),
-        ]);
-        if (!disposed) void win.destroy();
+        try {
+          await closeAfterSaving({
+            saveNotes: () => flushPendingSavesRef.current(),
+            saveMetadata: flushMetadata,
+            close: async () => { if (!disposed) await win.destroy(); },
+          });
+        } catch (error) {
+          setAppError(`Could not save before closing. Your edits are still open. ${error instanceof Error ? error.message : String(error)}`);
+        } finally {
+          closing = false;
+          if (shell) shell.inert = wasInert;
+        }
       })
       .then((fn) => {
         if (disposed) fn();
@@ -1408,6 +1424,7 @@ export default function App() {
   useEffect(() => {
     const onClick = (event: MouseEvent) => {
       const target = event.target as Element | null;
+      if (!target?.closest(".context-menu")) setFilePathMenu(null);
       if (!target?.closest(".note-view-menu")) setWidthMenuOpen(false);
       // Don't dismiss when clicking inside a context menu, app menu, or any
       // dialog — those popovers handle their own lifecycle.
@@ -1415,6 +1432,7 @@ export default function App() {
       setAppMenuOpen(false);
       setContextMenu(null);
       setTabContextMenu(null);
+      setFilePathMenu(null);
     };
     // Capture phase so descendants that call stopPropagation (e.g. section
     // rows) still trigger menu dismissal.
@@ -2242,6 +2260,13 @@ export default function App() {
         ? noteDocument.markdown
         : createNoteDocument({ title: titleDraft, body: pendingBody, frontmatter: frontmatterDraft }).markdown;
       setRawMarkdownText(markdown);
+    } else {
+      // The rich editor remounts here; don't replay an earlier focus-at-end request.
+      setEditorFocusAtEndRequest(0);
+      setEditorRestorePosition(null);
+      if (noteSurfaceRef.current) noteSurfaceRef.current.scrollTop = 0;
+      setEditorFocusRequest((value) => value + 1);
+      updateDockedNoteTitle(false);
     }
     setRawMarkdownVisible((value) => !value);
   }
@@ -2363,6 +2388,11 @@ export default function App() {
 
     let titleWidth = titleInput.getBoundingClientRect().width;
     const updateWithoutAnimation = (entries?: ResizeObserverEntry[]) => {
+      const mainPane = surface.parentElement;
+      if (mainPane) {
+        const inset = titleInput.getBoundingClientRect().left - mainPane.getBoundingClientRect().left;
+        mainPane.style.setProperty("--note-content-inset", `${inset}px`);
+      }
       const titleEntry = entries?.find((entry) => entry.target === titleInput);
       const nextTitleWidth = titleEntry?.contentRect.width ?? titleInput.getBoundingClientRect().width;
       if (Math.abs(nextTitleWidth - titleWidth) > 0.5) {
@@ -2382,7 +2412,7 @@ export default function App() {
       cancelAnimationFrame(frame);
       observer?.disconnect();
     };
-  }, [activePath, hasOpenNote, resizeNoteTitleInput, titleDraft, updateDockedNoteTitle]);
+  }, [activePath, hasOpenNote, noteAlignment, editorWidthMode, resizeNoteTitleInput, titleDraft, updateDockedNoteTitle]);
 
   useEffect(() => {
     if (!hasOpenNote) {
@@ -2748,7 +2778,7 @@ export default function App() {
       validateNoteTitle(titleDraft);
     } catch (error) {
       setAppError(error instanceof Error ? error.message : String(error));
-      return;
+      throw error;
     }
 
     const snapshot = {
@@ -3033,6 +3063,7 @@ export default function App() {
         setWidthMenuOpen(false);
         setContextMenu(null);
         setTabContextMenu(null);
+        setFilePathMenu(null);
       }
       if (command && event.shiftKey && key === "f") {
         event.preventDefault();
@@ -4480,6 +4511,8 @@ export default function App() {
   function openContextMenu(event: React.MouseEvent, state: ContextMenuTarget) {
     event.preventDefault();
     event.stopPropagation();
+    setFilePathMenu(null);
+    setTabContextMenu(null);
     setContextMenu({ ...state, x: event.clientX, y: event.clientY } as ContextMenuState);
   }
 
@@ -4551,6 +4584,14 @@ export default function App() {
       await revealPath(workspace, target.path, target.kind);
     } catch (error) {
       setAppError(error instanceof Error ? error.message : String(error));
+    }
+  }
+
+  async function copyFilePath(path: string) {
+    try {
+      await navigator.clipboard.writeText(path);
+    } catch (error) {
+      setAppError(`Could not copy the file path. ${error instanceof Error ? error.message : String(error)}`);
     }
   }
 
@@ -4677,7 +4718,17 @@ export default function App() {
   }
 
   return (
-    <div className="app-shell" ref={appShellRef} data-plasma={plasmaEnabled || undefined} style={plasmaEnabled ? {
+    <div className="app-shell" ref={appShellRef} onContextMenuCapture={(event) => {
+      const target = (event.target as Element).closest<HTMLElement>("[data-notebook-path], [data-copy-note-path], [data-copy-folder-path]");
+      if (!target) return;
+      const path = target.dataset.notebookPath ?? notebookFilePath(workspace, target.dataset.copyNotePath ?? target.dataset.copyFolderPath);
+      if (!path) return;
+      event.preventDefault();
+      event.stopPropagation();
+      setContextMenu(null);
+      setTabContextMenu(null);
+      setFilePathMenu({ x: event.clientX, y: event.clientY, path, isNotebookTitle: target.matches(".app-menu-button") });
+    }} data-plasma={plasmaEnabled || undefined} style={plasmaEnabled ? {
       "--plasma-panel-opacity": `${plasmaFrost * 0.9}%`,
       "--plasma-editor-opacity": `${Math.min(95, plasmaFrost * 1.1)}%`,
     } as CSSProperties : undefined}>
@@ -4718,6 +4769,8 @@ export default function App() {
           onAdd={() => void addEmptyTab()}
           onClose={(tabId) => void closeTab(tabId)}
           onContextMenu={(event, tabId) => {
+            setFilePathMenu(null);
+            setContextMenu(null);
             event.preventDefault();
             event.stopPropagation();
             setTabContextMenu({ x: event.clientX, y: event.clientY, tabId });
@@ -5184,6 +5237,17 @@ export default function App() {
             </div>
             {rawMarkdownVisible || frontmatterError ? (
               <div className="raw-markdown-shell">
+                <div className="raw-markdown-toolbar">
+                  <button
+                    type="button"
+                    className="toolbar-button"
+                    onClick={toggleRawMarkdownMode}
+                    disabled={Boolean(frontmatterError)}
+                    title={frontmatterError ? "Fix the frontmatter error to return to the rich editor." : undefined}
+                  >
+                    Return to Rich Editor
+                  </button>
+                </div>
                 {rawFindOpen ? (
                   <div className={rawReplaceOpen ? "note-find-bar raw-find-bar has-replace" : "note-find-bar raw-find-bar"}>
                     <div className="note-find-row">
@@ -5396,6 +5460,7 @@ export default function App() {
             folders.some((folder) => folder.path === activeCreateNoteFolderPath);
           return (
         <ContextMenu
+          onCopyFilePath={() => { if (contextMenu.kind !== "empty") void copyFilePath(notebookFilePath(workspace, contextMenu.path)); }}
           state={contextMenu}
           folderColorSubject={isSectionContextTarget(contextMenu, navigationStyle, folders) ? "section" : "folder"}
           activeCreateNoteParentName={
@@ -5451,12 +5516,24 @@ export default function App() {
 
       {tabContextMenu ? (
         <TabContextMenu
+          onCopyFilePath={openTabs.find(tab => tab.id === tabContextMenu.tabId)?.path ? () => {
+            const path = openTabs.find(tab => tab.id === tabContextMenu.tabId)?.path;
+            if (path) void copyFilePath(notebookFilePath(workspace, path));
+          } : undefined}
           state={tabContextMenu}
           onCloseTab={() => void closeTab(tabContextMenu.tabId)}
           onCloseAll={() => void closeAllTabs()}
           onClose={() => setTabContextMenu(null)}
         />
       ) : null}
+
+      {filePathMenu ? <FilePathContextMenu {...filePathMenu}
+        notebookActions={filePathMenu.isNotebookTitle ? {
+          onNew: () => void chooseWorkspace("new", true),
+          onOpen: () => void chooseWorkspace("open", true),
+          onManage: () => { setNotebooksManageOpen(true); setAppMenuOpen(false); },
+        } : undefined}
+        onReveal={filePathMenu.isNotebookTitle ? () => void revealTarget({ kind: "folder", path: "" }) : undefined} onCopy={() => void copyFilePath(filePathMenu.path)} onClose={() => setFilePathMenu(null)} /> : null}
 
       {folderDialogParent !== null ? (
         <div className="dialog-backdrop" onMouseDown={() => setFolderDialogParent(null)}>

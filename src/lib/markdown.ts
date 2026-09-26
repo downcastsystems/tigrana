@@ -1,6 +1,7 @@
 import { readParagraphIndentMarker } from "./writingStyle";
 import { replaceEmojiShortcodes } from "./emoji";
 import { inlineColorValue, restoreInlineColorSpans } from "./inlineColors";
+import { isSupportedOrderedListNumber } from "./orderedListNumbers";
 import {
   closesMarkdownCodeFence,
   markdownCodeFenceDelimiter,
@@ -484,9 +485,9 @@ export function markdownToHtml(markdown: string, options: MarkdownOptions = {}) 
       continue;
     }
 
-    const ordered = /^\d+\.\s+(.*)$/.exec(stripped);
-    if (ordered) {
-      const gathered = gatherListContinuation(i, indent, ordered[1]);
+    const ordered = /^(\d+)\.\s+(.*)$/.exec(stripped);
+    if (ordered && isSupportedOrderedListNumber(ordered[1])) {
+      const gathered = gatherListContinuation(i, indent, ordered[2]);
       i = gathered.lastIndex;
       emitListItem(indent, "ol", `<li><p>${inlineMarkdownToHtml(gathered.content, options)}</p>`);
       i += 1;

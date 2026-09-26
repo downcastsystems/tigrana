@@ -2148,17 +2148,36 @@ html[data-theme="dark"] .frontmatter-add:hover {
   font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace;
 }
 
-.manage-notebooks-dialog {
-  width: min(1100px, calc(100vw - 64px));
-  padding: 32px 36px;
+.property-path-value {
+  display: flex;
+  align-items: flex-start;
+  gap: 6px;
+}
+
+.property-path-value code { flex: 1; }
+.property-path-value .icon-button { flex: 0 0 auto; }
+
+.dialog.manage-notebooks-dialog {
+  display: flex;
+  flex-direction: column;
+  width: min(760px, calc(100vw - 48px));
+  max-height: calc(82vh - 24px);
+  padding: 24px;
 }
 
 .manage-notebooks-dialog .dialog-header {
   margin-bottom: 22px;
 }
 
+.manage-notebooks-dialog .dialog-header p {
+  overflow: visible;
+  text-overflow: clip;
+  white-space: normal;
+}
+
 .manage-notebooks-list {
   display: grid;
+  min-height: 0;
   gap: 12px;
   max-height: min(820px, calc(100vh - 220px));
   margin-top: 16px;
@@ -2207,6 +2226,10 @@ html[data-theme="dark"] .frontmatter-add:hover {
 }
 
 .manage-notebook-row small {
+  overflow: visible;
+  text-overflow: clip;
+  white-space: normal;
+  overflow-wrap: anywhere;
   margin-top: 3px;
   color: var(--text-muted);
   font-size: 12px;
@@ -2436,6 +2459,10 @@ html[data-theme="dark"] .frontmatter-add:hover {
   box-shadow: var(--shadow-modal);
   font-size: 14px;
   font-weight: 520;
+}
+
+.file-path-context-menu {
+  z-index: 150;
 }
 
 .context-menu button {
@@ -2722,6 +2749,10 @@ kbd {
   min-height: var(--pane-header-height);
   padding: 0 14px;
   background: transparent;
+}
+
+.main-pane > .topbar {
+  padding-left: var(--note-content-inset, 36px);
 }
 
 .sidebar-toggle,
@@ -3074,6 +3105,9 @@ html[data-theme="dark"] .tab-list-separator {
   flex-direction: column;
   min-height: 0;
   overflow: auto;
+  /* Raw Markdown scrolls inside its textarea; keep centered content anchored
+     when the rich editor's outer scrollbar disappears. */
+  scrollbar-gutter: stable;
   background: transparent;
 }
 
@@ -3356,6 +3390,13 @@ html[data-theme="dark"] .tab-list-separator {
   padding: 24px 0 28px;
   flex: 1 1 auto;
   min-height: 0;
+}
+
+.raw-markdown-toolbar {
+  display: flex;
+  justify-content: flex-end;
+  flex-shrink: 0;
+  margin-bottom: 8px;
 }
 
 .raw-markdown-input-frame {
@@ -3880,6 +3921,14 @@ html[data-theme="dark"] .tab-list-separator {
 .ProseMirror ul,
 .ProseMirror ol {
   padding-left: 1.35em;
+}
+
+.ProseMirror ol {
+  padding-inline-start: max(1.35em, calc(var(--ordered-list-marker-width, 1ch) + 0.75em));
+}
+
+.ProseMirror ol > li::marker {
+  font-variant-numeric: tabular-nums;
 }
 
 .ProseMirror li {
@@ -6765,8 +6814,14 @@ html[data-theme="dark"] .bullet-method-order-section { background: rgb(0 0 0 / 1
 .bullet-method-guide { margin: 0 0 20px; padding-left: 24px; color: var(--text-muted); line-height: 1.55; }
 .bullet-method-guide li + li { margin-top: 8px; }
 .bullet-method-guide strong { color: var(--text); }
-.bullet-method-statuses { list-style: none; margin: 12px 0; padding: 0; }
-.bullet-method-status { display: flex; align-items: center; gap: 8px; padding: 12px 0; border-top: 2px solid var(--border); }
+.bullet-method-status-table { overflow-x: auto; margin: 12px 0; }
+.bullet-method-statuses { list-style: none; margin: 0; padding: 0; }
+.bullet-method-status,
+.bullet-method-column-headings { display: grid; grid-template-columns: 14px 18px minmax(140px, 1fr) 76px 36px 30px 94px; align-items: center; gap: 8px; min-width: 456px; }
+.bullet-method-column-headings { padding: 0 0 8px; color: var(--text-muted); font-size: 12px; font-weight: 600; }
+.bullet-method-column-headings > :nth-child(5) { text-align: center; }
+.bullet-method-status { padding: 8px 0; border-top: 1px solid var(--border); }
+.bullet-method-no-shortcut { padding-left: 8px; color: var(--text-muted); }
 .bullet-method-status.is-drop-before { border-top-color: var(--settings-focus); }
 .bullet-method-status.is-drop-after { box-shadow: 0 2px 0 var(--settings-focus); }
 .bullet-method-status.is-dragging { opacity: .5; }
@@ -6785,7 +6840,7 @@ body.is-dragging-bullet-status, body.is-dragging-bullet-status * { cursor: grabb
 .bullet-method-actions [role="status"] { font-size: 12px; color: var(--text-muted); }
 .bullet-method-settings button:disabled { opacity: .4; cursor: default; }
 .bullet-method-settings [role="alert"] { color: var(--text); border-left: 3px solid var(--settings-focus); padding-left: 10px; }
-@media (max-width: 650px) { .bullet-method-row-actions { flex-direction: column; } }
+
 }
 
 .bullet-method-icon-picker { display: flex; align-items: center; gap: 6px; }
@@ -6831,6 +6886,6 @@ html[data-theme="light"] .ProseMirror li[data-bullet-method-completed="true"] .b
 
 .bullet-method-dim-reset-slot { display: inline-flex; align-items: center; justify-content: center; flex: 0 0 30px; width: 30px; height: 30px; }
 
-.settings-modal .bullet-method-dim-choice { flex: 0 0 auto; gap: 6px; white-space: nowrap; }
+.settings-modal .bullet-method-dim-choice { display: flex; justify-content: center; margin: 0; gap: 0; white-space: nowrap; }
 
 .bullet-method-status-icon-slot { display: flex; align-items: center; justify-content: center; flex: 0 0 30px; width: 30px; }

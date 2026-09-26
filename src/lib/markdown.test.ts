@@ -7,6 +7,18 @@ HTMLCanvasElement.prototype.getContext = (() => null) as typeof HTMLCanvasElemen
 const { htmlToMarkdown, markdownToHtml } = await import("./markdown");
 
 describe("Markdown round trips", () => {
+  it.each(["2147483648", "4294967296", "999999999999999999999999999999"])("keeps oversized marker %s as ordinary text across a round trip", number => {
+    const markdown = `${number}. Keep this number`;
+    const html = markdownToHtml(markdown);
+    expect(html).not.toContain("<ol");
+    expect(htmlToMarkdown(html).trim()).toBe(markdown);
+    expect(markdownToHtml(htmlToMarkdown(html))).not.toContain("<ol");
+  });
+
+  it("still recognizes the maximum supported number as a list", () => {
+    expect(markdownToHtml("2147483647. Item")).toContain("<ol>");
+  });
+
   const cases = [
     ["paragraph", "A quiet place to write."],
     ["heading", "# Story Notes"],

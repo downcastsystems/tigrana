@@ -146,7 +146,7 @@ async function submitMove(container: HTMLElement) {
   });
 }
 
-describe("Moving an edited Note", () => {
+describe("Note persistence across moves and editor transitions", () => {
   const mounted: Array<{ container: HTMLDivElement; root: Root }> = [];
 
   afterEach(async () => {
@@ -167,16 +167,16 @@ describe("Moving an edited Note", () => {
     Reflect.deleteProperty(document, "elementFromPoint");
   });
 
-  async function mount() {
+  async function mount(withOtherNote = false) {
     demoPersistence.set("tigrana-demo-v5", JSON.stringify({
       folders: ["Meetings", "Meetings/2026", "Archive"],
-      notes: { "Meetings/Source.md": "# Source\n\nOriginal body." },
+      notes: { "Meetings/Source.md": "# Source\n\nOriginal body.", ...(withOtherNote ? { "Meetings/Other.md": "# Other\n\nOther body." } : {}) },
     }));
     demoPersistence.set("tigrana-meta:/demo/Tigrana", JSON.stringify({
       revision: 0, navigationStyle: "section-view", welcomeNoteAdded: true,
     }));
     localStorage.setItem("tigrana-session:/demo/Tigrana", JSON.stringify({
-      openTabs: ["Meetings/Source.md"], activeTab: "Meetings/Source.md",
+      openTabs: withOtherNote ? ["Meetings/Source.md", "Meetings/Other.md"] : ["Meetings/Source.md"], activeTab: "Meetings/Source.md",
     }));
     const container = document.createElement("div");
     document.body.appendChild(container);
@@ -190,6 +190,127 @@ describe("Moving an edited Note", () => {
     vi.useFakeTimers();
     return container;
   }
+
+  async function toggleMarkdown(container: HTMLElement) {
+    await act(async () => container.querySelector<HTMLButtonElement>('[title="Editor options"]')!.click());
+    await act(async () => Array.from(container.querySelectorAll<HTMLButtonElement>('[role="menuitemcheckbox"]'))
+      .find(button => /Show raw Markdown|Show rich editor/.test(button.textContent ?? ""))!.click());
+  }
+
+  async function pendingEdit(container: HTMLElement) {
+    await act(async () => {
+      const editor = editorIn(container);
+      editor.commands.selectAll();
+      editor.commands.insertContent(newBody);
+    });
+    // No debounce or autosave timers have run yet.
+    expect(readNotes()["Meetings/Source.md"]).not.toContain(newBody);
+  }
+
+  it.each(["note", "tab", "close-tab", "new-tab", "markdown-rich"])("preserves an uncommitted typing burst through %s", async transition => {
+    const container = await mount(true);
+    await pendingEdit(container);
+    if (transition === "markdown-rich") {
+      await toggleMarkdown(container);
+      expect(container.querySelector<HTMLTextAreaElement>('[aria-label="Raw Markdown"]')!.value).toContain(newBody);
+      await act(async () => Array.from(container.querySelectorAll<HTMLButtonElement>("button"))
+        .find(button => button.textContent === "Return to Rich Editor")!.click());
+      expect(editorIn(container).state.doc.textContent).toBe(newBody);
+    } else {
+      if (transition === "tab" || transition === "close-tab") {
+        await act(async () => container.querySelector<HTMLButtonElement>('[title="Open tabs"]')!.click());
+      }
+      await act(async () => {
+        if (transition === "note") container.querySelector<HTMLButtonElement>('[data-note-path="Meetings/Other.md"]')!.click();
+        if (transition === "tab") Array.from(container.querySelectorAll<HTMLButtonElement>('.tab-overflow-item'))
+          .find(tab => tab.textContent?.includes("Other"))!.click();
+        if (transition === "close-tab") container.querySelector<HTMLElement>('.tab-overflow-item.is-active [title="Close tab"]')!.click();
+        if (transition === "new-tab") container.querySelector<HTMLButtonElement>('[title="New empty tab"]')!.click();
+      });
+    }
+    await act(async () => { await vi.advanceTimersByTimeAsync(2000); });
+    expect(readNotes()["Meetings/Source.md"]).toContain(newBody);
+    expect(readNotes()["Meetings/Other.md"]).toContain("Other body.");
+  });
+
+  it.each(["note", "rich"])("preserves raw Markdown edits through a switch to %s", async transition => {
+    const container = await mount(true);
+    await toggleMarkdown(container);
+    await act(async () => {
+      const raw = container.querySelector<HTMLTextAreaElement>('[aria-label="Raw Markdown"]')!;
+      Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, "value")!.set!.call(raw, `# Source\n\n${newBody}`);
+      raw.dispatchEvent(new Event("input", { bubbles: true }));
+    });
+    if (transition === "rich") {
+      await toggleMarkdown(container);
+      expect(editorIn(container).state.doc.textContent).toContain(newBody);
+    } else {
+      await act(async () => container.querySelector<HTMLButtonElement>('[data-note-path="Meetings/Other.md"]')!.click());
+    }
+    await act(async () => { await vi.advanceTimersByTimeAsync(2000); });
+    expect(readNotes()["Meetings/Source.md"]).toContain(newBody);
+  });
+
+  it("blocks navigation with an invalid title instead of discarding the edited body", async () => {
+    const container = await mount(true);
+    await pendingEdit(container);
+    await act(async () => {
+      const title = container.querySelector<HTMLTextAreaElement>('[aria-label="Note title"]')!;
+      Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, "value")!.set!.call(title, "Invalid?");
+      title.dispatchEvent(new Event("input", { bubbles: true }));
+    });
+    await act(async () => container.querySelector<HTMLButtonElement>('[data-note-path="Meetings/Other.md"]')!.click());
+    expect(container.querySelector<HTMLTextAreaElement>('[aria-label="Note title"]')!.value).toBe("Invalid?");
+    expect(editorIn(container).state.doc.textContent).toBe(newBody);
+  });
+
+  it("keeps the latest body when switching away and back while the disk save is delayed", async () => {
+    const container = await mount(true);
+    delayedSaves.enabled = true;
+    await pendingEdit(container);
+    await act(async () => container.querySelector<HTMLButtonElement>('[data-note-path="Meetings/Other.md"]')!.click());
+    await act(async () => container.querySelector<HTMLButtonElement>('[data-note-path="Meetings/Source.md"]')!.click());
+    expect(editorIn(container).state.doc.textContent).toBe(newBody);
+    delayedSaves.enabled = false;
+    await act(async () => { delayedSaves.releases.splice(0).forEach(release => release()); await vi.advanceTimersByTimeAsync(2000); });
+    expect(readNotes()["Meetings/Source.md"]).toContain(newBody);
+    expect(readNotes()["Meetings/Other.md"]).toContain("Other body.");
+  });
+
+  it("preserves frontmatter and supported Markdown through repeated mode switches and reopening", async () => {
+    const container = await mount(true);
+    const content = "---\ncustom_field: keep-me\n---\n\n## Meeting notes\n\n- [ ] Follow up\n- [x] Sent\n\n1. First\n2. Second\n\n```js\nconst total = 42;\n```\n\n[Reference](Other.md)\n\n2147483648. Literal number";
+    await toggleMarkdown(container);
+    await act(async () => {
+      const raw = container.querySelector<HTMLTextAreaElement>('[aria-label="Raw Markdown"]')!;
+      Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, "value")!.set!.call(raw, content);
+      raw.dispatchEvent(new Event("input", { bubbles: true }));
+    });
+    for (let cycle = 0; cycle < 3; cycle++) {
+      await toggleMarkdown(container);
+      expect(editorIn(container).state.doc.textContent).toContain("const total = 42;");
+      await toggleMarkdown(container);
+      const raw = container.querySelector<HTMLTextAreaElement>('[aria-label="Raw Markdown"]')!.value;
+      expect(raw).toContain("custom_field: keep-me");
+      expect(raw).toContain("2147483648. Literal number");
+      expect(raw).toContain("- [x] Sent");
+      expect(raw).toContain("[Reference](Other.md)");
+    }
+    await act(async () => container.querySelector<HTMLButtonElement>('[data-note-path="Meetings/Other.md"]')!.click());
+    await act(async () => { await vi.advanceTimersByTimeAsync(2000); });
+    const saved = readNotes()["Meetings/Source.md"];
+    expect(saved).toContain("custom_field: keep-me");
+    expect(saved).toContain("const total = 42;");
+    const app = mounted.find(entry => entry.container === container)!;
+    await act(async () => app.root.unmount());
+    app.root = createRoot(container);
+    await act(async () => app.root.render(<App />));
+    await act(async () => { await vi.advanceTimersByTimeAsync(200); });
+    await act(async () => container.querySelector<HTMLButtonElement>('[data-note-path="Meetings/Source.md"]')!.click());
+    expect(editorIn(container).state.doc.textContent).toContain("2147483648. Literal number");
+    expect(editorIn(container).state.doc.textContent).toContain("const total = 42;");
+    expect(readNotes()["Meetings/Source.md"]).toBe(saved);
+  });
 
   it.each([0, 1000])("preserves the editor body with %i ms before Move", async (saveDelay) => {
     const container = await mount();
