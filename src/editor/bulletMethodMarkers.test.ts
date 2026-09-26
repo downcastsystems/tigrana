@@ -10,8 +10,9 @@ import { sortSelectedLines } from "./sortLines";
 const editors: Editor[] = [];
 afterEach(() => { editors.splice(0).forEach(editor => editor.destroy()); vi.restoreAllMocks(); });
 function make(content: string) {
-  const editor = new Editor({ extensions: [StarterKit, TaskList, TaskItem.configure({ nested: true }), BulletMethodMarkers], content });
+  const editor = new Editor({ editorProps: { handleScrollToSelection: () => true }, extensions: [StarterKit, TaskList, TaskItem.configure({ nested: true }), BulletMethodMarkers], content });
   editor.view.dispatch(editor.state.tr.setMeta("bulletMethodDisplay", { enabled: true, replaceBullets: true, dimCompleted: true }));
+  vi.spyOn(editor.view, "coordsAtPos").mockReturnValue({ top: 20, bottom: 40, left: 20, right: 20 });
   editors.push(editor);
   return editor;
 }
@@ -134,7 +135,8 @@ it("recognizes COMPLETE as a completed parent without inventing a status icon", 
 });
 
 it("defaults off and removes all appearance decorations when disabled", () => {
-  const editor = new Editor({ extensions: [StarterKit, BulletMethodMarkers], content: '<ul><li><p>DONE: Task</p></li></ul>' });
+  const editor = new Editor({ editorProps: { handleScrollToSelection: () => true }, extensions: [StarterKit, BulletMethodMarkers], content: '<ul><li><p>DONE: Task</p></li></ul>' });
+  vi.spyOn(editor.view, "coordsAtPos").mockReturnValue({ top: 20, bottom: 40, left: 20, right: 20 });
   editors.push(editor);
   expect(editor.view.dom.querySelector('[data-bullet-method-completed],button')).toBeNull();
   editor.view.dispatch(editor.state.tr.setMeta('bulletMethodDisplay', { enabled: true, replaceBullets: true, dimCompleted: true }));
@@ -154,4 +156,116 @@ it("uses each status's dim choice, including renamed, custom, and unmarked items
   editor.view.dispatch(editor.state.tr.setMeta('bulletMethodDisplay', { enabled: true, replaceBullets: true, dimCompleted: false }));
   expect(dimmed()).toEqual([]);
   expect(editor.getHTML()).not.toContain('data-bullet-method-dim');
+});
+
+function textPosition(editor: Editor, text: string) {
+  let found = 0;
+  editor.state.doc.descendants((node, pos) => { if (node.isText && node.text!.includes(text)) found = pos + node.text!.indexOf(text); });
+  return found;
+}
+const itemTexts = (editor: Editor) => Array.from(editor.view.dom.querySelectorAll("li > p"), p => p.textContent);
+it("sorts on click, moves the caret into the clicked item, and undoes both changes together", () => {
+  const editor = make('<ul><li><p>TODO: First</p></li><li><p>TODO: Second</p></li><li><p>CLOSED: Third</p></li></ul>');
+  editor.commands.setTextSelection(textPosition(editor, "Second") + 3);
+  editor.view.dom.querySelector<HTMLButtonElement>('button')!.click();
+  expect(itemTexts(editor)).toEqual(["CLOSED: Third", "TODO: Second", "IN PROGRESS: First"]);
+  expect(editor.state.selection.head).toBe(textPosition(editor, "First"));
+  editor.commands.undo();
+  expect(itemTexts(editor)).toEqual(["TODO: First", "TODO: Second", "CLOSED: Third"]);
+  editor.commands.redo();
+  expect(itemTexts(editor)).toEqual(["CLOSED: Third", "TODO: Second", "IN PROGRESS: First"]);
+});
+it("moves an off-screen caret to the clicked item after sorting", () => {
+  const editor = make('<ul><li><p>TODO: First</p></li><li><p>TODO: Second</p></li></ul>');
+  editor.commands.setTextSelection(textPosition(editor, "Second") + 2);
+  vi.mocked(editor.view.coordsAtPos).mockReturnValue({ top: -40, bottom: -20, left: 20, right: 20 });
+  editor.view.dom.querySelector<HTMLButtonElement>('button')!.click();
+  expect(editor.state.selection.head).toBe(textPosition(editor, "First"));
+  expect(itemTexts(editor)).toEqual(["TODO: Second", "IN PROGRESS: First"]);
+});
+it("uses the live auto-sort switch and never sorts just because a status was typed", () => {
+  const editor = make('<ul><li><p>TODO: First</p></li><li><p>TODO: Second</p></li></ul>');
+  editor.view.dispatch(editor.state.tr.setMeta('bulletMethodDisplay', { enabled: true, replaceBullets: true, autoSortOnClick: false }));
+  editor.view.dom.querySelector<HTMLButtonElement>('button')!.click();
+  expect(itemTexts(editor)).toEqual(["IN PROGRESS: First", "TODO: Second"]);
+  expect(editor.state.selection.head).toBe(textPosition(editor, "First"));
+  editor.view.dispatch(editor.state.tr.setMeta('bulletMethodDisplay', { enabled: true, replaceBullets: true }));
+  editor.commands.insertContentAt({ from: 3, to: 14 }, "DONE");
+  expect(itemTexts(editor)).toEqual(["DONE: First", "TODO: Second"]);
+});
+
+it("follows custom status order and moves a visible outside caret into the clicked item", () => {
+  const editor = make('<p>Outside text</p><ul><li><p>TODO: First</p><ul><li><p>DONE: Child</p></li></ul></li><li><p>DONE: Second</p></li></ul>');
+  const statuses = [...defaultBulletMethodStatuses].reverse();
+  editor.view.dispatch(editor.state.tr.setMeta(bulletMethodMarkersKey, statuses));
+  const cursor = textPosition(editor, "Outside") + 4;
+  editor.commands.setTextSelection(cursor);
+  editor.view.dom.querySelector<HTMLButtonElement>('button')!.click();
+  expect(itemTexts(editor)).toEqual(["IN PROGRESS: First", "DONE: Child", "DONE: Second"]);
+  expect(editor.state.selection.head).toBe(textPosition(editor, "First"));
+});
+
+it("highlights the moved item and restarts the expiry for rapid status clicks", () => {
+  const editor = make('<ul><li><p>TODO: First</p></li><li><p>TODO: Second</p></li><li><p>CLOSED: Third</p></li></ul>');
+  vi.useFakeTimers();
+  try {
+    const clickFirst = () => {
+      const item = [...editor.view.dom.querySelectorAll('li')].find(li => li.textContent?.includes('First'))!;
+      item.querySelector<HTMLButtonElement>('button')!.click();
+    };
+    clickFirst();
+    const initialClass = editor.view.dom.querySelector('.bullet-method-moved')!.className;
+    expect(editor.view.dom.querySelector('.bullet-method-moved')?.textContent).toBe('IN PROGRESS: First');
+    vi.advanceTimersByTime(400);
+    clickFirst();
+    expect(editor.view.dom.querySelectorAll('.bullet-method-moved')).toHaveLength(1);
+    expect(editor.view.dom.querySelector('.bullet-method-moved')?.textContent).toBe('DONE: First');
+    expect(editor.view.dom.querySelector('.bullet-method-moved')!.className).not.toBe(initialClass);
+    vi.advanceTimersByTime(200);
+    expect(editor.view.dom.querySelector('.bullet-method-moved')?.textContent).toBe('DONE: First');
+    expect(editor.getHTML()).not.toContain('bullet-method-moved');
+    vi.advanceTimersByTime(700);
+    expect(editor.view.dom.querySelector('.bullet-method-moved')).toBeNull();
+    editor.commands.undo();
+    expect(itemTexts(editor)).toEqual(['CLOSED: Third', 'TODO: Second', 'IN PROGRESS: First']);
+  } finally { vi.useRealTimers(); }
+});
+
+it("clears movement feedback on undo and does not highlight an item that stays in place", () => {
+  const editor = make('<ul><li><p>TODO: First</p></li><li><p>TODO: Second</p></li></ul>');
+  editor.view.dom.querySelector<HTMLButtonElement>('button')!.click();
+  expect(editor.view.dom.querySelector('.bullet-method-moved')).not.toBeNull();
+  editor.commands.undo();
+  expect(editor.view.dom.querySelector('.bullet-method-moved')).toBeNull();
+  editor.view.dispatch(editor.state.tr.setMeta('bulletMethodDisplay', { enabled: true, replaceBullets: true, autoSortOnClick: false }));
+  editor.view.dom.querySelector<HTMLButtonElement>('button')!.click();
+  expect(editor.view.dom.querySelector('.bullet-method-moved')).toBeNull();
+});
+
+it("anchors repeated pointer clicks to the same bullet without smooth scrolling", () => {
+  const editor = make('<ul><li><p>TODO: First</p></li><li><p>TODO: Second</p></li><li><p>CLOSED: Third</p></li></ul>');
+  const surface = document.createElement('div');
+  surface.className = 'note-surface';
+  surface.style.scrollBehavior = 'smooth';
+  surface.append(editor.view.dom);
+  document.body.append(surface);
+  surface.scrollTop = 200;
+  vi.spyOn(HTMLElement.prototype, 'getBoundingClientRect').mockImplementation(function (this: HTMLElement) {
+    const index = this.classList.contains('bullet-method-marker-button')
+      ? [...editor.view.dom.querySelectorAll('.bullet-method-marker-button')].indexOf(this) : -1;
+    const top = index < 0 ? 0 : 400 + index * 120 - surface.scrollTop;
+    return { top, bottom: top + (index < 0 ? 600 : 20), left: 20, right: 40, width: 20, height: index < 0 ? 600 : 20, x: 20, y: top, toJSON() {} };
+  });
+  const firstButton = () => [...editor.view.dom.querySelectorAll('li')].find(li => li.textContent?.includes('First'))!.querySelector<HTMLButtonElement>('button')!;
+  try {
+    const originalTop = firstButton().getBoundingClientRect().top;
+    firstButton().dispatchEvent(new MouseEvent('click', { bubbles: true, detail: 1 }));
+    expect(surface.scrollTop).toBe(440);
+    expect(firstButton().getBoundingClientRect().top).toBe(originalTop);
+    firstButton().dispatchEvent(new MouseEvent('click', { bubbles: true, detail: 2 }));
+    expect(surface.scrollTop).toBe(320);
+    expect(firstButton().getBoundingClientRect().top).toBe(originalTop);
+    expect(firstButton().closest('li')?.textContent).toContain('DONE: First');
+    expect(surface.style.scrollBehavior).toBe('smooth');
+  } finally { surface.remove(); }
 });

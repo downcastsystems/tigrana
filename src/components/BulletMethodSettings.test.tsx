@@ -119,12 +119,14 @@ it("applies display toggles immediately without changing status drafts", async (
   try {
     await act(async () => root.render(<BulletMethodSettings statuses={defaultBulletMethodStatuses} onChange={statusesChanged} onDisplayChange={changed} />));
     const boxes = host.querySelectorAll<HTMLInputElement>('.bullet-method-display-options input[type="checkbox"]');
-    expect([...boxes].map(box => box.checked)).toEqual([true, true, true]);
+    expect([...boxes].map(box => box.checked)).toEqual([true, true, true, true]);
     await act(async () => boxes[0].click());
     expect(changed).toHaveBeenLastCalledWith({ enabled: true, replaceBullets: false, dimCompleted: true });
     await act(async () => boxes[1].click());
     expect(changed).toHaveBeenLastCalledWith({ enabled: true, replaceBullets: true, dimCompleted: true, shortcutsEnabled: false });
     await act(async () => boxes[2].click());
+    expect(changed).toHaveBeenLastCalledWith({ enabled: true, replaceBullets: true, dimCompleted: true, autoSortOnClick: false });
+    await act(async () => boxes[3].click());
     expect(changed).toHaveBeenLastCalledWith({ enabled: true, replaceBullets: true, dimCompleted: false });
     expect(statusesChanged).not.toHaveBeenCalled();
   } finally { await act(async () => root.unmount()); host.remove(); }
@@ -173,7 +175,7 @@ it("starts off, hides subordinate controls, and reveals them when enabled", asyn
     expect(host.querySelectorAll('.bullet-method-enable input[type="checkbox"], .bullet-method-display-options input[type="checkbox"]')).toHaveLength(1);
     expect(host.textContent).not.toContain('Select a list');
     await act(async () => host.querySelector<HTMLInputElement>('input[type="checkbox"]')!.click());
-    expect(host.querySelectorAll('.bullet-method-enable input[type="checkbox"], .bullet-method-display-options input[type="checkbox"]')).toHaveLength(4);
+    expect(host.querySelectorAll('.bullet-method-enable input[type="checkbox"], .bullet-method-display-options input[type="checkbox"]')).toHaveLength(5);
     expect(host.textContent).toContain('Select a list');
     await act(async () => host.querySelector<HTMLInputElement>('input[type="checkbox"]')!.click());
     expect(host.querySelector('input[type="range"]')).toBeNull();

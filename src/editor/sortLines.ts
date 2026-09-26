@@ -198,3 +198,23 @@ export function sortSelectedLines(state: EditorState, command: SortCommand, stat
   }
   return tr.scrollIntoView();
 }
+
+/** Sort the clicked list in the status-change transaction, carrying text positions with their items. */
+export function sortAfterStatusClick(tr: Transaction, clicked: number, statuses: readonly BulletMethodStatus[]): number {
+  const resolved = tr.doc.resolve(clicked);
+  for (let depth = 1; depth <= resolved.depth; depth++) {
+    const list = resolved.node(depth);
+    if (!listNames.has(list.type.name)) continue;
+    const start = resolved.before(depth);
+    const sorted = sortListTree(list, statuses, clicked - start);
+    if (sorted.node.eq(list)) return clicked;
+    const selection = tr.selection;
+    const mapPosition = (pos: number) => pos > start && pos < start + list.nodeSize
+      ? start + sortListTree(list, statuses, pos - start).cursor! : pos;
+    const anchor = mapPosition(selection.anchor), head = mapPosition(selection.head);
+    tr.replaceWith(start, start + list.nodeSize, sorted.node);
+    if (selection instanceof TextSelection) tr.setSelection(TextSelection.create(tr.doc, anchor, head));
+    return start + sorted.cursor!;
+  }
+  return clicked;
+}

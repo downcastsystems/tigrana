@@ -6889,3 +6889,18 @@ html[data-theme="light"] .ProseMirror li[data-bullet-method-completed="true"] .b
 .settings-modal .bullet-method-dim-choice { display: flex; justify-content: center; margin: 0; gap: 0; white-space: nowrap; }
 
 .bullet-method-status-icon-slot { display: flex; align-items: center; justify-content: center; flex: 0 0 30px; width: 30px; }
+
+/* Alternate identical animations so another click restarts the destination cue. */
+@keyframes bullet-method-move-a {
+  0%, 20% { background-color: color-mix(in srgb, var(--accent) 42%, transparent); box-shadow: 0 0 14px color-mix(in srgb, var(--accent) 45%, transparent), inset 0 0 0 1px color-mix(in srgb, var(--accent) 65%, transparent); }
+  to { background-color: transparent; box-shadow: 0 0 0 transparent, inset 0 0 0 1px transparent; }
+}
+@keyframes bullet-method-move-b {
+  0%, 20% { background-color: color-mix(in srgb, var(--accent) 42%, transparent); box-shadow: 0 0 14px color-mix(in srgb, var(--accent) 45%, transparent), inset 0 0 0 1px color-mix(in srgb, var(--accent) 65%, transparent); }
+  to { background-color: transparent; box-shadow: 0 0 0 transparent, inset 0 0 0 1px transparent; }
+}
+.ProseMirror .bullet-method-moved { border-radius: 4px; animation: bullet-method-move-a 850ms ease-out; }
+.ProseMirror .bullet-method-moved-1 { animation-name: bullet-method-move-b; }
+@media (prefers-reduced-motion: reduce) {
+  .ProseMirror .bullet-method-moved { animation: none; background-color: color-mix(in srgb, var(--accent) 28%, transparent); }
+}

@@ -70,3 +70,11 @@ it("preserves per-status dim choices and gives old configurations sensible defau
   expect(readBulletMethodStatuses().map(statusDims)).toEqual([false, false, true, false, false]);
   expect(statusDims({ id: "custom", prefix: "WAITING", description: "" })).toBe(false);
 });
+
+it("defaults click sorting on and persists an explicit off choice", () => {
+  expect(readBulletMethodDisplay().autoSortOnClick).not.toBe(false);
+  writeBulletMethodDisplay({ ...defaultBulletMethodDisplay, autoSortOnClick: false });
+  expect(readBulletMethodDisplay().autoSortOnClick).toBe(false);
+  writeBulletMethodDisplay({ ...defaultBulletMethodDisplay, autoSortOnClick: true });
+  expect(readBulletMethodDisplay().autoSortOnClick).toBe(true);
+});

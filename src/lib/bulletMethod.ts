@@ -7,10 +7,16 @@ export function statusIcon(status: BulletMethodStatus): BulletMethodIcon | null 
 export function statusDims(status: BulletMethodStatus): boolean {
   return status.dim ?? (status.id === "done" || status.id === "closed");
 }
-export function nextBulletMethodStatus(status: BulletMethodStatus, statuses: readonly BulletMethodStatus[]) {
+function bulletMethodProgression(statuses: readonly BulletMethodStatus[]) {
   const ids = ["todo", "in-progress", "done", "closed"];
-  const cycle = [...ids.flatMap(id => statuses.filter(row => row.id === id && row.prefix !== null)),
+  return [...ids.flatMap(id => statuses.filter(row => row.id === id && row.prefix !== null)),
     ...statuses.filter(row => !ids.includes(row.id) && row.prefix !== null && statusIcon(row) !== null)];
+}
+export function firstBulletMethodStatus(statuses: readonly BulletMethodStatus[]) {
+  return bulletMethodProgression(statuses)[0];
+}
+export function nextBulletMethodStatus(status: BulletMethodStatus, statuses: readonly BulletMethodStatus[]) {
+  const cycle = bulletMethodProgression(statuses);
   const index = cycle.findIndex(row => row.id === status.id);
   return cycle.length > 1 && index >= 0 ? cycle[(index + 1) % cycle.length] : null;
 }
@@ -50,6 +56,7 @@ export function validateBulletMethodStatuses(statuses: readonly BulletMethodStat
     if (status.icon !== undefined && !bulletMethodIcons.includes(status.icon)) return "Choose a supported circle icon.";
     if (status.shortcut !== undefined && typeof status.shortcut !== "string") return "Shortcuts must be text.";
     const shortcut = statusShortcut(status);
+    if (shortcut === "-:") return "-: is reserved for the starting status in the progression.";
     if (shortcut) {
       if (!/^\S{1,8}:$/.test(shortcut)) return "Use 1–8 characters followed by a colon, without spaces, for each shortcut.";
       if (shortcuts.has(shortcut)) return "Each shortcut must be unique.";
@@ -72,7 +79,9 @@ export function readBulletMethodStatuses(): readonly BulletMethodStatus[] {
     if (!Array.isArray(stored) || !stored.every(status => status && typeof status === "object"
       && typeof status.id === "string" && (typeof status.prefix === "string" || status.prefix === null)
       && typeof status.description === "string")) return defaultBulletMethodStatuses;
-    return validateBulletMethodStatuses(stored) ? defaultBulletMethodStatuses : stored;
+    // The fixed first-row shortcut replaces any older per-status assignment.
+    const statuses = stored.map(status => status.shortcut === "-:" ? { ...status, shortcut: "" } : status);
+    return validateBulletMethodStatuses(statuses) ? defaultBulletMethodStatuses : statuses;
   } catch {
     return defaultBulletMethodStatuses;
   }
@@ -93,7 +102,7 @@ export function bulletMethodRank(text: string, statuses: readonly BulletMethodSt
   return index >= 0 ? index : statuses.findIndex(status => status.prefix === null);
 }
 
-export type BulletMethodDisplay = { shortcutsEnabled?: boolean; enabled?: boolean; replaceBullets: boolean; dimCompleted: boolean; lightPercent?: number; darkPercent?: number };
+export type BulletMethodDisplay = { autoSortOnClick?: boolean; shortcutsEnabled?: boolean; enabled?: boolean; replaceBullets: boolean; dimCompleted: boolean; lightPercent?: number; darkPercent?: number };
 export const defaultBulletMethodDisplay: BulletMethodDisplay = { enabled: false, replaceBullets: true, dimCompleted: true };
 export const bulletMethodDisplayKey = "tigrana.bulletMethod.display.v1";
 export function bulletMethodDimPercent(display: BulletMethodDisplay, mode: "light" | "dark"): number {
@@ -105,6 +114,7 @@ export function readBulletMethodDisplay(): BulletMethodDisplay {
     const stored = JSON.parse(localStorage.getItem(bulletMethodDisplayKey) ?? "null");
     return {
       enabled: stored?.enabled === true,
+      ...(typeof stored?.autoSortOnClick === "boolean" ? { autoSortOnClick: stored.autoSortOnClick } : {}),
       ...(typeof stored?.shortcutsEnabled === "boolean" ? { shortcutsEnabled: stored.shortcutsEnabled } : {}),
       replaceBullets: typeof stored?.replaceBullets === "boolean" ? stored.replaceBullets : true,
       dimCompleted: typeof stored?.dimCompleted === "boolean" ? stored.dimCompleted : true,

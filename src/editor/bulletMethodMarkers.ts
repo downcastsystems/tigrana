@@ -2,10 +2,12 @@ import { bulletMethodIconUrl } from "../lib/bulletMethodIcons";
 import { Extension, InputRule } from "@tiptap/core";
 import type { Node as ProseMirrorNode } from "@tiptap/pm/model";
 import { closeHistory } from "@tiptap/pm/history";
-import { Mapping } from "@tiptap/pm/transform";
-import { Plugin, PluginKey } from "@tiptap/pm/state";
+import { canJoin, Mapping } from "@tiptap/pm/transform";
+import { bulletMoveHighlightKey, createBulletMoveHighlightPlugin } from "./bulletMoveHighlight";
+import { sortAfterStatusClick } from "./sortLines";
+import { Plugin, PluginKey, TextSelection } from "@tiptap/pm/state";
 import { Decoration, DecorationSet } from "@tiptap/pm/view";
-import { bulletMethodDimPercent, defaultBulletMethodDisplay, type BulletMethodDisplay, defaultBulletMethodStatuses, statusShortcut, statusDims, statusIcon, nextBulletMethodStatus, type BulletMethodStatus } from "../lib/bulletMethod";
+import { bulletMethodDimPercent, defaultBulletMethodDisplay, type BulletMethodDisplay, defaultBulletMethodStatuses, firstBulletMethodStatus, statusShortcut, statusDims, statusIcon, nextBulletMethodStatus, type BulletMethodStatus } from "../lib/bulletMethod";
 
 type MarkerState = { decorations: DecorationSet; statuses: readonly BulletMethodStatus[]; display: BulletMethodDisplay };
 export const bulletMethodMarkersKey = new PluginKey<MarkerState>("bulletMethodMarkers");
@@ -68,10 +70,38 @@ function decorationsIn(doc: ProseMirrorNode, from: number, to: number, statuses:
         const paragraph = view.state.doc.resolve(start).parent;
         const current = marker(view.state.doc.resolve(start).node(-1), statuses);
         if (!current || current.status.id !== match.status.id) return;
+        const surface = view.dom.closest<HTMLElement>(".note-surface");
+        const anchorTop = event.detail > 0 && surface ? button.getBoundingClientRect().top : null;
         const marks = paragraph.firstChild?.marks;
         const tr = closeHistory(view.state.tr).replaceWith(start, start + current.colon,
           view.state.schema.text(next.prefix!, marks));
+        const settings = bulletMethodMarkersKey.getState(view.state);
+        let clicked = start + Math.min(next.prefix!.length + 2, paragraph.content.size + next.prefix!.length - current.colon);
+        const beforeSort = clicked;
+        if (settings?.display.autoSortOnClick !== false) {
+          clicked = sortAfterStatusClick(tr, clicked, settings?.statuses ?? statuses);
+        }
+        tr.setMeta(bulletMoveHighlightKey, clicked !== beforeSort ? tr.doc.resolve(clicked).before() : null);
         view.dispatch(tr);
+        // Keep the same point of the clicked bullet under the pointer. The
+        // browser clamps at the document edges when exact anchoring is impossible.
+        let pointerAnchored = false;
+        if (anchorTop !== null && surface && clicked !== beforeSort) {
+          const paragraphDOM = view.nodeDOM(view.state.doc.resolve(clicked).before());
+          const movedButton = paragraphDOM instanceof HTMLElement
+            ? paragraphDOM.closest("li")?.querySelector<HTMLElement>(":scope > .bullet-method-marker-button") : null;
+          if (movedButton) {
+            const scrollBehavior = surface.style.scrollBehavior;
+            surface.style.scrollBehavior = "auto";
+            surface.scrollTop += movedButton.getBoundingClientRect().top - anchorTop;
+            surface.style.scrollBehavior = scrollBehavior;
+            pointerAnchored = true;
+          }
+        }
+        // Clicking a status always focuses that item's text, without undoing
+        // the pointer's scroll anchor when the item has moved.
+        const selectionTr = view.state.tr.setSelection(TextSelection.create(view.state.doc, clicked)).setMeta("addToHistory", false);
+        view.dispatch(pointerAnchored ? selectionTr : selectionTr.scrollIntoView());
         view.dispatch(closeHistory(view.state.tr));
         view.focus();
       });
@@ -86,23 +116,37 @@ export const BulletMethodMarkers = Extension.create({
   name: "bulletMethodMarkers",
   addInputRules() {
     return [new InputRule({
-      find: /^(\S{1,8}:) $/,
+      find: /^(-[^\s:][^:\r\n]*:|\S{1,8}:) $/,
       handler: ({ state, range, match, chain }) => {
         const settings = bulletMethodMarkersKey.getState(state);
         if (!settings?.display.enabled || settings.display.shortcutsEnabled === false) return null;
-        const status = settings.statuses.find(row => statusShortcut(row) === match[1]);
-        if (!status?.prefix) return null;
-        const prefix = status.prefix.trim();
+        const typed = match[1];
+        const namedStatus = typed.startsWith("-")
+          ? settings.statuses.find(row => row.prefix !== null && row.prefix.trim().toUpperCase() === typed.slice(1, -1).toUpperCase())
+          : undefined;
+        const status = typed === "-:" ? firstBulletMethodStatus(settings.statuses)
+          : namedStatus ?? settings.statuses.find(row => statusShortcut(row) === typed);
+        if (!status) return null;
+        const prefix = status.prefix?.trim();
         const { $from, empty } = state.selection;
         if (!empty || $from.parent.type.name !== "paragraph" || $from.parentOffset !== $from.parent.content.size) return null;
         const inBullet = $from.depth >= 3 && $from.node(-1).type.name === "listItem"
           && $from.node(-2).type.name === "bulletList" && $from.index(-1) === 0;
         if ($from.depth !== 1 && !inBullet) return null;
         const conversion = chain().command(({ tr }) => {
-          tr.insertText(`${prefix}: `, range.from, range.to);
+          tr.insertText(prefix ? `${prefix}: ` : "", range.from, range.to);
           return true;
         });
-        if (!inBullet) conversion.wrapInList("bulletList");
+        if (!inBullet) {
+          conversion.wrapInList("bulletList").command(({ tr }) => {
+            // Match the regular dash input rule: wrapping alone leaves adjacent
+            // lists separate, so explicitly join the preceding bullet list.
+            const boundary = range.from - 1;
+            const before = tr.doc.resolve(boundary).nodeBefore;
+            if (before?.type.name === "bulletList" && canJoin(tr.doc, boundary)) tr.join(boundary);
+            return true;
+          });
+        }
         // Include the trailing paragraph in this transaction so the trailing-node
         // plugin cannot clear the input rule's immediate Backspace undo record.
         conversion.command(({ tr }) => {
@@ -115,7 +159,7 @@ export const BulletMethodMarkers = Extension.create({
     })];
   },
   addProseMirrorPlugins() {
-    return [new Plugin<MarkerState>({
+    return [createBulletMoveHighlightPlugin(), new Plugin<MarkerState>({
       key: bulletMethodMarkersKey,
       state: {
         init: (_, state) => ({

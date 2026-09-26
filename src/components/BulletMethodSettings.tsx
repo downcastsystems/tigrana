@@ -154,6 +154,10 @@ export default function BulletMethodSettings({ statuses, onChange, display = def
           try { onDisplayChange?.({ ...display, shortcutsEnabled: event.target.checked }); setSaveError(null); }
           catch { setSaveError("Could not save shortcut settings. Please try again."); }
         }} /> Enable status shortcuts</label>
+        <label><input type="checkbox" checked={display.autoSortOnClick !== false} onChange={event => {
+          try { onDisplayChange?.({ ...display, autoSortOnClick: event.target.checked }); setSaveError(null); }
+          catch { setSaveError("Could not save sorting settings. Please try again."); }
+        }} /> Auto-sort when clicking a status icon</label>
         <label><input type="checkbox" checked={display.dimCompleted} onChange={event => {
           try { onDisplayChange?.({ ...display, dimCompleted: event.target.checked }); setSaveError(null); }
           catch { setSaveError("Could not save display settings. Please try again."); }
@@ -193,7 +197,7 @@ export default function BulletMethodSettings({ statuses, onChange, display = def
       {display.enabled && <p>Select a list and choose <strong>Edit → Sort Lines → Bullet Method</strong> to sort by the status order below. Shortcut: <strong>⌘⌥.</strong> on Mac, <strong>Ctrl+Alt+.</strong> on Windows/Linux.</p>}
       <section className="bullet-method-order-section" aria-labelledby="bullet-method-status-order-heading">
         <h3 id="bullet-method-status-order-heading">Status order</h3>
-        <p>Drag a handle or use the arrows to reorder. Edit names or add your own statuses. Names match regardless of capitalization.</p>
+        <p>Drag a handle or use the arrows to reorder. Edit names or add your own statuses. Names match regardless of capitalization. <code>-:</code> + Space starts with TODO, or the earliest available status in the progression.</p>
         <div className="bullet-method-status-table">
         <div className="bullet-method-column-headings" aria-hidden="true">
           <span /><span /><span>Status</span><span>Shortcut</span><span>Dim</span><span /><span />
