@@ -89,7 +89,6 @@ function decorationsIn(doc: ProseMirrorNode, from: number, to: number, statuses:
         view.dispatch(tr);
         // Keep the same point of the clicked bullet under the pointer. The
         // browser clamps at the document edges when exact anchoring is impossible.
-        let pointerAnchored = false;
         if (anchorTop !== null && surface && clicked !== beforeSort) {
           const paragraphDOM = view.nodeDOM(view.state.doc.resolve(clicked).before());
           const movedButton = paragraphDOM instanceof HTMLElement
@@ -99,13 +98,13 @@ function decorationsIn(doc: ProseMirrorNode, from: number, to: number, statuses:
             surface.style.scrollBehavior = "auto";
             surface.scrollTop += movedButton.getBoundingClientRect().top - anchorTop;
             surface.style.scrollBehavior = scrollBehavior;
-            pointerAnchored = true;
           }
         }
-        // Clicking a status always focuses that item's text, without undoing
-        // the pointer's scroll anchor when the item has moved.
+        // A pointer click already targets visible text. Do not request caret
+        // margins even when sorting leaves the item in place: near the upper
+        // edge that needlessly scrolls the note. Keyboard activation may scroll.
         const selectionTr = view.state.tr.setSelection(TextSelection.create(view.state.doc, clicked)).setMeta("addToHistory", false);
-        view.dispatch(pointerAnchored ? selectionTr : selectionTr.scrollIntoView());
+        view.dispatch(anchorTop !== null ? selectionTr : selectionTr.scrollIntoView());
         view.dispatch(closeHistory(view.state.tr));
         view.focus();
       });
