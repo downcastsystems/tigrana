@@ -269,3 +269,74 @@ it("anchors repeated pointer clicks to the same bullet without smooth scrolling"
     expect(surface.style.scrollBehavior).toBe('smooth');
   } finally { surface.remove(); }
 });
+
+it.each([false, true])("celebrates DONE once after a status click (auto-sort: %s), then cleans up", autoSortOnClick => {
+  vi.useFakeTimers();
+  const editor = make('<ul><li><p>IN PROGRESS: Finish this</p></li><li><p>TODO: Other</p></li></ul>');
+  document.body.append(editor.view.dom);
+  try {
+    editor.view.dispatch(editor.state.tr.setMeta('bulletMethodDisplay', { enabled: true, replaceBullets: true, autoSortOnClick }));
+    editor.view.dom.querySelector<HTMLButtonElement>('button')!.click();
+    vi.advanceTimersByTime(20);
+    expect(document.querySelectorAll('.bullet-status-celebration > i')).toHaveLength(12);
+    expect(editor.getHTML()).not.toContain('celebration');
+    vi.advanceTimersByTime(650);
+    expect(document.querySelector('.bullet-status-celebration')).toBeNull();
+    editor.commands.undo();
+    editor.commands.redo();
+    vi.advanceTimersByTime(20);
+    expect(document.querySelector('.bullet-status-celebration')).toBeNull();
+  } finally { editor.view.dom.remove(); vi.useRealTimers(); }
+});
+
+it("honors disabled celebrations, custom names, reduced motion and editor cleanup", () => {
+  vi.useFakeTimers();
+  const editor = make('<ul><li><p>IN PROGRESS: Finish this</p></li></ul>');
+  const editorDOM = editor.view.dom;
+  document.body.append(editorDOM);
+  const click = () => { editor.view.dom.querySelector<HTMLButtonElement>('button')!.click(); vi.advanceTimersByTime(20); };
+  const reset = (celebrate: boolean) => {
+    editor.commands.setContent('<ul><li><p>IN PROGRESS: Finish this</p></li></ul>');
+    editor.view.dispatch(editor.state.tr.setMeta(bulletMethodMarkersKey, defaultBulletMethodStatuses.map(s => s.id === 'done' ? { ...s, prefix: 'FINISHED', celebrate } : s)));
+  };
+  try {
+    reset(false); click();
+    expect(document.querySelector('.bullet-status-celebration')).toBeNull();
+    reset(true); click();
+    expect(editor.state.doc.textContent).toBe('FINISHED: Finish this');
+    expect(document.querySelector('.bullet-status-celebration')).not.toBeNull();
+    reset(true);
+    expect(document.querySelector('.bullet-status-celebration')).toBeNull();
+    vi.stubGlobal('matchMedia', () => ({ matches: true }));
+    click();
+    expect(document.querySelector('.bullet-status-celebration')).toBeNull();
+    vi.unstubAllGlobals();
+    reset(true); click();
+    editor.destroy();
+    expect(document.querySelector('.bullet-status-celebration')).toBeNull();
+  } finally { vi.unstubAllGlobals(); editorDOM.remove(); vi.useRealTimers(); }
+});
+
+it("cycles backward with Shift-click, wraps, and supports undo without changing ordinary clicks", () => {
+  const editor = make('<ul><li><p>DONE: Keep this</p></li></ul>');
+  const click = (shiftKey: boolean) => editor.view.dom.querySelector<HTMLButtonElement>('button')!
+    .dispatchEvent(new MouseEvent('click', { bubbles: true, shiftKey }));
+  for (const prefix of ['IN PROGRESS', 'TODO', 'CLOSED', 'DONE']) {
+    click(true);
+    expect(editor.state.doc.textContent).toBe(`${prefix}: Keep this`);
+  }
+  editor.commands.undo();
+  expect(editor.state.doc.textContent).toBe('CLOSED: Keep this');
+  click(false);
+  expect(editor.state.doc.textContent).toBe('TODO: Keep this');
+});
+
+it("uses updated custom predecessors and skips removed statuses when Shift-clicking", () => {
+  const editor = make('<ul><li><p>DONE: Work</p></li></ul>');
+  const statuses = defaultBulletMethodStatuses.filter(s => s.id !== 'in-progress')
+    .map(s => s.id === 'todo' ? { ...s, prefix: 'WAITING' } : s);
+  editor.view.dispatch(editor.state.tr.setMeta(bulletMethodMarkersKey, statuses));
+  expect(editor.view.dom.querySelector('button')!.title).toContain('Shift-click: WAITING');
+  editor.view.dom.querySelector('button')!.dispatchEvent(new MouseEvent('click', { bubbles: true, shiftKey: true }));
+  expect(editor.state.doc.textContent).toBe('WAITING: Work');
+});

@@ -1,9 +1,9 @@
 import { expect, it } from 'vitest';
 import { decodeBulletStatusSystem, encodeBulletStatusSystem } from './bulletStatusSystem';
-import { defaultBulletMethodStatuses, statusDims, statusIcon, statusShortcut } from './bulletMethod';
+import { defaultBulletMethodStatuses, statusCelebrates, statusDims, statusIcon, statusShortcut } from './bulletMethod';
 
 it('round trips order, custom names, icons, shortcuts and dim choices without display settings', () => {
-  const rows = [...defaultBulletMethodStatuses].reverse().map(row => ({ ...row, dim: false }));
+  const rows = [...defaultBulletMethodStatuses].reverse().map(row => ({ ...row, dim: false, celebrate: row.id === "todo" }));
   rows[1] = { ...rows[1], prefix: 'WAITING', icon: 'x', shortcut: 'w:' };
   const encoded = encodeBulletStatusSystem(rows);
   const imported = decodeBulletStatusSystem(encoded);
@@ -11,6 +11,7 @@ it('round trips order, custom names, icons, shortcuts and dim choices without di
   for (let i = 0; i < rows.length; i++) {
     expect(imported[i].prefix).toBe(rows[i].prefix);
     expect(statusIcon(imported[i])).toBe(statusIcon(rows[i]));
+    expect(statusCelebrates(imported[i])).toBe(statusCelebrates(rows[i]));
     expect(statusDims(imported[i])).toBe(statusDims(rows[i]));
     expect(statusShortcut(imported[i])).toBe(statusShortcut(rows[i]));
   }
@@ -27,6 +28,7 @@ it('rejects malformed, unsupported and conflicting systems', () => {
     { ...file, statuses: [...file.statuses, file.statuses[0]] },
     { ...file, statuses: file.statuses.map((s: object) => ({ ...s, icon: 'invalid' })) },
     { ...file, statuses: file.statuses.map((s: object) => ({ ...s, dim: 'yes' })) },
+    { ...file, statuses: file.statuses.map((s: object) => ({ ...s, celebrate: 'yes' })) },
   ]) expect(() => decodeBulletStatusSystem(JSON.stringify(value))).toThrow();
   expect(() => decodeBulletStatusSystem('{')).toThrow();
 });

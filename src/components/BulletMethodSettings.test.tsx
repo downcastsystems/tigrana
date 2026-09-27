@@ -220,6 +220,24 @@ it("automatically saves per-status dim choices and restores their defaults", asy
   } finally { await act(async () => root.unmount()); host.remove(); }
 });
 
+it("automatically saves per-status celebration choices and restores their defaults", async () => {
+  const host = document.createElement('div'); document.body.append(host);
+  const root = createRoot(host);
+  const saved = vi.fn();
+  try {
+    await act(async () => root.render(<BulletMethodSettings statuses={defaultBulletMethodStatuses} onChange={saved} />));
+    const celebrate = (name: string) => host.querySelector<HTMLInputElement>(`input[aria-label="Celebrate ${name}"]`)!;
+    expect(['CLOSED', 'DONE', 'TODO', 'IN PROGRESS', 'No status'].map(name => celebrate(name).checked)).toEqual([false, true, false, false, false]);
+    await act(async () => { celebrate('DONE').click(); celebrate('TODO').click(); });
+    expect(saved).toHaveBeenCalled();
+    expect(saved.mock.lastCall![0].find((status: BulletMethodStatus) => status.id === 'done').celebrate).toBe(false);
+    expect(saved.mock.lastCall![0].find((status: BulletMethodStatus) => status.id === 'todo').celebrate).toBe(true);
+    await act(async () => [...host.querySelectorAll('button')].find(button => button.textContent?.includes('Restore defaults'))!.click());
+    expect(celebrate('DONE').checked).toBe(true);
+    expect(celebrate('TODO').checked).toBe(false);
+  } finally { await act(async () => root.unmount()); host.remove(); }
+});
+
 it("updates the dimming label live and preserves spaces while autosaving names", async () => {
   const host = document.createElement('div'); document.body.append(host);
   const root = createRoot(host);

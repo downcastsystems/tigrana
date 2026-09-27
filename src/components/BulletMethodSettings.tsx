@@ -2,7 +2,7 @@ import { decodeBulletStatusSystem, encodeBulletStatusSystem } from "../lib/bulle
 import { exportTextFile } from "../lib/desktop";
 import { useEffect, useRef, useState, type PointerEvent as ReactPointerEvent } from "react";
 import { ArrowDown, ArrowUp, GripVertical, Plus, RotateCcw, Trash2 } from "lucide-react";
-import { bulletMethodDimPercent, defaultBulletMethodDisplay, type BulletMethodDisplay, statusDims, statusIcon, defaultBulletMethodStatuses, validateBulletMethodStatuses, type BulletMethodStatus, statusShortcut } from "../lib/bulletMethod";
+import { bulletMethodDimPercent, defaultBulletMethodDisplay, type BulletMethodDisplay, statusCelebrates, statusDims, statusIcon, defaultBulletMethodStatuses, validateBulletMethodStatuses, type BulletMethodStatus, statusShortcut } from "../lib/bulletMethod";
 
 import { BulletMethodIconPicker } from "./BulletMethodIconPicker";
 
@@ -205,7 +205,7 @@ export default function BulletMethodSettings({ statuses, onChange, display = def
         <p>Drag a handle or use the arrows to reorder. Edit names or add your own statuses. Names match regardless of capitalization. <code>-:</code> + Space starts with TODO, or the earliest available status in the progression.</p>
         <div className="bullet-method-status-table">
         <div className="bullet-method-column-headings" aria-hidden="true">
-          <span /><span /><span>Status</span><span>Shortcut</span><span>Dim</span><span /><span />
+          <span /><span /><span>Status</span><span>Shortcut</span><span>Dim</span><span>Celebrate</span><span /><span />
         </div>
         <ol ref={listRef} className="bullet-method-statuses" aria-label="Bullet Statuses status order">
           {draft.map((status, index) => {
@@ -230,6 +230,11 @@ export default function BulletMethodSettings({ statuses, onChange, display = def
                 <label className="bullet-method-dim-choice">
                   <input type="checkbox" aria-label={`Dim ${name}`} checked={statusDims(status)}
                     onChange={event => update(status.id, { dim: event.target.checked })} />
+                </label>
+                <label className="bullet-method-dim-choice">
+                  <input type="checkbox" aria-label={`Celebrate ${name}`} checked={statusCelebrates(status)} disabled={status.prefix === null}
+                    title="Show a pixel burst when switching to this status"
+                    onChange={event => update(status.id, { celebrate: event.target.checked })} />
                 </label>
                 <div className="bullet-method-status-icon-slot">
                   {status.prefix !== null && <BulletMethodIconPicker name={name} value={statusIcon(status) ?? "circle"} onChange={icon => update(status.id, { icon })} />}
@@ -280,7 +285,7 @@ export default function BulletMethodSettings({ statuses, onChange, display = def
       </section>
       <section className="settings-reset-appearance">
         <h3>Default Bullet Statuses</h3>
-        <p>Restore the default statuses, icons, and order, plus dimming to 65% in light mode and 70% in dark mode. Your notes stay unchanged.</p>
+        <p>Restore the default statuses, icons, order, and celebrations, plus dimming to 65% in light mode and 70% in dark mode. Your notes stay unchanged.</p>
         <button className="toolbar-button" onClick={() => save(defaultBulletMethodStatuses, "Bullet Statuses defaults restored.", true)}><RotateCcw size={16} /> Restore defaults</button>
       </section>
     </div>

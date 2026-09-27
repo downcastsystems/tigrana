@@ -1,4 +1,5 @@
 // @vitest-environment jsdom
+import { bulletCelebrationKey } from "./bulletCelebration";
 import { Editor } from "@tiptap/core";
 import { StarterKit } from "@tiptap/starter-kit";
 import { afterEach, expect, it } from "vitest";
@@ -198,4 +199,13 @@ it("serializes a joined status bullet without a blank line between items", () =>
   const editor = create('<ul><li><p>DONE: Existing</p></li></ul><p>::</p>');
   type(editor, " ");
   expect(htmlToMarkdown(editor.getHTML()).trim()).toBe('- DONE: Existing\n- TODO:');
+});
+
+it.each([true, false])("celebrates a completion shortcut only when enabled (%s)", celebrate => {
+  const editor = create('<p>-DONE:</p>');
+  editor.view.dispatch(editor.state.tr.setMeta(bulletMethodMarkersKey, defaultBulletMethodStatuses.map(s => s.id === 'done' ? { ...s, celebrate } : s)));
+  type(editor, ' ');
+  const position = bulletCelebrationKey.getState(editor.state)!.position;
+  if (celebrate) expect(editor.state.doc.nodeAt(position!)?.textContent).toBe('DONE: ');
+  else expect(position).toBeNull();
 });

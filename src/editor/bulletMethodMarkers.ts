@@ -1,3 +1,4 @@
+import { bulletCelebrationKey, createBulletCelebrationPlugin } from "./bulletCelebration";
 import { bulletMethodIconUrl } from "../lib/bulletMethodIcons";
 import { Extension, InputRule } from "@tiptap/core";
 import type { Node as ProseMirrorNode } from "@tiptap/pm/model";
@@ -7,7 +8,7 @@ import { bulletMoveHighlightKey, createBulletMoveHighlightPlugin } from "./bulle
 import { sortAfterStatusClick } from "./sortLines";
 import { Plugin, PluginKey, TextSelection } from "@tiptap/pm/state";
 import { Decoration, DecorationSet } from "@tiptap/pm/view";
-import { bulletMethodDimPercent, defaultBulletMethodDisplay, type BulletMethodDisplay, defaultBulletMethodStatuses, firstBulletMethodStatus, statusShortcut, statusDims, statusIcon, nextBulletMethodStatus, type BulletMethodStatus } from "../lib/bulletMethod";
+import { bulletMethodDimPercent, defaultBulletMethodDisplay, type BulletMethodDisplay, defaultBulletMethodStatuses, firstBulletMethodStatus, statusShortcut, statusCelebrates, statusDims, statusIcon, nextBulletMethodStatus, type BulletMethodStatus } from "../lib/bulletMethod";
 
 type MarkerState = { decorations: DecorationSet; statuses: readonly BulletMethodStatus[]; display: BulletMethodDisplay };
 export const bulletMethodMarkersKey = new PluginKey<MarkerState>("bulletMethodMarkers");
@@ -49,6 +50,7 @@ function decorationsIn(doc: ProseMirrorNode, from: number, to: number, statuses:
     if (Object.keys(attributes).length) decorations.push(Decoration.node(pos, pos + node.nodeSize, attributes));
     if (!display.replaceBullets || !icon || !match) return;
     const next = nextBulletMethodStatus(match.status, statuses);
+    const previous = nextBulletMethodStatus(match.status, statuses, -1);
     // Keep the non-editable button outside the paragraph. WebKit otherwise
     // includes the preceding newline when double-clicking its first word.
     decorations.push(Decoration.widget(pos + 1, (view, getPos) => {
@@ -59,11 +61,12 @@ function decorationsIn(doc: ProseMirrorNode, from: number, to: number, statuses:
       button.dataset.icon = icon;
       button.style.setProperty("--bullet-method-marker", `url("${bulletMethodIconUrl(icon)}")`);
       button.setAttribute("aria-label", next ? `${match.status.prefix}: change to ${next.prefix}` : match.status.prefix!);
-      button.title = button.getAttribute("aria-label")!;
+      button.title = `${button.getAttribute("aria-label")!}${previous ? ` (Shift-click: ${previous.prefix})` : ""}`;
       button.addEventListener("mousedown", event => event.preventDefault());
       button.addEventListener("click", event => {
         event.preventDefault();
-        if (!view.editable || !next) return;
+        const destination = event.shiftKey ? previous : next;
+        if (!view.editable || !destination) return;
         const widgetPos = getPos();
         if (widgetPos === undefined) return;
         const start = widgetPos + 1;
@@ -74,14 +77,15 @@ function decorationsIn(doc: ProseMirrorNode, from: number, to: number, statuses:
         const anchorTop = event.detail > 0 && surface ? button.getBoundingClientRect().top : null;
         const marks = paragraph.firstChild?.marks;
         const tr = closeHistory(view.state.tr).replaceWith(start, start + current.colon,
-          view.state.schema.text(next.prefix!, marks));
+          view.state.schema.text(destination.prefix!, marks));
         const settings = bulletMethodMarkersKey.getState(view.state);
-        let clicked = start + Math.min(next.prefix!.length + 2, paragraph.content.size + next.prefix!.length - current.colon);
+        let clicked = start + Math.min(destination.prefix!.length + 2, paragraph.content.size + destination.prefix!.length - current.colon);
         const beforeSort = clicked;
         if (settings?.display.autoSortOnClick !== false) {
           clicked = sortAfterStatusClick(tr, clicked, settings?.statuses ?? statuses);
         }
         tr.setMeta(bulletMoveHighlightKey, clicked !== beforeSort ? tr.doc.resolve(clicked).before() : null);
+        if (statusCelebrates(destination)) tr.setMeta(bulletCelebrationKey, tr.doc.resolve(clicked).before());
         view.dispatch(tr);
         // Keep the same point of the clicked bullet under the pointer. The
         // browser clamps at the document edges when exact anchoring is impossible.
@@ -106,7 +110,7 @@ function decorationsIn(doc: ProseMirrorNode, from: number, to: number, statuses:
         view.focus();
       });
       return button;
-    }, { key: JSON.stringify([icon, match.status, next]), side: -1, stopEvent: () => true }));
+    }, { key: JSON.stringify([icon, match.status, next, previous]), side: -1, stopEvent: () => true }));
 
   });
   return decorations;
@@ -153,13 +157,14 @@ export const BulletMethodMarkers = Extension.create({
           if (tr.doc.lastChild?.type.name === "bulletList") {
             tr.insert(tr.doc.content.size, state.schema.nodes.paragraph.create());
           }
+          if (statusCelebrates(status)) tr.setMeta(bulletCelebrationKey, tr.selection.$from.before());
           return true;
         }).run();
       },
     })];
   },
   addProseMirrorPlugins() {
-    return [createBulletMoveHighlightPlugin(), new Plugin<MarkerState>({
+    return [createBulletCelebrationPlugin(), createBulletMoveHighlightPlugin(), new Plugin<MarkerState>({
       key: bulletMethodMarkersKey,
       state: {
         init: (_, state) => ({

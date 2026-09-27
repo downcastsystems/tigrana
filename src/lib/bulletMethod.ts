@@ -7,6 +7,9 @@ export function statusIcon(status: BulletMethodStatus): BulletMethodIcon | null 
 export function statusDims(status: BulletMethodStatus): boolean {
   return status.dim ?? (status.id === "done" || status.id === "closed");
 }
+export function statusCelebrates(status: BulletMethodStatus): boolean {
+  return status.prefix !== null && (status.celebrate ?? status.id === "done");
+}
 function bulletMethodProgression(statuses: readonly BulletMethodStatus[]) {
   const ids = ["todo", "in-progress", "done", "closed"];
   return [...ids.flatMap(id => statuses.filter(row => row.id === id && row.prefix !== null)),
@@ -15,10 +18,10 @@ function bulletMethodProgression(statuses: readonly BulletMethodStatus[]) {
 export function firstBulletMethodStatus(statuses: readonly BulletMethodStatus[]) {
   return bulletMethodProgression(statuses)[0];
 }
-export function nextBulletMethodStatus(status: BulletMethodStatus, statuses: readonly BulletMethodStatus[]) {
+export function nextBulletMethodStatus(status: BulletMethodStatus, statuses: readonly BulletMethodStatus[], direction: 1 | -1 = 1) {
   const cycle = bulletMethodProgression(statuses);
   const index = cycle.findIndex(row => row.id === status.id);
-  return cycle.length > 1 && index >= 0 ? cycle[(index + 1) % cycle.length] : null;
+  return cycle.length > 1 && index >= 0 ? cycle[(index + direction + cycle.length) % cycle.length] : null;
 }
 
 export type BulletMethodStatus = {
@@ -27,6 +30,7 @@ export type BulletMethodStatus = {
   description: string;
   icon?: BulletMethodIcon;
   dim?: boolean;
+  celebrate?: boolean;
   shortcut?: string;
 };
 
@@ -52,6 +56,7 @@ export function validateBulletMethodStatuses(statuses: readonly BulletMethodStat
   for (const status of statuses) {
     if (!status.id || ids.has(status.id)) return "Each status must have a unique identity.";
     ids.add(status.id);
+    if (status.celebrate !== undefined && typeof status.celebrate !== "boolean") return "Choose whether to celebrate each status.";
     if (status.dim !== undefined && typeof status.dim !== "boolean") return "Choose whether to dim each status.";
     if (status.icon !== undefined && !bulletMethodIcons.includes(status.icon)) return "Choose a supported circle icon.";
     if (status.shortcut !== undefined && typeof status.shortcut !== "string") return "Shortcuts must be text.";

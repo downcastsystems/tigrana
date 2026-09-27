@@ -6824,9 +6824,10 @@ html[data-theme="dark"] .bullet-method-order-section { background: rgb(0 0 0 / 1
 .bullet-method-status-table { overflow-x: auto; margin: 12px 0; }
 .bullet-method-statuses { list-style: none; margin: 0; padding: 0; }
 .bullet-method-status,
-.bullet-method-column-headings { display: grid; grid-template-columns: 14px 18px minmax(140px, 1fr) 76px 36px 30px 94px; align-items: center; gap: 8px; min-width: 456px; }
+.bullet-method-column-headings { display: grid; grid-template-columns: 14px 18px minmax(140px, 1fr) 76px 36px 64px 30px 94px; align-items: center; gap: 8px; min-width: 528px; }
 .bullet-method-column-headings { padding: 0 0 8px; color: var(--text-muted); font-size: 12px; font-weight: 600; }
-.bullet-method-column-headings > :nth-child(5) { text-align: center; }
+.bullet-method-column-headings > :nth-child(5),
+.bullet-method-column-headings > :nth-child(6) { text-align: center; }
 .bullet-method-status { padding: 8px 0; border-top: 1px solid var(--border); }
 .bullet-method-no-shortcut { padding-left: 8px; color: var(--text-muted); }
 .bullet-method-status.is-drop-before { border-top-color: var(--settings-focus); }
@@ -6929,3 +6930,18 @@ html[data-theme="light"] .ProseMirror li[data-bullet-method-completed="true"] .b
 .theme-surface-plasma { margin-top: 16px; }
 .theme-surface-plasma > .theme-preview-toggle:first-child { margin-top: 0; }
 .bullet-status-transfer { display: flex; gap: 8px; margin-top: 16px; }
+
+.bullet-status-celebration { position: fixed; width: 0; height: 0; pointer-events: none; z-index: 100; }
+.bullet-status-celebration > i {
+  position: absolute; width: 6px; height: 6px; left: -3px; top: -3px;
+  background: var(--pixel-color); box-shadow: 0 0 1px #0004;
+  animation: bullet-status-poof 600ms cubic-bezier(.15,.65,.35,1) both;
+}
+@keyframes bullet-status-poof {
+  0% { opacity: 1; transform: translate(0, 0) scale(.8); }
+  60% { opacity: 1; }
+  100% { opacity: 0; transform: translate(var(--pixel-x), var(--pixel-y)) scale(.4); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .bullet-status-celebration { display: none; }
+}

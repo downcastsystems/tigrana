@@ -1,4 +1,4 @@
-import { statusDims, statusIcon, statusShortcut, validateBulletMethodStatuses, type BulletMethodStatus } from './bulletMethod';
+import { statusCelebrates, statusDims, statusIcon, statusShortcut, validateBulletMethodStatuses, type BulletMethodStatus } from './bulletMethod';
 
 export function encodeBulletStatusSystem(statuses: readonly BulletMethodStatus[]): string {
   const error = validateBulletMethodStatuses(statuses);
@@ -6,7 +6,7 @@ export function encodeBulletStatusSystem(statuses: readonly BulletMethodStatus[]
   return JSON.stringify({ format: 'tigrana-bullet-statuses', version: 1, statuses: statuses.map(status => ({
     id: status.id, prefix: status.prefix?.trim() ?? null, description: status.description,
     ...(statusIcon(status) ? { icon: statusIcon(status) } : {}),
-    dim: statusDims(status), shortcut: statusShortcut(status),
+    celebrate: statusCelebrates(status), dim: statusDims(status), shortcut: statusShortcut(status),
   })) }, null, 2) + '\n';
 }
 
@@ -23,6 +23,7 @@ export function decodeBulletStatusSystem(text: string): readonly BulletMethodSta
     // Copy only status fields. Display preferences never enter the import path.
     return { id: s.id, prefix: s.prefix?.trim() ?? null, description: s.description,
       ...(s.icon !== undefined ? { icon: s.icon } : {}),
+      ...(s.celebrate !== undefined ? { celebrate: s.celebrate } : {}),
       ...(s.dim !== undefined ? { dim: s.dim } : {}),
       ...(s.shortcut !== undefined ? { shortcut: s.shortcut } : {}),
     } as BulletMethodStatus;
