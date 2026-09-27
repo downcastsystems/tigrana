@@ -26,7 +26,7 @@ function sort(editor: Editor, command: SortCommand = "sort_az") {
 }
 function texts(editor: Editor) { return editor.state.doc.content.content.map((node) => node.textContent); }
 
-describe("Bullet Method at the cursor", () => {
+describe("Bullet Statuses at the cursor", () => {
   function cursorIn(editor: Editor, text: string, offset = 3) {
     let position = 0;
     editor.state.doc.descendants((node, pos) => { if (node.isText && node.text === text) position = pos + offset; });
@@ -271,7 +271,7 @@ describe("Sort Lines", () => {
 });
 
 
-describe("Bullet Method", () => {
+describe("Bullet Statuses", () => {
   it("recognizes the menu command and stably sorts statuses, preserving content and undo", () => {
     expect(isSortCommand("sort_bullet_method")).toBe(true);
     const editor = setup("<ul><li>General notes</li><li>TODO: zebra</li><li>IN PROGRESS: working</li><li><strong>done:</strong> shipped</li><li>CLOSED: delegated</li><li>TODO: alpha</li><li>We are DONE: with this</li><li>DONE without a colon</li></ul>");

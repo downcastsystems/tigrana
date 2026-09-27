@@ -1,3 +1,5 @@
+import { decodeBulletStatusSystem, encodeBulletStatusSystem } from "../lib/bulletStatusSystem";
+import { exportTextFile } from "../lib/desktop";
 import { useEffect, useRef, useState, type PointerEvent as ReactPointerEvent } from "react";
 import { ArrowDown, ArrowUp, GripVertical, Plus, RotateCcw, Trash2 } from "lucide-react";
 import { bulletMethodDimPercent, defaultBulletMethodDisplay, type BulletMethodDisplay, statusDims, statusIcon, defaultBulletMethodStatuses, validateBulletMethodStatuses, type BulletMethodStatus, statusShortcut } from "../lib/bulletMethod";
@@ -14,6 +16,8 @@ export default function BulletMethodSettings({ statuses, onChange, display = def
   const [draft, setDraft] = useState(statuses);
   const [draggedId, setDraggedId] = useState<string | null>(null);
   const [dropTarget, setDropTarget] = useState<{ id: string; after: boolean } | null>(null);
+  const importRef = useRef<HTMLInputElement>(null);
+  const [transferError, setTransferError] = useState("");
   const listRef = useRef<HTMLOListElement>(null);
   const cleanupDragRef = useRef<(() => void) | null>(null);
   useEffect(() => () => { cleanupDragRef.current?.(); }, []);
@@ -40,7 +44,7 @@ export default function BulletMethodSettings({ statuses, onChange, display = def
       setSaveError(null);
       setMessage("");
     } catch {
-      setSaveError("Could not save Bullet Method settings. Your changes are still here; try again.");
+      setSaveError("Could not save Bullet Statuses settings. Your changes are still here; try again.");
     }
   }, [draft, error]);
   function update(id: string, patch: Partial<BulletMethodStatus>) {
@@ -121,6 +125,7 @@ export default function BulletMethodSettings({ statuses, onChange, display = def
     window.addEventListener("keydown", onKey);
   }
   function save(next: readonly BulletMethodStatus[], feedback: string, restoreDimming = false) {
+    setTransferError("");
     try {
       if (restoreDimming) onDisplayChange?.({
         ...display,
@@ -133,16 +138,16 @@ export default function BulletMethodSettings({ statuses, onChange, display = def
       setSaveError(null);
       setMessage(feedback);
     } catch {
-      setSaveError("Could not save Bullet Method settings. Your changes are still here; try saving again.");
+      setSaveError("Could not save Bullet Statuses settings. Your changes are still here; try saving again.");
     }
   }
   return (
     <div className="bullet-method-settings">
       <div className="bullet-method-enable">
-        <label><input type="checkbox" aria-label="Turn on the Bullet Method" checked={Boolean(display.enabled)} onChange={event => {
+        <label><input type="checkbox" aria-label="Turn on Bullet Statuses" checked={Boolean(display.enabled)} onChange={event => {
           try { onDisplayChange?.({ ...display, enabled: event.target.checked }); setSaveError(null); }
-          catch { setSaveError("Could not save Bullet Method settings. Please try again."); }
-        }} /><span>Turn on the Bullet Method<small>Supercharge your workflow</small></span></label>
+          catch { setSaveError("Could not save Bullet Statuses settings. Please try again."); }
+        }} /><span>Turn on Bullet Statuses<small>Supercharge your workflow</small></span></label>
       </div>
       {display.enabled && <>
       <div className="bullet-method-display-options">
@@ -194,7 +199,7 @@ export default function BulletMethodSettings({ statuses, onChange, display = def
         <li><strong>No status:</strong> Uncategorized notes.<br />Example: <code>The client prefers a September launch</code></li>
       </ul>
       </details>
-      {display.enabled && <p>Select a list and choose <strong>Edit → Sort Lines → Bullet Method</strong> to sort by the status order below. Shortcut: <strong>⌘⌥.</strong> on Mac, <strong>Ctrl+Alt+.</strong> on Windows/Linux.</p>}
+      {display.enabled && <p>Select a list and choose <strong>Edit → Sort Lines → Bullet Statuses</strong> to sort by the status order below. Shortcut: <strong>⌘⌥.</strong> on Mac, <strong>Ctrl+Alt+.</strong> on Windows/Linux.</p>}
       <section className="bullet-method-order-section" aria-labelledby="bullet-method-status-order-heading">
         <h3 id="bullet-method-status-order-heading">Status order</h3>
         <p>Drag a handle or use the arrows to reorder. Edit names or add your own statuses. Names match regardless of capitalization. <code>-:</code> + Space starts with TODO, or the earliest available status in the progression.</p>
@@ -202,7 +207,7 @@ export default function BulletMethodSettings({ statuses, onChange, display = def
         <div className="bullet-method-column-headings" aria-hidden="true">
           <span /><span /><span>Status</span><span>Shortcut</span><span>Dim</span><span /><span />
         </div>
-        <ol ref={listRef} className="bullet-method-statuses" aria-label="Bullet Method status order">
+        <ol ref={listRef} className="bullet-method-statuses" aria-label="Bullet Statuses status order">
           {draft.map((status, index) => {
             const name = status.prefix ?? "No status";
             return (
@@ -248,6 +253,25 @@ export default function BulletMethodSettings({ statuses, onChange, display = def
           setDraft(next); setMessage("");
         }}><Plus size={16} /> Add status</button>
         <p className="bullet-method-help">No status includes unmarked notes and unrecognized prefixes. It can move, but cannot be removed. Renaming or removing a status does not change existing notes; their old prefixes become unrecognized.</p>
+        <div className="bullet-status-transfer">
+          <input ref={importRef} type="file" accept=".json,application/json" aria-label="Import Bullet Statuses" hidden onChange={async event => {
+            const file = event.target.files?.[0]; event.target.value = '';
+            if (!file) return;
+            try {
+              setTransferError('');
+              if (file.size > 1_000_000) throw new Error('Choose a status system smaller than 1 MB.');
+              save(decodeBulletStatusSystem(await file.text()), 'Status system imported.');
+            } catch (error) { setTransferError(error instanceof Error ? error.message : 'Could not import status system.'); }
+          }} />
+          <button className="toolbar-button" onClick={() => importRef.current?.click()}>Import</button>
+          <button className="toolbar-button" disabled={Boolean(error)} onClick={async () => {
+            try {
+              setTransferError('');
+              await exportTextFile('bullet-statuses.json', encodeBulletStatusSystem(draft), [{ name: 'Bullet Statuses', extensions: ['json'] }], 'Export Bullet Statuses');
+            } catch (error) { setTransferError(error instanceof Error ? error.message : 'Could not export status system.'); }
+          }}>Export</button>
+        </div>
+        {transferError && <p role="alert">{transferError}</p>}
         {error ? <p role="alert">{error}</p> : null}
         {saveError ? <p role="alert">{saveError}</p> : null}
         {saveError && <button className="toolbar-button" disabled={Boolean(error)} onClick={() => save(draft, "Settings saved.")}>Retry</button>}
@@ -255,9 +279,9 @@ export default function BulletMethodSettings({ statuses, onChange, display = def
       </section>
       </section>
       <section className="settings-reset-appearance">
-        <h3>Default Bullet Method</h3>
+        <h3>Default Bullet Statuses</h3>
         <p>Restore the default statuses, icons, and order, plus dimming to 65% in light mode and 70% in dark mode. Your notes stay unchanged.</p>
-        <button className="toolbar-button" onClick={() => save(defaultBulletMethodStatuses, "Bullet Method defaults restored.", true)}><RotateCcw size={16} /> Restore defaults</button>
+        <button className="toolbar-button" onClick={() => save(defaultBulletMethodStatuses, "Bullet Statuses defaults restored.", true)}><RotateCcw size={16} /> Restore defaults</button>
       </section>
     </div>
   );

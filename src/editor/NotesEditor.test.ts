@@ -580,7 +580,7 @@ describe("formatting selection eligibility", () => {
   });
 });
 
-describe("Bullet Method formatting button", () => {
+describe("Bullet Statuses formatting button", () => {
   it.each([false, true])("sorts selected bullets using the configured order (custom: %s) and supports undo", async (custom) => {
     vi.useFakeTimers();
     const editor = new Editor({
@@ -605,12 +605,12 @@ describe("Bullet Method formatting button", () => {
     try {
       await act(async () => root.render(createElement(FormattingBubbleMenu, { editor, bulletMethodStatuses: statuses })));
       await act(async () => vi.advanceTimersByTime(80));
-      expect(document.querySelector('button[aria-label="Sort by Bullet Method"]')).toBeNull();
+      expect(document.querySelector('button[aria-label="Sort by Bullet Statuses"]')).toBeNull();
       await act(async () => root.render(createElement(FormattingBubbleMenu, { editor, bulletMethodStatuses: statuses, bulletMethodEnabled: true })));
       await act(async () => vi.advanceTimersByTime(80));
-      const button = document.querySelector<HTMLButtonElement>('button[aria-label="Sort by Bullet Method"]');
+      const button = document.querySelector<HTMLButtonElement>('button[aria-label="Sort by Bullet Statuses"]');
       expect(button).not.toBeNull();
-      expect(button!.title).toContain("Sort by Bullet Method");
+      expect(button!.title).toContain("Sort by Bullet Statuses");
       await act(async () => {
         const mouseDown = new MouseEvent("mousedown", { bubbles: true, cancelable: true });
         button!.dispatchEvent(mouseDown);

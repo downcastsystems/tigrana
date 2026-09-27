@@ -1,3 +1,4 @@
+import { surfacesForMode } from "./themeSurfaces";
 import { resolveTypography } from "./themeOptions";
 import { inlineColorVariables } from "./inlineColors";
 import type { ThemeDocument } from "./themes";
@@ -96,7 +97,7 @@ export function themeStylesheet(
   const tokens = `[data-theme-region="${region}"]{${Object.entries(variables)
     .map(([key, value]) => `${key}:${value}`)
     .join(";")}}`;
-  return tokens + surfaceStyles(theme, region) + (theme.design ? compileThemeCss(theme.design, region) : "") + explicitEditorColors(theme, mode, region);
+  return tokens + surfaceStyles(theme, region, true, mode) + (theme.design ? compileThemeCss(theme.design, region) : "") + explicitEditorColors(theme, mode, region);
 }
 
 /** Share the packaged landscape with the GPU without external image requests. */
@@ -106,16 +107,17 @@ export function themeBackgroundImage(theme: ThemeDocument): string | undefined {
 }
 
 /** Surface overrides are confined to notebook regions, never Settings/dialogs. */
-export function surfaceStyles(theme: ThemeDocument, region: string, embedAssets = true) {
-  const s = theme.surfaces;
+export function surfaceStyles(theme: ThemeDocument, region: string, embedAssets = true, mode: "light" | "dark" = "dark") {
+  const s = theme.surfaces && surfacesForMode(theme.surfaces, mode);
   if (!s) return '';
   const root = `[data-theme-region="${region}"]`;
   const asset = s.image ? theme.design?.assets[s.image] : undefined;
   const image = asset?.mime.startsWith('image/') ? `url("${embedAssets ? `data:${asset.mime};base64,${asset.data}` : s.image}")` : 'none';
+  const titlebarFill = `color-mix(in srgb,${theme.accentTitlebar ? "var(--titlebar-bg)" : "var(--surface)"} ${s.titlebar}%,transparent)`;
   return `
-${root} { --tigrana-editor-opacity: ${s.editor}%; }
+${root} { --tigrana-background-image: ${image}; --tigrana-titlebar-fill: ${titlebarFill}; --tigrana-titlebar-shadow-opacity: ${(s.titlebarShadow ?? 100) / 100}; --tigrana-editor-opacity: ${s.editor}%; --plasma-titlebar-shadow-opacity: ${(s.titlebarShadow ?? 100) / 100}; }
 ${root}.app-frame.theme-standard { background-color: ${s.background}; }
-${root}.app-frame { background-image: ${image}; background-size: cover; background-position: center; }
+${root}.app-frame { background-image: var(--tigrana-background-image); background-size: cover; background-position: center; }
 ${image !== 'none' ? `.app-shell[data-plasma]:has(> .plasma-background[data-plasma-image-ready]) ${root}.app-frame { background-image: none; }` : ''}
 ${root} .left-panes, ${root} .note-surface { background: transparent; backdrop-filter: none; }
 ${root} :is(.folder-pane,.notes-pane,.unified-tree-pane) { background-color: color-mix(in srgb,var(--surface) ${s.navigation}%,transparent); }

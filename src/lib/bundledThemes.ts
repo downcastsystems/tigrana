@@ -23,3 +23,8 @@ export const allBuiltInThemes = [...classicThemes, ...bundledThemes];
 export function isBundledTheme(theme: ThemeDocument | null): boolean {
   return !!theme && bundledThemes.some((bundled) => bundled.id === theme.id && themesMatch(bundled, theme));
 }
+
+/** The experimental Starfall release now follows the canonical built-in theme. */
+export function findBuiltInTheme(id: string | undefined): ThemeDocument | undefined {
+  return allBuiltInThemes.find(theme => theme.id === (id === 'builtin-starfall-2' ? 'builtin-starfall-studio' : id));
+}

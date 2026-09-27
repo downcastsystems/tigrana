@@ -47,10 +47,10 @@ export async function updateAppMenuState(label: string, state: AppMenuState) {
   await invoke("update_app_menu_state", { label, state });
 }
 
-export async function exportTextFile(defaultFileName: string, contents: string, filters: Array<{ name: string; extensions: string[] }>) {
+export async function exportTextFile(defaultFileName: string, contents: string, filters: Array<{ name: string; extensions: string[] }>, title = "Export note") {
   if (isTauri()) {
     const path = await save({
-      title: "Export note",
+      title,
       defaultPath: defaultFileName,
       filters,
     });

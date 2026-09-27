@@ -37,8 +37,10 @@ const fixtureCss = `:host{display:block;isolation:isolate;clip-path:inset(0 roun
 export function ThemeWorkbenchPreview({
   theme,
   mode,
+  showControls = true,
 }: {
   theme: ThemeDocument;
+  showControls?: boolean;
   mode: "light" | "dark";
 }) {
   const renderedMode = themeRenderingMode(theme, mode);
@@ -85,9 +87,10 @@ export function ThemeWorkbenchPreview({
   // same region-scoped families in the document for portable font previews.
   const fontCss = useMemo(() => { try { return theme.design ? compileThemeCss({ ...theme.design, css: "" }, "preview") : ""; } catch { return ''; } }, [theme.design]);
   const plasma =
-    theme.plasma?.enabled && theme.design?.supportsPlasma !== false;
+    theme.plasma?.enabled;
   return (
     <>
+      {showControls && <>
       <div className="theme-preview-options" aria-label="Preview controls">
         <label>Navigation <select aria-label="Preview navigation" value={navigation} onChange={e => setNavigation(e.target.value as NavigationStyle)}>
           <option value="single-pane">Single pane</option><option value="dual-pane">Dual pane</option><option value="section-view">Dual pane with sections</option>
@@ -98,6 +101,7 @@ export function ThemeWorkbenchPreview({
         <button type="button" className="toolbar-button" onClick={() => { setNavigation(null); setOutline(null); }}>Theme defaults</button>
       </div>
       <p className="settings-description">Preview scales to fit the full layout. Scroll inside the note to explore its content; hover items and use Tab to check focus.</p>
+      </>}
       {fontCss ? <style>{fontCss}</style> : null}
       {compiled.error ? (
         <p role="alert">Preview uses visual settings until the CSS is valid.</p>

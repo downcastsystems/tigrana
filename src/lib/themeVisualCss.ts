@@ -9,7 +9,7 @@ export function generatedVisualCss(theme: ThemeDocument): string {
   );
   return '/* Generated from Visual settings. Edit those settings to change these values.\n   Custom CSS below takes precedence; use var(--tigrana-accent), etc. to follow Visual. */\n\n'
     + palettes.join('\n\n')
-    + (theme.surfaces ? '\n\n/* Panel surfaces */\n' + surfaceStyles(theme, 'visual-reference', false).split('[data-theme-region="visual-reference"]').join(':scope') : '')
+    + (theme.surfaces ? '\n\n/* Panel surfaces */\n' + (['light', 'dark'] as const).map(mode => surfaceStyles(theme, 'visual-reference', false, mode).split('[data-theme-region="visual-reference"]').join(`:scope.theme-${mode}`)).join('\n') : '')
     + `\n\n/* Plasma: ${theme.plasma?.enabled ? 'on' : 'off'}; frost ${theme.plasma?.frost ?? 80}%; blur ${theme.plasma?.backgroundBlur ?? 0}px.\n   Plasma effects are rendered by the app, not by custom CSS. */`;
 }
 

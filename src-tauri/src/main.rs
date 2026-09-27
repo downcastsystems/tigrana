@@ -1907,7 +1907,7 @@ fn build_app_menu(
         handle, "sort_za_case", "Z-A (Case Sensitive)", can_sort, Some(za_icon), None::<&str>,
     )?;
     let sort_bullet_method = IconMenuItem::with_id(
-        handle, "sort_bullet_method", "Bullet Method", can_sort_bullet_method, Some(bullet_icon), Some("CmdOrCtrl+Alt+Period"),
+        handle, "sort_bullet_method", "Bullet Statuses", can_sort_bullet_method, Some(bullet_icon), Some("CmdOrCtrl+Alt+Period"),
     )?;
     let sort_lines = Submenu::with_items(
         handle, "Sort Lines", can_sort || can_sort_bullet_method, &[&sort_az, &sort_za, &sort_az_case, &sort_za_case],

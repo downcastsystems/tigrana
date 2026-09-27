@@ -42,7 +42,7 @@ function setReactInputValue(input: HTMLInputElement, value: string) {
 describe("Note editor typing performance", () => {
   const mounted: Array<{ container: HTMLElement; root: Root }> = [];
 
-  it("keeps current Bullet Method settings after fresh loads, cached switches, and reloads", async () => {
+  it("keeps current Bullet Statuses settings after fresh loads, cached switches, and reloads", async () => {
     const container = document.createElement("div"); document.body.append(container);
     const root = createRoot(container); mounted.push({ container, root });
     const display = { enabled: true, replaceBullets: true, dimCompleted: true };

@@ -256,6 +256,23 @@ fn normalize_theme_inner(theme: &Value, allow_base: bool) -> Result<Value, Strin
             if !(0.0..=100.0).contains(&n) { return Err("Invalid surface opacity".into()); }
             settings.insert(key.into(), if n.fract() == 0.0 { Value::from(n as u64) } else { Value::from(n) });
         }
+        if let Some(value) = surfaces.get("titlebarShadow") {
+            let n = value.as_f64().ok_or("Invalid title bar shadow opacity")?;
+            if !(0.0..=100.0).contains(&n) { return Err("Invalid title bar shadow opacity".into()); }
+            settings.insert("titlebarShadow".into(), number_value(n));
+        }
+        if let Some(light) = surfaces.get("light") {
+            let light = light.as_object().ok_or("Invalid light surfaces")?;
+            let mut overrides = serde_json::Map::new();
+            for key in ["navigation", "editor", "outline", "titlebar", "titlebarShadow"] {
+                if let Some(value) = light.get(key) {
+                    let n = value.as_f64().ok_or("Invalid light surface opacity")?;
+                    if !(0.0..=100.0).contains(&n) { return Err("Invalid light surface opacity".into()); }
+                    overrides.insert(key.into(), number_value(n));
+                }
+            }
+            settings.insert("light".into(), Value::Object(overrides));
+        }
         if let Some(image) = surfaces.get("image") {
             let path = image.as_str().ok_or("Invalid surface image")?;
             let name = path.strip_prefix("assets/").ok_or("Invalid surface image")?;
@@ -356,9 +373,6 @@ fn normalize_design(v: &Value) -> Result<Value, String> {
     {
         return Err("Invalid theme version".into());
     }
-    let supports = v["supportsPlasma"]
-        .as_bool()
-        .ok_or("Invalid Plasma support")?;
     let mut metrics = serde_json::Map::new();
     for (key, min, max) in [
         ("radius", 0.0, 24.0),
@@ -412,7 +426,7 @@ fn normalize_design(v: &Value) -> Result<Value, String> {
         assets.insert(path.clone(), json!({"mime":mime,"data":data}));
     }
     Ok(
-        json!({"apiVersion":1,"author":text("author",100)?,"version":version,"license":text("license",20_000)?,"supportsPlasma":supports,"css":text("css",100_000)?,"assets":assets,"metrics":metrics}),
+        json!({"apiVersion":1,"author":text("author",100)?,"version":version,"license":text("license",20_000)?,"css":text("css",100_000)?,"assets":assets,"metrics":metrics}),
     )
 }
 
@@ -488,6 +502,59 @@ fn save_in_dir(dir: &Path, theme: Value, expected: Option<Value>) -> Result<(), 
 mod tests {
     use super::*;
     use serde_json::json;
+    #[test]
+    fn retired_plasma_support_flag_is_ignored() {
+        let mut theme: Value = serde_json::from_str(include_str!("../../src/themes/starfall-studio.json")).unwrap();
+        theme["plasma"]["enabled"] = json!(true);
+        let clean = normalize_theme(&theme).unwrap();
+        assert!(clean["design"].get("supportsPlasma").is_none());
+        theme["design"]["supportsPlasma"] = json!(false);
+        assert_eq!(normalize_theme(&theme).unwrap(), clean);
+        assert_eq!(clean["plasma"]["enabled"], json!(true));
+    }
+
+    #[test]
+    fn new_theme_save_preserves_surface_settings() {
+        let dir = std::env::temp_dir().join(format!("tigrana-theme-surfaces-{}", uuid::Uuid::new_v4()));
+        let mut theme: Value = serde_json::from_str(include_str!("../../src/themes/starfall-studio.json")).unwrap();
+        theme["id"] = json!("starfall-copy");
+        theme["name"] = json!("Starfall copy");
+        theme["surfaces"] = json!({"background":"#112233","navigation":30,"editor":80,"outline":0,"titlebar":100,
+            "titlebarShadow":0,"light":{"editor":45,"titlebar":0,"titlebarShadow":0}});
+        save_in_dir(&dir, theme.clone(), None).unwrap();
+        let saved: Value = serde_json::from_str(&fs::read_to_string(dir.join("starfall-copy.json")).unwrap()).unwrap();
+        assert_eq!(saved["surfaces"], theme["surfaces"]);
+        save_in_dir(&dir, theme.clone(), Some(theme)).unwrap();
+        fs::remove_dir_all(dir).unwrap();
+    }
+
+    #[test]
+    fn surface_overrides_validate_and_survive_original_snapshots() {
+        let base: Value = serde_json::from_str(include_str!("../../src/themes/vampire.json")).unwrap();
+        let mut theme = base.clone();
+        theme["id"] = json!("plasma-copy");
+        theme["baseThemeId"] = base["id"].clone();
+        theme["baseThemeSnapshot"] = base.clone();
+        let clean = normalize_theme(&theme).unwrap();
+        assert_eq!(clean["baseThemeSnapshot"]["surfaces"], base["surfaces"]);
+        assert_eq!(normalize_theme(&clean).unwrap(), clean);
+        for value in [json!(-1), json!(101), json!("50"), Value::Null] {
+            let mut invalid = theme.clone();
+            invalid["surfaces"]["titlebarShadow"] = value.clone();
+            assert!(normalize_theme(&invalid).is_err());
+            for key in ["navigation", "editor", "outline", "titlebar", "titlebarShadow"] {
+                let mut invalid = theme.clone();
+                invalid["surfaces"]["light"][key] = value.clone();
+                assert!(normalize_theme(&invalid).is_err());
+            }
+        }
+        for value in [json!([]), json!(false), Value::Null] {
+            let mut invalid = theme.clone();
+            invalid["surfaces"]["light"] = value;
+            assert!(normalize_theme(&invalid).is_err());
+        }
+    }
+
     #[test]
     fn spacing_settings_survive_native_normalization() {
         let mut theme: Value = serde_json::from_str(include_str!("../../src/themes/vampire.json")).unwrap();
@@ -670,7 +737,7 @@ mod tests {
         assert!(save_in_dir(&dir, invalid_plasma, Some(plasma_theme.clone())).is_err());
         let mut advanced = plasma_theme.clone();
         advanced["schemaVersion"] = json!(2);
-        advanced["design"] = json!({"apiVersion":1,"author":"Creator","version":"1.0.0","license":"MIT","supportsPlasma":true,"css":".ProseMirror h1 { color: red; }","assets":{},"metrics":{"radius":12,"spacing":1,"lineHeight":1.6}});
+        advanced["design"] = json!({"apiVersion":1,"author":"Creator","version":"1.0.0","license":"MIT","css":".ProseMirror h1 { color: red; }","assets":{},"metrics":{"radius":12,"spacing":1,"lineHeight":1.6}});
         for key in ["editorText", "selectedText", "highlightText", "highlightBackground"] {
             advanced["light"][key] = json!("#123456");
             advanced["dark"][key] = json!("#ffffff");

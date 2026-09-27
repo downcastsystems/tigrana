@@ -2,6 +2,8 @@ export const surfaceKeys = ['navigation', 'editor', 'outline', 'titlebar'] as co
 export type ThemeSurfaces = Record<(typeof surfaceKeys)[number], number> & {
   background: string;
   image?: string;
+  titlebarShadow?: number;
+  light?: Partial<Record<(typeof surfaceKeys)[number] | "titlebarShadow", number>>;
 };
 export function parseThemeSurfaces(value: unknown): ThemeSurfaces {
   const v = value as ThemeSurfaces | null;
@@ -13,10 +15,32 @@ export function parseThemeSurfaces(value: unknown): ThemeSurfaces {
       throw new Error('Surface opacity must be between 0 and 100.');
     result[key] = v[key];
   }
+  if (v.titlebarShadow !== undefined) {
+    validateOpacity(v.titlebarShadow);
+    result.titlebarShadow = v.titlebarShadow;
+  }
+  if (v.light !== undefined) {
+    if (!v.light || typeof v.light !== 'object' || Array.isArray(v.light)) throw new Error('Invalid light surfaces.');
+    result.light = {};
+    for (const key of [...surfaceKeys, 'titlebarShadow'] as const) {
+      if (v.light[key] !== undefined) {
+        validateOpacity(v.light[key]);
+        result.light[key] = v.light[key];
+      }
+    }
+  }
   if (v.image !== undefined) {
     if (typeof v.image !== 'string' || !/^assets\/[a-zA-Z0-9_-]+\.(png|jpg|jpeg|webp)$/.test(v.image))
       throw new Error('Choose a packaged background image.');
     result.image = v.image;
   }
   return result;
+}
+
+function validateOpacity(value: unknown) {
+  if (typeof value !== 'number' || !Number.isFinite(value) || value < 0 || value > 100)
+    throw new Error('Surface opacity must be between 0 and 100.');
+}
+export function surfacesForMode(surfaces: ThemeSurfaces, mode: 'light' | 'dark'): ThemeSurfaces {
+  return mode === 'light' ? { ...surfaces, ...surfaces.light } : surfaces;
 }

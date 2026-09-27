@@ -1,9 +1,9 @@
 # Sort menu icons
 
 The A–Z and Z–A SVGs come from lucide-react 0.468.0, `ArrowDownAZ` and
-`ArrowDownZA`. The Bullet Method SVG uses Lucide's `CircleDot` and matches
+`ArrowDownZA`. The Bullet Statuses SVG uses Lucide's `CircleDot` and matches
 src/components/BulletMethodIcon.tsx. Their full license is in LICENSE-lucide.
-Keep the two Bullet Method representations synchronized when changing the mark.
+Keep the two Bullet Statuses representations synchronized when changing the mark.
 
 The native menu uses 36 × 36 straight RGBA pixels rendered from these SVGs.
 macOS displays them at 18 logical pixels and treats them as template images,

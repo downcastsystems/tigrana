@@ -3,7 +3,7 @@ import { beforeEach, describe, expect, it } from "vitest";
 import { statusDims, bulletMethodDimPercent, bulletMethodDisplayKey, defaultBulletMethodDisplay, readBulletMethodDisplay, writeBulletMethodDisplay, bulletMethodRank, bulletMethodSettingsKey, defaultBulletMethodStatuses, readBulletMethodStatuses, validateBulletMethodStatuses, writeBulletMethodStatuses } from "./bulletMethod";
 
 beforeEach(() => localStorage.clear());
-describe("Bullet Method settings", () => {
+describe("Bullet Statuses settings", () => {
   it("persists custom order, names and descriptions including the position of unmarked notes", () => {
     const statuses = [defaultBulletMethodStatuses[4], { id: "waiting", prefix: " WAITING ", description: "Someone else's turn." }, defaultBulletMethodStatuses[2]];
     const saved = writeBulletMethodStatuses(statuses);

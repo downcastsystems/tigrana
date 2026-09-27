@@ -76,7 +76,7 @@ export default function SettingsModal(props: {
                     className={`settings-nav-item ${section === id ? "is-active" : ""}`}
                     onClick={() => { setSection(id); props.onSectionChange?.(id); }}
                   >
-                    {id === "bullet-method" ? "Bullet Method" : id === "appearance" ? "Appearance" : "General"}
+                    {id === "bullet-method" ? "Bullet Statuses" : id === "appearance" ? "Appearance" : "General"}
                   </button>
                 ))}
               </nav>
@@ -85,7 +85,7 @@ export default function SettingsModal(props: {
               <div className="settings-content-header">
                 <div>
                   <h2 className={section === "bullet-method" ? "bullet-method-heading" : undefined}>
-                    {section === "bullet-method" ? "Bullet Method" : section === "appearance" ? "Appearance" : "General"}
+                    {section === "bullet-method" ? "Bullet Statuses" : section === "appearance" ? "Appearance" : "General"}
                     {section === "bullet-method" ? <BulletMethodIcon size={20} /> : null}
                   </h2>
                   <p>

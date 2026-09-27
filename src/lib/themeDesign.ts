@@ -7,7 +7,6 @@ export type ThemeDesign = {
   author: string;
   version: string;
   license: string;
-  supportsPlasma: boolean;
   css: string;
   assets: Record<string, ThemeAsset>;
   metrics: { radius: number; spacing: number; lineHeight: number };
@@ -17,7 +16,6 @@ export const defaultThemeDesign: ThemeDesign = {
   author: "Anonymous Creator",
   version: "1.0.0",
   license: "CC0-1.0\nhttps://creativecommons.org/publicdomain/zero/1.0/",
-  supportsPlasma: true,
   css: "",
   assets: {},
   metrics: { radius: 8, spacing: 1, lineHeight: 1.6 },
@@ -36,8 +34,6 @@ export function parseThemeDesign(value: unknown): ThemeDesign {
   const version = text("version", 40);
   if (!/^\d+\.\d+\.\d+$/.test(version))
     throw new Error("Theme version must be major.minor.patch.");
-  if (typeof v.supportsPlasma !== "boolean")
-    throw new Error("Invalid Plasma support setting.");
   const m = v.metrics as Record<string, unknown> | undefined;
   const metric = (key: string, min: number, max: number) => {
     const n = m?.[key];
@@ -92,7 +88,6 @@ export function parseThemeDesign(value: unknown): ThemeDesign {
     author: text("author", 100),
     version,
     license: text("license", 20_000),
-    supportsPlasma: v.supportsPlasma,
     css: text("css", 100_000),
     assets,
     metrics: {

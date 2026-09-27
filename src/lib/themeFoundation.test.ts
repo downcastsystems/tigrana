@@ -88,7 +88,7 @@ describe("theme foundation", () => {
           plasma: { enabled: true, frost: 60, backgroundBlur: 0 },
         }),
       ).plasma?.enabled,
-    ).toBe(false);
+    ).toBe(true);
   });
   it("rejects package paths, unexpected files, and oversized expansion", () => {
     expect(() =>

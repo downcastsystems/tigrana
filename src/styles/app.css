@@ -6419,7 +6419,7 @@ html[data-theme="dark"] .theme-code:focus { border-color: #69aaff; outline-color
 .settings-appearance:has(.theme-editor) { display: flex; flex: 1; min-width: 0; min-height: 0; }
 .settings-appearance > .theme-builder:has(.theme-editor) { display: flex; flex-direction: column; flex: 1; min-width: 0; min-height: 0; }
 .settings-modal .theme-editor { flex: 1; min-height: 0; gap: 0; }
-.settings-modal .theme-editor-controls { flex: 1; min-height: 0; overflow-y: auto; overflow-x: hidden; scrollbar-gutter: stable; padding: 0 16px 16px 0; }
+.settings-modal .theme-editor-controls { flex: 1; min-height: 0; overflow-y: auto; overflow-x: hidden; scrollbar-gutter: stable; margin-left: -12px; width: calc(100% + 12px); padding: 0 16px 16px 12px; }
 .theme-editor-actions { flex-shrink: 0; margin: 0; padding: 16px 0 0; border-top: 1px solid var(--border); background: var(--surface-strong); }
 .theme-conflict > .theme-actions { align-items: flex-start; flex-direction: column; }
 .theme-conflict > .theme-actions .toolbar-button { flex-direction: column; align-items: flex-start; justify-content: center; gap: 4px; padding: 10px 12px; text-align: left; white-space: normal; }
@@ -6523,11 +6523,13 @@ html[data-theme] .theme-conflict .theme-actions .toolbar-button.is-recommended:h
 .settings-appearance-divider { width: 100%; border: 0; border-top: 1px solid var(--border); margin: 12px 0; }
 /* Reserve space inside the scroller for the Theme background to extend past
    the shared text edge without being clipped by overflow. */
-.settings-scroll:has(.settings-appearance):not(:has(.theme-editor)),
+.settings-scroll:has(.settings-appearance),
 .settings-scroll:has(.bullet-method-settings) { margin-left: -12px; padding-left: 12px; }
 .settings-theme-section,
+.theme-surface-plasma,
 .bullet-method-order-section { margin-inline: -12px; padding: 14px 12px; border-radius: 8px; background: rgb(0 0 0 / 4%); }
 html[data-theme="dark"] .settings-theme-section,
+html[data-theme="dark"] .theme-surface-plasma,
 html[data-theme="dark"] .bullet-method-order-section { background: rgb(0 0 0 / 16%); }
 .settings-theme-section > .setting-row { padding-top: 0; }
 .theme-color-presets { margin-top: 6px; }
@@ -6918,3 +6920,7 @@ html[data-theme="light"] .ProseMirror li[data-bullet-method-completed="true"] .b
 .context-document-submenu::after { content: ""; position: absolute; top: 0; width: 8px; height: 100%; }
 .context-document-submenu::before { left: 100%; }
 .context-document-submenu::after { right: 100%; }
+
+.theme-surface-plasma { margin-top: 16px; }
+.theme-surface-plasma > .theme-preview-toggle:first-child { margin-top: 0; }
+.bullet-status-transfer { display: flex; gap: 8px; margin-top: 16px; }

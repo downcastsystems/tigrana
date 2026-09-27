@@ -1404,8 +1404,8 @@ export function FormattingBubbleMenu({
                 {button.label === "Tasks" && bulletMethodEnabled && (
                   <button
                     type="button"
-                    aria-label="Sort by Bullet Method"
-                    title={`Sort by Bullet Method (${/Mac|iPhone|iPad/.test(navigator.platform) ? "⌘⌥." : "Ctrl+Alt+."})`}
+                    aria-label="Sort by Bullet Statuses"
+                    title={`Sort by Bullet Statuses (${/Mac|iPhone|iPad/.test(navigator.platform) ? "⌘⌥." : "Ctrl+Alt+."})`}
                     onMouseDown={(event) => event.preventDefault()}
                     onClick={() => applyLineSort(editor, "sort_bullet_method", bulletMethodStatuses)}
                   >

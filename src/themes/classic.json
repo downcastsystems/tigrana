@@ -19,7 +19,6 @@
       "author": "Tigrana",
       "version": "1.0.2",
       "license": "Tigrana built-in palette adaptation",
-      "supportsPlasma": true,
       "css": ".section-view-folder-pane .folder-row { border-radius: 0; }\n.note-tab.is-active { background: var(--tigrana-accent); border-color: transparent; }\n:scope.theme-light .ProseMirror::selection, :scope.theme-light .ProseMirror *::selection, :scope.theme-light .note-title-input::selection, :scope.theme-light .raw-markdown-input::selection { background-color: color-mix(in srgb, var(--tigrana-accent) 35%, white); color: currentColor; }\n:scope.theme-dark .ProseMirror::selection, :scope.theme-dark .ProseMirror *::selection, :scope.theme-dark .note-title-input::selection, :scope.theme-dark .raw-markdown-input::selection { background-color: color-mix(in srgb, var(--tigrana-accent) 40%, white); color: currentColor; }\n",
       "assets": {},
       "metrics": {
@@ -81,7 +80,6 @@
       "author": "Tigrana",
       "version": "1.2.0",
       "license": "Tigrana Classic styling. Palette colors matched to AnuPpuccin reference images: https://github.com/AnubisNekhet/AnuPpuccin/tree/main/assets/colorschemes . No AnuPpuccin stylesheet code or artwork is included.",
-      "supportsPlasma": true,
       "css": ".section-view-folder-pane .folder-row { border-radius: 0; }\n.note-tab.is-active { background: var(--tigrana-accent); border-color: transparent; }\n:scope.theme-light .ProseMirror::selection, :scope.theme-light .ProseMirror *::selection, :scope.theme-light .note-title-input::selection, :scope.theme-light .raw-markdown-input::selection { background-color: color-mix(in srgb, var(--tigrana-accent) 35%, white); color: currentColor; }\n:scope.theme-dark .ProseMirror::selection, :scope.theme-dark .ProseMirror *::selection, :scope.theme-dark .note-title-input::selection, :scope.theme-dark .raw-markdown-input::selection { background-color: color-mix(in srgb, var(--tigrana-accent) 40%, white); color: currentColor; }\n",
       "assets": {},
       "metrics": {
@@ -151,7 +149,6 @@
       "author": "Tigrana",
       "version": "1.2.0",
       "license": "Tigrana Classic styling. Palette colors matched to AnuPpuccin reference images: https://github.com/AnubisNekhet/AnuPpuccin/tree/main/assets/colorschemes . No AnuPpuccin stylesheet code or artwork is included.",
-      "supportsPlasma": true,
       "css": ".section-view-folder-pane .folder-row { border-radius: 0; }\n.note-tab.is-active { background: var(--tigrana-accent); border-color: transparent; }\n:scope.theme-light .ProseMirror::selection, :scope.theme-light .ProseMirror *::selection, :scope.theme-light .note-title-input::selection, :scope.theme-light .raw-markdown-input::selection { background-color: color-mix(in srgb, var(--tigrana-accent) 35%, white); color: currentColor; }\n:scope.theme-dark .ProseMirror::selection, :scope.theme-dark .ProseMirror *::selection, :scope.theme-dark .note-title-input::selection, :scope.theme-dark .raw-markdown-input::selection { background-color: color-mix(in srgb, var(--tigrana-accent) 40%, white); color: currentColor; }\n",
       "assets": {},
       "metrics": {
@@ -221,7 +218,6 @@
       "author": "Tigrana",
       "version": "1.2.0",
       "license": "Tigrana Classic styling. Palette colors matched to AnuPpuccin reference images: https://github.com/AnubisNekhet/AnuPpuccin/tree/main/assets/colorschemes . No AnuPpuccin stylesheet code or artwork is included.",
-      "supportsPlasma": true,
       "css": ".section-view-folder-pane .folder-row { border-radius: 0; }\n.note-tab.is-active { background: var(--tigrana-accent); border-color: transparent; }\n:scope.theme-light .ProseMirror::selection, :scope.theme-light .ProseMirror *::selection, :scope.theme-light .note-title-input::selection, :scope.theme-light .raw-markdown-input::selection { background-color: color-mix(in srgb, var(--tigrana-accent) 35%, white); color: currentColor; }\n:scope.theme-dark .ProseMirror::selection, :scope.theme-dark .ProseMirror *::selection, :scope.theme-dark .note-title-input::selection, :scope.theme-dark .raw-markdown-input::selection { background-color: color-mix(in srgb, var(--tigrana-accent) 40%, white); color: currentColor; }\n",
       "assets": {},
       "metrics": {
@@ -291,7 +287,6 @@
       "author": "Tigrana",
       "version": "1.2.0",
       "license": "Tigrana Classic styling. Palette colors matched to AnuPpuccin reference images: https://github.com/AnubisNekhet/AnuPpuccin/tree/main/assets/colorschemes . No AnuPpuccin stylesheet code or artwork is included.",
-      "supportsPlasma": true,
       "css": ".section-view-folder-pane .folder-row { border-radius: 0; }\n.note-tab.is-active { background: var(--tigrana-accent); border-color: transparent; }\n:scope.theme-light .ProseMirror::selection, :scope.theme-light .ProseMirror *::selection, :scope.theme-light .note-title-input::selection, :scope.theme-light .raw-markdown-input::selection { background-color: color-mix(in srgb, var(--tigrana-accent) 35%, white); color: currentColor; }\n:scope.theme-dark .ProseMirror::selection, :scope.theme-dark .ProseMirror *::selection, :scope.theme-dark .note-title-input::selection, :scope.theme-dark .raw-markdown-input::selection { background-color: color-mix(in srgb, var(--tigrana-accent) 40%, white); color: currentColor; }\n",
       "assets": {},
       "metrics": {
@@ -361,7 +356,6 @@
       "author": "Tigrana",
       "version": "1.2.0",
       "license": "Tigrana Classic styling. Palette colors matched to AnuPpuccin reference images: https://github.com/AnubisNekhet/AnuPpuccin/tree/main/assets/colorschemes . No AnuPpuccin stylesheet code or artwork is included.",
-      "supportsPlasma": true,
       "css": ".section-view-folder-pane .folder-row { border-radius: 0; }\n.note-tab.is-active { background: var(--tigrana-accent); border-color: transparent; }\n:scope.theme-light .ProseMirror::selection, :scope.theme-light .ProseMirror *::selection, :scope.theme-light .note-title-input::selection, :scope.theme-light .raw-markdown-input::selection { background-color: color-mix(in srgb, var(--tigrana-accent) 35%, white); color: currentColor; }\n:scope.theme-dark .ProseMirror::selection, :scope.theme-dark .ProseMirror *::selection, :scope.theme-dark .note-title-input::selection, :scope.theme-dark .raw-markdown-input::selection { background-color: color-mix(in srgb, var(--tigrana-accent) 40%, white); color: currentColor; }\n",
       "assets": {},
       "metrics": {
@@ -431,7 +425,6 @@
       "author": "Tigrana",
       "version": "1.1.1",
       "license": "Tigrana palette adaptation. Catppuccin palette: https://catppuccin.com/palette/ (MIT, Catppuccin).",
-      "supportsPlasma": true,
       "css": ".section-view-folder-pane .folder-row { border-radius: 0; }\n.ProseMirror::selection, .ProseMirror *::selection, .note-title-input::selection, .raw-markdown-input::selection { background-color: color-mix(in srgb, var(--surface-strong) 50%, var(--tigrana-background)); color: var(--tigrana-editor-text); }\n.note-status-bar { background: var(--surface); color: var(--tigrana-text); border: 1px solid var(--tigrana-border); box-shadow: none; }\n:scope.theme-light .ProseMirror a { color: #1e66f5; }\n:scope.theme-dark .ProseMirror a { color: #8caaee; }\n",
       "assets": {},
       "metrics": {
@@ -501,7 +494,6 @@
       "author": "Tigrana",
       "version": "1.1.1",
       "license": "Tigrana palette adaptation. Catppuccin palette: https://catppuccin.com/palette/ (MIT, Catppuccin).",
-      "supportsPlasma": true,
       "css": ".section-view-folder-pane .folder-row { border-radius: 0; }\n.ProseMirror::selection, .ProseMirror *::selection, .note-title-input::selection, .raw-markdown-input::selection { background-color: color-mix(in srgb, var(--surface-strong) 50%, var(--tigrana-background)); color: var(--tigrana-editor-text); }\n.note-status-bar { background: var(--surface); color: var(--tigrana-text); border: 1px solid var(--tigrana-border); box-shadow: none; }\n:scope.theme-light .ProseMirror a { color: #1e66f5; }\n:scope.theme-dark .ProseMirror a { color: #8aadf4; }\n",
       "assets": {},
       "metrics": {
@@ -571,7 +563,6 @@
       "author": "Tigrana",
       "version": "1.1.1",
       "license": "Tigrana palette adaptation. Catppuccin palette: https://catppuccin.com/palette/ (MIT, Catppuccin).",
-      "supportsPlasma": true,
       "css": ".section-view-folder-pane .folder-row { border-radius: 0; }\n.ProseMirror::selection, .ProseMirror *::selection, .note-title-input::selection, .raw-markdown-input::selection { background-color: color-mix(in srgb, var(--surface-strong) 50%, var(--tigrana-background)); color: var(--tigrana-editor-text); }\n.note-status-bar { background: var(--surface); color: var(--tigrana-text); border: 1px solid var(--tigrana-border); box-shadow: none; }\n:scope.theme-light .ProseMirror a { color: #1e66f5; }\n:scope.theme-dark .ProseMirror a { color: #89b4fa; }\n",
       "assets": {},
       "metrics": {
@@ -641,7 +632,6 @@
       "author": "Tigrana",
       "version": "1.1.1",
       "license": "Tigrana palette adaptation. Catppuccin palette: https://catppuccin.com/palette/ (MIT, Catppuccin).",
-      "supportsPlasma": true,
       "css": ".section-view-folder-pane .folder-row { border-radius: 0; }\n.ProseMirror::selection, .ProseMirror *::selection, .note-title-input::selection, .raw-markdown-input::selection { background-color: color-mix(in srgb, var(--surface-strong) 50%, var(--tigrana-background)); color: var(--tigrana-editor-text); }\n.note-status-bar { background: var(--surface); color: var(--tigrana-text); border: 1px solid var(--tigrana-border); box-shadow: none; }\n:scope.theme-light .ProseMirror a { color: #1e66f5; }\n:scope.theme-dark .ProseMirror a { color: #8caaee; }\n",
       "assets": {},
       "metrics": {

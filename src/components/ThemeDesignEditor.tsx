@@ -212,22 +212,6 @@ export function ThemeDesignEditor({
           />
         </label>
         <label>
-          <input
-            type="checkbox"
-            checked={design.supportsPlasma}
-            onChange={(e) => {
-              change({ supportsPlasma: e.target.checked });
-              if (!e.target.checked && theme.plasma)
-                onChange({
-                  schemaVersion: 2,
-                  design: { ...design, supportsPlasma: false },
-                  plasma: { ...theme.plasma, enabled: false },
-                });
-            }}
-          />
-          Supports Plasma
-        </label>
-        <label>
           License
           <textarea
             className="theme-code"

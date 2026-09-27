@@ -215,11 +215,11 @@ requests are rejected if another window changed the saved copy.
 
 ## Plasma defaults and notebook overrides
 
-The theme editor's **Advanced surfaces → Plasma UI by default** checkbox and
+The theme editor's **Advanced surfaces → Enable Plasma UI** checkbox and
 Flow, frostiness, and background blur sliders determine the theme's glass effects.
 Selecting a theme reapplies these settings. Themes without Plasma settings use
-standard rendering. Unsupported themes disable the checkbox; authors can enable
-**Supports Plasma** in Sharing details to experiment. Appearance no longer offers
+standard rendering. Plasma can be enabled for any theme, though the result depends
+on its styling. Appearance no longer offers
 a separate Plasma override. Existing notebook Plasma preferences remain readable
 until a theme is selected again.
 

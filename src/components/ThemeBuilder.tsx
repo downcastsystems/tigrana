@@ -1,3 +1,4 @@
+import { surfacesForMode } from "../lib/themeSurfaces";
 import { mixAccentColor } from "../lib/quickAppearance";
 import { ThemeVariantsEditor } from "./ThemeVariantsEditor";
 import { resolveThemeVariant } from "../lib/themes";
@@ -10,7 +11,7 @@ import { authoringOriginal, originalSnapshot, updateDerivedTheme } from "../lib/
 import { ThemeTypographyEditor } from "./ThemeTypographyEditor";
 import { ThemeControlsEditor } from "./ThemeControlsEditor";
 import { ThemeHealthCheck } from "./ThemeHealthCheck";
-import { allBuiltInThemes, bundledThemes } from "../lib/bundledThemes";
+import { allBuiltInThemes, bundledThemes, findBuiltInTheme } from "../lib/bundledThemes";
 import { ThemeDeleteDialog } from "./ThemeDeleteDialog";
 import { visualCssHints } from "../lib/themeVisualCss";
 import { ThemeSurfacesEditor } from "./ThemeSurfacesEditor";
@@ -79,6 +80,7 @@ export function ThemePreview({
   backgroundBlur?: number;
 }) {
   const p = theme[mode];
+  const surfaces = theme.surfaces && surfacesForMode(theme.surfaces, mode);
   return (
     <div
       className="theme-preview"
@@ -91,9 +93,10 @@ export function ThemePreview({
           borderColor: p.border,
           fontFamily: theme.appFontFamily,
           fontSize: theme.appFontSize,
+          "--plasma-titlebar-shadow-opacity": (surfaces?.titlebarShadow ?? 100) / 100,
           "--preview-accent": p.accent,
           "--preview-background": p.background,
-          "--plasma-titlebar-fill": `color-mix(in srgb, ${theme.accentTitlebar ? p.titlebar : p.surface} ${theme.accentTitlebar ? 80 : 55}%, transparent)`,
+          "--plasma-titlebar-fill": `color-mix(in srgb, ${theme.accentTitlebar ? p.titlebar : p.surface} ${surfaces?.titlebar ?? (theme.accentTitlebar ? 80 : 55)}%, transparent)`,
           "--link-color": `color-mix(in srgb, ${p.accent} 45%, ${p.text} 55%)`,
         } as CSSProperties
       }
@@ -750,16 +753,6 @@ export function ThemeBuilder({
                 </div>
                 <ThemeTypographyEditor theme={draft} change={update} />
                 <ThemeControlsEditor theme={draft} change={update} />
-                <label>
-                  <input
-                    type="checkbox"
-                    checked={draft.accentTitlebar}
-                    onChange={(e) =>
-                      update({ accentTitlebar: e.target.checked })
-                    }
-                  />{" "}
-                  Colored title bar
-                </label>
               </div>
               <ThemeDesignEditor
                 theme={draft}
@@ -858,11 +851,13 @@ export function ThemeBuilder({
 /** Mount per notebook. The local snapshot remains authoritative until the user resolves a difference. */
 export function ThemeReconciliation({
   current,
+  mode = "dark",
   onApply,
   acknowledgedDifference,
   onKeepBoth,
 }: {
   current: ThemeDocument | null;
+  mode?: "light" | "dark";
   onApply: (theme: ThemeDocument) => void;
   acknowledgedDifference?: ThemeDifferenceAcknowledgement;
   onKeepBoth?: (difference: ThemeDifferenceAcknowledgement) => void;
@@ -895,7 +890,7 @@ export function ThemeReconciliation({
     setError("");
     // Restoring defaults stores a snapshot even for classic built-in presets.
     // Those themes already ship with the app; they need no library registration.
-    const builtIn = allBuiltInThemes.find((theme) => theme.id === snapshot?.id);
+    const builtIn = findBuiltInTheme(snapshot?.id);
     if (snapshot && snapshot.id !== "default" && !(builtIn && themesMatch(snapshot, builtIn)))
       void listThemes()
         .then(async (result) => {
@@ -958,11 +953,11 @@ export function ThemeReconciliation({
           <div className="theme-conflict-previews">
             <div>
               <h3>This notebook</h3>
-              <ThemePreview theme={current} mode="dark" />
+              <ThemeWorkbenchPreview theme={current} mode={mode} showControls={false} />
             </div>
             <div>
               <h3>App-wide theme</h3>
-              <ThemePreview theme={shared} mode="dark" />
+              <ThemeWorkbenchPreview theme={shared} mode={mode} showControls={false} />
             </div>
           </div>
         ) : null}

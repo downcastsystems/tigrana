@@ -168,3 +168,40 @@ describe('built-in theme catalog', () => {
     }
   });
 });
+
+it('limits Plasma light surface defaults to light mode and preserves package settings', () => {
+  for (const id of ['dracula', 'plasma-ooze', 'plasma-undertow', 'plasma-witches-brew']) {
+    const theme = classicThemes.find(t => t.id === id)!;
+    const light = themeStylesheet(theme, 'light', 'test');
+    const dark = themeStylesheet(theme, 'dark', 'test');
+    expect(light).toContain('--tigrana-editor-opacity: 45%');
+    expect(light).toContain('--plasma-titlebar-shadow-opacity: 0');
+    expect(light).toContain('var(--surface) 0%,transparent)');
+    expect(dark).toContain('--tigrana-editor-opacity: 35%');
+    expect(dark).toContain('--plasma-titlebar-shadow-opacity: 1');
+    expect(decodeThemePackage(encodeThemePackage(theme)).surfaces).toEqual(theme.surfaces);
+  }
+  for (const theme of allBuiltInThemes.filter(t => t.id !== 'dracula' && t.id !== 'builtin-starfall-studio' && !t.id.startsWith('plasma-'))) {
+    expect(theme.surfaces?.light).toBeUndefined();
+    expect(theme.surfaces?.titlebarShadow).toBeUndefined();
+  }
+});
+
+
+it('ships the updated Starfall once, with matching round controls in both modes', () => {
+  const next = bundledThemes.find(t => t.id === 'builtin-starfall-studio')!;
+  expect(bundledThemes.filter(t => t.name.startsWith('Starfall'))).toEqual([next]);
+  expect(next.name).toBe('Starfall');
+  expect(next.plasma?.enabled).toBe(false);
+  expect(next.design).not.toHaveProperty("supportsPlasma");
+  expect(Object.keys(next.design!.assets)).toHaveLength(2);
+  expect(next.surfaces?.titlebar).toBe(0);
+  for (const mode of ['light', 'dark'] as const) {
+    const css = themeStylesheet(next, mode, 'preview');
+    expect(css).toContain('background-attachment:fixed');
+    expect(css).toContain('--tigrana-panel-radius:16px');
+    expect(css).toContain('--tigrana-control-character:1');
+    expect(css).toContain('border:1px solid var(--tigrana-pink)');
+    expect(css).toContain('[data-theme-region="preview"].app-titlebar .tab-history-button');
+  }
+});

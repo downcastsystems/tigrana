@@ -30,7 +30,7 @@ it("edits, validates, reorders by buttons and drag, removes, saves and restores 
   });
   try {
     await act(async () => root.render(<Harness />));
-    expect(host.textContent).toContain("Edit → Sort Lines → Bullet Method");
+    expect(host.textContent).toContain("Edit → Sort Lines → Bullet Statuses");
     expect(host.querySelector<HTMLButtonElement>('[aria-label="Remove No status"]')!.disabled).toBe(true);
     await click("Move No status up");
     await click("Add status");
@@ -245,5 +245,29 @@ it("updates the dimming label live and preserves spaces while autosaving names",
     for (const name of ['CLOSED', 'DONE', 'NEXT UP']) await act(async () => host.querySelector<HTMLInputElement>(`[aria-label="Dim ${name}"]`)!.click());
     expect(globalLabel()).toContain('none selected');
     expect([...host.querySelectorAll('button')].some(button => /Save changes|Discard changes/.test(button.textContent ?? ''))).toBe(false);
+  } finally { await act(async () => root.unmount()); host.remove(); }
+});
+
+it('imports only status rows and restores the original system afterward', async () => {
+  const { encodeBulletStatusSystem } = await import('../lib/bulletStatusSystem');
+  const host = document.createElement('div'); document.body.append(host);
+  const root = createRoot(host);
+  const saved = vi.fn(), displayChanged = vi.fn();
+  const imported = [...defaultBulletMethodStatuses].reverse().map(s => ({ ...s, dim: false }));
+  try {
+    await act(async () => root.render(<BulletMethodSettings statuses={defaultBulletMethodStatuses} onChange={saved} onDisplayChange={displayChanged} />));
+    const input = host.querySelector<HTMLInputElement>('input[type="file"]')!;
+    Object.defineProperty(input, 'files', { configurable: true, value: [{ size: 100, text: async () => encodeBulletStatusSystem(imported) }] });
+    await act(async () => input.dispatchEvent(new Event('change', { bubbles: true })));
+    expect(saved.mock.lastCall![0].map((s: BulletMethodStatus) => s.id)).toEqual(imported.map(s => s.id));
+    expect(saved.mock.lastCall![0].every((s: BulletMethodStatus) => s.dim === false)).toBe(true);
+    expect(displayChanged).not.toHaveBeenCalled();
+    const calls = saved.mock.calls.length;
+    Object.defineProperty(input, 'files', { configurable: true, value: [{ size: 10, text: async () => '{}' }] });
+    await act(async () => input.dispatchEvent(new Event('change', { bubbles: true })));
+    expect(saved).toHaveBeenCalledTimes(calls);
+    expect(host.querySelector('[role="alert"]')?.textContent).toContain('supported');
+    await act(async () => [...host.querySelectorAll('button')].find(b => b.textContent?.includes('Restore defaults'))!.click());
+    expect(saved.mock.lastCall![0]).toEqual(defaultBulletMethodStatuses);
   } finally { await act(async () => root.unmount()); host.remove(); }
 });

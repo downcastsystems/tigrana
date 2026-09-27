@@ -5820,7 +5820,7 @@ export default function App() {
           />
       ) : null}
 
-      {workspace && metadataLoaded && !settingsOpen ? <ThemeReconciliation key={workspace} current={customTheme} onApply={applyCustomTheme}
+      {workspace && metadataLoaded && !settingsOpen ? <ThemeReconciliation key={workspace} current={customTheme} mode={resolvedTheme} onApply={applyCustomTheme}
         acknowledgedDifference={metadata.appearance?.acknowledgedThemeDifference}
         onKeepBoth={(difference) => updateNotebookAppearance({ acknowledgedThemeDifference: difference })} /> : null}
 

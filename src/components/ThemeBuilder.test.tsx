@@ -1,3 +1,4 @@
+import { themeStylesheet } from "../lib/themeRuntime";
 import { themeFamily } from "../lib/themeFamilies";
 import { bundledThemes, classicThemes } from "../lib/bundledThemes";
 // @vitest-environment jsdom
@@ -579,7 +580,7 @@ it("offers bundled Starfall, keeps its assets portable, and edits a personal cop
       select.dispatchEvent(new Event("change", { bubbles: true }));
     });
     expect(apply).toHaveBeenCalledWith(starfall);
-    expect(starfall.plasma?.enabled).toBe(true);
+    expect(starfall.plasma?.enabled).toBe(false);
     expect(starfall.light.selectedText).toBe("#241533");
     expect(Object.keys(starfall.design!.assets)).toHaveLength(2);
     await act(async () => root.render(<ThemeBuilder current={starfall} seed={starfall} onApply={apply}/>));
@@ -592,7 +593,7 @@ it("offers bundled Starfall, keeps its assets portable, and edits a personal cop
     const saved = (await listThemes()).themes[0];
     expect(saved.id).not.toBe(starfall.id);
     expect(saved.design?.assets).toEqual(starfall.design?.assets);
-    expect(saved.plasma?.enabled).toBe(true);
+    expect(saved.plasma?.enabled).toBe(false);
   } finally { await act(async () => root.unmount()); }
 });
 
@@ -983,5 +984,40 @@ it.each([true, false])('does not flag sidebar visibility alone as a theme change
       onApply={vi.fn()} onUseThemeDefaults={vi.fn()} />));
     expect(host.querySelector('.theme-current-settings strong')?.textContent)
       .toBe(`Current settings differ from ${theme.name}.`);
+  } finally { await act(async () => root.unmount()); }
+});
+
+
+it("renders reconciliation with full theme CSS in the notebook color mode", async () => {
+  const original = bundledThemes.find(theme => theme.name === 'Starfall')!;
+  const shared = { ...original, id: 'starfall-preview-copy', name: 'Starfall copy' };
+  await saveTheme(shared, null);
+  const current = { ...shared, surfaces: { background: '#112233', navigation: 30, editor: 45, outline: 25, titlebar: 0, titlebarShadow: 0 } };
+  const host = document.createElement('div'); document.body.append(host);
+  const root = createRoot(host);
+  try {
+    await act(async () => root.render(<ThemeReconciliation current={current} mode="light" onApply={vi.fn()} />));
+    const previews = [...host.querySelectorAll('[aria-label="light full theme preview"]')];
+    expect(previews).toHaveLength(2);
+    expect(host.querySelector('[aria-label="Preview controls"]')).toBeNull();
+    for (const preview of previews) {
+      expect(preview.shadowRoot?.querySelector('.app-frame')).not.toBeNull();
+      expect(preview.shadowRoot?.textContent).toContain('data-theme-region="preview"');
+      expect([...preview.shadowRoot!.querySelectorAll('style')].some(style => style.textContent === themeStylesheet(preview === previews[0] ? current : shared, 'light', 'preview'))).toBe(true);
+    }
+  } finally { await act(async () => root.unmount()); host.remove(); }
+});
+
+
+it('offers the promoted Starfall as a built-in update for experimental snapshots', async () => {
+  const latest = bundledThemes.find(theme => theme.id === 'builtin-starfall-studio')!;
+  const old = { ...latest, id: 'builtin-starfall-2', name: 'Starfall 2.0' };
+  const host = document.createElement('div'), root = createRoot(host), apply = vi.fn();
+  try {
+    await act(async () => root.render(<ThemeReconciliation current={old} onApply={apply} />));
+    expect(host.textContent).toContain('A newer built-in theme is available');
+    expect(host.textContent).not.toContain('Make this theme available app-wide?');
+    await act(async () => button(host, 'Use the latest version in this notebook only').click());
+    expect(apply).toHaveBeenCalledWith(latest);
   } finally { await act(async () => root.unmount()); }
 });

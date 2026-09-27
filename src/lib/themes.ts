@@ -377,7 +377,7 @@ export function themeAppearance(theme: ThemeDocument): NotebookAppearance {
     ...(theme.navigationStyle === undefined ? {} : { navigationStyle: theme.navigationStyle }),
     plasma: {
       ...(theme.plasma ?? defaultPlasmaSettings),
-      enabled: (theme.plasma?.enabled ?? false) && theme.design?.supportsPlasma !== false,
+      enabled: (theme.plasma?.enabled ?? false),
     },
     appFontFamily: theme.appFontFamily,
     appFontSize: theme.appFontSize,

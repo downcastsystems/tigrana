@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { defaultPlasmaSettings, type ThemeDocument } from '../lib/themes';
 import { defaultThemeDesign, parseThemeDesign } from '../lib/themeDesign';
-import { surfaceKeys } from '../lib/themeSurfaces';
+import { surfacesForMode, surfaceKeys } from '../lib/themeSurfaces';
 import { ThemeColorField } from './ThemeColorField';
 
 export function ThemeSurfacesEditor({ theme, mode, change }: {
@@ -12,21 +12,25 @@ export function ThemeSurfacesEditor({ theme, mode, change }: {
   const latest = useRef(theme);
   latest.current = theme;
   useEffect(() => { mounted.current = true; return () => { mounted.current = false; }; }, []);
-  const surfaces = theme.surfaces ?? {
+  const baseSurfaces = theme.surfaces ?? {
     background: theme[mode].background,
     navigation: theme.plasma?.enabled ? theme.plasma.frost * 0.9 : 100,
     editor: theme.plasma?.enabled ? Math.min(95, theme.plasma.frost * 1.1) : 100,
     outline: theme.plasma?.enabled ? theme.plasma.frost * 0.9 : 100, titlebar: 100,
   };
+  const surfaces = surfacesForMode(baseSurfaces, mode);
+  const changeOpacity = (key: typeof surfaceKeys[number] | 'titlebarShadow', value: number) => change({ surfaces: mode === 'light' && baseSurfaces.light
+    ? { ...baseSurfaces, light: { ...baseSurfaces.light, [key]: value } }
+    : { ...baseSurfaces, [key]: value } });
   const names = { navigation: 'Navigation', editor: 'Editor', outline: 'Outline', titlebar: 'Title bar' };
   return <section className="theme-advanced-surfaces">
     <h3>Advanced surfaces</h3>
     <p className="settings-description">Lower panel opacity to reveal the background. Text and controls stay opaque. These settings apply in both standard and Plasma modes.</p>
     {theme.design?.css && <p className="settings-description">Custom CSS can override panel backgrounds and opacity. If a slider has no visible effect, check the matching panel rules in Advanced CSS.</p>}
     <ThemeColorField label="Window background" name="Window background" value={surfaces.background}
-      onChange={background => change({ surfaces: { ...surfaces, background } })}/>
+      onChange={background => change({ surfaces: { ...baseSurfaces, background } })}/>
     <label className="setting-row">Background image
-      <select aria-label="Background image" value={surfaces.image ?? ''} onChange={e => change({ surfaces: { ...surfaces, image: e.target.value || undefined } })}>
+      <select aria-label="Background image" value={surfaces.image ?? ''} onChange={e => change({ surfaces: { ...baseSurfaces, image: e.target.value || undefined } })}>
         <option value="">None</option>
         {Object.entries(theme.design?.assets ?? {}).filter(([, asset]) => asset.mime.startsWith('image/')).map(([path]) => <option key={path} value={path}>{path.slice(7)}</option>)}
       </select>
@@ -54,15 +58,22 @@ export function ThemeSurfacesEditor({ theme, mode, change }: {
     {surfaceKeys.map(key => <label className="setting-row" key={key}>
       <span>{names[key]} opacity <output>{Math.round(surfaces[key])}%</output></span>
       <input type="range" aria-label={`${names[key]} opacity`} min={0} max={100} value={surfaces[key]}
-        onChange={e => change({ surfaces: { ...surfaces, [key]: Number(e.target.value) } })}/>
+        onChange={e => changeOpacity(key, Number(e.target.value))}/>
     </label>)}
+    <label className="setting-row">
+      <span>Title bar shadow opacity <output>{surfaces.titlebarShadow ?? 100}%</output></span>
+      <input type="range" aria-label="Title bar shadow opacity" min={0} max={100} value={surfaces.titlebarShadow ?? 100}
+        onChange={e => changeOpacity('titlebarShadow', Number(e.target.value))}/>
+    </label>
+    <label className="theme-preview-toggle">
+      <input type="checkbox" checked={theme.accentTitlebar}
+        onChange={event => change({ accentTitlebar: event.target.checked })} />
+      Colored title bar
+    </label>
     <div className="theme-surface-plasma">
-      <h4>Plasma glass</h4>
-      <p className="settings-description">Use the opacity sliders above to control how much background shows through each panel. Frostiness adjusts the Plasma glass effect; lower Editor opacity if the note background hides it.</p>
       <label className="theme-preview-toggle">
         <input
           type="checkbox"
-          disabled={theme.design?.supportsPlasma === false}
           checked={theme.plasma?.enabled ?? false}
           onChange={(event) =>
             change({
@@ -75,10 +86,6 @@ export function ThemeSurfacesEditor({ theme, mode, change }: {
         />
         Enable Plasma UI
       </label>
-      <p className="settings-description">
-        These settings belong to this theme and apply when you select it. Preview both light and dark modes before saving.
-      </p>
-      {theme.design?.supportsPlasma === false && <p className="settings-description">This theme does not support Plasma. Enable Supports Plasma in Sharing details to try it.</p>}
       {theme.plasma?.enabled ? (
         <>
           <label className="theme-preview-toggle">
