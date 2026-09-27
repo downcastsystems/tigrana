@@ -7,7 +7,7 @@ import { Table, TableRow, TableCell, TableHeader } from "@tiptap/extension-table
 import { CellSelection } from "@tiptap/pm/tables";
 import { AllSelection, TextSelection } from "@tiptap/pm/state";
 import { afterEach, describe, expect, it } from "vitest";
-import { isSortCommand, sortSelectedLines, type SortCommand } from "./sortLines";
+import { isSortCommand, sortCurrentList, sortSelectedLines, type SortCommand } from "./sortLines";
 
 HTMLCanvasElement.prototype.getContext = (() => null) as typeof HTMLCanvasElement.prototype.getContext;
 const { markdownToHtml, htmlToMarkdown } = await import("../lib/markdown");
@@ -103,6 +103,35 @@ describe("Bullet Statuses at the cursor", () => {
     const editor = setup("<ul><li><p>z</p></li><li><p>a</p></li></ul>");
     cursorIn(editor, "z", 0);
     expect(sortSelectedLines(editor.state, "sort_az")).toBeNull();
+  });
+});
+
+describe("current-list sorting from a text selection", () => {
+  it.each([false, true])("uses the active end when a selection spans lists (reverse: %s)", reverse => {
+    const editor = setup('<ul><li><p>TODO: First</p></li><li><p>DONE: First</p></li></ul><p>Between</p><ul><li><p>TODO: Second</p></li><li><p>DONE: Second</p></li></ul>');
+    const positions: number[] = [];
+    editor.state.doc.descendants((node, pos) => {
+      if (node.isText && node.text!.startsWith('TODO:')) positions.push(pos + 6);
+    });
+    editor.commands.setTextSelection({ from: positions[reverse ? 1 : 0], to: positions[reverse ? 0 : 1] });
+    const original = editor.getJSON();
+    const untouched = editor.state.doc.child(reverse ? 2 : 0);
+    const tr = sortCurrentList(editor.state);
+    expect(tr).not.toBeNull();
+    editor.view.dispatch(tr!);
+    expect(editor.state.doc.child(reverse ? 2 : 0).eq(untouched)).toBe(true);
+    expect(editor.state.doc.child(reverse ? 0 : 2).firstChild!.textContent).toBe(reverse ? 'DONE: First' : 'DONE: Second');
+    expect(editor.state.selection.empty).toBe(true);
+    expect(editor.state.selection.$head.parent.textContent).toBe(reverse ? 'TODO: First' : 'TODO: Second');
+    expect(editor.state.selection.$head.parentOffset).toBe(6);
+    editor.commands.undo();
+    expect(editor.getJSON()).toEqual(original);
+  });
+
+  it("does nothing when the active selection is outside a list", () => {
+    const editor = setup('<p>TODO: First</p><p>DONE: Second</p>');
+    editor.commands.setTextSelection({ from: 1, to: editor.state.doc.content.size - 1 });
+    expect(sortCurrentList(editor.state)).toBeNull();
   });
 });
 

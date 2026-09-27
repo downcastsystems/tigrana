@@ -35,16 +35,17 @@ function sortListTree(node: ProseMirrorNode, statuses: readonly BulletMethodStat
   return { node: node.copy(Fragment.fromArray(children.map(child => child.node))), cursor: mappedCursor };
 }
 
-function sortListAtCursor(state: EditorState, statuses: readonly BulletMethodStatus[]): Transaction | null {
+/** Sort the list containing the active end of a text selection, as at a caret. */
+export function sortCurrentList(state: EditorState, statuses: readonly BulletMethodStatus[] = defaultBulletMethodStatuses): Transaction | null {
   const { selection } = state;
-  if (!(selection instanceof TextSelection) || !selection.empty) return null;
-  const { $from } = selection;
+  if (!(selection instanceof TextSelection)) return null;
+  const { $head } = selection;
   // Start at the outermost containing list so every level is sorted together.
-  for (let depth = 1; depth <= $from.depth; depth++) {
-    const list = $from.node(depth);
+  for (let depth = 1; depth <= $head.depth; depth++) {
+    const list = $head.node(depth);
     if (!listNames.has(list.type.name)) continue;
-    const start = $from.before(depth);
-    const sorted = sortListTree(list, statuses, $from.pos - start);
+    const start = $head.before(depth);
+    const sorted = sortListTree(list, statuses, $head.pos - start);
     if (sorted.node.eq(list)) return null;
     const tr = closeHistory(state.tr).replaceWith(start, start + list.nodeSize, sorted.node);
     return tr.setSelection(TextSelection.create(tr.doc, start + sorted.cursor!)).scrollIntoView();
@@ -55,7 +56,7 @@ function sortListAtCursor(state: EditorState, statuses: readonly BulletMethodSta
 /** Sort touched sibling units, retaining their marks, attributes and descendants. */
 export function sortSelectedLines(state: EditorState, command: SortCommand, statuses: readonly BulletMethodStatus[] = defaultBulletMethodStatuses): Transaction | null {
   const { selection } = state;
-  if (selection.empty) return command === "sort_bullet_method" ? sortListAtCursor(state, statuses) : null;
+  if (selection.empty) return command === "sort_bullet_method" ? sortCurrentList(state, statuses) : null;
   // CellSelection.from/to describe just its primary cell, not the rectangle.
   // Its range envelope covers all selected rows, including reverse selections.
   const from = selection.ranges.reduce((start, range) => Math.min(start, range.$from.pos), selection.from);

@@ -107,7 +107,7 @@ import {
 import { handleListTextReplacement, prepareListTextReplacement } from "./listTextReplacement";
 import { SearchHighlight, getEditorMatches, scrollEditorPositionIntoView, searchHighlightKey } from "./searchHighlight";
 import { ensureParagraphAfterCurrentTable, filterSlashCommands, markCurrentTableAsTigranaHtml } from "./slashCommands";
-import { isSortCommand, sortSelectedLines, type SortCommand } from "./sortLines";
+import { isSortCommand, sortCurrentList, sortSelectedLines, type SortCommand } from "./sortLines";
 import { refreshSortedSelectionPaint } from "./sortSelectionPaint";
 import { OrderedListWithGutter } from "./orderedList";
 import { StoryParagraphs, handleStoryParagraphKey, setParagraphIndent } from "./storyParagraphs";
@@ -1103,11 +1103,11 @@ async function applyLinkToEditorSelection(
     .run();
 }
 
-function applyLineSort(editor: Editor, command: SortCommand, statuses: readonly BulletMethodStatus[]) {
+function applyLineSort(editor: Editor, command: SortCommand, statuses: readonly BulletMethodStatus[], scope: "selection" | "current-list" = "selection") {
   if (!editor.isEditable) return;
   // A cursor-only shortcut must not act on a stale cursor while another field has focus.
   if (editor.state.selection.empty && !editor.isFocused) return;
-  const tr = sortSelectedLines(editor.state, command, statuses);
+  const tr = scope === "current-list" ? sortCurrentList(editor.state, statuses) : sortSelectedLines(editor.state, command, statuses);
   if (tr) {
     editor.view.dispatch(tr);
     editor.view.dispatch(closeHistory(editor.state.tr));
@@ -1407,7 +1407,7 @@ export function FormattingBubbleMenu({
                     aria-label="Sort by Bullet Statuses"
                     title={`Sort by Bullet Statuses (${/Mac|iPhone|iPad/.test(navigator.platform) ? "⌘⌥." : "Ctrl+Alt+."})`}
                     onMouseDown={(event) => event.preventDefault()}
-                    onClick={() => applyLineSort(editor, "sort_bullet_method", bulletMethodStatuses)}
+                    onClick={() => applyLineSort(editor, "sort_bullet_method", bulletMethodStatuses, "current-list")}
                   >
                     <BulletMethodIcon size={15} />
                   </button>

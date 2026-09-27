@@ -581,15 +581,15 @@ describe("formatting selection eligibility", () => {
 });
 
 describe("Bullet Statuses formatting button", () => {
-  it.each([false, true])("sorts selected bullets using the configured order (custom: %s) and supports undo", async (custom) => {
+  it.each([false, true])("sorts the entire current list from a selected word (custom: %s) and supports undo", async (custom) => {
     vi.useFakeTimers();
     const editor = new Editor({
       extensions: [StarterKit],
-      content: "<ul><li><p>TODO: Start</p></li><li><p>DONE: Finished</p></li><li><p>New note</p></li></ul>",
+      content: "<ul><li><p>TODO: Start</p></li><li><p>DONE: Finished</p></li><li><p>New note</p></li></ul><p>Between lists</p><ul><li><p>TODO: Other</p></li><li><p>DONE: Other</p></li></ul>",
     });
     const first = textRange(editor.state.doc, "TODO: Start");
-    const last = textRange(editor.state.doc, "New note");
-    editor.commands.setTextSelection({ from: first.from, to: last.to });
+    editor.commands.setTextSelection({ from: first.from + 6, to: first.to });
+    const otherList = editor.state.doc.lastChild!;
     const original = editor.getJSON();
     editor.isFocused = true;
     const focus = vi.spyOn(editor.view, "focus").mockImplementation(() => {});
@@ -622,7 +622,9 @@ describe("Bullet Statuses formatting button", () => {
       expect(items).toEqual(custom
         ? ["New note", "TODO: Start", "DONE: Finished"]
         : ["DONE: Finished", "TODO: Start", "New note"]);
-      expect(editor.state.selection.empty).toBe(false);
+      expect(editor.state.doc.lastChild!.eq(otherList)).toBe(true);
+      expect(editor.state.selection.empty).toBe(true);
+      expect(editor.state.selection.$head.parent.textContent).toBe("TODO: Start");
       expect(focus).toHaveBeenCalled();
       await act(async () => { expect(editor.commands.undo()).toBe(true); });
       expect(editor.getJSON()).toEqual(original);

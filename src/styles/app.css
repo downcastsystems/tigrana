@@ -3948,9 +3948,14 @@ html[data-theme="dark"] .tab-list-separator {
 .ProseMirror ul:not([data-type="taskList"]) > li[data-bullet-method-marker] {
   position: relative;
   list-style-type: none;
-  /* Keep WebKit's text selection inside each paragraph, not its block gaps. */
-  display: flex;
-  flex-direction: column;
+  /* Preserve list-item layout: WebKit skips flex rows when a selection drag
+     moves into the marker gutter or the empty margin beside the list. */
+}
+.ProseMirror li[data-bullet-method-marker] > p {
+  /* Give selection paint its own coordinate space so WebKit does not fill
+     the gaps between rows. A 2D identity transform preserves inline layout
+     without forcing a composited layer for every status paragraph. */
+  transform: translate(0);
 }
 /* Positioned status rows otherwise paint a thin selection strip in the list
    gutter. Paragraphs and inline content retain the theme's selection colors. */

@@ -34,6 +34,42 @@ try {
     assert.equal(await page.locator('.ProseMirror li p').nth(1).innerText(), 'IN PROGRESS: Look at report');
     await page.close();
   }
+  // Reproduce dragging upward into the marker gutter and empty left margin.
+  // WebKit skips flex status rows here even though dragging within text works.
+  for (const nested of [false, true]) for (const offset of [2, -15, -40, -100]) {
+    const page = await browser.newPage({ viewport: { width: 1100, height: 850 } });
+    await page.goto(`${base}/scripts/fixtures/status-selection.html`);
+    await page.waitForSelector('.bullet-method-marker-button');
+    const lines = ['CLOSED: First', 'DONE: Second', 'DONE: Third', 'TODO: Fourth',
+      'TODO: Fifth', 'Ordinary sixth', 'Ordinary seventh', 'TODO: Eighth', 'Ordinary last'];
+    await page.evaluate(({ lines, nested }) => {
+      const list = `<ul>${lines.map(text => `<li><p>${text}</p></li>`).join('')}</ul>`;
+      editor.commands.setContent(nested ? `<ul><li><p>Parent</p>${list}</li></ul>` : list);
+    }, { lines, nested });
+    const boxes = await page.locator('li p').evaluateAll(paragraphs => paragraphs.map(p => {
+      const range = document.createRange(); range.selectNodeContents(p);
+      const rect = range.getBoundingClientRect();
+      return { x: rect.x, y: rect.y + rect.height / 2, right: rect.right };
+    }));
+    if (nested) boxes.shift();
+    const last = boxes.at(-1);
+    await page.mouse.move(last.right - 1, last.y);
+    await page.mouse.down();
+    await page.mouse.move(boxes[5].x + offset, boxes[5].y, { steps: 10 });
+    await page.mouse.move(boxes[1].x + offset, boxes[1].y, { steps: 20 });
+    // A non-editable icon can resolve to the end of its row. It must still
+    // advance through the list, and leaving the icon must reach the row start.
+    if (offset === -15) {
+      assert((await page.evaluate(() => getSelection().toString())).includes('DONE: Third'));
+      await page.mouse.move(boxes[1].x - 40, boxes[1].y, { steps: 5 });
+    }
+    await page.mouse.up();
+    const selected = await page.evaluate(() => getSelection().toString());
+    assert(selected.startsWith('DONE: Second'), `Upward drag at offset ${offset} must reach the status row, got ${JSON.stringify(selected)}`);
+    assert(selected.endsWith('Ordinary last'));
+    assert.deepEqual(await page.locator('li p').allTextContents(), nested ? ['Parent', ...lines] : lines, 'Dragging across icons must not cycle a status');
+    await page.close();
+  }
   // DOM range rectangles alone miss WebKit's extra paint between blocks.
   // Exercise a real upward drag and inspect the screenshot's empty row gaps.
   for (const nested of [false, true]) {
@@ -80,5 +116,5 @@ try {
     assert(counts.text > 100, 'The selected text must still visibly highlight');
     await page.close();
   }
-  console.log('First-word and ordinary-word selection, typing, undo, and status clicking, and flat/nested upward-drag selection painting passed in WebKit.');
+  console.log('First-word and ordinary-word selection, typing, undo, status clicking, margin dragging, and flat/nested selection painting passed in WebKit.');
 } finally { await browser.close(); }
