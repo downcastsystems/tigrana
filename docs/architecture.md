@@ -587,11 +587,39 @@ sequence prevents optimistic updates and retry replays from counting a save twic
 with saves made by this version; it cannot reconstruct earlier writing sessions.
 
 Footnotes use portable `[^label]` references and `[^label]: text` definitions,
-with indented continuation paragraphs. The editor shows numbered reference
-atoms and compact definition blocks; the Footnote slash command and sidebar
-open a Markdown text dialog for insertion/editing. Raw definition source is
-preserved through serialization, including multiline content. References are
-numbered by first occurrence, while labels stay stable on disk. The sidebar
-identifies missing, duplicate, and unused definitions. Inline Obsidian-style
-`^[text]` footnotes are not generated. Typing transactions map existing number
-decorations; only changes involving reference nodes rebuild numbering.
+with indented continuation blocks. Definitions are editable block containers in
+the main editor, so formatting, lists, blockquotes, and undo work normally.
+Typing `[^]` in rich text creates a footnote and focuses its definition. Explicit
+labels such as `[^5]` are literal while typing in rich text and are escaped on
+save; Markdown source still supports ordinary labeled references and definitions.
+The shortcut is disabled inside code and footnotes.
+Adding a footnote inserts a reference at the selection's end and moves the caret
+into an empty definition. References navigate to definitions; definition numbers
+navigate back to references. Sidebar text opens the definition and its number
+returns to the reference. Reused references cycle when navigating repeatedly.
+The sidebar delete button removes the definition and all matching references in
+one undoable transaction; the remaining footnotes renumber automatically.
+Backspace or Delete with a collapsed caret inside an empty definition performs
+the same removal. Footnotes containing text or non-text content are preserved.
+At the first or last visual line, plain Up/Down moves to the adjacent footnote
+or stays put after the final footnote. Up from the first footnote returns to the
+end of the note body; Down from the body's final visual line enters the first
+footnote. The editor does not append a blank prose
+paragraph after the final footnote.
+
+Numbers follow first reference occurrence, while Markdown labels stay stable
+and are not displayed beside the numbers. Definition rows use a hanging indent
+and sort into reference order on load and structural footnote changes. Missing
+and unused definitions remain accessible. Untouched definition source is
+preserved, while edited content serializes to indented Markdown. Ordinary typing
+maps existing numbering decorations without scanning the whole document or
+serializing Markdown. Inline Obsidian-style `^[text]` footnotes are not generated.
+
+
+Footnotes in print, HTML, PDF, and Word exports use a compact, numbered section
+at the end of each Note, rather than page-bottom footnotes. Export markup removes
+editor controls and keeps rich blocks, superscript references, and links in both
+directions. Numbers follow first-reference order and restart per Note. Link target
+IDs are scoped per Note in collections. Long footnotes can continue across pages.
+Combined Markdown exports namespace reference and definition labels to prevent
+collisions; single-Note Markdown retains its original labels.

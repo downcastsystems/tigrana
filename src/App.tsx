@@ -14,6 +14,8 @@ import { WebviewWindow } from "@tauri-apps/api/webviewWindow";
 import { LogicalPosition, LogicalSize, availableMonitors, getCurrentWindow } from "@tauri-apps/api/window";
 import { open } from "@tauri-apps/plugin-dialog";
 import {
+  Asterisk,
+  Table2,
   Check,
   ChevronDown,
   ChevronUp,
@@ -446,7 +448,7 @@ export default function App() {
   const [wordCountVisible, setWordCountVisible] = useState(() => readStoredWordCountVisibility());
   const [noteScrollFades, setNoteScrollFades] = useState<ScrollFadeVisibility>({ top: false, bottom: false });
   const [dockedTitleState, setDockedTitleState] = useState({ visible: false, animate: false });
-  const [rightSidebarMode, setRightSidebarMode] = useState<RightSidebarMode>("outline");
+  const [rightSidebarMode, setRightSidebarMode] = useState<RightSidebarMode>("overview");
   const outlineScrollPositions = useRef(new Map<string, number>());
   const [linkIndex, setLinkIndex] = useState<LinkIndex | null>(null);
   const [rawMarkdownVisible, setRawMarkdownVisible] = useState(false);
@@ -2223,8 +2225,10 @@ export default function App() {
       case "align_center":
         updateNotebookAppearance({ noteAlignment: "center" });
         break;
+      case "format_table":
+      case "format_footnote":
       case "format_equation":
-        if (contentsActive && activeNoteEditable && !rawMarkdownVisible && !frontmatterError) requestEditorCommand("equation");
+        if (contentsActive && activeNoteEditable && !rawMarkdownVisible && !frontmatterError) requestEditorCommand(command === "format_table" ? "table" : command === "format_footnote" ? "footnote" : "equation");
         break;
       case "format_image":
         void requestImage().then((pick) => {
@@ -5262,6 +5266,11 @@ export default function App() {
                     <EditorOptionsSubmenu label="Insert" disabled={!contentsActive || !activeNoteEditable || rawMarkdownVisible || Boolean(frontmatterError)}>
                       <button type="button" role="menuitem"
                         onMouseDown={event => event.preventDefault()}
+                        onClick={() => { void handleMenuCommand("format_table"); setWidthMenuOpen(false); }}>
+                        <span><strong>Table</strong></span><Table2 size={16} />
+                      </button>
+                      <button type="button" role="menuitem"
+                        onMouseDown={event => event.preventDefault()}
                         onClick={() => { void handleMenuCommand("format_image"); setWidthMenuOpen(false); }}>
                         <span><strong>Image</strong></span><ImageIcon size={16} />
                       </button>
@@ -5269,6 +5278,11 @@ export default function App() {
                         onMouseDown={event => event.preventDefault()}
                         onClick={() => { requestEditorCommand("equation"); setWidthMenuOpen(false); }}>
                         <span><strong>Equation</strong></span><Sigma size={16} />
+                      </button>
+                      <button type="button" role="menuitem"
+                        onMouseDown={event => event.preventDefault()}
+                        onClick={() => { void handleMenuCommand("format_footnote"); setWidthMenuOpen(false); }}>
+                        <span><strong>Footnote</strong></span><Asterisk size={16} viewBox="4 4 16 16" strokeWidth={1.5} />
                       </button>
                     </EditorOptionsSubmenu>
                     <EditorOptionsSubmenu label="Export" disabled={!noteOpen}>
@@ -5534,6 +5548,7 @@ export default function App() {
           onGoalChange={metadataLoaded ? (noteId, goal) => { updateMetadata(current => setWritingGoal(current, noteId, goal)); } : undefined}
           onInsertFootnote={activeNoteEditable && noteOpen && !rawMarkdownVisible && !frontmatterError ? () => requestEditorCommand("footnote") : undefined}
           onEditFootnote={activeNoteEditable && noteOpen && !rawMarkdownVisible && !frontmatterError ? label => requestEditorCommand("footnote", { src: label }) : undefined}
+          onDeleteFootnote={activeNoteEditable && noteOpen && !rawMarkdownVisible && !frontmatterError ? label => requestEditorCommand("deleteFootnote", { src: label }) : undefined}
           onSelectFootnote={noteOpen && !rawMarkdownVisible && !frontmatterError ? label => requestEditorCommand("selectFootnote", { src: label }) : undefined}
           onFrontmatterChange={handleFrontmatterChange}
           onModeChange={setRightSidebarMode}
@@ -5993,7 +6008,6 @@ function menuFormatCommandToEditorCommand(command: string): EditorCommand | null
     format_quote: "quote",
     format_code_block: "codeBlock",
     format_divider: "divider",
-    format_table: "table",
   };
   return map[command] ?? null;
 }

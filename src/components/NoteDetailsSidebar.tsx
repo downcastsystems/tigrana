@@ -40,6 +40,7 @@ export function RightSidebar({
   onInsertFootnote,
   onEditFootnote,
   onSelectFootnote,
+  onDeleteFootnote,
 }: {
   body?: string;
   demoContents?: Map<string, string>;
@@ -47,6 +48,7 @@ export function RightSidebar({
   onInsertFootnote?: () => void;
   onEditFootnote?: (label: string) => void;
   onSelectFootnote?: (label: string) => void;
+  onDeleteFootnote?: (label: string) => void;
   id?: string;
   overlayActions?: ReactNode;
   activeNote: NoteEntry | null;
@@ -70,7 +72,7 @@ export function RightSidebar({
   onSelectBacklink: (path: string) => void;
 }) {
   const effectiveIndex = useMemo(() => linkIndex ?? (demoContents ? buildDemoLinkIndex(demoContents, notes) : null), [demoContents, linkIndex, notes]);
-  const footnotesPane = <FootnotesPane body={body} onInsert={onInsertFootnote} onEdit={onEditFootnote} onSelect={onSelectFootnote} />;
+  const footnotesPane = <FootnotesPane body={body} onInsert={onInsertFootnote} onEdit={onEditFootnote} onSelect={onSelectFootnote} onDelete={onDeleteFootnote} />;
   const linksPane = <NoteLinksPane linkIndex={effectiveIndex} activePath={activePath} selectedFolder={selectedFolder}
     notes={notes} metadata={metadata} onSelect={onSelectBacklink} />;
   const outlineScrollKey = noteIdentity ? JSON.stringify([workspace, noteIdentity]) : null;
@@ -123,6 +125,7 @@ export function RightSidebar({
             positions={outlineScrollPositions} onSelect={onSelectOutline} /></OverviewSection>
           <OverviewSection title="Links">{linksPane}</OverviewSection>
           <OverviewSection title="Footnotes">{footnotesPane}</OverviewSection>
+          <div className="overview-note-dates"><NoteDateRows activeNote={activeNote} /></div>
         </div>
       ) : mode === "outline" ? (
         <NoteOutlineList key={outlineScrollKey} outline={outline} scrollKey={outlineScrollKey}
@@ -172,8 +175,21 @@ function NoteOutlineList({ outline, scrollKey, positions, onSelect }: {
 }
 
 function OverviewSection({ title, children, defaultExpanded = true }: { title: string; children: ReactNode; defaultExpanded?: boolean }) {
-  const [expanded, setExpanded] = useState(defaultExpanded);
-  return <details className="overview-section" open={expanded} onToggle={event => setExpanded(event.currentTarget.open)}>
+  const preferenceKey = `tigrana-overview-${title.toLowerCase()}-expanded`;
+  const [expanded, setExpanded] = useState(() => {
+    try {
+      const saved = localStorage.getItem(preferenceKey);
+      return saved === "true" ? true : saved === "false" ? false : defaultExpanded;
+    } catch {
+      return defaultExpanded;
+    }
+  });
+  return <details className="overview-section" open={expanded} onToggle={event => {
+    const open = event.currentTarget.open;
+    if (open === expanded) return;
+    setExpanded(open);
+    try { localStorage.setItem(preferenceKey, String(open)); } catch { /* Keep the current choice if storage is unavailable. */ }
+  }}>
     <summary>{title}</summary>
     {children}
   </details>;
@@ -274,12 +290,6 @@ export function PropertiesPane({ activeNote, pendingNote, workspace }: { activeN
     return () => window.clearTimeout(timer);
   }, [copiedPath]);
   const folderPath = activeNote ? activeNote.parent_path || notebookName : pendingNote ? pendingNote.parentPath || notebookName : "None";
-  const createdAt = activeNote
-    ? activeNote.created_at != null ? new Date(activeNote.created_at * 1000).toLocaleString() : "Not available"
-    : "Not saved yet";
-  const updatedAt = activeNote
-    ? activeNote.updated_at != null ? new Date(activeNote.updated_at * 1000).toLocaleString() : "Not available"
-    : "Not saved yet";
 
   return (
     <div className="properties-list">
@@ -301,10 +311,23 @@ export function PropertiesPane({ activeNote, pendingNote, workspace }: { activeN
       </div>
       <PropertyRow label="Folder" value={folderPath} code copyPath={activeNote ? notebookFilePath(workspace, activeNote.parent_path) : undefined} />
       <PropertyRow label="Notebook" value={workspace || "No notebook open"} code copyPath={workspace || undefined} />
-      <PropertyRow label="Created" value={createdAt} />
-      <PropertyRow label="Updated" value={updatedAt} />
+      <NoteDateRows activeNote={activeNote} />
     </div>
   );
+}
+
+function NoteDateRows({ activeNote }: { activeNote: NoteEntry | null }) {
+  const createdAt = activeNote
+    ? activeNote.created_at != null ? new Date(activeNote.created_at * 1000).toLocaleString() : "Not available"
+    : "Not saved yet";
+  const updatedAt = activeNote
+    ? activeNote.updated_at != null ? new Date(activeNote.updated_at * 1000).toLocaleString() : "Not available"
+    : "Not saved yet";
+
+  return <>
+    <PropertyRow label="Created" value={createdAt} />
+    <PropertyRow label="Updated" value={updatedAt} />
+  </>;
 }
 
 function PropertyRow({ code, label, value, copyPath }: { code?: boolean; label: string; value: string; copyPath?: string }) {

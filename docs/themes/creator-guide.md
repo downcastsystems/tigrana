@@ -82,6 +82,8 @@ Style the word-count badge with `.note-status-bar` in Advanced CSS. Its backgrou
 
 Use local PNG, JPEG or WebP artwork and WOFF2 fonts. Reference a packaged image with `url("assets/paper.webp")`. Remote URLs, imports, arbitrary data URLs, scripts, SVG, CSS nesting, `!important`, animations, filters and functional selector pseudo-classes such as `:is(...)` are rejected. Write separate complete selectors instead. Invalid CSS is shown as an error and prevents saving; the preview temporarily uses the visual settings.
 
+Footnote markers use the link color without an underline by default. To deliberately underline them, add `.ProseMirror a.footnote-reference { text-decoration: underline; }` in Custom CSS.
+
 ## Give your theme its own controls
 
 Under **Visual → Theme-specific controls**, users adjust sliders, colors and switches. Under **Define controls for this theme**, creators define those controls as JSON and choose **Apply control definitions**. **Start with a slider** supplies an example.
