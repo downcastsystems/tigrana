@@ -592,6 +592,8 @@ atoms and compact definition blocks; the Footnote slash command and sidebar
 open a Markdown text dialog for insertion/editing. Raw definition source is
 preserved through serialization, including multiline content. References are
 numbered by first occurrence, while labels stay stable on disk. The sidebar
-identifies missing, duplicate, and unused definitions. Inline Obsidian-style
+identifies missing, duplicate, and unused definitions. Its Go to reference action
+centers and highlights the inline attachment in the note, cycling through
+locations when a label is reused. Inline Obsidian-style
 `^[text]` footnotes are not generated. Typing transactions map existing number
 decorations; only changes involving reference nodes rebuild numbering.

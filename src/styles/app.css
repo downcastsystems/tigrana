@@ -7033,6 +7033,9 @@ html[data-theme="light"] .ProseMirror li[data-bullet-method-completed="true"] .b
 .footnote-sidebar-heading { display: flex; justify-content: space-between; gap: 8px; }
 .footnote-sidebar-entry p { margin: 3px 0; font-size: 12px; line-height: 1.5; white-space: pre-wrap; overflow-wrap: anywhere; }
 .ProseMirror .footnote-reference { font-size: 0.75em; cursor: pointer; padding: 0 2px; vertical-align: super; }
+/* Outrank scoped theme link rules; explicit theme footnote rules can still override. */
+.ProseMirror a.footnote-reference,
+[data-theme-region] .ProseMirror a.footnote-reference { text-decoration: none; }
 .ProseMirror .footnote-reference::after { content: attr(data-number); }
 .footnote-reference .sr-only { position: absolute; width: 1px; height: 1px; padding: 0; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
 .ProseMirror .footnote-definition { margin: 18px 0; padding: 10px 0; border-top: 1px solid color-mix(in srgb, currentColor 18%, transparent); cursor: pointer; font-size: 0.85em; }
@@ -7043,3 +7046,7 @@ html[data-theme="light"] .ProseMirror li[data-bullet-method-completed="true"] .b
 .footnote-dialog-hint { margin: 8px 0 0; color: var(--muted); font-size: 13px; line-height: 1.5; }
 
 .footnote-dialog .field-label { color: var(--text); }
+
+.ProseMirror .footnote-reference.ProseMirror-selectednode { outline: 2px solid currentColor; outline-offset: 2px; border-radius: 2px; }
+
+.footnote-sidebar-label { padding: 4px 2px; font-size: 11px; }

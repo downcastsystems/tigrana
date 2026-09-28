@@ -1,6 +1,6 @@
 import { closeHistory } from "@tiptap/pm/history";
 import { Extension, InputRule, Node, type Editor } from "@tiptap/core";
-import { Plugin, PluginKey, TextSelection } from "@tiptap/pm/state";
+import { NodeSelection, Plugin, PluginKey, TextSelection } from "@tiptap/pm/state";
 import { Decoration, DecorationSet } from "@tiptap/pm/view";
 import type { Fragment, Node as PMNode } from "@tiptap/pm/model";
 import { footnoteAnchor, footnoteKey, footnoteMarkdown, validFootnoteLabel } from "../lib/footnotes";
@@ -120,13 +120,19 @@ export function saveFootnote(editor: Editor, label: string, body: string, positi
   return true;
 }
 
+/** Reveal the attachment in the prose, cycling when the same label is reused. */
 export function selectFootnote(editor: Editor, label: string) {
-  const definition = findFootnoteDefinition(editor, label);
-  if (definition) editor.commands.setNodeSelection(definition.pos);
-  else {
-    let pos: number | null = null;
-    editor.state.doc.descendants((node, at) => { if (pos === null && node.type.name === "footnoteReference" && footnoteKey(node.attrs.label) === footnoteKey(label)) pos = at; });
-    if (pos !== null) editor.commands.setNodeSelection(pos);
-  }
+  const positions: number[] = [];
+  editor.state.doc.descendants((node, pos) => {
+    if (node.type.name === "footnoteReference" && footnoteKey(node.attrs.label) === footnoteKey(label)) positions.push(pos);
+  });
+  if (!positions.length) return false;
+  const current = editor.state.selection instanceof NodeSelection ? positions.indexOf(editor.state.selection.from) : -1;
+  const pos = positions[(current + 1) % positions.length];
+  editor.commands.setNodeSelection(pos);
+  editor.view.focus();
   editor.commands.scrollIntoView();
+  const marker = editor.view.nodeDOM(pos);
+  if (marker instanceof HTMLElement) marker.scrollIntoView?.({ block: "center", inline: "nearest" });
+  return true;
 }

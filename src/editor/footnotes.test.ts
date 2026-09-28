@@ -2,7 +2,7 @@
 import { Editor } from "@tiptap/core";
 import { StarterKit } from "@tiptap/starter-kit";
 import { afterEach, expect, it } from "vitest";
-import { FootnoteDefinitionNode, FootnoteReferenceNode, FootnoteInteractions, saveFootnote } from "./footnotes";
+import { FootnoteDefinitionNode, FootnoteReferenceNode, FootnoteInteractions, saveFootnote, selectFootnote } from "./footnotes";
 import { footnoteEntries, parseFootnotes } from "../lib/footnotes";
 import { htmlToMarkdown, markdownToHtml } from "../lib/markdown";
 import { measureNoteText } from "../lib/noteTextStats";
@@ -66,4 +66,26 @@ it('keeps adjacent definitions as separate blocks', () => {
   const saved = htmlToMarkdown(editor.getHTML());
   expect(parseFootnotes(saved).definitions.map(item => item.body)).toEqual(['First', 'Second']);
   expect(saved).not.toContain('\u0003');
+});
+
+it('jumps to the reference in the prose, cycles reused labels, and leaves content unchanged', () => {
+  const editor = create('First[^a].\n\nSecond[^a].\n\n[^a]: Definition.\n\n[^unused]: No reference.');
+  const references: number[] = [];
+  let definition = 0;
+  editor.state.doc.descendants((node, pos) => {
+    if (node.type.name === 'footnoteReference') references.push(pos);
+    if (node.type.name === 'footnoteDefinition') definition = pos;
+  });
+  editor.commands.setNodeSelection(definition);
+  editor.setEditable(false);
+  const original = editor.getJSON();
+  expect(selectFootnote(editor, 'A')).toBe(true);
+  expect(editor.state.selection.from).toBe(references[0]);
+  expect(selectFootnote(editor, 'a')).toBe(true);
+  expect(editor.state.selection.from).toBe(references[1]);
+  selectFootnote(editor, 'a');
+  expect(editor.state.selection.from).toBe(references[0]);
+  expect(selectFootnote(editor, 'unused')).toBe(false);
+  expect(editor.state.selection.from).toBe(references[0]);
+  expect(editor.getJSON()).toEqual(original);
 });
