@@ -75,3 +75,16 @@ export function footnoteEntries(markdown: string): FootnoteEntry[] {
   }
   return [...entries.values()];
 }
+
+/** Plain readable sidebar text, without exposing Markdown formatting delimiters. */
+export function footnotePreview(markdown: string): string {
+  const text = (node: RootContent): string => {
+    if ("value" in node) return node.value;
+    if (node.type === "image") return node.alt ?? "";
+    if (!("children" in node)) return "";
+    const children = node.children.map(child => text(child as RootContent));
+    if (node.type === "list") return children.map((child, index) => `${node.ordered ? `${(node.start ?? 1) + index}.` : "•"} ${child}`).join("\n");
+    return children.join(node.type === "paragraph" || node.type === "link" || node.type === "strong" || node.type === "emphasis" || node.type === "delete" ? "" : "\n");
+  };
+  return parser.parse(markdown).children.map(text).join("\n\n");
+}

@@ -1,4 +1,4 @@
-import { footnoteAnchor, parseFootnotes } from "./footnotes";
+import { footnoteAnchor, footnoteKey, footnoteMarkdown, parseFootnotes } from "./footnotes";
 import { alignmentOpening, readTextAlignment } from "./textAlignment";
 import { readParagraphIndentMarker } from "./writingStyle";
 import { replaceEmojiShortcodes } from "./emoji";
@@ -131,7 +131,7 @@ export function markdownToHtml(markdown: string, options: MarkdownOptions = {}):
     while (markdown.includes(token)) token += "\u0003";
     const replacements = [
       ...footnotes.references.map(reference => ({ ...reference, html: `<sup data-type="footnoteReference" data-label="${escapeHtml(reference.label)}" data-number="${reference.number}"><a href="#${footnoteAnchor(reference.label)}">${reference.number}</a></sup>`, block: false })),
-      ...footnotes.definitions.map(definition => ({ ...definition, html: `<aside data-type="footnoteDefinition" data-label="${escapeHtml(definition.label)}" data-markdown="${escapeHtml(definition.markdown)}" id="${footnoteAnchor(definition.label)}"><strong>Footnote ${escapeHtml(definition.label)}</strong>${markdownToHtml(definition.body, options)}</aside>`, block: true })),
+      ...footnotes.definitions.map(definition => ({ ...definition, html: "", block: true })),
     ].sort((a, b) => a.from - b.from);
     let source = markdown;
     for (let n = replacements.length - 1; n >= 0; n--) {
@@ -150,7 +150,13 @@ export function markdownToHtml(markdown: string, options: MarkdownOptions = {}):
       const marker = `${token}${n}${token}`;
       rendered = rendered.replace(replacement.block ? `<p>${marker}</p>` : marker, () => replacement.html);
     });
-    return rendered;
+    const numbers = new Map(footnotes.references.map(reference => [footnoteKey(reference.label), reference.number]));
+    const definitions = [...footnotes.definitions].sort((a, b) =>
+      (numbers.get(footnoteKey(a.label)) ?? Infinity) - (numbers.get(footnoteKey(b.label)) ?? Infinity));
+    return rendered + definitions.map(definition => {
+      const number = numbers.get(footnoteKey(definition.label)) ?? "–";
+      return `<aside data-type="footnoteDefinition" data-label="${escapeHtml(definition.label)}" data-markdown="${escapeHtml(definition.markdown)}" id="${footnoteAnchor(definition.label)}" class="footnote-definition"><button type="button" contenteditable="false" class="footnote-backlink" data-footnote-backlink="${escapeHtml(definition.label)}">${number}</button><div class="footnote-content">${markdownToHtml(definition.body, options) || "<p></p>"}</div></aside>`;
+    }).join("");
   }
   const lines = markdown.replace(/\r\n/g, "\n").split("\n");
   const html: string[] = [];
@@ -675,7 +681,13 @@ export function htmlToMarkdown(html: string) {
     const tag = block.tagName.toLowerCase();
 
     if (block.getAttribute("data-type") === "footnoteDefinition") {
-      markdown.push(block.getAttribute("data-markdown") ?? "");
+      const content = block.querySelector(":scope > .footnote-content");
+      const original = block.getAttribute("data-markdown") ?? "";
+      const body = content ? htmlToMarkdown(content.innerHTML).trimEnd() : "";
+      const originalBody = original ? parseFootnotes(original).definitions[0]?.body : undefined;
+      // Keep untouched source, including soft line breaks, until its editable content changes.
+      const unchanged = originalBody !== undefined && body === htmlToMarkdown(markdownToHtml(originalBody)).trimEnd();
+      markdown.push(unchanged || !content ? original : footnoteMarkdown(block.getAttribute("data-label") ?? "1", body));
       return;
     }
     const alignment = readTextAlignment(block.getAttribute("style"));

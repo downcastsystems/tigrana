@@ -5024,13 +5024,15 @@ html[data-theme="dark"] .table-column-handle.is-visible:hover {
   cursor: pointer;
 }
 
-.link-picker-row:hover {
-  background: var(--accent-soft);
+.link-picker-row:hover,
+.link-picker-row.is-selected {
+  background: var(--tigrana-hover-background, var(--accent-soft));
+  color: var(--tigrana-hover-text, var(--text));
 }
 
-.link-picker-row.is-selected {
-  background: var(--accent-active);
-  color: var(--accent-strong);
+.link-picker-row:hover .link-picker-parent,
+.link-picker-row.is-selected .link-picker-parent {
+  color: inherit;
 }
 
 .link-picker-title {
@@ -7026,27 +7028,41 @@ html[data-theme="light"] .ProseMirror li[data-bullet-method-completed="true"] .b
 .writing-goal-form button { min-height: 28px; font: inherit; padding: 3px 7px; }
 .note-links-pane { padding: 0 6px 10px; }
 .note-links-pane h3 { margin: 8px; font-size: 11px; color: var(--muted); }
+.note-links-pane .empty-sidebar-note { font-size: 11px; }
 .note-links-pane .backlinks-item:disabled { opacity: 0.6; cursor: default; }
 .footnotes-pane { padding: 0 14px 12px; }
 .footnotes-pane .empty-sidebar-note { margin: 6px 0; }
-.footnote-sidebar-entry { padding: 8px 0; border-bottom: 1px solid color-mix(in srgb, currentColor 8%, transparent); }
-.footnote-sidebar-heading { display: flex; justify-content: space-between; gap: 8px; }
-.footnote-sidebar-entry p { margin: 3px 0; font-size: 12px; line-height: 1.5; white-space: pre-wrap; overflow-wrap: anywhere; }
+.footnote-sidebar-entry { display: grid; grid-template-columns: 1.5em minmax(0, 1fr) 22px; gap: 2px 8px; padding: 6px 0; }
+.footnote-sidebar-number, .footnote-sidebar-text { appearance: none; border: 0; background: transparent; color: inherit; font: inherit; padding: 0; text-align: left; cursor: pointer; }
+.footnote-sidebar-number { align-self: start; color: var(--link-color); font-size: 11px; line-height: 1.8; text-align: right; }
+.footnote-sidebar-text { display: block; min-width: 0; align-self: start; font-size: 12px; line-height: 1.5; text-align: left; }
+/* Clamp a text container, not the native button's internal layout box. */
+.footnote-sidebar-preview { display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 3; overflow: hidden; max-height: 4.5em; white-space: pre-wrap; overflow-wrap: anywhere; }
+.footnote-sidebar-entry .footnote-sidebar-delete { align-self: start; width: 22px; height: 22px; min-width: 0; padding: 3px; color: var(--muted); }
+.footnote-sidebar-text:hover { color: var(--link-color); }
+.footnote-sidebar-entry .sidebar-hint { grid-column: 2; }
+.footnote-sidebar-number:disabled { color: var(--muted); cursor: default; }
 .ProseMirror .footnote-reference { font-size: 0.75em; cursor: pointer; padding: 0 2px; vertical-align: super; }
 /* Outrank scoped theme link rules; explicit theme footnote rules can still override. */
 .ProseMirror a.footnote-reference,
 [data-theme-region] .ProseMirror a.footnote-reference { text-decoration: none; }
 .ProseMirror .footnote-reference::after { content: attr(data-number); }
 .footnote-reference .sr-only { position: absolute; width: 1px; height: 1px; padding: 0; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
-.ProseMirror .footnote-definition { margin: 18px 0; padding: 10px 0; border-top: 1px solid color-mix(in srgb, currentColor 18%, transparent); cursor: pointer; font-size: 0.85em; }
-.footnote-definition > strong { display: block; font-size: 0.85em; color: var(--muted); margin-bottom: 5px; }
-.footnote-definition > span { display: block; white-space: pre-wrap; }
-.footnote-dialog { width: min(520px, calc(100vw - 32px)); max-height: calc(82dvh - 16px); overflow-y: auto; }
-.footnote-dialog textarea { display: block; height: auto; resize: vertical; min-height: 130px; padding: 10px 11px; font: inherit; line-height: 1.5; }
-.footnote-dialog-hint { margin: 8px 0 0; color: var(--muted); font-size: 13px; line-height: 1.5; }
-
-.footnote-dialog .field-label { color: var(--text); }
+/* Use a hanging indent and only one separator for the whole footnote section. */
+[data-theme-region] .ProseMirror .footnote-definition,
+.ProseMirror .footnote-definition { display: grid; grid-template-columns: 1.5em minmax(0, 1fr); gap: 0 0.6em; margin: 0.5em 0; padding: 0; border: 0; font-size: 0.85em; }
+[data-theme-region] .ProseMirror :not(.footnote-definition) + .footnote-definition,
+.ProseMirror > .footnote-definition:first-child { margin-top: 1.5em; padding-top: 0.75em; border-top: 1px solid color-mix(in srgb, currentColor 18%, transparent); }
+[data-theme-region] .ProseMirror .footnote-backlink { appearance: none; align-self: start; border: 0; background: transparent; color: var(--link-color); font: inherit; font-size: 0.85em; line-height: inherit; padding: 0; text-align: right; cursor: pointer; }
+[data-theme-region] .ProseMirror .footnote-backlink:disabled { color: var(--muted); cursor: default; }
+[data-theme-region] .ProseMirror .footnote-content { min-width: 0; }
+[data-theme-region] .ProseMirror .footnote-content > :first-child { margin-top: 0; }
+[data-theme-region] .ProseMirror .footnote-content > :last-child { margin-bottom: 0; }
+[data-theme-region] .ProseMirror .footnote-content > p { margin: 0.4em 0; }
 
 .ProseMirror .footnote-reference.ProseMirror-selectednode { outline: 2px solid currentColor; outline-offset: 2px; border-radius: 2px; }
 
-.footnote-sidebar-label { padding: 4px 2px; font-size: 11px; }
+.overview-note-dates { padding: 10px 14px 14px; }
+.overview-note-dates .property-row { gap: 3px; padding: 6px 0; border: 0; }
+.overview-note-dates .property-row span { color: var(--muted); font-size: 11px; font-weight: 500; text-transform: none; }
+.overview-note-dates .property-row strong { color: var(--muted); font-size: 11px; font-weight: 400; }

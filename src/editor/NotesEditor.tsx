@@ -1,6 +1,5 @@
 import { formattingSelectionAnchor } from "./formattingSelectionAnchor";
-import { FootnoteDefinitionNode, FootnoteReferenceNode, FootnoteInteractions, requestFootnote, selectFootnote } from "./footnotes";
-import { FootnoteDialog } from "./FootnoteDialog";
+import { FootnoteDefinitionNode, FootnoteReferenceNode, FootnoteInteractions, requestFootnote, selectFootnote, deleteFootnote, handleEmptyFootnoteDelete, handleFootnoteArrow } from "./footnotes";
 import { canAlignText, setTextAlignment, TextAlignmentExtension } from "./textAlignment";
 import { SearchResultReveal, useSearchResultReveal } from "./searchResultReveal";
 import { TaskItem, TaskList } from "@tiptap/extension-list";
@@ -203,6 +202,7 @@ export function NotesEditor({ bulletMethodDisplay = defaultBulletMethodDisplay, 
       StarterKit.configure({
         codeBlock: false,
         orderedList: false,
+        trailingNode: { notAfter: ["footnoteDefinition"] },
         heading: {
           levels: [1, 2, 3, 4, 5, 6],
         },
@@ -349,6 +349,8 @@ export function NotesEditor({ bulletMethodDisplay = defaultBulletMethodDisplay, 
       handleDOMEvents: {
         beforeinput: handleListTextReplacement,
         keydown(_view, event) {
+          if (editorRef.current && handleFootnoteArrow(editorRef.current, event)) return true;
+          if (editorRef.current && handleEmptyFootnoteDelete(editorRef.current, event)) return true;
           prepareListTextReplacement(_view, event);
           if (handleNestedListBoundaryDelete(_view, event)) return true;
           if (handleSameLevelListItemBackspace(_view, event)) return true;
@@ -737,6 +739,10 @@ export function NotesEditor({ bulletMethodDisplay = defaultBulletMethodDisplay, 
       if (request.src) selectFootnote(editor, request.src);
       return;
     }
+    if (request.command === "deleteFootnote") {
+      if (request.src) deleteFootnote(editor, request.src);
+      return;
+    }
     if (request.command === "equation") {
       requestEquation(editor);
       return;
@@ -922,7 +928,6 @@ export function NotesEditor({ bulletMethodDisplay = defaultBulletMethodDisplay, 
     >
       {editor && colorToolbarElement ? createPortal(<EditorColorControls editor={editor} disabled={!editable || colorsDisabled} />, colorToolbarElement) : null}
       {editor ? <EquationContextMenu editor={editor} disabled={!editable} /> : null}
-      {editor ? <FootnoteDialog key={historyKey} editor={editor} disabled={!editable} /> : null}
       {editor ? <EquationDialog editor={editor} disabled={!editable} /> : null}
       {editor ? <FormattingBubbleMenu bulletMethodEnabled={Boolean(bulletMethodDisplay.enabled)} editor={editor} onRequestLink={onRequestLink} bulletMethodStatuses={bulletMethodStatuses} /> : null}
       {findOpen ? (
