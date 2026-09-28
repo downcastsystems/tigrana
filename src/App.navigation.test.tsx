@@ -388,8 +388,8 @@ describe("Note navigation persistence", () => {
       expect(insert.disabled).toBe(false);
       await act(async () => insert.click());
       const options = [...container.querySelectorAll<HTMLButtonElement>('[role="menu"][aria-label="Insert"] button')];
-      expect(options.map(button => button.textContent)).toEqual(["Image", "Equation"]);
-      await act(async () => options[0].click());
+      expect(options.map(button => button.textContent)).toEqual(["Table", "Image", "Equation", "Footnote"]);
+      await act(async () => options.find(button => button.textContent === "Image")!.click());
       expect([...document.querySelectorAll('h2')].some(heading => heading.textContent === "Insert image")).toBe(true);
     } finally { await act(async () => root.unmount()); }
   });

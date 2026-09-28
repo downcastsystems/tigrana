@@ -1,5 +1,6 @@
 import { storyParagraphCss, type WritingStyle } from "./writingStyle";
 import { renderMath } from "./math";
+import { exportFootnotes, exportFootnoteCss } from "./footnoteExport";
 import { markdownToHtml } from "./markdown";
 
 export function noteExportFileStem(title: string) {
@@ -13,16 +14,16 @@ export function noteExportFileStem(title: string) {
 export async function buildNoteExportHtml(
   title: string,
   markdown: string,
-  options: { writingStyle?: WritingStyle; resolveImageSrc?: (src: string) => string | Promise<string> } = {},
+  options: { footnotePrefix?: string; writingStyle?: WritingStyle; resolveImageSrc?: (src: string) => string | Promise<string> } = {},
 ) {
   const imageSources = await collectResolvedImageSources(markdown, options.resolveImageSrc);
-  const body = markdownToHtml(markdown, {
+  const body = exportFootnotes(markdownToHtml(markdown, {
     resolveImageSrc: (src) => imageSources.get(src) ?? src,
     renderEquation: (latex, block) => {
       try { return renderMath(latex, block, "mathml"); }
       catch { return escapeHtml(latex); }
     },
-  });
+  }), options.footnotePrefix ?? "note");
   return `<!doctype html>
 <html>
 <head>
@@ -89,6 +90,7 @@ export async function buildNoteExportHtml(
     th, td { border: 1px solid #d0d7de; padding: 0.45em 0.6em; }
     mark { background: #fff2a8; }
     ${options.writingStyle === "story" ? storyParagraphCss("main") : ""}
+    ${exportFootnoteCss}
     @media print {
       body { margin: 0; max-width: none; padding: 0; }
     }

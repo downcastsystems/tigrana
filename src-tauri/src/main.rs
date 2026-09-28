@@ -1802,14 +1802,14 @@ fn build_app_menu(
         handle,
         "format_table",
         "Table",
-        rich_editable_note,
+        rich_editable_note && state.contents_active,
         None::<&str>,
     )?;
     let format_image = MenuItem::with_id(
         handle,
         "format_image",
         "Image...",
-        rich_editable_note,
+        rich_editable_note && state.contents_active,
         None::<&str>,
     )?;
 
@@ -1819,6 +1819,20 @@ fn build_app_menu(
         "Equation...",
         rich_editable_note && state.contents_active,
         None::<&str>,
+    )?;
+
+    let format_footnote = MenuItem::with_id(
+        handle,
+        "format_footnote",
+        "Footnote",
+        rich_editable_note && state.contents_active,
+        None::<&str>,
+    )?;
+    let insert_menu = Submenu::with_items(
+        handle,
+        "Insert",
+        rich_editable_note && state.contents_active,
+        &[&format_table, &format_image, &format_equation, &format_footnote],
     )?;
 
     let open_notebooks = Submenu::new(handle, "Open Notebooks", true)?;
@@ -2029,9 +2043,7 @@ fn build_app_menu(
             &format_code_block,
             &format_divider,
             &PredefinedMenuItem::separator(handle)?,
-            &format_table,
-            &format_image,
-            &format_equation,
+            &insert_menu,
         ],
     )?;
     let window_menu = Submenu::with_items(
@@ -2507,6 +2519,7 @@ pub fn run() {
             "format_table" => emit_menu_command(app, "format_table"),
             "format_image" => emit_menu_command(app, "format_image"),
             "format_equation" => emit_menu_command(app, "format_equation"),
+            "format_footnote" => emit_menu_command(app, "format_footnote"),
             "request_quit" => {
                 let labels: Vec<String> = app.webview_windows().keys().cloned().collect();
                 for label in labels {

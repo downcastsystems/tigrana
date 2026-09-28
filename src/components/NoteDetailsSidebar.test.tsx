@@ -18,6 +18,7 @@ describe("Outline scroll positions", () => {
   const noop = () => undefined;
 
   beforeEach(() => {
+    localStorage.clear();
     container = document.createElement("div");
     document.body.append(container);
     root = createRoot(container);
@@ -68,6 +69,33 @@ describe("Outline scroll positions", () => {
     expect(header.firstElementChild?.classList.contains("sidebar-tabs")).toBe(true);
     expect(header.lastElementChild?.textContent).toBe("Overview");
     expect(container.querySelector('[title="Overview"]')?.getAttribute("aria-pressed")).toBe("true");
+  });
+
+  it("remembers expanded and collapsed Goals across tab changes, hiding, and remounts", () => {
+    const render = (mode: RightSidebarMode = "overview", visible = true) =>
+      act(() => root.render(<Harness path="Note.md" pages={3} mode={mode} visible={visible} />));
+    const goals = () => container.querySelector<HTMLDetailsElement>(".overview-section")!;
+    const toggle = (open: boolean) => act(() => {
+      goals().open = open;
+      goals().dispatchEvent(new Event("toggle"));
+    });
+    render();
+    toggle(true);
+    render("properties"); render();
+    expect(goals().open).toBe(true);
+    render("overview", false); render();
+    expect(goals().open).toBe(true);
+    act(() => root.unmount());
+    root = createRoot(container);
+    render();
+    expect(goals().open).toBe(true);
+    toggle(false);
+    render("properties"); render();
+    expect(goals().open).toBe(false);
+    act(() => root.unmount());
+    root = createRoot(container);
+    render();
+    expect(goals().open).toBe(false);
   });
 
   it("starts unseen notes at the top and restores each note after switching through shorter outlines", () => {

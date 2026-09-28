@@ -54,6 +54,7 @@ export type EditorCommand =
   | SortCommand
   | "footnote"
   | "selectFootnote"
+  | "deleteFootnote"
   | "equation"
   | "bold"
   | "italic"
