@@ -11,7 +11,7 @@ import { measureNoteText } from "../lib/noteTextStats";
 const editors: Editor[] = [];
 afterEach(() => editors.splice(0).forEach(editor => editor.destroy()));
 function create(markdown: string) {
-  const editor = new Editor({ extensions: [StarterKit, FootnoteReferenceNode, FootnoteDefinitionNode, FootnoteInteractions], content: markdownToHtml(markdown) });
+  const editor = new Editor({ extensions: [StarterKit.configure({ trailingNode: { notAfter: ["footnoteDefinition"] } }), FootnoteReferenceNode, FootnoteDefinitionNode, FootnoteInteractions], content: markdownToHtml(markdown) });
   editors.push(editor); return editor;
 }
 
@@ -297,4 +297,69 @@ it('leaves wrapped-line and internal block navigation to the editor', () => {
   const event = new KeyboardEvent('keydown', { key: 'ArrowDown', cancelable: true });
   expect(handleFootnoteArrow(editor, event)).toBe(true);
   expect(editor.state.selection.from).toBe(last);
+});
+
+function typeText(editor: Editor, text: string) {
+  for (const character of text) {
+    const { from, to } = editor.state.selection;
+    const handled = editor.view.someProp('handleTextInput', handler => handler(editor.view, from, to, character, () => editor.state.tr.insertText(character, from, to)));
+    if (!handled) editor.view.dispatch(editor.state.tr.insertText(character, from, to));
+  }
+}
+
+it('creates and focuses an automatically numbered footnote from [^] before existing references', () => {
+  const editor = create('Existing[^1].\n\n[^1]: Keep');
+  editor.commands.setTextSelection(1);
+  typeText(editor, '[^]');
+  expect(editor.state.selection.$from.node(-1).attrs.label).toBe('2');
+  expect([...editor.view.dom.querySelectorAll('.footnote-reference')].map(node => node.getAttribute('data-number'))).toEqual(['1', '2']);
+  expect([...editor.view.dom.querySelectorAll('.footnote-definition')].map(node => node.getAttribute('data-label'))).toEqual(['2', '1']);
+  typeText(editor, 'New text');
+  expect(findFootnoteDefinition(editor, '2')!.node.textContent).toBe('New text');
+  expect(findFootnoteDefinition(editor, '1')!.node.textContent).toBe('Keep');
+});
+
+it('undoes shortcut insertion together with its empty definition', () => {
+  const editor = create('Body');
+  editor.commands.setTextSelection(5);
+  typeText(editor, '[^]');
+  expect(editor.commands.undoInputRule()).toBe(true);
+  expect(editor.state.doc.textContent).toBe('Body[^]');
+  expect(editor.view.dom.querySelectorAll('.footnote-definition, .footnote-reference')).toHaveLength(0);
+});
+
+it.each(['[^5]', '[^named]'])('keeps typed %s literal through saving and reopening', text => {
+  const editor = create('Body ');
+  editor.commands.setTextSelection(5);
+  typeText(editor, text);
+  expect(editor.view.dom.querySelectorAll('.footnote-reference')).toHaveLength(0);
+  const saved = htmlToMarkdown(editor.getHTML());
+  expect(saved).toContain(`\\${text}`);
+  const reopened = create(saved);
+  expect(reopened.view.dom.querySelectorAll('.footnote-reference')).toHaveLength(0);
+  expect(reopened.state.doc.textContent).toBe(editor.state.doc.textContent);
+  expect(htmlToMarkdown(reopened.getHTML())).toBe(saved);
+});
+
+it('keeps the shortcut literal inside footnotes and code', () => {
+  const footnote = create('Body[^1].\n\n[^1]: Text');
+  editFootnote(footnote, '1');
+  typeText(footnote, '[^]');
+  expect(footnote.view.dom.querySelectorAll('.footnote-definition')).toHaveLength(1);
+  expect(findFootnoteDefinition(footnote, '1')!.node.textContent).toContain('[^]');
+  const code = create('```\ncode\n```');
+  code.commands.setTextSelection(1);
+  typeText(code, '[^]');
+  expect(code.view.dom.querySelectorAll('.footnote-reference')).toHaveLength(0);
+  expect(code.state.doc.textContent).toContain('[^]');
+});
+
+it('undoes shortcut creation before existing footnotes without damaging their references', () => {
+  const editor = create('Existing[^1].\n\n[^1]: Keep');
+  editor.commands.setTextSelection(1);
+  typeText(editor, '[^]');
+  expect(editor.commands.undo()).toBe(true);
+  expect(findFootnoteDefinition(editor, '2')).toBeNull();
+  expect(findFootnoteDefinition(editor, '1')!.node.textContent).toBe('Keep');
+  expect(editor.view.dom.querySelectorAll('.footnote-reference')).toHaveLength(1);
 });

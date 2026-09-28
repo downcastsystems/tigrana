@@ -68,10 +68,30 @@ async function prepareImages(document: Document, control?: DocumentControl) {
   }
 }
 
+/** PDF destinations belong to text blocks; inline anchor IDs are lost by the converter. */
+function preparePdfFootnoteDestinations(document: Document) {
+  const destinations = new Map<string, string>();
+  for (const anchor of document.querySelectorAll(".export-footnote-reference [id], .export-footnote-number [id]")) {
+    const block = anchor.closest("p, h1, h2, h3, h4, h5, h6, li, td, th");
+    if (!block) continue;
+    const originalId = anchor.id;
+    // Several references in one paragraph share a return destination. PDFMake
+    // registers only one destination per text block, so map every link to it.
+    if (!block.id) block.id = originalId;
+    destinations.set(originalId, block.id);
+    anchor.removeAttribute("id");
+  }
+  for (const link of document.querySelectorAll('a[href^="#"]')) {
+    const target = destinations.get(link.getAttribute("href")!.slice(1));
+    if (target) link.setAttribute("href", `#${target}`);
+  }
+}
+
 export async function createPdfDefinition(html: string, title: string, prepared = false): Promise<TDocumentDefinitions> {
   const { default: htmlToPdfmake } = await import("html-to-pdfmake");
   const document = prepared ? new DOMParser().parseFromString(html, "text/html") : portableDocument(html);
   if (!prepared) await prepareImages(document);
+  preparePdfFootnoteDestinations(document);
   const content: Content[] = Array.from(document.querySelectorAll(".export-note")).map((note, index) => ({
     stack: [htmlToPdfmake(note.innerHTML, { window: window as unknown as NonNullable<Parameters<typeof htmlToPdfmake>[1]>["window"], removeExtraBlanks: true, defaultStyles: {
       p: { margin: [0, 0, 0, 8] }, ul: { margin: [0, 0, 0, 10] }, ol: { margin: [0, 0, 0, 10] }, li: { margin: [0, 0, 0, 3] },
@@ -91,12 +111,12 @@ export async function createPdf(html: string, title: string, prepared = false): 
 }
 
 export async function createWordDocument(html: string, title: string, prepared = false): Promise<Uint8Array> {
-  const { Document: WordDocument, Packer, Paragraph, TextRun, ExternalHyperlink, ImageRun, Table, TableRow, TableCell, HeadingLevel, WidthType, BorderStyle, SectionType } = await import("docx");
+  const { Document: WordDocument, Packer, Paragraph, TextRun, ExternalHyperlink, InternalHyperlink, Bookmark, ImageRun, Table, TableRow, TableCell, HeadingLevel, WidthType, BorderStyle, SectionType } = await import("docx");
   const document = prepared ? new DOMParser().parseFromString(html, "text/html") : portableDocument(html);
   if (!prepared) await prepareImages(document);
-  type Run = InstanceType<typeof TextRun> | InstanceType<typeof ExternalHyperlink> | InstanceType<typeof ImageRun>;
+  type Run = InstanceType<typeof Bookmark> | InstanceType<typeof InternalHyperlink> | InstanceType<typeof TextRun> | InstanceType<typeof ExternalHyperlink> | InstanceType<typeof ImageRun>;
   type Block = InstanceType<typeof Paragraph> | InstanceType<typeof Table>;
-  type Format = { color?: string; bold?: boolean; italics?: boolean; strike?: boolean; font?: string; highlight?: "yellow"; underline?: { type: "single" } };
+  type Format = { superScript?: boolean; color?: string; bold?: boolean; italics?: boolean; strike?: boolean; font?: string; highlight?: "yellow"; underline?: { type: "single" } };
   function inline(node: Node, format: Format = {}): Run[] {
     if (node.nodeType === Node.TEXT_NODE) return [new TextRun({ text: node.textContent ?? "", ...format })];
     if (!(node instanceof Element)) return [];
@@ -119,11 +139,15 @@ export async function createWordDocument(html: string, title: string, prepared =
     if (tag === "u") next.underline = { type: "single" };
     if (tag === "code") next.font = "Courier New";
     if (tag === "mark") next.highlight = "yellow";
+    if (tag === "sup") next.superScript = true;
     const children = Array.from(node.childNodes).flatMap(child => inline(child, next));
+    const anchored = (runs: Run[]): Run[] => node.id && node.closest(".export-footnotes, .export-footnote-reference")
+      ? [new Bookmark({ id: node.id, children: runs })] : runs;
     const href = node.getAttribute("href");
+    if (tag === "a" && href?.startsWith("#") && node.closest(".export-footnotes, .export-footnote-reference")) return anchored([new InternalHyperlink({ anchor: href.slice(1), children })]);
     if (tag === "a" && href && /^(https?:|mailto:)/i.test(href)) return [new ExternalHyperlink({ link: href, children })];
     if (tag === "p" && node.previousElementSibling?.tagName === "P") children.unshift(new TextRun({ break: 1 }));
-    return children;
+    return anchored(children);
   }
   function blocks(parent: Element, depth = 0, quoted = false): Block[] {
     const result: Block[] = [];
@@ -134,11 +158,15 @@ export async function createWordDocument(html: string, title: string, prepared =
       }
       const tag = node.tagName.toLowerCase();
       if (tag === "table") {
+        const footnotes = node.classList.contains("export-footnote-table");
+        const noBorder = { style: BorderStyle.NONE, size: 0, color: "FFFFFF" };
+        const borders = footnotes ? { top: noBorder, bottom: noBorder, left: noBorder, right: noBorder, insideHorizontal: noBorder, insideVertical: noBorder } : undefined;
         const rows = Array.from(node.querySelectorAll(":scope > tbody > tr, :scope > thead > tr, :scope > tr"));
-        result.push(new Table({ width: { size: 100, type: WidthType.PERCENTAGE }, rows: rows.map(row => new TableRow({
+        result.push(new Table({ borders, ...(footnotes ? { columnWidths: [400, 8600] } : {}), width: { size: 100, type: WidthType.PERCENTAGE }, rows: rows.map(row => new TableRow({
           children: Array.from(row.children).map(cell => {
             const content = blocks(cell);
             return new TableCell({
+              borders,
               columnSpan: Number(cell.getAttribute("colspan")) || 1,
               rowSpan: Number(cell.getAttribute("rowspan")) || 1,
               children: content.length ? content : [new Paragraph({ children: inline(cell) })],

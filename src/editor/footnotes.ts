@@ -13,6 +13,16 @@ function definitionInsertionPosition(doc: PMNode) {
   return position;
 }
 
+function nextFootnoteLabel(doc: PMNode) {
+  const labels = new Set<string>();
+  doc.descendants(node => {
+    if (["footnoteReference", "footnoteDefinition"].includes(node.type.name)) labels.add(footnoteKey(node.attrs.label));
+  });
+  let next = 1;
+  while (labels.has(String(next))) next++;
+  return String(next);
+}
+
 /** Insert a reference and immediately edit its definition, or open an existing one. */
 export function requestFootnote(editor: Editor, label?: string) {
   if (label) return editFootnote(editor, label);
@@ -22,13 +32,7 @@ export function requestFootnote(editor: Editor, label?: string) {
   for (let depth = selection.$to.depth; depth > 0; depth--) {
     if (selection.$to.node(depth).type.name === "footnoteDefinition") return false;
   }
-  const labels = new Set<string>();
-  editor.state.doc.descendants(node => {
-    if (["footnoteReference", "footnoteDefinition"].includes(node.type.name)) labels.add(footnoteKey(node.attrs.label));
-  });
-  let next = 1;
-  while (labels.has(String(next))) next++;
-  const newLabel = String(next);
+  const newLabel = nextFootnoteLabel(editor.state.doc);
   const tr = closeHistory(editor.state.tr);
   tr.insert(selection.to, editor.schema.nodes.footnoteReference.create({ label: newLabel }));
   tr.insert(definitionInsertionPosition(tr.doc), editor.schema.nodes.footnoteDefinition.createAndFill({ label: newLabel })!);
@@ -66,9 +70,17 @@ export const FootnoteReferenceNode = Node.create({
       "class": "footnote-reference", "role": "button", "tabindex": "0", "aria-label": `Footnote ${node.attrs.label}` }, ["span", { "class": "sr-only" }, `Footnote ${node.attrs.label}`]];
   },
   renderText({ node }) { return `[^${node.attrs.label}]`; },
-  addInputRules() { return [new InputRule({ find: /(?<!\\)\[\^([^\]\s<>]+)\]$/, handler: ({ state, range, match }) => {
-    if (!validFootnoteLabel(match[1])) return null;
-    state.tr.replaceWith(range.from, range.to, this.type.create({ label: match[1] }));
+  addInputRules() { return [new InputRule({ find: /(?<!\\)\[\^\]$/, handler: ({ state, range }) => {
+    if (!this.editor.isEditable) return null;
+    for (let depth = state.selection.$from.depth; depth > 0; depth--) {
+      if (state.selection.$from.node(depth).type.name === "footnoteDefinition") return null;
+    }
+    const label = nextFootnoteLabel(state.doc);
+    const tr = state.tr;
+    tr.replaceWith(range.from, range.to, this.type.create({ label }));
+    const position = definitionInsertionPosition(tr.doc);
+    tr.insert(position, state.schema.nodes.footnoteDefinition.createAndFill({ label })!);
+    tr.setSelection(TextSelection.near(tr.doc.resolve(position + 1))).scrollIntoView();
   } })]; },
 });
 

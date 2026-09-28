@@ -79,6 +79,7 @@ const inlineMarkdownToHtml = (value: string, options: MarkdownOptions = {}) => {
   html = html.replace(/~~([^~]+)~~/g, "<s>$1</s>");
   html = html.replace(/\*\*([^*]+)\*\*/g, "<strong>$1</strong>");
   html = html.replace(/\*([^*]+)\*/g, "<em>$1</em>");
+  html = html.replace(/\\(\[\^[^\]\s<>]+\])/g, "$1");
   return html.replace(new RegExp(`${codeToken}(\\d+)${codeToken}`, "g"), (_match, index: string) => codeSpans[Number(index)])
     .replace(new RegExp(`${imageToken}(\\d+)${imageToken}`, "g"), (_match, index: string) => images[Number(index)]);
 };
@@ -583,7 +584,9 @@ function inlineHtmlToMarkdown(element: Element): string {
   let value = "";
   element.childNodes.forEach((node) => {
     if (node.nodeType === Node.TEXT_NODE) {
-      value += node.textContent ?? "";
+      // Literal rich-text labels must not become references on the next reload.
+      value += element.closest("code, pre") ? node.textContent ?? ""
+        : (node.textContent ?? "").replace(/(?<!\\)\[\^([^\]\s<>]+)\]/g, "\\$&");
       return;
     }
 

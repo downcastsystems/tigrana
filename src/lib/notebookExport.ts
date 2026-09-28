@@ -1,3 +1,4 @@
+import { namespaceFootnoteMarkdown } from "./footnoteExport";
 import type { FolderEntry, NoteEntry, WorkspaceMetadata } from "../types";
 import { orderFolders, orderNotes } from "./notebookMetadata";
 import { buildNoteExportHtml } from "./exportNote";
@@ -25,8 +26,8 @@ export function collectExportNotes(path: string, notes: NoteEntry[], folders: Fo
 export async function buildNotebookExportHtml(notes: ExportNote[], resolveImageSrc?: (src: string) => Promise<string>) {
   if (!notes.length) throw new Error("There are no notes to print or export in this folder.");
   const documents = [];
-  for (const note of notes) {
-    const html = await buildNoteExportHtml(note.title, note.markdown, { resolveImageSrc });
+  for (const [index, note] of notes.entries()) {
+    const html = await buildNoteExportHtml(note.title, note.markdown, { resolveImageSrc, footnotePrefix: `note_${index + 1}` });
     documents.push(new DOMParser().parseFromString(html, "text/html"));
   }
   const output = documents[0].cloneNode(true) as Document;
@@ -50,5 +51,5 @@ export async function buildNotebookExportHtml(notes: ExportNote[], resolveImageS
 
 /** Collections omit per-note managed frontmatter and keep readable note boundaries. */
 export function buildNotebookExportMarkdown(notes: ExportNote[]): string {
-  return notes.map(note => `# ${note.title.replace(/[\r\n]+/g, " ").replace(/([\\`*_{}[\]<>])/g, "\\$1")}\n\n${note.markdown.trim()}`).join("\n\n---\n\n") + "\n";
+  return notes.map((note, index) => `# ${note.title.replace(/[\r\n]+/g, " ").replace(/([\\`*_{}[\]<>])/g, "\\$1")}\n\n${(notes.length > 1 ? namespaceFootnoteMarkdown(note.markdown, `note-${index + 1}`) : note.markdown).trim()}`).join("\n\n---\n\n") + "\n";
 }

@@ -2,6 +2,7 @@ import { describe, it, expect, afterAll } from 'vitest';
 import { unzipSync, strFromU8 } from 'fflate';
 import { installWorkerDom } from './workerDom';
 import { htmlToMarkdown } from './markdown';
+import { buildNotebookExportHtml } from './notebookExport';
 import { createPdf, createWordDocument } from './exportFormats';
 const originalWindow = globalThis.window;
 installWorkerDom();
@@ -28,4 +29,15 @@ describe('portable document writers in the worker DOM', () => {
     expect(content).toContain('/Count 2');
     expect(bytes.length).toBeGreaterThan(5000);
   });
+});
+
+it('preserves footnotes through the production worker DOM', async () => {
+  const html = await buildNotebookExportHtml([{ title: 'Footnotes', markdown: 'Body[^1].\n\n[^1]: **Rich** footnote.' }]);
+  const pdf = await createPdf(html, 'Footnotes');
+  expect(pdf.length).toBeGreaterThan(5000);
+  const files = unzipSync(await createWordDocument(html, 'Footnotes'));
+  const xml = strFromU8(files['word/document.xml']);
+  expect(xml).toContain('w:val="superscript"');
+  expect(xml).toContain('w:name="note_1_fn_1"');
+  expect(xml).toContain('Rich');
 });
