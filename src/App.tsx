@@ -1,3 +1,4 @@
+import { localWritingDay, setWritingGoal, writingProgressMutation } from "./lib/writingProgress";
 import { useRawSearchResultReveal } from "./editor/useRawSearchResultReveal";
 import type { SearchRevealRequest } from "./editor/searchResultReveal";
 import { documentExportTargets, type DocumentExportFormat, type DocumentExportTarget } from "./lib/documentExportTargets";
@@ -342,6 +343,9 @@ const defaultNotebookThemeColors = (): NotebookThemeColorSettings => ({
 });
 
 type PersistDraftSnapshot = {
+  metadata: WorkspaceMetadata;
+  writingDay: string;
+  previousMarkdown: string;
   workspace: string;
   path: string | null;
   pendingNote: DraftNote | null;
@@ -697,7 +701,7 @@ export default function App() {
     titleDraft,
     draft,
     activePath ?? (pendingNote ? `pending:${pendingNote.parentPath}` : null),
-    Boolean(noteOpen && outlineVisible && rightSidebarMode === "outline"),
+    Boolean(noteOpen && outlineVisible && (rightSidebarMode === "outline" || rightSidebarMode === "overview")),
   );
   const backgroundNoteStats = useNoteTextStats(draft, activePath ?? (pendingNote ? "pending-note" : null));
   const noteStats = selectedEditorText ? measureNoteText(selectedEditorText) : backgroundNoteStats;
@@ -733,7 +737,15 @@ export default function App() {
   useLayoutEffect(() => {
     draftSaveRevisions.observe(rawMarkdownDraft);
   }, [draftSaveRevisions, rawMarkdownDraft]);
-  backlinkPaneVisibleRef.current = outlineVisible && rightSidebarMode === "backlinks";
+  backlinkPaneVisibleRef.current = outlineVisible && (rightSidebarMode === "links" || rightSidebarMode === "overview");
+  useEffect(() => {
+    if (!workspace || !outlineVisible || !["links", "overview"].includes(rightSidebarMode) || !notebookStorage.capabilities.durableLinkIndex) return;
+    let cancelled = false;
+    void readLinkIndex(workspace).then(index => {
+      if (!cancelled && metadataSessionRef.current.isActive(workspace)) setLinkIndex(index);
+    }).catch(error => console.error("Could not refresh note links", error));
+    return () => { cancelled = true; };
+  }, [outlineVisible, rightSidebarMode, workspace]);
   const customTheme = useMemo(() => readTheme(metadata.appearance?.customTheme), [metadata.appearance?.customTheme]);
   const invalidNotebookTheme = !!metadata.appearance?.customTheme && !customTheme;
   const themePreset = useMemo(() => {
@@ -2833,6 +2845,14 @@ export default function App() {
     if (!savedDocument.frontmatterError) setFrontmatterError(null);
   }, [activeNoteLifecycle, draftSaveRevisions]);
 
+  const recordWritingProgress = useCallback((snapshot: PersistDraftSnapshot, before: string, written: string, savedPath: string) => {
+    const updater = writingProgressMutation(before, written, snapshot.writingDay, savedPath);
+    if (!updater) return;
+    if (metadataSessionRef.current.isActive(snapshot.workspace)) updateMetadata(updater);
+    else void notebookMetadataPersistence.mutate(snapshot.workspace, updater, snapshot.metadata, acceptPersistedMetadata)
+      .catch(error => console.error("Could not save writing progress", error));
+  }, [acceptPersistedMetadata, updateMetadata]);
+
   const persistDraftAttempt = useCallback(async () => {
     setAppError(null);
     if (!workspace || !noteOpen) return;
@@ -2857,6 +2877,9 @@ export default function App() {
     }
 
     const snapshot = {
+      metadata: metadataRef.current,
+      writingDay: localWritingDay(),
+      previousMarkdown: currentLifecycleState.savedRawMarkdownText,
       workspace,
       path: currentLifecycleState.activePath,
       pendingNote: currentLifecycleState.activePath ? null : currentLifecycleState.pendingNote,
@@ -2919,11 +2942,13 @@ export default function App() {
 
         const savedPath = nextPath;
         draftSaveRevisions.markRequested(snapshot.saveRevision);
+        const previousWritingContent = activeNoteLifecycle.getAcceptedDiskContent(savedPath) ?? snapshot.previousMarkdown;
         const written = await activeNoteLifecycle.runExpectedDiskWrite(
           savedPath,
           snapshot.markdown,
           () => saveNote(snapshot.workspace, savedPath, snapshot.markdown),
         );
+        recordWritingProgress(snapshot, previousWritingContent, written, savedPath);
         if (!metadataSessionRef.current.isActive(snapshot.workspace)) return;
         if (snapshot.path && snapshot.path !== savedPath) activeNoteLifecycle.forgetDiskContent(snapshot.path);
         recordNotePosition(savedPath, written);
@@ -2948,11 +2973,13 @@ export default function App() {
 
     enqueueNoteSave(snapshot.path, async () => {
       const savedPath = snapshot.path as string;
+      const previousWritingContent = activeNoteLifecycle.getAcceptedDiskContent(savedPath) ?? snapshot.previousMarkdown;
       const written = await activeNoteLifecycle.runExpectedDiskWrite(
         savedPath,
         snapshot.markdown,
         () => saveNote(snapshot.workspace, savedPath, snapshot.markdown),
       );
+      recordWritingProgress(snapshot, previousWritingContent, written, savedPath);
       if (!metadataSessionRef.current.isActive(snapshot.workspace)) return;
       recordNotePosition(savedPath, written);
       pendingNoteContentsRef.current.accept(savedPath, snapshot.markdown);
@@ -2977,7 +3004,7 @@ export default function App() {
       }
     });
     return snapshot.markdown;
-  }, [acceptSavedMarkdown, acquireActiveNoteLock, activeNoteEditable, activeNoteLifecycle, applyNoteAccess, draft, draftSaveRevisions, enqueueNoteSave, flushPendingEditorBody, frontmatterDraft, frontmatterError, navigationStyle, noteOpen, notebookPathMutations, placePathInActiveTab, rawMarkdownDraft, rawMarkdownVisible, recordNotePosition, refreshWorkspace, releaseActiveNoteLock, setActivePathAuthoritatively, titleDraft, updateMetadata, workspace]);
+  }, [recordWritingProgress, acceptSavedMarkdown, acquireActiveNoteLock, activeNoteEditable, activeNoteLifecycle, applyNoteAccess, draft, draftSaveRevisions, enqueueNoteSave, flushPendingEditorBody, frontmatterDraft, frontmatterError, navigationStyle, noteOpen, notebookPathMutations, placePathInActiveTab, rawMarkdownDraft, rawMarkdownVisible, recordNotePosition, refreshWorkspace, releaseActiveNoteLock, setActivePathAuthoritatively, titleDraft, updateMetadata, workspace]);
 
   persistDraftAttemptRef.current = persistDraftAttempt;
   const persistDraft = useCallback(
@@ -5502,6 +5529,12 @@ export default function App() {
           folders={folders}
           notes={notes}
           metadata={metadata}
+          body={noteOpen ? draft : ""}
+          demoContents={!notebookStorage.capabilities.durableLinkIndex ? contents : undefined}
+          onGoalChange={metadataLoaded ? (noteId, goal) => { updateMetadata(current => setWritingGoal(current, noteId, goal)); } : undefined}
+          onInsertFootnote={activeNoteEditable && noteOpen && !rawMarkdownVisible && !frontmatterError ? () => requestEditorCommand("footnote") : undefined}
+          onEditFootnote={activeNoteEditable && noteOpen && !rawMarkdownVisible && !frontmatterError ? label => requestEditorCommand("footnote", { src: label }) : undefined}
+          onSelectFootnote={noteOpen && !rawMarkdownVisible && !frontmatterError ? label => requestEditorCommand("selectFootnote", { src: label }) : undefined}
           onFrontmatterChange={handleFrontmatterChange}
           onModeChange={setRightSidebarMode}
           onSelectOutline={handleOutlineSelect}

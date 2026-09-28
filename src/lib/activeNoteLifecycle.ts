@@ -175,6 +175,10 @@ export class ActiveNoteLifecycle {
     return this.activeLoadToken !== 0;
   }
 
+  getAcceptedDiskContent(path: string) {
+    return this.acceptedDiskContent.get(path);
+  }
+
   acceptDiskContent(path: string, content: string) {
     this.acceptedDiskContent.set(path, normalizeNoteMarkdown(content));
   }

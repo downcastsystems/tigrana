@@ -4,7 +4,7 @@ import { Editor } from "@tiptap/core";
 import { StarterKit } from "@tiptap/starter-kit";
 import { afterEach, expect, it } from "vitest";
 import { BulletMethodMarkers, bulletMethodMarkersKey } from "./bulletMethodMarkers";
-import { defaultBulletMethodStatuses, validateBulletMethodStatuses, readBulletMethodStatuses, writeBulletMethodStatuses, readBulletMethodDisplay, writeBulletMethodDisplay, bulletMethodSettingsKey, bulletMethodDisplayKey } from "../lib/bulletMethod";
+import { statusShortcut, defaultBulletMethodStatuses, validateBulletMethodStatuses, readBulletMethodStatuses, writeBulletMethodStatuses, readBulletMethodDisplay, writeBulletMethodDisplay, bulletMethodSettingsKey, bulletMethodDisplayKey } from "../lib/bulletMethod";
 import { htmlToMarkdown } from "../lib/markdown";
 
 const editors: Editor[] = [];
@@ -61,11 +61,16 @@ it("converts inside an empty bullet without nesting another list", () => {
   expect(editor.state.doc.textContent).toBe("TODO: ");
   expect(editor.view.dom.querySelectorAll("ul")).toHaveLength(1);
 });
-it("does not replace text following the cursor or convert pasted shortcuts", () => {
+it("converts a prefix before existing text and restores it on immediate Backspace", () => {
   const editor = create("<p>:: following</p>");
   editor.commands.setTextSelection(3);
   type(editor, " ");
+  expect(editor.state.doc.textContent).toBe("TODO:  following");
+  expect(editor.state.doc.firstChild?.type.name).toBe("bulletList");
+  expect(editor.commands.undoInputRule()).toBe(true);
   expect(editor.state.doc.textContent).toBe("::  following");
+});
+it("does not convert pasted shortcuts", () => {
   const pasted = create("<p></p>");
   pasted.view.pasteText(":: ", new Event("paste") as ClipboardEvent);
   expect(pasted.state.doc.textContent).toContain("::");
@@ -209,3 +214,16 @@ it.each([true, false])("celebrates a completion shortcut only when enabled (%s)"
   if (celebrate) expect(editor.state.doc.nodeAt(position!)?.textContent).toBe('DONE: ');
   else expect(position).toBeNull();
 });
+
+it.each(defaultBulletMethodStatuses.map(status => ({ ...status, shortcut: statusShortcut(status) })).filter(status => status.shortcut))(
+  "expands $shortcut before existing formatted bullet text", status => {
+    const editor = create(`<ul><li><p>${status.shortcut}<strong>Existing text</strong></p></li></ul>`);
+    editor.commands.setTextSelection(3 + status.shortcut!.length);
+    type(editor, " ");
+    expect(editor.state.doc.textContent).toBe(`${status.prefix ? `${status.prefix}: ` : ""}Existing text`);
+    expect(editor.getHTML()).toContain("<strong>Existing text</strong>");
+    expect(editor.view.dom.querySelectorAll("ul")).toHaveLength(1);
+    expect(editor.commands.undoInputRule()).toBe(true);
+    expect(editor.state.doc.textContent).toBe(`${status.shortcut} Existing text`);
+  },
+);

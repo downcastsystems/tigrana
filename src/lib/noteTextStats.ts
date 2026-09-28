@@ -1,3 +1,4 @@
+import { stripAlignmentWrappers } from "./textAlignment";
 import { stripParagraphIndentMarkers } from "./writingStyle";
 import { stripInlineColorSpans } from "./inlineColors";
 
@@ -17,8 +18,10 @@ export type NoteTextStatsResponse = {
 };
 
 export function measureNoteText(text: string): NoteTextStats {
-  const plain = stripInlineColorSpans(stripParagraphIndentMarkers(text))
+  const plain = stripInlineColorSpans(stripParagraphIndentMarkers(stripAlignmentWrappers(text)))
     .replace(/<\/?u>/gi, "")
+    .replace(/<img\b[^>]*>/gi, "")
+    .replace(/\[\^[^\]\s]+\](?::)?/g, "")
     .replace(/!\[[^\]]*]\([^)]*\)/g, "")
     .replace(/\[([^\]]+)]\([^)]*\)/g, "$1")
     .replace(/[`*_>#-]/g, " ")

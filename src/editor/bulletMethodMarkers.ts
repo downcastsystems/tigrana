@@ -132,7 +132,7 @@ export const BulletMethodMarkers = Extension.create({
         if (!status) return null;
         const prefix = status.prefix?.trim();
         const { $from, empty } = state.selection;
-        if (!empty || $from.parent.type.name !== "paragraph" || $from.parentOffset !== $from.parent.content.size) return null;
+        if (!empty || $from.parent.type.name !== "paragraph") return null;
         const inBullet = $from.depth >= 3 && $from.node(-1).type.name === "listItem"
           && $from.node(-2).type.name === "bulletList" && $from.index(-1) === 0;
         if ($from.depth !== 1 && !inBullet) return null;

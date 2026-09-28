@@ -119,6 +119,7 @@ export type NotebookSnapshot = {
 };
 
 export type WorkspaceMetadata = {
+  writingProgress?: import("./lib/writingProgress").WritingProgress;
   newNoteWritingStyle?: import("./lib/writingStyle").NewNoteWritingStyle;
   lastWritingStyle?: import("./lib/writingStyle").WritingStyle;
   revision: number;

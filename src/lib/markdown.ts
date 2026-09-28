@@ -1,3 +1,5 @@
+import { footnoteAnchor, parseFootnotes } from "./footnotes";
+import { alignmentOpening, readTextAlignment } from "./textAlignment";
 import { readParagraphIndentMarker } from "./writingStyle";
 import { replaceEmojiShortcodes } from "./emoji";
 import { inlineColorValue, restoreInlineColorSpans } from "./inlineColors";
@@ -27,7 +29,22 @@ type MarkdownOptions = {
 export const HARD_BREAK_PLACEHOLDER = "";
 
 const inlineMarkdownToHtml = (value: string, options: MarkdownOptions = {}) => {
-  let html = escapeHtml(value);
+  const images: string[] = [];
+  let imageToken = "\u0002";
+  while (value.includes(imageToken)) imageToken += "\u0002";
+  // Resized images can also occur inside list items.
+  const protectedValue = value.replace(/`[^`]+`|<img\s[^>]*\/?>/gi, image => {
+    if (image.startsWith("`")) return image;
+    const src = /\bsrc="([^"]*)"/.exec(image)?.[1];
+    if (src === undefined) return image;
+    const decode = (text: string) => text.replace(/&quot;/g, '"').replace(/&lt;/g, "<").replace(/&gt;/g, ">").replace(/&amp;/g, "&");
+    const source = decode(src);
+    const alt = decode(/\balt="([^"]*)"/.exec(image)?.[1] ?? "");
+    const width = /\bwidth="(\d+)"/.exec(image)?.[1];
+    const rendered = `<img src="${escapeHtml(options.resolveImageSrc?.(source) ?? source)}" alt="${escapeHtml(alt)}" data-markdown-src="${escapeHtml(source)}"${width ? ` width="${width}"` : ""} />`;
+    return `${imageToken}${images.push(rendered) - 1}${imageToken}`;
+  });
+  let html = escapeHtml(protectedValue);
   html = html.replace(new RegExp(HARD_BREAK_PLACEHOLDER, "g"), "<br>");
   html = replaceEmojiShortcodes(html);
   // Protect code before recognizing inline markup, including literal <u> examples.
@@ -62,7 +79,8 @@ const inlineMarkdownToHtml = (value: string, options: MarkdownOptions = {}) => {
   html = html.replace(/~~([^~]+)~~/g, "<s>$1</s>");
   html = html.replace(/\*\*([^*]+)\*\*/g, "<strong>$1</strong>");
   html = html.replace(/\*([^*]+)\*/g, "<em>$1</em>");
-  return html.replace(new RegExp(`${codeToken}(\\d+)${codeToken}`, "g"), (_match, index: string) => codeSpans[Number(index)]);
+  return html.replace(new RegExp(`${codeToken}(\\d+)${codeToken}`, "g"), (_match, index: string) => codeSpans[Number(index)])
+    .replace(new RegExp(`${imageToken}(\\d+)${imageToken}`, "g"), (_match, index: string) => images[Number(index)]);
 };
 
 const EM_SPACE = " ";
@@ -106,7 +124,34 @@ function endsHtmlTable(line: string) {
   return /<\/table>\s*$/i.test(line.trim());
 }
 
-export function markdownToHtml(markdown: string, options: MarkdownOptions = {}) {
+export function markdownToHtml(markdown: string, options: MarkdownOptions = {}): string {
+  const footnotes = parseFootnotes(markdown);
+  if (footnotes.definitions.length || footnotes.references.length) {
+    let token = "\u0003";
+    while (markdown.includes(token)) token += "\u0003";
+    const replacements = [
+      ...footnotes.references.map(reference => ({ ...reference, html: `<sup data-type="footnoteReference" data-label="${escapeHtml(reference.label)}" data-number="${reference.number}"><a href="#${footnoteAnchor(reference.label)}">${reference.number}</a></sup>`, block: false })),
+      ...footnotes.definitions.map(definition => ({ ...definition, html: `<aside data-type="footnoteDefinition" data-label="${escapeHtml(definition.label)}" data-markdown="${escapeHtml(definition.markdown)}" id="${footnoteAnchor(definition.label)}"><strong>Footnote ${escapeHtml(definition.label)}</strong>${markdownToHtml(definition.body, options)}</aside>`, block: true })),
+    ].sort((a, b) => a.from - b.from);
+    let source = markdown;
+    for (let n = replacements.length - 1; n >= 0; n--) {
+      const replacement = replacements[n];
+      const marker = `${token}${n}${token}`;
+      let before = source.slice(0, replacement.from);
+      let after = source.slice(replacement.to);
+      if (replacement.block) {
+        if (before && !before.endsWith("\n\n")) before += before.endsWith("\n") ? "\n" : "\n\n";
+        if (after && !after.startsWith("\n\n")) after = (after.startsWith("\n") ? "\n" : "\n\n") + after;
+      }
+      source = before + marker + after;
+    }
+    let rendered = markdownToHtml(source, options);
+    replacements.forEach((replacement, n) => {
+      const marker = `${token}${n}${token}`;
+      rendered = rendered.replace(replacement.block ? `<p>${marker}</p>` : marker, () => replacement.html);
+    });
+    return rendered;
+  }
   const lines = markdown.replace(/\r\n/g, "\n").split("\n");
   const html: string[] = [];
   type ListLevel = { type: "ul" | "ol" | "task"; indent: number; openLi: boolean; lastLiIndex: number };
@@ -238,6 +283,7 @@ export function markdownToHtml(markdown: string, options: MarkdownOptions = {}) 
     const trimmed = raw.trim();
     if (!trimmed) return true;
     if (trimmed.startsWith("```")) return true;
+    if (alignmentOpening.test(raw)) return true;
     if (trimmed.startsWith("$$")) return true;
     if (isTableRow(raw)) return true;
     if (/^(#{1,6})\s+/.test(trimmed)) return true;
@@ -307,6 +353,21 @@ export function markdownToHtml(markdown: string, options: MarkdownOptions = {}) 
       }
       i += 1;
       continue;
+    }
+
+    const alignment = alignmentOpening.exec(line);
+    if (alignment) {
+      let end = i + 1;
+      while (end < lines.length && lines[end] !== "</div>") end++;
+      if (end < lines.length) {
+        closeList(); closeTable(); flushBlankParagraphs();
+        const inner = markdownToHtml(lines.slice(i + 1, end).join("\n").replace(/^\n|\n$/g, ""), options) || "<p></p>";
+        // Put alignment directly on text blocks so loading through Tiptap and
+        // exporting through htmlToMarkdown follow the same representation.
+        html.push(inner.replace(/<(p|h[1-6])(?=[ >])/g, `<$1 style="text-align: ${alignment[1]}"`));
+        i = end + 1;
+        continue;
+      }
     }
 
     const paragraphIndent = readParagraphIndentMarker(line);
@@ -529,6 +590,10 @@ function inlineHtmlToMarkdown(element: Element): string {
       value += HARD_BREAK_PLACEHOLDER;
       return;
     }
+    if (node.getAttribute("data-type") === "footnoteReference") {
+      value += `[^${node.getAttribute("data-label") ?? ""}]`;
+      return;
+    }
     if (node.getAttribute("data-type") === "inlineMath") {
       value += `$${node.getAttribute("data-latex") ?? ""}$`;
       return;
@@ -609,7 +674,16 @@ export function htmlToMarkdown(html: string) {
   blocks.forEach((block, index) => {
     const tag = block.tagName.toLowerCase();
 
-    if (block.getAttribute("data-type") === "blockMath") {
+    if (block.getAttribute("data-type") === "footnoteDefinition") {
+      markdown.push(block.getAttribute("data-markdown") ?? "");
+      return;
+    }
+    const alignment = readTextAlignment(block.getAttribute("style"));
+    if ((tag === "p" || /^h[1-6]$/.test(tag)) && (alignment === "center" || alignment === "right")) {
+      const copy = block.cloneNode(true) as HTMLElement;
+      copy.style.removeProperty("text-align");
+      markdown.push(`<div style="text-align: ${alignment}">\n\n${htmlToMarkdown(copy.outerHTML).trimEnd()}\n\n</div>`);
+    } else if (block.getAttribute("data-type") === "blockMath") {
       markdown.push(`$$\n${block.getAttribute("data-latex") ?? ""}\n$$`);
     } else if (/^h[1-6]$/.test(tag)) {
       const level = Number(tag.slice(1));
@@ -811,9 +885,9 @@ function imageElementToMarkdown(image: Element): string {
 }
 
 export function normalizeMarkdownImageLines(markdown: string) {
-  return markdown
+  return markdown.split("\n").map(line => /^\s*(?:[-*]|\d+\.)\s/.test(line) ? line : line
     .replace(/([^\n])(<img\s[^>]*\/>)/gi, "$1\n\n$2")
     .replace(/(<img\s[^>]*\/>)([^\n])/gi, "$1\n\n$2")
     .replace(/([^\n])(!\[[^\]]*\]\([^)]+\))/g, "$1\n\n$2")
-    .replace(/(!\[[^\]]*\]\([^)]+\))([^\n])/g, "$1\n\n$2");
+    .replace(/(!\[[^\]]*\]\([^)]+\))([^\n])/g, "$1\n\n$2")).join("\n");
 }

@@ -52,6 +52,8 @@ export type PendingEditorChange = {
 export type EditorCommand =
   | InlineColorCommand
   | SortCommand
+  | "footnote"
+  | "selectFootnote"
   | "equation"
   | "bold"
   | "italic"

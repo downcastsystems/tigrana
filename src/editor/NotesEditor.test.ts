@@ -643,14 +643,21 @@ describe("formatting bubble position", () => {
     const doc = bulletDoc([bulletItem("Selected text")]);
     const range = textRange(doc, "Selected text");
     const listeners = new Map<string, Set<() => void>>();
+    let resizeBubble: (() => void) | undefined;
+    vi.stubGlobal("ResizeObserver", class {
+      constructor(callback: () => void) { resizeBubble = callback; }
+      observe() {}
+      disconnect() {}
+    });
+    let height = 40;
     let top = 120;
     let left = 240;
-    const bounds = vi.spyOn(HTMLElement.prototype, "getBoundingClientRect").mockReturnValue({
-      width: 400, height: 40, top: 0, left: 0, right: 400, bottom: 40,
+    const bounds = vi.spyOn(HTMLElement.prototype, "getBoundingClientRect").mockImplementation(() => ({
+      width: 400, height, top: 0, left: 0, right: 400, bottom: height,
       x: 0, y: 0, toJSON: () => ({}),
-    });
+    }));
     const editor = {
-      state: { selection: TextSelection.create(doc, range.from, range.to) },
+      state: { doc, selection: TextSelection.create(doc, range.from, range.to) },
       isActive: () => false,
       getAttributes: () => ({}),
       isEditable: true,
@@ -709,10 +716,29 @@ describe("formatting bubble position", () => {
       await act(async () => window.dispatchEvent(new Event("resize")));
       expect(bubble?.style.left).toBe(`${window.innerWidth - 408}px`);
       expect(bubble?.style.top).toBe(`${window.innerHeight - 48}px`);
+
+      const surface = document.createElement("section");
+      surface.className = "note-surface";
+      container.append(surface);
+      surface.append(editor.view.dom);
+      surface.getBoundingClientRect = () => ({ top: 64, bottom: 600, height: 536, left: 0, right: 800, width: 800, x: 0, y: 64, toJSON: () => ({}) });
+      top = 150;
+      height = 110;
+      await act(async () => window.dispatchEvent(new Event("scroll")));
+      // Three rows would overlap the app header above this selection.
+      expect(bubble?.style.top).toBe("178px");
+
+      height = 40;
+      await act(async () => resizeBubble?.());
+      expect(bubble?.style.top).toBe("102px");
+      height = 110;
+      await act(async () => resizeBubble?.());
+      expect(bubble?.style.top).toBe("178px");
     } finally {
       await act(async () => root.unmount());
       container.remove();
       bounds.mockRestore();
+      vi.unstubAllGlobals();
       vi.useRealTimers();
     }
   });

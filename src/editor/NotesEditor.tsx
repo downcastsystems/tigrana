@@ -1,3 +1,7 @@
+import { formattingSelectionAnchor } from "./formattingSelectionAnchor";
+import { FootnoteDefinitionNode, FootnoteReferenceNode, FootnoteInteractions, requestFootnote, selectFootnote } from "./footnotes";
+import { FootnoteDialog } from "./FootnoteDialog";
+import { canAlignText, setTextAlignment, TextAlignmentExtension } from "./textAlignment";
 import { SearchResultReveal, useSearchResultReveal } from "./searchResultReveal";
 import { TaskItem, TaskList } from "@tiptap/extension-list";
 import { TableRow } from "@tiptap/extension-table";
@@ -15,6 +19,9 @@ import type { EditorView } from "@tiptap/pm/view";
 import { EditorContent, Range, useEditor, type Editor } from "@tiptap/react";
 import { StarterKit } from "@tiptap/starter-kit";
 import {
+  AlignLeft,
+  AlignCenter,
+  AlignRight,
   Bold,
   CheckSquare,
   ChevronDown,
@@ -218,6 +225,10 @@ export function NotesEditor({ bulletMethodDisplay = defaultBulletMethodDisplay, 
         },
       }),
       StoryParagraphs,
+      TextAlignmentExtension,
+      FootnoteReferenceNode,
+      FootnoteDefinitionNode,
+      FootnoteInteractions,
       OrderedListWithGutter,
       BulletMethodMarkers,
       CodeBlockWithControls.configure({ lowlight }),
@@ -260,7 +271,7 @@ export function NotesEditor({ bulletMethodDisplay = defaultBulletMethodDisplay, 
       setSlash(null);
       return false;
     }
-    const currentCommands = filterSlashCommands(currentSlash.query);
+    const currentCommands = filterSlashCommands(currentSlash.query, currentEditor);
 
     if (event.key === "ArrowDown") {
       if (currentCommands.length === 0) return false;
@@ -718,6 +729,14 @@ export function NotesEditor({ bulletMethodDisplay = defaultBulletMethodDisplay, 
 
   const applyEditorCommand = useCallback((request: EditorCommandRequest) => {
     if (!editor) return;
+    if (request.command === "footnote") {
+      requestFootnote(editor, request.src);
+      return;
+    }
+    if (request.command === "selectFootnote") {
+      if (request.src) selectFootnote(editor, request.src);
+      return;
+    }
     if (request.command === "equation") {
       requestEquation(editor);
       return;
@@ -848,7 +867,7 @@ export function NotesEditor({ bulletMethodDisplay = defaultBulletMethodDisplay, 
 
   useSearchResultReveal(editor, searchRevealRequest, workspace, notePath, reloadRequest);
 
-  const commands = slash ? filterSlashCommands(slash.query) : [];
+  const commands = slash ? filterSlashCommands(slash.query, editor) : [];
   const selectedSlashIndex = slash?.selected ?? -1;
 
   useLayoutEffect(() => {
@@ -903,6 +922,7 @@ export function NotesEditor({ bulletMethodDisplay = defaultBulletMethodDisplay, 
     >
       {editor && colorToolbarElement ? createPortal(<EditorColorControls editor={editor} disabled={!editable || colorsDisabled} />, colorToolbarElement) : null}
       {editor ? <EquationContextMenu editor={editor} disabled={!editable} /> : null}
+      {editor ? <FootnoteDialog key={historyKey} editor={editor} disabled={!editable} /> : null}
       {editor ? <EquationDialog editor={editor} disabled={!editable} /> : null}
       {editor ? <FormattingBubbleMenu bulletMethodEnabled={Boolean(bulletMethodDisplay.enabled)} editor={editor} onRequestLink={onRequestLink} bulletMethodStatuses={bulletMethodStatuses} /> : null}
       {findOpen ? (
@@ -1299,6 +1319,15 @@ export function FormattingBubbleMenu({
     },
   ];
 
+  if (canAlignText(editor)) buttonRows.push({
+    label: "Text alignment",
+    buttons: [
+      { label: "Align left", icon: AlignLeft, active: !editor.isActive({ textAlign: "center" }) && !editor.isActive({ textAlign: "right" }), run: () => setTextAlignment(editor, "left") },
+      { label: "Align center", icon: AlignCenter, active: editor.isActive({ textAlign: "center" }), run: () => setTextAlignment(editor, "center") },
+      { label: "Align right", icon: AlignRight, active: editor.isActive({ textAlign: "right" }), run: () => setTextAlignment(editor, "right") },
+    ],
+  });
+
   const eligible = (() => {
     if (typeof document === "undefined") return false;
     if (document.querySelector(".dialog-backdrop")) return false;
@@ -1337,11 +1366,7 @@ export function FormattingBubbleMenu({
     if (!visible) return null;
     const { from, to } = editor.state.selection;
     try {
-      const start = editor.view.coordsAtPos(from);
-      const end = editor.view.coordsAtPos(to);
-      const top = Math.min(start.top, end.top);
-      const left = (start.left + end.left) / 2;
-      return { top, left, bottom: Math.max(start.bottom, end.bottom) };
+      return formattingSelectionAnchor(editor.view, from, to);
     } catch {
       return null;
     }
@@ -1350,17 +1375,41 @@ export function FormattingBubbleMenu({
   useLayoutEffect(() => {
     const bubble = bubbleRef.current;
     if (!position || !bubble) return;
-    const { width, height } = bubble.getBoundingClientRect();
-    const margin = 8;
-    const left = Math.max(margin, Math.min(position.left - width / 2, window.innerWidth - width - margin));
-    const above = position.top - height - margin;
-    const top = Math.max(margin, Math.min(
-      above >= margin ? above : position.bottom + margin,
-      window.innerHeight - height - margin,
-    ));
-    bubble.style.left = `${left}px`;
-    bubble.style.top = `${top}px`;
-  }, [position]);
+    const surface = editor.view.dom.closest(".note-surface");
+    const place = () => {
+      const { width, height } = bubble.getBoundingClientRect();
+      const bounds = surface?.getBoundingClientRect();
+      const margin = 8;
+      // The note's visible scroll area excludes the app header and editor toolbar.
+      const upper = Math.max(0, bounds?.top ?? 0) + margin;
+      const lower = Math.min(window.innerHeight, bounds?.bottom ?? window.innerHeight) - margin;
+      const above = position.top - height - margin;
+      const center = above >= upper ? position.left : position.belowLeft;
+      const left = Math.max(margin, Math.min(center - width / 2, window.innerWidth - width - margin));
+      const top = Math.max(upper, Math.min(
+        above >= upper ? above : position.bottom + margin,
+        lower - height,
+      ));
+      bubble.style.left = `${left}px`;
+      bubble.style.top = `${top}px`;
+    };
+    place();
+    // Formatting and theme changes can add rows or change their height without
+    // changing the selection. Keep its anchor stable, but measure the new bar.
+    if (typeof ResizeObserver === "undefined") return;
+    let surfaceBounds = surface?.getBoundingClientRect();
+    const observer = new ResizeObserver(() => {
+      const next = surface?.getBoundingClientRect();
+      if (next && surfaceBounds && (next.width !== surfaceBounds.width || next.height !== surfaceBounds.height
+        || next.left !== surfaceBounds.left || next.top !== surfaceBounds.top)) {
+        surfaceBounds = next;
+        setPositionRevision(value => value + 1);
+      } else place();
+    });
+    observer.observe(bubble);
+    if (surface) observer.observe(surface);
+    return () => observer.disconnect();
+  }, [editor, position]);
 
   // Reference `tick` so editor state changes still refresh button/visibility
   // state without treating every transaction as an anchor invalidation.
@@ -1547,7 +1596,7 @@ function cutSelectedTaskLines(view: EditorView, event: ClipboardEvent) {
 
 function getSelectedText(editor: Editor) {
   const { from, to, empty } = editor.state.selection;
-  if (empty) return "";
+  if (empty || editor.state.selection instanceof NodeSelection && ["image", "footnoteReference", "footnoteDefinition"].includes(editor.state.selection.node.type.name)) return "";
   return editor.state.doc.textBetween(from, to, "\n", "\n");
 }
 

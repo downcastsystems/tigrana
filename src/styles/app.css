@@ -3862,6 +3862,7 @@ html[data-theme="dark"] .tab-list-separator {
 
 .image-resizable img {
   display: block;
+  width: 100%;
   max-width: 100%;
   height: auto;
   border-radius: 8px;
@@ -3874,7 +3875,25 @@ html[data-theme="dark"] .tab-list-separator {
   border-radius: 8px;
 }
 
+.image-resize-edge {
+  position: absolute;
+  right: -6px;
+  top: 0;
+  bottom: 0;
+  width: 12px;
+  cursor: ew-resize;
+  touch-action: none;
+  z-index: 9;
+}
+
+.image-resize-handle.is-top {
+  top: -6px;
+  bottom: auto;
+  cursor: ne-resize;
+}
+
 .image-resize-handle {
+  touch-action: none;
   position: absolute;
   right: -6px;
   bottom: -6px;
@@ -3903,7 +3922,8 @@ html[data-theme="dark"] .tab-list-separator {
   cursor: pointer;
 }
 
-.ProseMirror a:hover {
+.ProseMirror a:hover,
+.ProseMirror .footnote-reference:hover {
   opacity: 0.8;
 }
 
@@ -6945,3 +6965,81 @@ html[data-theme="light"] .ProseMirror li[data-bullet-method-completed="true"] .b
 @media (prefers-reduced-motion: reduce) {
   .bullet-status-celebration { display: none; }
 }
+
+.right-sidebar-header {
+  flex-direction: column;
+  align-items: stretch;
+  gap: 10px;
+  padding-top: 10px;
+  padding-bottom: 10px;
+  flex-shrink: 0;
+}
+
+.right-sidebar-header .sidebar-tabs {
+  justify-content: flex-end;
+}
+
+.note-overview {
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  overflow: auto;
+}
+
+.note-overview .properties-list {
+  flex: 0 0 auto;
+  overflow: visible;
+}
+
+.note-overview h3 {
+  margin: 8px 14px;
+  font-size: 12px;
+  color: var(--muted);
+}
+
+.note-overview .outline-list {
+  flex: 0 0 auto;
+  overflow: visible;
+}
+
+.right-sidebar-header .sidebar-tabs { flex-wrap: wrap; }
+.sidebar-scroll-pane { min-height: 0; overflow: auto; }
+.overview-section { flex: 0 0 auto; border-bottom: 1px solid color-mix(in srgb, currentColor 10%, transparent); }
+.overview-section > summary { cursor: pointer; padding: 12px 14px; font-size: 12px; font-weight: 650; user-select: none; }
+.overview-section > summary::marker { color: var(--muted); }
+.sidebar-hint { color: var(--muted); font-size: 11px; line-height: 1.5; }
+.sidebar-text-button { border: 0; background: transparent; color: inherit; padding: 4px 2px; font-size: 11px; cursor: pointer; text-align: left; }
+.sidebar-text-button:hover:not(:disabled) { color: var(--accent); }
+.sidebar-text-button:disabled { opacity: 0.5; cursor: default; }
+.writing-progress-pane { padding: 2px 14px 10px; }
+.writing-progress-rings { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
+.writing-goal { min-width: 0; display: flex; align-items: center; flex-direction: column; gap: 4px; }
+.writing-goal-label { font-size: 11px; text-align: center; }
+.writing-ring { width: 64px; height: 64px; position: relative; display: grid; place-items: center; }
+.writing-ring svg { position: absolute; inset: 0; width: 100%; height: 100%; transform: rotate(-90deg); }
+.writing-ring circle { fill: none; stroke-width: 4; }
+.writing-ring-track { stroke: color-mix(in srgb, currentColor 12%, transparent); }
+.writing-ring-value { stroke: var(--accent); stroke-linecap: round; }
+.writing-ring strong { font-size: 12px; font-variant-numeric: tabular-nums; }
+.writing-goal-form { display: flex; flex-wrap: wrap; gap: 4px; font-size: 11px; }
+.writing-goal-form input { min-width: 0; width: 100%; height: 30px; padding: 0 7px; }
+.writing-goal-form button { min-height: 28px; font: inherit; padding: 3px 7px; }
+.note-links-pane { padding: 0 6px 10px; }
+.note-links-pane h3 { margin: 8px; font-size: 11px; color: var(--muted); }
+.note-links-pane .backlinks-item:disabled { opacity: 0.6; cursor: default; }
+.footnotes-pane { padding: 0 14px 12px; }
+.footnotes-pane .empty-sidebar-note { margin: 6px 0; }
+.footnote-sidebar-entry { padding: 8px 0; border-bottom: 1px solid color-mix(in srgb, currentColor 8%, transparent); }
+.footnote-sidebar-heading { display: flex; justify-content: space-between; gap: 8px; }
+.footnote-sidebar-entry p { margin: 3px 0; font-size: 12px; line-height: 1.5; white-space: pre-wrap; overflow-wrap: anywhere; }
+.ProseMirror .footnote-reference { font-size: 0.75em; cursor: pointer; padding: 0 2px; vertical-align: super; }
+.ProseMirror .footnote-reference::after { content: attr(data-number); }
+.footnote-reference .sr-only { position: absolute; width: 1px; height: 1px; padding: 0; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
+.ProseMirror .footnote-definition { margin: 18px 0; padding: 10px 0; border-top: 1px solid color-mix(in srgb, currentColor 18%, transparent); cursor: pointer; font-size: 0.85em; }
+.footnote-definition > strong { display: block; font-size: 0.85em; color: var(--muted); margin-bottom: 5px; }
+.footnote-definition > span { display: block; white-space: pre-wrap; }
+.footnote-dialog { width: min(520px, calc(100vw - 32px)); max-height: calc(82dvh - 16px); overflow-y: auto; }
+.footnote-dialog textarea { display: block; height: auto; resize: vertical; min-height: 130px; padding: 10px 11px; font: inherit; line-height: 1.5; }
+.footnote-dialog-hint { margin: 8px 0 0; color: var(--muted); font-size: 13px; line-height: 1.5; }
+
+.footnote-dialog .field-label { color: var(--text); }

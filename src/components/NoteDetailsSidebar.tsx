@@ -1,14 +1,17 @@
+import { WritingProgressPane } from "./WritingProgressPane";
+import { FootnotesPane } from "./FootnotesPane";
+import { NoteLinksPane } from "./NoteLinksPane";
+import { buildDemoLinkIndex } from "../lib/demoLinkIndex";
 import type { DraftNote } from "../lib/notebookNavigation";
-import { Braces, Check, Copy, FileText, LayoutList, Link2 } from "lucide-react";
+import { Braces, Check, Copy, FileText, LayoutDashboard, LayoutList, Link2, Asterisk } from "lucide-react";
 import { notebookFilePath } from "../lib/filePaths";
 import type { ReactNode } from "react";
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { createNoteDocument, updateNoteDocumentFrontmatterField, type FrontmatterField } from "../lib/noteDocument";
 import { getNotebookName } from "../lib/notebookMetadata";
 import type { FolderEntry, LinkIndex, NoteEntry, WorkspaceMetadata } from "../types";
-import { IconMark } from "./IconBrowser";
 
-export type RightSidebarMode = "outline" | "frontmatter" | "properties" | "backlinks";
+export type RightSidebarMode = "overview" | "outline" | "frontmatter" | "properties" | "links" | "footnotes";
 
 export function RightSidebar({
   id,
@@ -25,14 +28,25 @@ export function RightSidebar({
   linkIndex,
   activePath,
   selectedFolder,
-  folders,
   notes,
   metadata,
   onFrontmatterChange,
   onModeChange,
   onSelectOutline,
   onSelectBacklink,
+  body = "",
+  demoContents,
+  onGoalChange,
+  onInsertFootnote,
+  onEditFootnote,
+  onSelectFootnote,
 }: {
+  body?: string;
+  demoContents?: Map<string, string>;
+  onGoalChange?: (noteId: string | null, goal: number | null) => void;
+  onInsertFootnote?: () => void;
+  onEditFootnote?: (label: string) => void;
+  onSelectFootnote?: (label: string) => void;
   id?: string;
   overlayActions?: ReactNode;
   activeNote: NoteEntry | null;
@@ -55,36 +69,62 @@ export function RightSidebar({
   onSelectOutline: (id: string) => void;
   onSelectBacklink: (path: string) => void;
 }) {
+  const effectiveIndex = useMemo(() => linkIndex ?? (demoContents ? buildDemoLinkIndex(demoContents, notes) : null), [demoContents, linkIndex, notes]);
+  const footnotesPane = <FootnotesPane body={body} onInsert={onInsertFootnote} onEdit={onEditFootnote} onSelect={onSelectFootnote} />;
+  const linksPane = <NoteLinksPane linkIndex={effectiveIndex} activePath={activePath} selectedFolder={selectedFolder}
+    notes={notes} metadata={metadata} onSelect={onSelectBacklink} />;
   const outlineScrollKey = noteIdentity ? JSON.stringify([workspace, noteIdentity]) : null;
+  const overviewRef = useRef<HTMLDivElement>(null);
+  const overviewScrollKey = noteIdentity ? JSON.stringify([workspace, noteIdentity, "overview"]) : null;
+  useLayoutEffect(() => {
+    if (overviewRef.current) overviewRef.current.scrollTop = overviewScrollKey ? outlineScrollPositions.get(overviewScrollKey) ?? 0 : 0;
+  }, [mode, outline, overviewScrollKey, outlineScrollPositions]);
   const title =
-    mode === "outline"
+    mode === "overview" ? "Overview" : mode === "outline"
       ? "Outline"
       : mode === "frontmatter"
       ? "Frontmatter"
-      : mode === "backlinks"
-      ? "Backlinks"
+      : mode === "links"
+      ? "Links"
+      : mode === "footnotes" ? "Footnotes"
       : "Properties";
   return (
     <aside id={id} className="right-sidebar">
       {overlayActions}
-      <div className="pane-header">
-        <strong>{title}</strong>
-        <div className="sidebar-tabs">
-          <button className={`icon-button ${mode === "outline" ? "is-active" : ""}`} type="button" title="Outline" onClick={() => onModeChange("outline")}>
+      <div className="pane-header right-sidebar-header">
+        <div className="sidebar-tabs" role="group" aria-label="Note information">
+          <button className={`icon-button ${mode === "overview" ? "is-active" : ""}`} type="button" title="Overview" aria-pressed={mode === "overview"} onClick={() => onModeChange("overview")}>
+            <LayoutDashboard size={16} />
+          </button>
+          <button className={`icon-button ${mode === "outline" ? "is-active" : ""}`} type="button" title="Outline" aria-pressed={mode === "outline"} onClick={() => onModeChange("outline")}>
             <LayoutList size={16} />
           </button>
-          <button className={`icon-button ${mode === "backlinks" ? "is-active" : ""}`} type="button" title="Backlinks" onClick={() => onModeChange("backlinks")}>
+          <button className={`icon-button ${mode === "links" ? "is-active" : ""}`} type="button" title="Links" aria-pressed={mode === "links"} onClick={() => onModeChange("links")}>
             <Link2 size={16} />
           </button>
-          <button className={`icon-button ${mode === "frontmatter" ? "is-active" : ""}`} type="button" title="Frontmatter" onClick={() => onModeChange("frontmatter")}>
+          <button className={`icon-button ${mode === "footnotes" ? "is-active" : ""}`} type="button" title="Footnotes" aria-pressed={mode === "footnotes"} onClick={() => onModeChange("footnotes")}>
+            <Asterisk size={16} viewBox="4 4 16 16" strokeWidth={1.5} />
+          </button>
+          <button className={`icon-button ${mode === "frontmatter" ? "is-active" : ""}`} type="button" title="Frontmatter" aria-pressed={mode === "frontmatter"} onClick={() => onModeChange("frontmatter")}>
             <Braces size={16} />
           </button>
-          <button className={`icon-button ${mode === "properties" ? "is-active" : ""}`} type="button" title="Properties" onClick={() => onModeChange("properties")}>
+          <button className={`icon-button ${mode === "properties" ? "is-active" : ""}`} type="button" title="Properties" aria-pressed={mode === "properties"} onClick={() => onModeChange("properties")}>
             <FileText size={16} />
           </button>
         </div>
+        <strong>{title}</strong>
       </div>
-      {mode === "outline" ? (
+      {mode === "overview" ? (
+        <div className="note-overview" ref={overviewRef} onScroll={event => {
+          if (overviewScrollKey) outlineScrollPositions.set(overviewScrollKey, event.currentTarget.scrollTop);
+        }}>
+          <OverviewSection title="Goals" defaultExpanded={false}><WritingProgressPane metadata={metadata} noteId={noteIdentity} onGoalChange={onGoalChange} /></OverviewSection>
+          <OverviewSection title="Outline"><NoteOutlineList key={overviewScrollKey} outline={outline} scrollKey={null}
+            positions={outlineScrollPositions} onSelect={onSelectOutline} /></OverviewSection>
+          <OverviewSection title="Links">{linksPane}</OverviewSection>
+          <OverviewSection title="Footnotes">{footnotesPane}</OverviewSection>
+        </div>
+      ) : mode === "outline" ? (
         <NoteOutlineList key={outlineScrollKey} outline={outline} scrollKey={outlineScrollKey}
           positions={outlineScrollPositions} onSelect={onSelectOutline} />
       ) : mode === "frontmatter" ? (
@@ -94,16 +134,10 @@ export function RightSidebar({
           frontmatterError={frontmatterError}
           onChange={onFrontmatterChange}
         />
-      ) : mode === "backlinks" ? (
-        <BacklinksPane
-          linkIndex={linkIndex}
-          activePath={activePath}
-          selectedFolder={selectedFolder}
-          folders={folders}
-          notes={notes}
-          metadata={metadata}
-          onSelectBacklink={onSelectBacklink}
-        />
+      ) : mode === "links" ? (
+        <div className="sidebar-scroll-pane">{linksPane}</div>
+      ) : mode === "footnotes" ? (
+        <div className="sidebar-scroll-pane">{footnotesPane}</div>
       ) : (
         <PropertiesPane activeNote={activeNote} pendingNote={pendingNote} workspace={workspace} />
       )}
@@ -137,78 +171,12 @@ function NoteOutlineList({ outline, scrollKey, positions, onSelect }: {
   </div>;
 }
 
-function BacklinksPane({
-  linkIndex,
-  activePath,
-  selectedFolder,
-  folders,
-  notes,
-  metadata,
-  onSelectBacklink,
-}: {
-  linkIndex: LinkIndex | null;
-  activePath: string | null;
-  selectedFolder: string;
-  folders: FolderEntry[];
-  notes: NoteEntry[];
-  metadata: WorkspaceMetadata;
-  onSelectBacklink: (path: string) => void;
-}) {
-  if (!linkIndex) {
-    return <p className="empty-sidebar-note">Indexing links…</p>;
-  }
-  // Prefer the open note; fall back to the selected folder (single-pane / section view).
-  const targetPath = activePath ?? (selectedFolder || null);
-  if (!targetPath) {
-    return <p className="empty-sidebar-note">Select a note or folder to see what links to it.</p>;
-  }
-  const targetIsFolder = !activePath;
-  const targetName = targetIsFolder
-    ? folders.find((f) => f.path === targetPath)?.name ?? targetPath
-    : notes.find((n) => n.path === targetPath)?.title ?? targetPath;
-  const id = linkIndex.pathToId[targetPath];
-  if (!id) {
-    return (
-      <p className="empty-sidebar-note">
-        No incoming links to <strong>{targetName}</strong> yet.
-      </p>
-    );
-  }
-  const inbound = linkIndex.inbound[id] ?? [];
-  const seen = new Set<string>();
-  const rows = inbound.flatMap((ref) => {
-    if (seen.has(ref.sourceId)) return [];
-    seen.add(ref.sourceId);
-    const source = linkIndex.notesById[ref.sourceId];
-    if (!source) return [];
-    const title = notes.find((n) => n.path === source.path)?.title ?? source.title;
-    const icon = metadata.noteIcons[source.path];
-    return [{ sourceId: ref.sourceId, path: source.path, title, icon }];
-  });
-  if (!rows.length) {
-    return (
-      <p className="empty-sidebar-note">
-        No incoming links to <strong>{targetName}</strong> yet.
-      </p>
-    );
-  }
-  return (
-    <div className="backlinks-list">
-      {rows.map((row) => (
-        <button
-          className="backlinks-item"
-          data-copy-note-path={row.path}
-          key={row.sourceId}
-          type="button"
-          title={row.path}
-          onClick={() => onSelectBacklink(row.path)}
-        >
-          <IconMark value={row.icon} fallback={FileText} size={14} />
-          <span className="backlinks-item-title">{row.title}</span>
-        </button>
-      ))}
-    </div>
-  );
+function OverviewSection({ title, children, defaultExpanded = true }: { title: string; children: ReactNode; defaultExpanded?: boolean }) {
+  const [expanded, setExpanded] = useState(defaultExpanded);
+  return <details className="overview-section" open={expanded} onToggle={event => setExpanded(event.currentTarget.open)}>
+    <summary>{title}</summary>
+    {children}
+  </details>;
 }
 
 function FrontmatterPane({

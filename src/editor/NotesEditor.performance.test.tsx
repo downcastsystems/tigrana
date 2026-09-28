@@ -136,6 +136,57 @@ describe("Note editor typing performance", () => {
     expect(onChange).not.toHaveBeenCalled();
   });
 
+  it.each(["![Image](image.png)", "- ![Image](image.png)"])("keeps image selection, text stats, and resize stable: %s", async imageMarkdown => {
+    const container = document.createElement("div"); document.body.append(container);
+    const root = createRoot(container); mounted.push({ container, root });
+    const onPositionChange = vi.fn();
+    await act(async () => root.render(<NotesEditor content={`Some note text.\n\n${imageMarkdown}`} editable findRequest={0}
+      focusAtEndRequest={0} focusRequest={0} historyKey="images" notePath="Images.md"
+      onChange={() => undefined} onLoadError={error => { throw error; }}
+      onPendingChange={() => undefined} onPositionChange={onPositionChange}
+      restorePosition={null} spellcheckEnabled workspace="/Notebook" />));
+    const pm = container.querySelector<HTMLElement>(".ProseMirror")!;
+    const editor = (pm as HTMLElement & { editor: import("@tiptap/core").Editor }).editor;
+    let imagePos = 0;
+    editor.state.doc.descendants((node, pos) => { if (node.type.name === "image") imagePos = pos; });
+    await act(async () => { editor.commands.setNodeSelection(imagePos); });
+    expect(onPositionChange.mock.lastCall?.[0].selectedText).toBe("");
+    const img = container.querySelector(".image-resizable img")!;
+    const clickImage = () => {
+      img.dispatchEvent(new MouseEvent("mousedown", { bubbles: true, cancelable: true, button: 0 }));
+      img.dispatchEvent(new MouseEvent("mouseup", { bubbles: true }));
+      img.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    };
+    await act(async () => { editor.commands.setTextSelection(1); clickImage(); });
+    expect(editor.state.selection.from).toBe(imagePos);
+    expect(container.querySelector(".image-resizable.is-selected")).not.toBeNull();
+    await act(async () => { clickImage(); });
+    expect(container.querySelector(".image-resize-edge")).not.toBeNull();
+    expect(container.querySelector(".image-resize-handle.is-top")).not.toBeNull();
+    if (imageMarkdown.startsWith("-")) expect(img.closest("li")).not.toBeNull();
+    vi.spyOn(img.parentElement!, "getBoundingClientRect").mockReturnValue(new DOMRect(0, 0, 400, 3000));
+    const edge = container.querySelector(".image-resize-edge")!;
+    const pointer = (target: EventTarget, type: string, x: number) => {
+      const event = new MouseEvent(type, { bubbles: true, cancelable: true, button: 0, clientX: x });
+      Object.defineProperty(event, "pointerId", { value: 1 }); target.dispatchEvent(event);
+    };
+    vi.mocked(htmlToMarkdown).mockClear();
+    await act(async () => {
+      pointer(edge, "pointerdown", 400);
+      pointer(document, "pointermove", 300);
+    });
+    expect(htmlToMarkdown).not.toHaveBeenCalled();
+    expect(editor.state.doc.nodeAt(imagePos)?.attrs.width).toBeNull();
+    await act(async () => pointer(document, "pointerup", 250));
+    expect(editor.state.doc.nodeAt(imagePos)?.attrs.width).toBe(250);
+    const serialized = htmlToMarkdown(editor.getHTML());
+    expect(serialized).toContain('width="250"');
+    await act(async () => editor.commands.setContent(markdownToHtml(serialized)));
+    expect(container.querySelector(".image-resizable")?.getAttribute("style")).toContain("250px");
+    if (imageMarkdown.startsWith("-")) expect(container.querySelector("li .image-resizable")).not.toBeNull();
+
+  });
+
   it("previews resize locally and persists the final equation size in the full editor", async () => {
     vi.useFakeTimers();
     const container = document.createElement("div"); document.body.appendChild(container);
@@ -709,7 +760,8 @@ describe("Note editor typing performance", () => {
     mounted.push({ container, root });
     const plain = Array.from({ length: 5_000 }, (_, index) => `word${index}`).join(" ");
     const format = (text: string) => colored ? `<span style="color: #a83232">${text}</span>` : text;
-    const longNote = format(plain);
+    const footnotes = colored ? "\n\nReference[^test].\n\n[^test]: Preserved footnote." : "";
+    const longNote = format(plain) + footnotes;
     const colorToolbarElement = document.createElement("div");
     container.append(colorToolbarElement);
     let parentRenderCount = 0;
@@ -775,7 +827,7 @@ describe("Note editor typing performance", () => {
     });
 
     expect(committedMarkdown).toHaveLength(1);
-    expect(committedMarkdown[0]).toBe(`${format(plain + " abc")}\n`);
+    expect(committedMarkdown[0]).toBe(`${format(plain + " abc")}${footnotes}\n`);
     expect(parentRenderCount).toBe(2);
     expect(container.querySelector(".ProseMirror")).toBe(editorElement);
   });

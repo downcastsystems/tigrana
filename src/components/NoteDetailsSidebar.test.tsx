@@ -41,7 +41,7 @@ describe("Outline scroll positions", () => {
   function Harness({ path, pages, workspace = "/Notebook", visible = true, mode = "outline", identity = path }: {
     path: string; pages: number; workspace?: string; visible?: boolean; mode?: RightSidebarMode; identity?: string;
   }) {
-    const outline = useNoteOutline(path, body(pages), `${workspace}/${path}`, visible && mode === "outline");
+    const outline = useNoteOutline(path, body(pages), `${workspace}/${path}`, visible && (mode === "outline" || mode === "overview"));
     return visible ? <StrictMode><RightSidebar activeNote={{ path, title: path, parent_path: "" }} activePath={path}
       noteIdentity={identity} outlineScrollPositions={positions} outline={outline} mode={mode}
       workspace={workspace} frontmatter="" frontmatterError={null} pendingNote={null} linkIndex={null}
@@ -55,6 +55,20 @@ describe("Outline scroll positions", () => {
       list().dispatchEvent(new Event("scroll"));
     });
   }
+
+  it("shows collapsed Goals followed by expanded Outline, Links, and Footnotes", () => {
+    act(() => root.render(<Harness path="Note.md" pages={3} mode="overview" />));
+    expect([...container.querySelectorAll(".overview-section > summary")].map(node => node.textContent)).toEqual(["Goals", "Outline", "Links", "Footnotes"]);
+    expect([...container.querySelectorAll(".overview-section")].map(node => node.hasAttribute("open"))).toEqual([false, true, true, true]);
+    expect(container.querySelectorAll(".writing-ring")).toHaveLength(2);
+    expect(container.querySelector('[title="Links"]')).not.toBeNull();
+    expect(container.querySelector('[title="Footnotes"]')).not.toBeNull();
+    expect(container.querySelectorAll(".note-overview .outline-item")).toHaveLength(4);
+    const header = container.querySelector(".right-sidebar-header")!;
+    expect(header.firstElementChild?.classList.contains("sidebar-tabs")).toBe(true);
+    expect(header.lastElementChild?.textContent).toBe("Overview");
+    expect(container.querySelector('[title="Overview"]')?.getAttribute("aria-pressed")).toBe("true");
+  });
 
   it("starts unseen notes at the top and restores each note after switching through shorter outlines", () => {
     act(() => root.render(<Harness path="Large.md" pages={1000} />));

@@ -104,3 +104,26 @@ describe("Markdown round trips", () => {
     expect(htmlToMarkdown(markdownToHtml(markdown)).trimEnd()).toBe(markdown);
   });
 });
+
+
+describe("images in lists", () => {
+  it.each([
+    '- ![Map](.assets/map.png)',
+    '- <img src=".assets/map.png" alt="Map" width="180" />',
+    '- Parent\n  - <img src=".assets/map.png" alt="Map" width="180" />',
+    '1. <img src=".assets/map.png" alt="Map" width="180" />',
+    '- [ ] <img src=".assets/map.png" alt="Map" width="180" />',
+  ])('retains the image inside its list: %s', markdown => {
+    const html = markdownToHtml(markdown);
+    const doc = new DOMParser().parseFromString(html, 'text/html');
+    expect(doc.querySelector('li img')).not.toBeNull();
+    expect(htmlToMarkdown(html).trimEnd()).toBe(markdown);
+  });
+  it('drops event attributes from resized inline images and leaves code examples literal', () => {
+    const doc = new DOMParser().parseFromString(markdownToHtml('- <img src="image.png" width="180" onload="alert(1)" />'), 'text/html');
+    expect(doc.querySelector('img')?.getAttribute('onload')).toBeNull();
+    const code = new DOMParser().parseFromString(markdownToHtml('- `<img src="image.png" width="180" />`'), 'text/html');
+    expect(code.querySelector('img')).toBeNull();
+    expect(code.querySelector('code')?.textContent).toContain('<img');
+  });
+});

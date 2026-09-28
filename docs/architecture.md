@@ -548,3 +548,50 @@ File → Print shares Export's current-note, current-folder and current-section
 selection rules. Section printing appears only in section view; unavailable
 selections are disabled. Cmd+P continues to print the current note. Collections
 use the same ordered aggregation and per-note page boundaries as PDF export.
+
+
+### Text alignment and image resizing
+
+Top-level paragraphs and headings support left, center, and right alignment through
+slash commands, selection formatting, and Cmd/Ctrl+Shift+L/E/R. Center and right
+alignment serialize as a `<div style="text-align: center">` or `right` wrapper with
+blank lines around ordinary Markdown. Left alignment removes the wrapper. The
+parser only accepts this narrow wrapper syntax. Headings remain Markdown headings
+for the outline, and wrappers are excluded from text counts. Alignment controls
+are unavailable in lists, quotes, and code blocks; HTML/style support varies among
+external Markdown renderers.
+
+Image node views explicitly select images without scrolling them into view. The
+top and bottom grips and the full right edge resize tall images, including images
+inside list items. Dragging previews the width locally and commits one editor
+transaction on release. Cancellation and node-view teardown remove drag listeners.
+Resized list images retain their list marker and portable `<img width="…" />` markup.
+Selecting an image leaves note word and character counts unchanged.
+
+
+### Overview, daily progress, links, and footnotes
+
+The right sidebar keeps a compact, right-aligned icon row above its title.
+Overview contains Goals, Outline, Links, and Footnotes. Goals starts collapsed;
+the other sections start expanded. Each section is independently collapsible. Links groups incoming and outgoing note
+links from the durable index; browser demo mode builds an equivalent index from
+saved demo contents. Opening Links or Overview refreshes the native index.
+
+Daily writing progress records net word-count changes at successful local saves,
+not on load, watcher updates, or failed saves. Signed per-note balances prevent
+deleting and restoring existing words from creating progress; displayed counts
+are clamped to zero per note. Dates use the local calendar. Notebook and per-note
+daily targets, and daily balances keyed by stable note UUID, live in notebook
+metadata under `writingProgress` and use semantic CAS updates. A per-session
+sequence prevents optimistic updates and retry replays from counting a save twice. Tracking starts
+with saves made by this version; it cannot reconstruct earlier writing sessions.
+
+Footnotes use portable `[^label]` references and `[^label]: text` definitions,
+with indented continuation paragraphs. The editor shows numbered reference
+atoms and compact definition blocks; the Footnote slash command and sidebar
+open a Markdown text dialog for insertion/editing. Raw definition source is
+preserved through serialization, including multiline content. References are
+numbered by first occurrence, while labels stay stable on disk. The sidebar
+identifies missing, duplicate, and unused definitions. Inline Obsidian-style
+`^[text]` footnotes are not generated. Typing transactions map existing number
+decorations; only changes involving reference nodes rebuild numbering.

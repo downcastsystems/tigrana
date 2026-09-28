@@ -1653,6 +1653,31 @@ describe("Note navigation persistence", () => {
     await act(async () => root.unmount());
   });
 
+  it("records writing progress only after a successful save, including retries", async () => {
+    demoPersistence.set("tigrana-demo-v5", JSON.stringify({ folders: [], notes: { "Welcome.md": "# Welcome\n\nOriginal body." } }));
+    const container = document.createElement("div");
+    document.body.appendChild(container); containers.push(container);
+    const root = createRoot(container);
+    const count = () => {
+      const raw = [...demoPersistence].find(([key]) => key.startsWith("tigrana-meta:"))?.[1];
+      const days = JSON.parse(raw ?? "{}").writingProgress?.days ?? {};
+      return Object.values(days).flatMap(entries => Object.values(entries as Record<string, number>)).reduce((sum, value) => sum + value, 0);
+    };
+    try {
+      await act(async () => { root.render(<App />); await new Promise(resolve => window.setTimeout(resolve, 50)); });
+      expect(count()).toBe(0);
+      saveFailures.attempts = 0; saveFailures.remaining = 1;
+      const body = container.querySelector<HTMLTextAreaElement>('textarea[aria-label="Test note body"]')!;
+      await act(async () => setReactTextareaValue(body, body.value + " Four new words today."));
+      await waitFor(() => saveFailures.attempts === 1);
+      expect(count()).toBe(0);
+      await waitFor(() => saveFailures.attempts >= 2, 4_500);
+      await waitFor(() => count() === 4);
+      await act(async () => setReactTextareaValue(body, body.value + " One more."));
+      await waitFor(() => count() === 6, 4_500);
+    } finally { await act(async () => root.unmount()); }
+  });
+
   it("does not navigate away when title validation prevents unsaved body content from being saved", async () => {
     demoPersistence.set("tigrana-demo-v5", JSON.stringify({
       folders: [],

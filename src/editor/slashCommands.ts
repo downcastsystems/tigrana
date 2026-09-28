@@ -1,8 +1,14 @@
+import { requestFootnote } from "./footnotes";
+import { canAlignText, setTextAlignment } from "./textAlignment";
 import { requestEquation } from "./mathNodes";
 import type { Editor, Range } from "@tiptap/react";
 import { TextSelection } from "@tiptap/pm/state";
 import { TableMap } from "@tiptap/pm/tables";
 import {
+  Asterisk,
+  AlignLeft,
+  AlignCenter,
+  AlignRight,
   Sigma,
   CheckSquare,
   Code,
@@ -37,6 +43,7 @@ export type SlashCommand = {
   hint: string;
   icon: LucideIcon;
   keywords: string[];
+  isAvailable?: (editor: Editor) => boolean;
   run: (editor: Editor, range: Range, context: SlashCommandContext) => void;
 };
 
@@ -242,6 +249,27 @@ export const slashCommands: SlashCommand[] = [
     keywords: ["math", "latex", "tex", "formula"],
     run: (editor, range) => requestEquation(editor, { block: false, from: range.from, to: range.to }),
   },
+  {
+    id: "footnote", title: "Footnote", hint: "Add a reference and footnote", icon: Asterisk,
+    keywords: ["footnote", "reference", "citation"],
+    run: (editor, range) => {
+      editor.chain().focus().deleteRange(range).run();
+      requestFootnote(editor);
+    },
+  },
+  ...([['left', AlignLeft], ['center', AlignCenter], ['right', AlignRight]] as const).map(([alignment, icon]) => ({
+    id: `align-${alignment}`,
+    title: `Align ${alignment}`,
+    hint: "Align a paragraph or heading",
+    icon,
+    keywords: ["align", alignment],
+    isAvailable: canAlignText,
+    run: (editor: Editor, range: Range) => {
+      if (!canAlignText(editor)) return;
+      editor.chain().focus().deleteRange(range).run();
+      setTextAlignment(editor, alignment);
+    },
+  })),
 ];
 
 export function markCurrentTableAsTigranaHtml(editor: Editor) {
@@ -312,9 +340,10 @@ export function ensureParagraphAfterCurrentTable(editor: Editor) {
   view.dispatch(tr.setSelection(TextSelection.create(tr.doc, cursorPos)).scrollIntoView());
 }
 
-export function filterSlashCommands(query: string) {
+export function filterSlashCommands(query: string, editor?: Editor | null) {
   const lower = query.toLowerCase();
   return slashCommands.filter((command) => {
+    if (editor && command.isAvailable && !command.isAvailable(editor)) return false;
     return (
       command.title.toLowerCase().includes(lower) ||
       command.keywords.some((keyword) => keyword.includes(lower))

@@ -19,6 +19,8 @@ pub struct FolderSiblingPlacement<'a> {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct WorkspaceMetadata {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub writing_progress: Option<Value>,
     #[serde(default)]
     pub revision: u64,
     #[serde(default)]
@@ -58,6 +60,7 @@ pub struct WorkspaceMetadata {
 impl Default for WorkspaceMetadata {
     fn default() -> Self {
         Self {
+            writing_progress: None,
             revision: 0,
             folder_order: Map::new(),
             note_order: Map::new(),
@@ -345,6 +348,27 @@ mod tests {
         fn drop(&mut self) {
             let _ = fs::remove_dir_all(&self.0);
         }
+    }
+
+    #[test]
+    fn writing_progress_survives_storage_conflicts_and_note_renames() {
+        let notebook = TestNotebook::new();
+        let progress = json!({
+            "notebookGoal": 500,
+            "noteGoals": { "stable-note-id": 200 },
+            "days": { "2026-09-28": { "stable-note-id": 125 } }
+        });
+        let mut incoming = WorkspaceMetadata::default();
+        incoming.writing_progress = Some(progress.clone());
+        let saved = compare_and_swap_workspace_metadata(&notebook.0, &incoming).unwrap();
+        assert!(saved.applied);
+        let conflict = compare_and_swap_workspace_metadata(&notebook.0, &incoming).unwrap();
+        assert!(!conflict.applied);
+        assert_eq!(conflict.metadata.writing_progress, Some(progress.clone()));
+        let mut renamed = saved.metadata;
+        repair_note_path(&mut renamed, "Old.md", "New.md", "", "");
+        write_workspace_metadata(&notebook.0, &renamed).unwrap();
+        assert_eq!(read_workspace_metadata(&notebook.0).unwrap().writing_progress, Some(progress));
     }
 
     #[test]
