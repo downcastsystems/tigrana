@@ -1,6 +1,7 @@
 // @vitest-environment jsdom
 import { serializeEditorSelectionForClipboard } from "./notesEditorBehavior";
 import { NodeSelection } from "@tiptap/pm/state";
+import { GapCursor } from "@tiptap/pm/gapcursor";
 import { Editor } from "@tiptap/core";
 import { StarterKit } from "@tiptap/starter-kit";
 import { afterEach, expect, it, vi } from "vitest";
@@ -9,6 +10,39 @@ import { footnoteEntries, footnotePreview, parseFootnotes } from "../lib/footnot
 import { htmlToMarkdown, markdownToHtml } from "../lib/markdown";
 import { measureNoteText } from "../lib/noteTextStats";
 const editors: Editor[] = [];
+it.each(['click', 'ArrowRight'])('keeps %s after the final footnote inside its text', action => {
+  const editor = create('Body[^1].\n\n[^1]: Footnote');
+  const definition = findFootnoteDefinition(editor, '1')!;
+  const end = definition.pos + definition.node.nodeSize;
+  editor.commands.setTextSelection(end - 2);
+  const original = editor.getJSON();
+  if (action === 'click') {
+    vi.spyOn(editor.view, 'posAtCoords').mockReturnValue({ pos: end, inside: -1 });
+    editor.view.someProp('handleClick', handler => handler(editor.view, end, new MouseEvent('click')));
+  } else {
+    vi.spyOn(editor.view, 'endOfTextblock').mockReturnValue(true);
+    editor.view.dom.dispatchEvent(new KeyboardEvent('keydown', { key: action, bubbles: true, cancelable: true }));
+  }
+  expect(editor.state.selection).not.toBeInstanceOf(GapCursor);
+  expect(editor.state.selection.from).toBe(end - 2);
+  expect(editor.view.dom.querySelector('.ProseMirror-gapcursor')).toBeNull();
+  expect(editor.getJSON()).toEqual(original);
+  editor.commands.insertContent('!');
+  expect(findFootnoteDefinition(editor, '1')!.node.textContent).toBe('Footnote!');
+  expect(editor.state.doc.lastChild!.type.name).toBe('footnoteDefinition');
+});
+
+it('redirects gaps between footnotes but preserves gap cursors elsewhere', () => {
+  const editor = create('Body[^1][^2].\n\n[^1]: First\n\n[^2]: Second');
+  const first = findFootnoteDefinition(editor, '1')!;
+  editor.view.dispatch(editor.state.tr.setSelection(new GapCursor(editor.state.doc.resolve(first.pos + first.node.nodeSize))));
+  expect(editor.state.selection.$from.node(-1).attrs.label).toBe('1');
+  editor.view.dispatch(editor.state.tr.setSelection(new GapCursor(editor.state.doc.resolve(first.pos))));
+  expect(editor.state.selection.$from.node(-1).attrs.label).toBe('1');
+  const ordinary = create('---');
+  ordinary.view.dispatch(ordinary.state.tr.setSelection(new GapCursor(ordinary.state.doc.resolve(0))));
+  expect(ordinary.state.selection).toBeInstanceOf(GapCursor);
+});
 afterEach(() => editors.splice(0).forEach(editor => editor.destroy()));
 function create(markdown: string) {
   const editor = new Editor({ extensions: [StarterKit.configure({ trailingNode: { notAfter: ["footnoteDefinition"] } }), FootnoteReferenceNode, FootnoteDefinitionNode, FootnoteInteractions], content: markdownToHtml(markdown) });

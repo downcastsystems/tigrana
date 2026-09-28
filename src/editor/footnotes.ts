@@ -1,4 +1,5 @@
 import { closeHistory } from "@tiptap/pm/history";
+import { GapCursor } from "@tiptap/pm/gapcursor";
 import { Extension, InputRule, Node, type Editor } from "@tiptap/core";
 import { NodeSelection, Plugin, PluginKey, TextSelection, type Transaction } from "@tiptap/pm/state";
 import { Decoration, DecorationSet } from "@tiptap/pm/view";
@@ -209,8 +210,19 @@ export const FootnoteInteractions = Extension.create({
         },
       },
       appendTransaction(transactions, _old, state) {
-        if (!transactions.some(footnoteStructureChanged)) return null;
-        return orderDefinitions(state.tr);
+        const reordered = transactions.some(footnoteStructureChanged) ? orderDefinitions(state.tr) : null;
+        // Mouse clicks and horizontal arrows can create gap selections outside
+        // isolating definitions. Keep those selections in editable footnote text.
+        if ((reordered ?? state).selection instanceof GapCursor) {
+          const { $from } = (reordered ?? state).selection;
+          const direction = $from.nodeBefore?.type.name === "footnoteDefinition" ? -1
+            : $from.nodeAfter?.type.name === "footnoteDefinition" ? 1 : 0;
+          if (direction) {
+            const selection = TextSelection.findFrom($from, direction, true);
+            if (selection) return (reordered ?? state.tr).setSelection(selection).scrollIntoView();
+          }
+        }
+        return reordered;
       },
       props: {
         decorations(state) { return this.getState(state); },

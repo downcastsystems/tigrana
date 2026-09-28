@@ -606,6 +606,8 @@ or stays put after the final footnote. Up from the first footnote returns to the
 end of the note body; Down from the body's final visual line enters the first
 footnote. The editor does not append a blank prose
 paragraph after the final footnote.
+Gap selections beside footnotes, including mouse clicks and horizontal arrow
+navigation, return to editable text instead of allowing stray paragraphs.
 
 Numbers follow first reference occurrence, while Markdown labels stay stable
 and are not displayed beside the numbers. Definition rows use a hanging indent
