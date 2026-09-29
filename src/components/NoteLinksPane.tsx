@@ -31,7 +31,7 @@ export function NoteLinksPane({ linkIndex, activePath, selectedFolder, notes, me
   return <div className="note-links-pane">
     {(["incoming", "outgoing"] as const).map(direction => <section key={direction} aria-label={`${direction === "incoming" ? "Incoming" : "Outgoing"} links`}>
       <h3>{direction === "incoming" ? "Incoming" : "Outgoing"}</h3>
-      {!rows[direction].length && <p className="empty-sidebar-note">{direction === "incoming" ? "No notes link here yet." : "No links to other notes yet."}</p>}
+      {!rows[direction].length && <p className="empty-sidebar-note">{direction === "incoming" ? "No note links yet." : "No links to other notes yet."}</p>}
       {rows[direction].map(row => <button className="backlinks-item" type="button" key={row.path} title={row.broken ? `Missing note: ${row.path}` : row.path}
         disabled={row.broken} data-copy-note-path={row.path} onClick={() => onSelect(row.path)}>
         <IconMark value={metadata.noteIcons[row.path]} fallback={FileText} size={14} />

@@ -7048,7 +7048,8 @@ html[data-theme="light"] .ProseMirror li[data-bullet-method-completed="true"] .b
 .note-links-pane { padding: 0 6px 10px; }
 .note-links-pane h3 { margin: 8px; font-size: 11px; color: var(--muted); }
 .note-links-pane > section + section { margin-top: 14px; }
-.note-links-pane .empty-sidebar-note { font-size: 11px; }
+.note-links-pane .empty-sidebar-note,
+.footnotes-pane .empty-sidebar-note { font-size: 11px; }
 .note-links-pane .backlinks-item:disabled { opacity: 0.6; cursor: default; }
 .footnotes-pane { padding: 0 14px 12px; }
 .footnotes-pane .empty-sidebar-note { margin: 6px 0; }
