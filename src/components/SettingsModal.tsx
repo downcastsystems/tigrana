@@ -1,3 +1,4 @@
+import { DateFormatSetting } from "./DateFormatSetting";
 import BulletMethodSettings from "./BulletMethodSettings";
 import { BulletMethodIcon } from "./BulletMethodIcon";
 import type { BulletMethodDisplay, BulletMethodStatus } from "../lib/bulletMethod";
@@ -161,6 +162,7 @@ export default function SettingsModal(props: {
                         <option value="story">Story</option>
                       </select>
                     </label>
+                    <DateFormatSetting />
                     <label className="setting-row">
                       Check spelling while typing
                       <input

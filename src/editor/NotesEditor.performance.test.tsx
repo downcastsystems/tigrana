@@ -42,6 +42,26 @@ function setReactInputValue(input: HTMLInputElement, value: string) {
 describe("Note editor typing performance", () => {
   const mounted: Array<{ container: HTMLElement; root: Root }> = [];
 
+  it("opens /date with the keyboard and dismisses it on an identical-content Note switch", async () => {
+    const container = document.createElement("div"); document.body.append(container);
+    const root = createRoot(container); mounted.push({ container, root });
+    const render = (path: string, content = "/date") => <NotesEditor content={content} editable findRequest={0}
+      focusAtEndRequest={0} focusRequest={0} historyKey={path} notePath={path}
+      onChange={() => undefined} onLoadError={error => { throw error; }}
+      onPendingChange={() => undefined} onPositionChange={() => undefined}
+      restorePosition={null} spellcheckEnabled workspace="/Notebook" />;
+    await act(async () => root.render(render("A.md", "")));
+    const pm = container.querySelector<HTMLElement>(".ProseMirror")!;
+    const editor = (pm as HTMLElement & { editor: import("@tiptap/core").Editor }).editor;
+    await act(async () => { editor.commands.insertContent("/date"); });
+    await act(async () => { pm.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", bubbles: true, cancelable: true })); });
+    expect(document.querySelector('[role="dialog"][aria-label="Insert date"]')).not.toBeNull();
+    expect(document.activeElement?.getAttribute("aria-current")).toBe("date");
+    await act(async () => root.render(render("B.md")));
+    expect(document.querySelector('[role="dialog"][aria-label="Insert date"]')).toBeNull();
+    expect(editor.getText()).toBe("/date");
+  });
+
   it("keeps current Bullet Statuses settings after fresh loads, cached switches, and reloads", async () => {
     const container = document.createElement("div"); document.body.append(container);
     const root = createRoot(container); mounted.push({ container, root });

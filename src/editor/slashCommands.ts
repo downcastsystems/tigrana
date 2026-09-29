@@ -1,4 +1,5 @@
 import { requestFootnote } from "./footnotes";
+import { requestDate } from "./dateInsertion";
 import { canAlignText, setTextAlignment } from "./textAlignment";
 import { requestEquation } from "./mathNodes";
 import type { Editor, Range } from "@tiptap/react";
@@ -6,6 +7,7 @@ import { TextSelection } from "@tiptap/pm/state";
 import { TableMap } from "@tiptap/pm/tables";
 import {
   Asterisk,
+  CalendarDays,
   AlignLeft,
   AlignCenter,
   AlignRight,
@@ -162,6 +164,14 @@ export const slashCommands: SlashCommand[] = [
     icon: Minus,
     keywords: ["hr", "divider", "line"],
     run: (editor, range) => editor.chain().focus().deleteRange(range).setHorizontalRule().run(),
+  },
+  {
+    id: "date",
+    title: "Date",
+    hint: "Pick a date, or press Enter for today",
+    icon: CalendarDays,
+    keywords: ["date", "today", "calendar"],
+    run: (editor, range) => requestDate(editor, range),
   },
   {
     id: "emoji",
@@ -341,12 +351,21 @@ export function ensureParagraphAfterCurrentTable(editor: Editor) {
 }
 
 export function filterSlashCommands(query: string, editor?: Editor | null) {
-  const lower = query.toLowerCase();
-  return slashCommands.filter((command) => {
-    if (editor && command.isAvailable && !command.isAvailable(editor)) return false;
-    return (
-      command.title.toLowerCase().includes(lower) ||
-      command.keywords.some((keyword) => keyword.includes(lower))
-    );
-  });
+  const lower = query.trim().toLowerCase();
+  const available = slashCommands.filter(command => !editor || !command.isAvailable || command.isAvailable(editor));
+  if (!lower) return available;
+  const rank = (command: SlashCommand) => {
+    const title = command.title.toLowerCase();
+    if (title === lower) return 0;
+    if (command.keywords.includes(lower)) return 1;
+    if (title.startsWith(lower)) return 2;
+    if (command.keywords.some(keyword => keyword.startsWith(lower))) return 3;
+    if (title.includes(lower)) return 4;
+    if (command.keywords.some(keyword => keyword.includes(lower))) return 5;
+    return 6;
+  };
+  return available.map(command => ({ command, rank: rank(command) }))
+    .filter(match => match.rank < 6)
+    .sort((a, b) => a.rank - b.rank || a.command.title.length - b.command.title.length)
+    .map(match => match.command);
 }

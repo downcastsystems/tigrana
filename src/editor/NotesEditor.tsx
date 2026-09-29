@@ -83,6 +83,7 @@ import {
 } from "./editorImages";
 import { EquationContextMenu } from "./EquationContextMenu";
 import { EquationDialog } from "./EquationDialog";
+import { DatePickerDialog } from "./DatePickerDialog";
 import { ColorHighlight, TextColor, applyInlineColor } from "./inlineColorMarks";
 import { EditorColorControls, InlineColorPicker } from "./InlineColorPicker";
 import { BlockMath, InlineMath, requestEquation } from "./mathNodes";
@@ -929,6 +930,7 @@ export function NotesEditor({ bulletMethodDisplay = defaultBulletMethodDisplay, 
       {editor && colorToolbarElement ? createPortal(<EditorColorControls editor={editor} disabled={!editable || colorsDisabled} />, colorToolbarElement) : null}
       {editor ? <EquationContextMenu editor={editor} disabled={!editable} /> : null}
       {editor ? <EquationDialog editor={editor} disabled={!editable} /> : null}
+      {editor ? <DatePickerDialog key={JSON.stringify([workspace, notePath, historyKey, reloadRequest])} editor={editor} disabled={!editable} /> : null}
       {editor ? <FormattingBubbleMenu bulletMethodEnabled={Boolean(bulletMethodDisplay.enabled)} editor={editor} onRequestLink={onRequestLink} bulletMethodStatuses={bulletMethodStatuses} /> : null}
       {findOpen ? (
         <div className={replaceOpen ? "note-find-bar has-replace" : "note-find-bar"}>

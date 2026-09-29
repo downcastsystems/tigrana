@@ -1,5 +1,5 @@
 import { ChevronDown, ChevronRight, FileText, Folder, Pin, Search } from "lucide-react";
-import { useMemo } from "react";
+import { useLayoutEffect, useMemo, useRef } from "react";
 import { orderFolders, orderNotes, type BookmarkView } from "../../lib/notebookMetadata";
 import type { RecentNotebook } from "../../lib/notebookSession";
 import type { BookmarkEntry, FolderEntry, NoteEntry, WorkspaceMetadata } from "../../types";
@@ -350,6 +350,37 @@ export function UnifiedTreePane({
   const parentForCreate = createParentPath ?? rootPath;
   const noteTargetsForCreate = createNoteTargets ?? [{ parentName: title, parentPath: parentForCreate }];
   const folderTargetsForCreate = noteTargetsForCreate.map(({ parentName, parentPath }) => ({ parentName, parentPath }));
+  const scrollRef = useRef<HTMLDivElement>(null);
+  const revealedSelection = useRef<string | null>(null);
+  const requestedSelection = useRef<string | null>(null);
+  const selectionKey = JSON.stringify([workspace, rootPath, activePath]);
+
+  useLayoutEffect(() => {
+    if (requestedSelection.current === selectionKey) return;
+    requestedSelection.current = selectionKey;
+    revealedSelection.current = null;
+    if (!activePath || (rootPath && !activePath.startsWith(`${rootPath}/`))) return;
+    // Restore visibility even when the remembered Note is in a collapsed folder.
+    const parts = activePath.split("/");
+    if (hiddenFolderParentPath === rootPath && parts.slice(0, -1).join("/") !== rootPath) return;
+    for (let depth = rootPath ? rootPath.split("/").length + 1 : 1; depth < parts.length; depth += 1) {
+      const path = parts.slice(0, depth).join("/");
+      if (metadata.expandedFolders[path] === false) onSetFolderExpanded(path, true);
+    }
+  }, [selectionKey, activePath, rootPath, hiddenFolderParentPath, metadata.expandedFolders, onSetFolderExpanded]);
+
+  useLayoutEffect(() => {
+    if (revealedSelection.current === selectionKey) return;
+    const pane = scrollRef.current;
+    const row = pane?.querySelector<HTMLElement>(".unified-note-row.is-active");
+    if (!pane || !row) return;
+    const bounds = pane.getBoundingClientRect();
+    const noteBounds = row.getBoundingClientRect();
+    // Scroll only this pane, leaving the editor and other panes in place.
+    if (noteBounds.top < bounds.top) pane.scrollTop += noteBounds.top - bounds.top;
+    else if (noteBounds.bottom > bounds.bottom) pane.scrollTop += noteBounds.bottom - bounds.bottom;
+    revealedSelection.current = selectionKey;
+  }, [selectionKey, metadata.expandedFolders, notes]);
 
   return (
     <section className="unified-tree-pane">
@@ -390,6 +421,7 @@ export function UnifiedTreePane({
       ) : null}
       <div
         className="unified-tree-scroll"
+        ref={scrollRef}
         data-pane-root-path={rootPath}
         onContextMenu={(event) => {
           if ((event.target as HTMLElement | null)?.closest("[data-note-path], [data-folder-path]")) return;

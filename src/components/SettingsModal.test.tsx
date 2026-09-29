@@ -69,7 +69,8 @@ it.each(["Create theme", "Edit theme"])(
       );
       expect(host.querySelector('[aria-label="Navigation style"]')).not.toBeNull();
       expect(host.textContent).not.toContain("Restore default appearance");
-      const generalLabels = [...host.querySelectorAll(".setting-row")];
+      expect(host.querySelector('[aria-label="Date format"]')).not.toBeNull();
+      const generalLabels = [...host.querySelectorAll(".setting-row")].filter(row => !row.querySelector('[aria-label="Date format"]'));
       expect(generalLabels.map((label) => label.textContent?.trim())).toEqual([
         "Navigation styleDual paneDual pane with sections (recommended)Single pane", "Editor widthComfortable WidthNarrow WidthFull Width", "Editor AlignmentAlign leftAlign center", "New Note Writing StyleFor this notebookLast used writing style (Notes)NotesStory", "Check spelling while typing", "Show word count",
       ]);
