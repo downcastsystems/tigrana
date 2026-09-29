@@ -121,6 +121,10 @@ jobs:
       - name: Install frontend dependencies
         run: npm ci
 
+      - name: Check Windows native menu refresh and lookup
+        if: runner.os == 'Windows'
+        run: cargo test --manifest-path src-tauri/Cargo.toml --test application_menu --locked
+
       - name: Import Apple Developer certificate
         if: runner.os == 'macOS'
         shell: bash

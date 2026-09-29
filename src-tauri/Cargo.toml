@@ -5,6 +5,10 @@ description = "A simple, beautiful, file-native desktop notes app."
 authors = ["Tigrana contributors"]
 edition = "2021"
 
+[[test]]
+name = "application_menu"
+harness = false
+
 [build-dependencies]
 tauri-build = { version = "2", features = [] }
 

@@ -1,4 +1,5 @@
 use fs2::FileExt;
+mod application_menu;
 mod assets;
 mod document_import;
 mod link_index;
@@ -1082,16 +1083,10 @@ fn popup_windows_menu(window: WebviewWindow, menu: String, x: f64, y: f64) -> Re
         return Ok(());
     }
     let native_menu = window.menu().ok_or("Window menu is unavailable")?;
-    for item in native_menu.items().map_err(|error| error.to_string())? {
-        if let Some(submenu) = item.as_submenu() {
-            if submenu.text().map_err(|error| error.to_string())? == menu {
-                return window
-                    .popup_menu_at(submenu, tauri::PhysicalPosition::new(x, y))
-                    .map_err(|error| error.to_string());
-            }
-        }
-    }
-    Err(format!("Unknown application menu: {menu}"))
+    let submenu = application_menu::application_submenu(&native_menu, &menu)?;
+    window
+        .popup_menu_at(&submenu, tauri::PhysicalPosition::new(x, y))
+        .map_err(|error| error.to_string())
 }
 
 #[tauri::command]
@@ -1859,8 +1854,9 @@ fn build_app_menu(
         }
     }
 
-    let tigrana_menu = Submenu::with_items(
+    let tigrana_menu = Submenu::with_id_and_items(
         handle,
+        "Tigrana",
         "Tigrana",
         true,
         &[
@@ -1876,8 +1872,9 @@ fn build_app_menu(
             &quit_item,
         ],
     )?;
-    let file_menu = Submenu::with_items(
+    let file_menu = Submenu::with_id_and_items(
         handle,
+        "File",
         "File",
         true,
         &[
@@ -1958,8 +1955,9 @@ fn build_app_menu(
     highlight_colors.append(&MenuItem::with_id(
         handle, "format_highlightColor_none", "No Highlight", colors_enabled, None::<&str>,
     )?)?;
-    let edit_menu = Submenu::with_items(
+    let edit_menu = Submenu::with_id_and_items(
         handle,
+        "Edit",
         "Edit",
         true,
         &[
@@ -1980,8 +1978,9 @@ fn build_app_menu(
             &spellcheck,
         ],
     )?;
-    let find_menu = Submenu::with_items(
+    let find_menu = Submenu::with_id_and_items(
         handle,
+        "Find",
         "Find",
         true,
         &[
@@ -1993,8 +1992,9 @@ fn build_app_menu(
             &search_notebook,
         ],
     )?;
-    let view_menu = Submenu::with_items(
+    let view_menu = Submenu::with_id_and_items(
         handle,
+        "View",
         "View",
         true,
         &[
@@ -2015,8 +2015,9 @@ fn build_app_menu(
             &PredefinedMenuItem::fullscreen(handle, None)?,
         ],
     )?;
-    let format_menu = Submenu::with_items(
+    let format_menu = Submenu::with_id_and_items(
         handle,
+        "Format",
         "Format",
         true,
         &[
@@ -2046,8 +2047,9 @@ fn build_app_menu(
             &insert_menu,
         ],
     )?;
-    let window_menu = Submenu::with_items(
+    let window_menu = Submenu::with_id_and_items(
         handle,
+        "Window",
         "Window",
         true,
         &[
@@ -2110,12 +2112,8 @@ fn rebuild_app_menu(app: &AppHandle, state: &NotebookWindowState) -> Result<(), 
         // Keep the hidden menu attached: set_menu removes/reinstalls the Win32
         // menu and resizes the webview on each dirty/save transition.
         if let Some(current) = app.menu() {
-            for item in current.items().map_err(|error| error.to_string())? {
-                current.remove(&item).map_err(|error| error.to_string())?;
-            }
-            for item in menu.items().map_err(|error| error.to_string())? {
-                current.append(&item).map_err(|error| error.to_string())?;
-            }
+            application_menu::replace_menu_items(&current, &menu)
+                .map_err(|error| error.to_string())?;
         }
     } else {
         app.set_menu(menu).map_err(|error| error.to_string())?;

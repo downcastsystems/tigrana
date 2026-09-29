@@ -36,7 +36,7 @@ export function WindowsMenuBar({ onError, onMouseDown, onDoubleClick }: {
   return (
     <header className="windows-menu-bar" onMouseDown={onMouseDown} onDoubleClick={onDoubleClick}>
       <nav className="windows-menus chrome-interactive" aria-label="Application menus">
-        {["Tigrana", "File", "Edit", "View", "Format", "Window"].map((menu) => (
+        {["Tigrana", "File", "Edit", "Find", "View", "Format", "Window"].map((menu) => (
           <button key={menu} type="button" aria-haspopup="menu" onClick={(event) => {
             const rect = event.currentTarget.getBoundingClientRect();
             // devicePixelRatio includes both monitor scaling and webview zoom.

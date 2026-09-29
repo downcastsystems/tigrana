@@ -55,11 +55,14 @@ describe("Windows window chrome", () => {
       expect(native.minimize).toHaveBeenCalledOnce();
       expect(native.toggleMaximize).toHaveBeenCalledOnce();
       expect(native.close).toHaveBeenCalledOnce();
-      const file = Array.from(host.querySelectorAll("button")).find((button) => button.textContent === "File")!;
-      vi.spyOn(file, "getBoundingClientRect").mockReturnValue({ left: 40, bottom: 32 } as DOMRect);
       vi.stubGlobal("devicePixelRatio", 1.5);
-      await act(async () => file.click());
-      expect(native.invoke).toHaveBeenCalledWith("popup_windows_menu", { menu: "File", x: 60, y: 48 });
+      const menus = Array.from(host.querySelectorAll<HTMLButtonElement>('[aria-haspopup="menu"]'));
+      expect(menus.map((button) => button.textContent)).toEqual(["Tigrana", "File", "Edit", "Find", "View", "Format", "Window"]);
+      for (const button of menus) {
+        vi.spyOn(button, "getBoundingClientRect").mockReturnValue({ left: 40, bottom: 32 } as DOMRect);
+        await act(async () => button.click());
+        expect(native.invoke).toHaveBeenLastCalledWith("popup_windows_menu", { menu: button.textContent, x: 60, y: 48 });
+      }
       expect(onError).not.toHaveBeenCalled();
     } finally {
       await act(async () => root.unmount());
