@@ -1,0 +1,77 @@
+<link rel="stylesheet" href="/src/styles/app.css">
+<link rel="stylesheet" href="/src/styles/theme-api.css">
+<style>body { padding: 24px; background: #1e1e1e; } #notebook { width: 830px; }</style>
+<div id="notebook" data-theme-region="notebook" data-theme-api="1"><div id="editor"></div></div>
+<style id="theme"></style>
+<script type="module">
+import React from 'react';
+import { createRoot } from 'react-dom/client';
+import { flushSync } from 'react-dom';
+import { NotesEditor } from '/src/editor/NotesEditor.tsx';
+import { markdownToHtml } from '/src/lib/markdown.ts';
+import { allBuiltInThemes } from '/src/lib/bundledThemes.ts';
+import { themeStylesheet } from '/src/lib/themeRuntime.ts';
+const noop = () => {};
+window.tableContent = `<table data-tigrana-table="true" data-header-row="true" data-header-column="false">
+  <colgroup>
+    <col data-width="191">
+    <col data-width="258">
+    <col data-width="272">
+  </colgroup>
+  <thead>
+    <tr><th>Developers</th><th>Romel</th><th>Data Team</th></tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td>Add OpenTelemetry to apps and services</td>
+      <td>Makes sure logs get to S3.</td>
+      <td>Builds interface to view/query logs, view metrics, and view/edit alerts.</td>
+    </tr>
+  </tbody>
+</table>`;
+flushSync(() => createRoot(document.querySelector('#editor')).render(React.createElement(NotesEditor, {
+  content: window.tableContent, editable: true, findRequest: 0, focusAtEndRequest: 0, focusRequest: 0,
+  historyKey: 'table', notePath: 'Table.md', workspace: '/Table', restorePosition: null,
+  onChange: noop, onPendingChange: noop, onPositionChange: noop,
+})));
+window.editor = document.querySelector('.ProseMirror').editor;
+window.themes = allBuiltInThemes.map(t => ({ id: t.id, name: t.name }));
+window.showTheme = (id, mode) => {
+  document.documentElement.dataset.theme = mode;
+  document.querySelector('#notebook').className = 'theme-' + mode;
+  document.querySelector('#theme').textContent = themeStylesheet(allBuiltInThemes.find(t => t.id === id), mode, 'notebook');
+};
+window.showTheme('builtin-baseline', 'dark');
+// Use native editing commands, then let ProseMirror reconcile the DOM just as
+// it does after browser input. Recent Playwright WebKit builds do not reproduce
+// the stale table height seen in macOS's WKWebView.
+window.runTableLayoutChecks = () => {
+  let edits = 0;
+  for (const theme of window.themes) for (const mode of ['light', 'dark']) {
+    window.showTheme(theme.id, mode);
+    editor.commands.setContent(markdownToHtml(window.tableContent));
+    for (const cell of ['th', 'td']) for (let index = 0; index < 3; index++) {
+      const p = document.querySelectorAll(cell + ' p')[index];
+      const selection = getSelection(), range = document.createRange();
+      range.selectNodeContents(p);
+      range.collapse(false);
+      selection.removeAllRanges();
+      selection.addRange(range);
+      p.focus();
+      for (const command of ['insertParagraph', 'insertLineBreak']) {
+        for (const action of [command, 'delete']) {
+          document.execCommand(action, false, null);
+          editor.view.domObserver.flush();
+          const table = document.querySelector('table');
+          const bottom = Math.max(...[...table.rows[table.rows.length - 1].cells].map(c => c.getBoundingClientRect().bottom));
+          const gap = table.getBoundingClientRect().bottom - bottom - parseFloat(getComputedStyle(table).borderBottomWidth);
+          if (gap > 1) throw new Error(`${theme.name} ${mode}, ${cell} ${index}, ${action}: ${gap}px gap below cells`);
+          if (table.rows.length !== 2) throw new Error('Editing cell text changed the row count');
+          edits++;
+        }
+      }
+    }
+  }
+  return `Passed ${edits} native edits across ${window.themes.length} themes in light and dark mode`;
+};
+</script>

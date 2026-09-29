@@ -4091,7 +4091,10 @@ html[data-theme="dark"] .tab-list-separator {
   border: solid rgba(52, 48, 43, 0.2);
   border-width: 1px 0 0 1px;
   table-layout: fixed;
-  overflow: hidden;
+  /* Keep rounded-corner clipping without a scroll container. Native WebKit
+     can retain stale row heights after cell edits with overflow: hidden,
+     leaving a blank strip below the cells until the Note is reopened. */
+  overflow: clip;
 }
 
 .ProseMirror .table-node-view table {
