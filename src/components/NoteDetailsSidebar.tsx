@@ -3,7 +3,7 @@ import { FootnotesPane } from "./FootnotesPane";
 import { NoteLinksPane } from "./NoteLinksPane";
 import { buildDemoLinkIndex } from "../lib/demoLinkIndex";
 import type { DraftNote } from "../lib/notebookNavigation";
-import { Braces, Check, Copy, FileText, LayoutDashboard, LayoutList, Link2, Asterisk } from "lucide-react";
+import { Braces, Check, Copy, FileText, LayoutDashboard, LayoutList, Link2, Asterisk, ChevronRight } from "lucide-react";
 import { notebookFilePath } from "../lib/filePaths";
 import type { ReactNode } from "react";
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
@@ -190,7 +190,7 @@ function OverviewSection({ title, children, defaultExpanded = true }: { title: s
     setExpanded(open);
     try { localStorage.setItem(preferenceKey, String(open)); } catch { /* Keep the current choice if storage is unavailable. */ }
   }}>
-    <summary>{title}</summary>
+    <summary><ChevronRight size={14} aria-hidden="true" />{title}</summary>
     {children}
   </details>;
 }

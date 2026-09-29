@@ -2,7 +2,7 @@ import { decodeBulletStatusSystem, encodeBulletStatusSystem } from "../lib/bulle
 import { exportTextFile } from "../lib/desktop";
 import { useEffect, useRef, useState, type PointerEvent as ReactPointerEvent } from "react";
 import { ArrowDown, ArrowUp, GripVertical, Plus, RotateCcw, Trash2 } from "lucide-react";
-import { bulletMethodDimPercent, defaultBulletMethodDisplay, type BulletMethodDisplay, statusCelebrates, statusDims, statusIcon, defaultBulletMethodStatuses, validateBulletMethodStatuses, type BulletMethodStatus, statusShortcut } from "../lib/bulletMethod";
+import { bulletMethodDimPercent, defaultBulletMethodDisplay, type BulletMethodDisplay, statusCelebrates, statusCycles, statusDims, statusIcon, defaultBulletMethodStatuses, validateBulletMethodStatuses, type BulletMethodStatus, statusShortcut } from "../lib/bulletMethod";
 
 import { BulletMethodIconPicker } from "./BulletMethodIconPicker";
 
@@ -188,24 +188,24 @@ export default function BulletMethodSettings({ statuses, onChange, display = def
       </>}
       <section className="bullet-method-status-section" aria-labelledby="bullet-method-statuses-heading">
       <h3 id="bullet-method-statuses-heading">Statuses</h3>
-      <p>On a blank line in the rich editor, type a dash (<code>-</code>) followed by a space to create a bullet.</p>
       <details className="bullet-method-meanings">
         <summary>What the default statuses mean</summary>
       <ul className="bullet-method-guide">
+        <li><strong>QUESTION:</strong> Waiting for an answer.<br />Example: <code>QUESTION: Who will review the proposal?</code></li>
         <li><strong>CLOSED:</strong> No further action needed from you; not necessarily &quot;done&quot;.<br />Example: <code>CLOSED: Proposal withdrawn</code></li>
         <li><strong>DONE:</strong> Task is complete.<br />Example: <code>DONE: Send the meeting summary</code></li>
-        <li><strong>TODO:</strong> Waiting to be started.<br />Example: <code>TODO: Review the proposal</code></li>
         <li><strong>IN PROGRESS:</strong> Actively working on it.<br />Example: <code>IN PROGRESS: Draft the project plan</code></li>
+        <li><strong>TODO:</strong> Waiting to be started.<br />Example: <code>TODO: Review the proposal</code></li>
         <li><strong>No status:</strong> Uncategorized notes.<br />Example: <code>The client prefers a September launch</code></li>
       </ul>
       </details>
-      {display.enabled && <p>Select a list and choose <strong>Edit → Sort Lines → Bullet Statuses</strong> to sort by the status order below. Shortcut: <strong>⌘⌥.</strong> on Mac, <strong>Ctrl+Alt+.</strong> on Windows/Linux.</p>}
+      {display.enabled && <p>Inside a list, choose Edit -&gt; Sort Lines -&gt; Bullet Statuses to sort by the status.</p>}
+      <p className="bullet-method-help">Drag a handle or use the arrows to reorder. Clicking a status icon cycles from bottom to top. Shift-click reverses it. <code>-:</code> + Space starts the cycle.</p>
       <section className="bullet-method-order-section" aria-labelledby="bullet-method-status-order-heading">
         <h3 id="bullet-method-status-order-heading">Status order</h3>
-        <p>Drag a handle or use the arrows to reorder. Edit names or add your own statuses. Names match regardless of capitalization. <code>-:</code> + Space starts with TODO, or the earliest available status in the progression.</p>
         <div className="bullet-method-status-table">
         <div className="bullet-method-column-headings" aria-hidden="true">
-          <span /><span /><span>Status</span><span>Shortcut</span><span>Dim</span><span>Celebrate</span><span /><span />
+          <span /><span /><span>Status</span><span>Shortcut</span><span>Dim</span><span>Celebrate</span><span>Cycle</span><span /><span />
         </div>
         <ol ref={listRef} className="bullet-method-statuses" aria-label="Bullet Statuses status order">
           {draft.map((status, index) => {
@@ -227,15 +227,20 @@ export default function BulletMethodSettings({ statuses, onChange, display = def
                   {status.prefix !== null ? <input className="settings-text-input" aria-label={`Shortcut for ${name}`} placeholder="None" value={statusShortcut(status)}
                     onChange={event => update(status.id, { shortcut: event.target.value })} /> : <span className="bullet-method-no-shortcut" aria-label="No shortcut">—</span>}
                 </div>
-                <label className="bullet-method-dim-choice">
+                {status.prefix === null ? <span className="bullet-method-unavailable" aria-label="Dimming unavailable for No status">—</span> : <label className="bullet-method-dim-choice">
                   <input type="checkbox" aria-label={`Dim ${name}`} checked={statusDims(status)}
                     onChange={event => update(status.id, { dim: event.target.checked })} />
-                </label>
-                <label className="bullet-method-dim-choice">
-                  <input type="checkbox" aria-label={`Celebrate ${name}`} checked={statusCelebrates(status)} disabled={status.prefix === null}
+                </label>}
+                {status.prefix === null ? <span className="bullet-method-unavailable" aria-label="Celebration unavailable for No status">—</span> : <label className="bullet-method-dim-choice">
+                  <input type="checkbox" aria-label={`Celebrate ${name}`} checked={statusCelebrates(status)}
                     title="Show a pixel burst when switching to this status"
                     onChange={event => update(status.id, { celebrate: event.target.checked })} />
-                </label>
+                </label>}
+                {status.prefix === null ? <span className="bullet-method-unavailable" aria-label="Cycling unavailable for No status">—</span> : <label className="bullet-method-dim-choice">
+                  <input type="checkbox" aria-label={`Cycle ${name}`} checked={statusCycles(status)}
+                    title="Include when cycling through statuses"
+                    onChange={event => update(status.id, { cycle: event.target.checked, ...(event.target.checked && !statusIcon(status) ? { icon: "circle" } : {}) })} />
+                </label>}
                 <div className="bullet-method-status-icon-slot">
                   {status.prefix !== null && <BulletMethodIconPicker name={name} value={statusIcon(status) ?? "circle"} onChange={icon => update(status.id, { icon })} />}
                 </div>
@@ -285,7 +290,7 @@ export default function BulletMethodSettings({ statuses, onChange, display = def
       </section>
       <section className="settings-reset-appearance">
         <h3>Default Bullet Statuses</h3>
-        <p>Restore the default statuses, icons, order, and celebrations, plus dimming to 65% in light mode and 70% in dark mode. Your notes stay unchanged.</p>
+        <p>Restore the default statuses, icons, order, cycle choices, and celebrations, plus dimming to 65% in light mode and 70% in dark mode. Your notes stay unchanged.</p>
         <button className="toolbar-button" onClick={() => save(defaultBulletMethodStatuses, "Bullet Statuses defaults restored.", true)}><RotateCcw size={16} /> Restore defaults</button>
       </section>
     </div>

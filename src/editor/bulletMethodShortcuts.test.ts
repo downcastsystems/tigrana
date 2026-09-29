@@ -21,7 +21,7 @@ function type(editor: Editor, text: string) {
   const handled = editor.view.someProp("handleTextInput", handler => handler(editor.view, from, to, text, () => editor.state.tr.insertText(text, from, to)));
   if (!handled) editor.view.dispatch(editor.state.tr.insertText(text, from, to));
 }
-it.each([["::", "TODO"], [".:", "IN PROGRESS"]])("converts %s after a space and persists the expanded status", (shortcut, status) => {
+it.each([["::", "TODO"], [".:", "IN PROGRESS"], ["?:", "QUESTION"]])("converts %s after a space and persists the expanded status", (shortcut, status) => {
   const editor = create(`<p>${shortcut}</p>`);
   type(editor, " ");
   expect(editor.state.doc.firstChild?.type.name).toBe("bulletList");
@@ -101,7 +101,7 @@ it.each(["x:", "*:", ">:", ":::"])("keeps unassigned shortcut %s as ordinary tex
   expect(editor.state.doc.firstChild?.type.name).toBe("paragraph");
   expect(editor.state.doc.textContent).toBe(`${shortcut} `);
 });
-it("uses the earliest progression status regardless of sort order and follows renaming", () => {
+it("starts from the bottom of the current order and follows renaming", () => {
   const editor = create("<p>-:</p>");
   type(editor, " ");
   expect(editor.state.doc.textContent).toBe("TODO: ");
@@ -109,15 +109,15 @@ it("uses the earliest progression status regardless of sort order and follows re
   editor.commands.setContent("<p>-:</p>");
   editor.commands.setTextSelection(3);
   const statuses = [...defaultBulletMethodStatuses].reverse().filter(row => row.prefix !== null);
-  const todoIndex = statuses.findIndex(row => row.id === "todo");
-  statuses[todoIndex] = { ...statuses[todoIndex], prefix: "WORKING" };
+  const questionIndex = statuses.findIndex(row => row.id === "question");
+  statuses[questionIndex] = { ...statuses[questionIndex], prefix: "WORKING" };
   editor.view.dispatch(editor.state.tr.setMeta(bulletMethodMarkersKey, statuses));
   type(editor, " ");
   expect(editor.state.doc.textContent).toBe("WORKING: ");
 });
-it("ignores No status in the progression and respects the global switch", () => {
+it("ignores No status at the bottom of the order and respects the global switch", () => {
   const editor = create("<p>-:</p>");
-  editor.view.dispatch(editor.state.tr.setMeta(bulletMethodMarkersKey, [...defaultBulletMethodStatuses].reverse()));
+  editor.view.dispatch(editor.state.tr.setMeta(bulletMethodMarkersKey, defaultBulletMethodStatuses));
   type(editor, " ");
   expect(editor.state.doc.firstChild?.type.name).toBe("bulletList");
   expect(editor.state.doc.textContent).toBe("TODO: ");
@@ -142,7 +142,21 @@ it("starts with IN PROGRESS when TODO has been removed", () => {
   type(editor, " ");
   expect(editor.state.doc.textContent).toBe("IN PROGRESS: ");
 });
-it.each(["TODO", "IN PROGRESS", "DONE", "CLOSED", "todo"])("converts the automatic named shortcut -%s: and supports immediate reversal", name => {
+it("skips excluded starting statuses but keeps their explicit shortcuts available", () => {
+  const statuses = defaultBulletMethodStatuses.map(s => ({ ...s, cycle: s.id !== "todo" }));
+  for (const [shortcut, expected] of [["-:", "IN PROGRESS: "], ["::", "TODO: "], ["-TODO:", "TODO: "]]) {
+    const editor = create(`<p>${shortcut}</p>`);
+    editor.view.dispatch(editor.state.tr.setMeta(bulletMethodMarkersKey, statuses));
+    type(editor, " ");
+    expect(editor.state.doc.textContent).toBe(expected);
+  }
+  const editor = create("<p>-:</p>");
+  editor.view.dispatch(editor.state.tr.setMeta(bulletMethodMarkersKey, statuses.map(s => ({ ...s, cycle: false }))));
+  type(editor, " ");
+  expect(editor.state.doc.textContent).toBe("-: ");
+  expect(editor.state.doc.firstChild?.type.name).toBe("paragraph");
+});
+it.each(["TODO", "IN PROGRESS", "DONE", "CLOSED", "QUESTION", "todo"])("converts the automatic named shortcut -%s: and supports immediate reversal", name => {
   const editor = create(`<p>-${name}:</p>`);
   type(editor, " ");
   expect(editor.state.doc.firstChild?.type.name).toBe("bulletList");

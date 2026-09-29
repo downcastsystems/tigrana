@@ -18,6 +18,21 @@ function make(content: string) {
 }
 const markers = (editor: Editor) => [...editor.view.dom.querySelectorAll('li')].map(li => li.getAttribute('data-bullet-method-marker'));
 
+it("updates click and Shift-click destinations when the shared order or Cycle choices change", () => {
+  const editor = make('<ul><li><p>TODO: Task</p></li></ul>');
+  const statuses = [...defaultBulletMethodStatuses].reverse().map(s => ({ ...s, cycle: s.id !== 'question' }));
+  editor.view.dispatch(editor.state.tr.setMeta(bulletMethodMarkersKey, statuses));
+  const button = () => editor.view.dom.querySelector<HTMLButtonElement>('button')!;
+  expect(button().getAttribute('aria-label')).toBe('TODO: change to CLOSED');
+  button().click();
+  expect(editor.state.doc.textContent).toBe('CLOSED: Task');
+  button().dispatchEvent(new MouseEvent('click', { bubbles: true, shiftKey: true }));
+  expect(editor.state.doc.textContent).toBe('TODO: Task');
+  editor.view.dispatch(editor.state.tr.setMeta(bulletMethodMarkersKey, statuses.map(s => ({ ...s, cycle: false }))));
+  button().click();
+  expect(editor.state.doc.textContent).toBe('TODO: Task');
+});
+
 it("renders only the direct status of ordinary bullets, without changing saved HTML or document attributes", () => {
   const html = '<ul><li><p>CLOSED: Delegated</p></li><li><p><strong>done:</strong> Finished</p></li><li><p>TODO: Start</p><ul><li><p>Plain child</p></li><li><p>IN PROGRESS: Nested</p></li></ul></li><li><p>Plain parent</p><ul><li><p>TODO: Child</p></li></ul></li></ul><ol><li><p>DONE: Numbered</p></li></ol><ul data-type="taskList"><li data-type="taskItem" data-checked="false"><p>TODO: Checkbox</p></li></ul>';
   const editor = make(html);
@@ -79,7 +94,7 @@ it("does not scan unrelated items or rebuild decorations for selection changes",
 it("cycles prefixes with isolated undo while preserving formatted body and nested notes", () => {
   const editor = make('<ul><li><p>TODO: <strong>Keep this</strong></p><ul><li><p>TODO: Child</p></li></ul></li></ul>');
   const click = () => editor.view.dom.querySelector<HTMLButtonElement>('.bullet-method-marker-button')!.click();
-  for (const prefix of ['IN PROGRESS', 'DONE', 'CLOSED', 'TODO']) {
+  for (const prefix of ['IN PROGRESS', 'DONE', 'CLOSED', 'QUESTION', 'TODO']) {
     click();
     expect(editor.state.doc.firstChild!.firstChild!.firstChild!.textContent).toBe(prefix + ': Keep this');
     expect(editor.getHTML()).toContain('<strong>Keep this</strong>');
@@ -87,7 +102,7 @@ it("cycles prefixes with isolated undo while preserving formatted body and neste
     expect(editor.getHTML()).not.toContain('button');
   }
   editor.commands.undo();
-  expect(editor.state.doc.firstChild!.firstChild!.firstChild!.textContent).toBe('CLOSED: Keep this');
+  expect(editor.state.doc.firstChild!.firstChild!.firstChild!.textContent).toBe('QUESTION: Keep this');
   editor.commands.redo();
   expect(editor.state.doc.firstChild!.firstChild!.firstChild!.textContent).toBe('TODO: Keep this');
   editor.setEditable(false);
@@ -145,14 +160,14 @@ it("defaults off and removes all appearance decorations when disabled", () => {
   expect(editor.view.dom.querySelector('[data-bullet-method-completed],button')).toBeNull();
 });
 
-it("uses each status's dim choice, including renamed, custom, and unmarked items", () => {
-  const editor = make('<ul><li><p>DONE: Keep bright</p></li><li><p>WAITING: Dim me</p><ul><li><p>Nested note</p></li></ul></li><li><p>Custom: Dim me too</p></li><li><p>Unmarked</p></li></ul>');
+it("dims configured statuses but ignores legacy dimming for unmarked and unknown items", () => {
+  const editor = make('<ul><li><p>DONE: Keep bright</p></li><li><p>WAITING: Dim me</p><ul><li><p>Nested note</p></li></ul></li><li><p>Custom: Dim me too</p></li><li><p>Unmarked</p></li><li><p>UNKNOWN: Keep bright</p></li></ul>');
   const statuses = [...defaultBulletMethodStatuses.map(status => status.id === 'done' ? { ...status, dim: false } : status.id === 'todo' ? { ...status, prefix: 'WAITING', dim: true } : status), { id: 'custom', prefix: 'Custom', description: '', dim: true }];
   editor.view.dispatch(editor.state.tr.setMeta(bulletMethodMarkersKey, statuses));
   const dimmed = () => [...editor.view.dom.querySelectorAll('p[data-bullet-method-dim]')].map(node => node.textContent);
   expect(dimmed()).toEqual(['WAITING: Dim me', 'Custom: Dim me too']);
   editor.view.dispatch(editor.state.tr.setMeta(bulletMethodMarkersKey, statuses.map(status => status.prefix === null ? { ...status, dim: true } : status)));
-  expect(dimmed()).toEqual(['WAITING: Dim me', 'Nested note', 'Custom: Dim me too', 'Unmarked']);
+  expect(dimmed()).toEqual(['WAITING: Dim me', 'Custom: Dim me too']);
   editor.view.dispatch(editor.state.tr.setMeta('bulletMethodDisplay', { enabled: true, replaceBullets: true, dimCompleted: false }));
   expect(dimmed()).toEqual([]);
   expect(editor.getHTML()).not.toContain('data-bullet-method-dim');
@@ -168,12 +183,12 @@ it("sorts on click, moves the caret into the clicked item, and undoes both chang
   const editor = make('<ul><li><p>TODO: First</p></li><li><p>TODO: Second</p></li><li><p>CLOSED: Third</p></li></ul>');
   editor.commands.setTextSelection(textPosition(editor, "Second") + 3);
   editor.view.dom.querySelector<HTMLButtonElement>('button')!.click();
-  expect(itemTexts(editor)).toEqual(["CLOSED: Third", "TODO: Second", "IN PROGRESS: First"]);
+  expect(itemTexts(editor)).toEqual(["CLOSED: Third", "IN PROGRESS: First", "TODO: Second"]);
   expect(editor.state.selection.head).toBe(textPosition(editor, "First"));
   editor.commands.undo();
   expect(itemTexts(editor)).toEqual(["TODO: First", "TODO: Second", "CLOSED: Third"]);
   editor.commands.redo();
-  expect(itemTexts(editor)).toEqual(["CLOSED: Third", "TODO: Second", "IN PROGRESS: First"]);
+  expect(itemTexts(editor)).toEqual(["CLOSED: Third", "IN PROGRESS: First", "TODO: Second"]);
 });
 it("moves an off-screen caret to the clicked item after sorting", () => {
   const editor = make('<ul><li><p>TODO: First</p></li><li><p>TODO: Second</p></li></ul>');
@@ -181,7 +196,7 @@ it("moves an off-screen caret to the clicked item after sorting", () => {
   vi.mocked(editor.view.coordsAtPos).mockReturnValue({ top: -40, bottom: -20, left: 20, right: 20 });
   editor.view.dom.querySelector<HTMLButtonElement>('button')!.click();
   expect(editor.state.selection.head).toBe(textPosition(editor, "First"));
-  expect(itemTexts(editor)).toEqual(["TODO: Second", "IN PROGRESS: First"]);
+  expect(itemTexts(editor)).toEqual(["IN PROGRESS: First", "TODO: Second"]);
 });
 it("uses the live auto-sort switch and never sorts just because a status was typed", () => {
   const editor = make('<ul><li><p>TODO: First</p></li><li><p>TODO: Second</p></li></ul>');
@@ -201,12 +216,12 @@ it("follows custom status order and moves a visible outside caret into the click
   const cursor = textPosition(editor, "Outside") + 4;
   editor.commands.setTextSelection(cursor);
   editor.view.dom.querySelector<HTMLButtonElement>('button')!.click();
-  expect(itemTexts(editor)).toEqual(["IN PROGRESS: First", "DONE: Child", "DONE: Second"]);
+  expect(itemTexts(editor)).toEqual(["DONE: Second", "QUESTION: First", "DONE: Child"]);
   expect(editor.state.selection.head).toBe(textPosition(editor, "First"));
 });
 
 it("highlights the moved item and restarts the expiry for rapid status clicks", () => {
-  const editor = make('<ul><li><p>TODO: First</p></li><li><p>TODO: Second</p></li><li><p>CLOSED: Third</p></li></ul>');
+  const editor = make('<ul><li><p>IN PROGRESS: Middle</p></li><li><p>TODO: First</p></li><li><p>TODO: Second</p></li><li><p>CLOSED: Third</p></li></ul>');
   vi.useFakeTimers();
   try {
     const clickFirst = () => {
@@ -227,23 +242,23 @@ it("highlights the moved item and restarts the expiry for rapid status clicks", 
     vi.advanceTimersByTime(700);
     expect(editor.view.dom.querySelector('.bullet-method-moved')).toBeNull();
     editor.commands.undo();
-    expect(itemTexts(editor)).toEqual(['CLOSED: Third', 'TODO: Second', 'IN PROGRESS: First']);
+    expect(itemTexts(editor)).toEqual(['CLOSED: Third', 'IN PROGRESS: Middle', 'IN PROGRESS: First', 'TODO: Second']);
   } finally { vi.useRealTimers(); }
 });
 
 it("clears movement feedback on undo and does not highlight an item that stays in place", () => {
-  const editor = make('<ul><li><p>TODO: First</p></li><li><p>TODO: Second</p></li></ul>');
-  editor.view.dom.querySelector<HTMLButtonElement>('button')!.click();
+  const editor = make('<ul><li><p>TODO: Second</p></li><li><p>TODO: First</p></li></ul>');
+  editor.view.dom.querySelectorAll<HTMLButtonElement>('button')[1]!.click();
   expect(editor.view.dom.querySelector('.bullet-method-moved')).not.toBeNull();
   editor.commands.undo();
   expect(editor.view.dom.querySelector('.bullet-method-moved')).toBeNull();
   editor.view.dispatch(editor.state.tr.setMeta('bulletMethodDisplay', { enabled: true, replaceBullets: true, autoSortOnClick: false }));
-  editor.view.dom.querySelector<HTMLButtonElement>('button')!.click();
+  editor.view.dom.querySelectorAll<HTMLButtonElement>('button')[1]!.click();
   expect(editor.view.dom.querySelector('.bullet-method-moved')).toBeNull();
 });
 
 it("anchors repeated pointer clicks to the same bullet without smooth scrolling", () => {
-  const editor = make('<ul><li><p>TODO: First</p></li><li><p>TODO: Second</p></li><li><p>CLOSED: Third</p></li></ul>');
+  const editor = make('<ul><li><p>IN PROGRESS: Middle</p></li><li><p>TODO: First</p></li><li><p>TODO: Second</p></li><li><p>CLOSED: Third</p></li></ul>');
   const surface = document.createElement('div');
   surface.className = 'note-surface';
   surface.style.scrollBehavior = 'smooth';
@@ -260,10 +275,10 @@ it("anchors repeated pointer clicks to the same bullet without smooth scrolling"
   try {
     const originalTop = firstButton().getBoundingClientRect().top;
     firstButton().dispatchEvent(new MouseEvent('click', { bubbles: true, detail: 1 }));
-    expect(surface.scrollTop).toBe(440);
+    expect(surface.scrollTop).toBe(320);
     expect(firstButton().getBoundingClientRect().top).toBe(originalTop);
     firstButton().dispatchEvent(new MouseEvent('click', { bubbles: true, detail: 2 }));
-    expect(surface.scrollTop).toBe(320);
+    expect(surface.scrollTop).toBe(200);
     expect(firstButton().getBoundingClientRect().top).toBe(originalTop);
     expect(firstButton().closest('li')?.textContent).toContain('DONE: First');
     expect(surface.style.scrollBehavior).toBe('smooth');
@@ -321,14 +336,14 @@ it("cycles backward with Shift-click, wraps, and supports undo without changing 
   const editor = make('<ul><li><p>DONE: Keep this</p></li></ul>');
   const click = (shiftKey: boolean) => editor.view.dom.querySelector<HTMLButtonElement>('button')!
     .dispatchEvent(new MouseEvent('click', { bubbles: true, shiftKey }));
-  for (const prefix of ['IN PROGRESS', 'TODO', 'CLOSED', 'DONE']) {
+  for (const prefix of ['IN PROGRESS', 'TODO', 'QUESTION', 'CLOSED', 'DONE']) {
     click(true);
     expect(editor.state.doc.textContent).toBe(`${prefix}: Keep this`);
   }
   editor.commands.undo();
   expect(editor.state.doc.textContent).toBe('CLOSED: Keep this');
   click(false);
-  expect(editor.state.doc.textContent).toBe('TODO: Keep this');
+  expect(editor.state.doc.textContent).toBe('QUESTION: Keep this');
 });
 
 it("uses updated custom predecessors and skips removed statuses when Shift-clicking", () => {

@@ -89,7 +89,7 @@ export default function SettingsModal(props: {
                     {section === "bullet-method" ? <BulletMethodIcon size={20} /> : null}
                   </h2>
                   <p>
-                    {section === "bullet-method" ? <>Keep tasks in your everyday notes. Start a bullet with a status and a colon, such as <code>TODO: Review the proposal</code>. Other statuses: IN PROGRESS, DONE, CLOSED. Leave general notes unmarked.</> : section === "appearance"
+                    {section === "bullet-method" ? <>Keep tasks in your everyday notes. Start a bullet with a status and a colon, such as <code>TODO: Review the proposal</code>. Other statuses: IN PROGRESS, DONE, CLOSED, QUESTION. Leave general notes unmarked.</> : section === "appearance"
                       ? "Customize themes, colors, and typography."
                       : "Navigation, editing, and word count preferences."}
                   </p>

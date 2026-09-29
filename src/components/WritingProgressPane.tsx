@@ -21,7 +21,7 @@ export function WritingProgressPane({ metadata, noteId, onGoalChange }: {
       <GoalRing key={noteId ?? "none"} label="This Note" count={counts.note} goal={noteId ? goals.noteGoals[noteId] : undefined}
         onChange={noteId && onGoalChange ? goal => onGoalChange(noteId, goal) : undefined} />
     </div>
-    <p className="sidebar-hint">Words added today, minus deletions. Updates on save.</p>
+    <p className="sidebar-hint">Words added today, minus deletions.</p>
   </div>;
 }
 

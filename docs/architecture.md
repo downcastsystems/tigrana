@@ -283,20 +283,25 @@ order. Nested lists stay with their parent item and selected sublists sort
 independently. Inline formatting and task checkbox state travel with the content.
 
 Bullet Statuses sorts by a leading, case-insensitive status followed by a colon:
-CLOSED, DONE, TODO, IN PROGRESS, then unmarked text. Items within each status
+QUESTION, CLOSED, DONE, IN PROGRESS, TODO, then unmarked text by default. Items within each status
 retain their order. Selected sibling tasks carry continuation paragraphs unchanged and sort their nested lists recursively; headings separate groups. Use Edit > Sort Lines > Bullet
 Method or Command+Option+period on macOS, Ctrl+Alt+period elsewhere. Like the
 other sort commands, it sorts selected rich-editor text. With a collapsed cursor, Bullet Statuses instead sorts the outermost containing bullet, numbered, or task list and all its descendant lists, preserving item contents and the cursor’s position within its moved item. Outside a list it does nothing.
 
 Ordinary bullet lists display Lucide status markers: circle-slash for CLOSED, circle-check for DONE,
-circle for TODO, and circle-dot for IN PROGRESS. These ProseMirror decorations
+circle for TODO, circle-dot for IN PROGRESS, and circle-help for QUESTION. These ProseMirror decorations
 follow the built-in status identities when renamed; custom and unrecognized
-statuses retain ordinary bullets. Markers never enter saved HTML or Markdown.
+statuses without configured icons retain ordinary bullets. Markers never enter saved HTML or Markdown.
 Typing rechecks changed items and their ancestors rather than rescanning the Note.
 Numbered lists and task checkboxes keep their existing markers. Marker buttons
-cycle TODO → IN PROGRESS → DONE → CLOSED → TODO, replacing only the prefix
-as one undoable edit. Removed statuses are skipped; custom statuses with icons
-follow CLOSED in settings order. Circle icon choices are stored with each status
+cycle upward through the same settings list and wrap around, replacing only the
+prefix as one undoable edit. The default cycle is TODO → IN PROGRESS → DONE →
+CLOSED → QUESTION → TODO. Shift-click reverses it. The per-status Cycle checkbox
+excludes statuses from cycle destinations and the `-:` + Space starting status,
+which is the lowest included status. No status and statuses without icons are
+always skipped. Clicking an excluded status can enter the next included status;
+with no destinations, clicking does nothing and `-:` stays literal. Named and
+assigned shortcuts still work for excluded statuses, including `?:` for QUESTION. Circle icon choices are stored with each status
 and can be changed in Settings > Bullet Statuses.
 
 Settings > Bullet Statuses explains the workflow and lets users reorder statuses
@@ -306,8 +311,10 @@ use pointer events and hit testing, like bookmark/sidebar reordering, rather tha
 HTML drag/drop that native WebKit can intercept as a copy operation. Drop targets
 show before/after placement; cancellation, window blur, and unmount clean up the
 gesture without changing the order. Changes are
-applied with Save changes; Restore defaults immediately restores the original
-configuration. No status is permanent and catches unknown prefixes. Names must
+saved automatically; Restore defaults immediately restores the original
+configuration. No status is permanent and catches unknown prefixes. It cannot
+be dimmed, celebrated, or included in the cycle, even through older saved settings.
+Names must
 be nonempty, unique ignoring case, and contain no colons or line breaks.
 Renaming/removing a prefix never rewrites notes. Configuration is app-local in
 `tigrana.bulletMethod.v1` localStorage and storage events synchronize open windows.

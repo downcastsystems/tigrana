@@ -10,6 +10,27 @@ function BulletMethodSettings(props: ComponentProps<typeof Settings>) {
 }
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 
+it("explains cycle direction and saves Cycle choices independently of Dim and Celebrate", async () => {
+  const host = document.createElement('div');
+  const root = createRoot(host);
+  const saved = vi.fn();
+  try {
+    await act(async () => root.render(<BulletMethodSettings statuses={defaultBulletMethodStatuses} onChange={saved} />));
+    expect(host.textContent).toContain('bottom to top');
+    const cycle = (name: string) => host.querySelector<HTMLInputElement>(`[aria-label="Cycle ${name}"]`)!;
+    expect(['QUESTION', 'CLOSED', 'DONE', 'IN PROGRESS', 'TODO'].map(name => cycle(name).checked)).toEqual([true, true, true, true, true]);
+    expect(cycle('No status')).toBeNull();
+    expect(host.querySelector('[aria-label="Cycling unavailable for No status"]')?.textContent).toBe('—');
+    expect(host.querySelector<HTMLInputElement>('[aria-label="Shortcut for QUESTION"]')!.value).toBe('?:');
+    await act(async () => cycle('DONE').click());
+    expect(saved.mock.lastCall![0].find((s: BulletMethodStatus) => s.id === 'done').cycle).toBe(false);
+    expect(host.querySelector<HTMLInputElement>('[aria-label="Dim DONE"]')!.checked).toBe(true);
+    expect(host.querySelector<HTMLInputElement>('[aria-label="Celebrate DONE"]')!.checked).toBe(true);
+    await act(async () => [...host.querySelectorAll('button')].find(b => b.textContent?.includes('Restore defaults'))!.click());
+    expect(cycle('DONE').checked).toBe(true);
+  } finally { await act(async () => root.unmount()); }
+});
+
 it("edits, validates, reorders by buttons and drag, removes, saves and restores defaults", async () => {
   const host = document.createElement("div"); document.body.append(host);
   const root = createRoot(host);
@@ -30,14 +51,14 @@ it("edits, validates, reorders by buttons and drag, removes, saves and restores 
   });
   try {
     await act(async () => root.render(<Harness />));
-    expect(host.textContent).toContain("Edit → Sort Lines → Bullet Statuses");
+    expect(host.textContent).toContain("Inside a list, choose Edit -> Sort Lines -> Bullet Statuses to sort by the status.");
     expect(host.querySelector<HTMLButtonElement>('[aria-label="Remove No status"]')!.disabled).toBe(true);
     await click("Move No status up");
     await click("Add status");
-    await input("Status 4 name", "todo");
+    await input("Status 5 name", "todo");
     expect(host.querySelector('[role="alert"]')!.textContent).toContain("unique");
     expect(saved.mock.lastCall![0].find((status: BulletMethodStatus) => status.prefix === "todo")).toBeUndefined();
-    await input("Status 4 name", "WAITING");
+    await input("Status 5 name", "WAITING");
     expect(host.querySelector('input[aria-label$=" meaning"]')).toBeNull();
     // Native WebKit may take over HTML drag/drop. Reordering must work from
     // pointer events alone, including drops over an editable status field.
@@ -59,10 +80,10 @@ it("edits, validates, reorders by buttons and drag, removes, saves and restores 
     await click("Icon for CLOSED");
     await click("circle-x");
     expect(saved.mock.lastCall![0].find((status: BulletMethodStatus) => status.id === "closed").icon).toBe("x");
-    expect(saved.mock.lastCall![0].map((status: BulletMethodStatus) => status.prefix)).toEqual(["WAITING", "CLOSED", "TODO", null, "IN PROGRESS"]);
+    expect(saved.mock.lastCall![0].map((status: BulletMethodStatus) => status.prefix)).toEqual(["WAITING", "QUESTION", "CLOSED", "IN PROGRESS", null, "TODO"]);
     await click("Restore defaults");
     expect(saved.mock.lastCall![0]).toEqual(defaultBulletMethodStatuses);
-    expect(host.querySelector<HTMLInputElement>('[aria-label="Status 1 name"]')!.value).toBe("CLOSED");
+    expect(host.querySelector<HTMLInputElement>('[aria-label="Status 1 name"]')!.value).toBe("QUESTION");
   } finally {
     await act(async () => root.unmount()); host.remove();
   }
@@ -74,7 +95,7 @@ it("keeps edits available when saving fails", async () => {
     await act(async () => root.render(<BulletMethodSettings statuses={defaultBulletMethodStatuses} onChange={() => { throw new Error("Storage full"); }} />));
     await act(async () => host.querySelector<HTMLButtonElement>('[aria-label="Move CLOSED down"]')!.click());
     expect(host.querySelector('[role="alert"]')!.textContent).toContain("Could not save");
-    expect(host.querySelector<HTMLInputElement>('[aria-label="Status 1 name"]')!.value).toBe("DONE");
+    expect(host.querySelector<HTMLInputElement>('[aria-label="Status 2 name"]')!.value).toBe("DONE");
   } finally { await act(async () => root.unmount()); }
 });
 
@@ -101,9 +122,9 @@ it.each(["drop", "pointercancel", "blur", "unmount", "outside", "click"])("handl
     expect(document.body.classList.contains("is-dragging-bullet-status")).toBe(false);
     if (!unmounted) {
       const names = [...host.querySelectorAll<HTMLInputElement>('input[aria-label$=" name"]')].map(input => input.value);
-      expect(names).toEqual(completion === "drop" ? ["DONE", "TODO", "IN PROGRESS", "CLOSED"] : ["CLOSED", "DONE", "TODO", "IN PROGRESS"]);
+      expect(names).toEqual(completion === "drop" ? ["QUESTION", "DONE", "IN PROGRESS", "TODO", "CLOSED"] : ["QUESTION", "CLOSED", "DONE", "IN PROGRESS", "TODO"]);
       if (completion === "drop") {
-        expect(saved.mock.lastCall![0].map((status: BulletMethodStatus) => status.prefix)).toEqual(["DONE", "TODO", "IN PROGRESS", null, "CLOSED"]);
+        expect(saved.mock.lastCall![0].map((status: BulletMethodStatus) => status.prefix)).toEqual(["QUESTION", "DONE", "IN PROGRESS", "TODO", null, "CLOSED"]);
       }
     }
   } finally {
@@ -173,10 +194,10 @@ it("starts off, hides subordinate controls, and reveals them when enabled", asyn
   try {
     await act(async () => root.render(<Harness />));
     expect(host.querySelectorAll('.bullet-method-enable input[type="checkbox"], .bullet-method-display-options input[type="checkbox"]')).toHaveLength(1);
-    expect(host.textContent).not.toContain('Select a list');
+    expect(host.textContent).not.toContain('Inside a list');
     await act(async () => host.querySelector<HTMLInputElement>('input[type="checkbox"]')!.click());
     expect(host.querySelectorAll('.bullet-method-enable input[type="checkbox"], .bullet-method-display-options input[type="checkbox"]')).toHaveLength(5);
-    expect(host.textContent).toContain('Select a list');
+    expect(host.textContent).toContain('Inside a list');
     await act(async () => host.querySelector<HTMLInputElement>('input[type="checkbox"]')!.click());
     expect(host.querySelector('input[type="range"]')).toBeNull();
   } finally { await act(async () => root.unmount()); host.remove(); }
@@ -209,7 +230,9 @@ it("automatically saves per-status dim choices and restores their defaults", asy
   try {
     await act(async () => root.render(<BulletMethodSettings statuses={defaultBulletMethodStatuses} onChange={saved} />));
     const dim = (name: string) => host.querySelector<HTMLInputElement>(`input[aria-label="Dim ${name}"]`)!;
-    expect(['CLOSED', 'DONE', 'TODO', 'IN PROGRESS', 'No status'].map(name => dim(name).checked)).toEqual([true, true, false, false, false]);
+    expect(['CLOSED', 'DONE', 'TODO', 'IN PROGRESS'].map(name => dim(name).checked)).toEqual([true, true, false, false]);
+    expect(dim('No status')).toBeNull();
+    expect(host.querySelector('[aria-label="Dimming unavailable for No status"]')?.textContent).toBe('—');
     await act(async () => { dim('DONE').click(); dim('TODO').click(); });
     expect(saved).toHaveBeenCalled();
     expect(saved.mock.lastCall![0].find((status: BulletMethodStatus) => status.id === 'done').dim).toBe(false);
@@ -227,7 +250,9 @@ it("automatically saves per-status celebration choices and restores their defaul
   try {
     await act(async () => root.render(<BulletMethodSettings statuses={defaultBulletMethodStatuses} onChange={saved} />));
     const celebrate = (name: string) => host.querySelector<HTMLInputElement>(`input[aria-label="Celebrate ${name}"]`)!;
-    expect(['CLOSED', 'DONE', 'TODO', 'IN PROGRESS', 'No status'].map(name => celebrate(name).checked)).toEqual([false, true, false, false, false]);
+    expect(['CLOSED', 'DONE', 'TODO', 'IN PROGRESS'].map(name => celebrate(name).checked)).toEqual([false, true, false, false]);
+    expect(celebrate('No status')).toBeNull();
+    expect(host.querySelector('[aria-label="Celebration unavailable for No status"]')?.textContent).toBe('—');
     await act(async () => { celebrate('DONE').click(); celebrate('TODO').click(); });
     expect(saved).toHaveBeenCalled();
     expect(saved.mock.lastCall![0].find((status: BulletMethodStatus) => status.id === 'done').celebrate).toBe(false);
@@ -251,7 +276,7 @@ it("updates the dimming label live and preserves spaces while autosaving names",
     expect(globalLabel()).toContain('Dim CLOSED, DONE');
     await act(async () => host.querySelector<HTMLInputElement>('[aria-label="Dim TODO"]')!.click());
     expect(globalLabel()).toContain('Dim CLOSED, DONE, TODO');
-    const field = host.querySelector<HTMLInputElement>('[aria-label="Status 3 name"]')!;
+    const field = host.querySelector<HTMLInputElement>('[aria-label="Status 5 name"]')!;
     for (const value of ['NEXT ', 'NEXT UP']) {
       await act(async () => {
         Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')!.set!.call(field, value);

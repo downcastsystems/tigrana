@@ -97,7 +97,7 @@ export function themeStylesheet(
   const tokens = `[data-theme-region="${region}"]{${Object.entries(variables)
     .map(([key, value]) => `${key}:${value}`)
     .join(";")}}`;
-  return tokens + surfaceStyles(theme, region, true, mode) + (theme.design ? compileThemeCss(theme.design, region) : "") + explicitEditorColors(theme, mode, region);
+  return tokens + surfaceStyles(theme, region, true, mode) + (theme.design ? compileThemeCss(theme.design, region) : "") + explicitEditorColors(theme, mode, region) + standardWindowBackground(theme, mode, region);
 }
 
 /** Share the packaged landscape with the GPU without external image requests. */
@@ -124,6 +124,20 @@ ${root} :is(.folder-pane,.notes-pane,.unified-tree-pane) { background-color: col
 ${root} .main-pane { background-color: color-mix(in srgb,var(--app-bg) ${s.editor}%,transparent); }
 ${root} .right-sidebar { background-color: color-mix(in srgb,var(--surface) ${s.outline}%,transparent); }
 ${root}.app-titlebar { background-color: color-mix(in srgb,${theme.accentTitlebar ? "var(--titlebar-bg)" : "var(--surface)"} ${s.titlebar}%,transparent); }
+`;
+}
+
+/** Standard mode needs one backdrop behind both the title bar and workspace. */
+function standardWindowBackground(theme: ThemeDocument, mode: "light" | "dark", region: string) {
+  const surfaces = theme.surfaces && surfacesForMode(theme.surfaces, mode);
+  if (!surfaces) return "";
+  const root = `[data-theme-region="${region}"]`;
+  const scope = root.repeat(4);
+  const image = themeBackgroundImage(theme);
+  return `
+.app-shell:not([data-plasma]):has(${root}.app-frame.theme-standard) { background: ${surfaces.background} ${image ? `url("${image}")` : 'none'} center / cover no-repeat; }
+.app-shell:not([data-plasma]) ${scope}.app-frame.theme-standard { background-color: transparent; background-image: none; }
+${scope}.app-titlebar.theme-standard { background: var(--tigrana-titlebar-fill); backdrop-filter: none; }
 `;
 }
 

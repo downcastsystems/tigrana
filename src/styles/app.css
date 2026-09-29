@@ -6846,12 +6846,14 @@ html[data-theme="dark"] .bullet-method-order-section { background: rgb(0 0 0 / 1
 .bullet-method-status-table { overflow-x: auto; margin: 12px 0; }
 .bullet-method-statuses { list-style: none; margin: 0; padding: 0; }
 .bullet-method-status,
-.bullet-method-column-headings { display: grid; grid-template-columns: 14px 18px minmax(140px, 1fr) 76px 36px 64px 30px 94px; align-items: center; gap: 8px; min-width: 528px; }
+.bullet-method-column-headings { display: grid; grid-template-columns: 14px 18px minmax(136px, 1fr) 76px 36px 64px 40px 30px 94px; align-items: center; gap: 8px; min-width: 572px; }
 .bullet-method-column-headings { padding: 0 0 8px; color: var(--text-muted); font-size: 12px; font-weight: 600; }
 .bullet-method-column-headings > :nth-child(5),
-.bullet-method-column-headings > :nth-child(6) { text-align: center; }
+.bullet-method-column-headings > :nth-child(6),
+.bullet-method-column-headings > :nth-child(7) { text-align: center; }
 .bullet-method-status { padding: 8px 0; border-top: 1px solid var(--border); }
 .bullet-method-no-shortcut { padding-left: 8px; color: var(--text-muted); }
+.bullet-method-unavailable { text-align: center; color: var(--text-muted); }
 .bullet-method-status.is-drop-before { border-top-color: var(--settings-focus); }
 .bullet-method-status.is-drop-after { box-shadow: 0 2px 0 var(--settings-focus); }
 .bullet-method-status.is-dragging { opacity: .5; }
@@ -7007,8 +7009,11 @@ html[data-theme="light"] .ProseMirror li[data-bullet-method-completed="true"] .b
 .right-sidebar-header .sidebar-tabs { flex-wrap: wrap; }
 .sidebar-scroll-pane { min-height: 0; overflow: auto; }
 .overview-section { flex: 0 0 auto; border-bottom: 1px solid color-mix(in srgb, currentColor 10%, transparent); }
-.overview-section > summary { cursor: pointer; padding: 12px 14px; font-size: 12px; font-weight: 650; user-select: none; }
-.overview-section > summary::marker { color: var(--muted); }
+.overview-section > summary { display: flex; align-items: center; gap: 6px; list-style: none; cursor: pointer; padding: 12px 14px; font-size: 12px; font-weight: 650; user-select: none; }
+.overview-section > summary::marker { content: ""; }
+.overview-section > summary::-webkit-details-marker { display: none; }
+.overview-section > summary > svg { flex-shrink: 0; }
+.overview-section[open] > summary > svg { transform: rotate(90deg); }
 .sidebar-hint { color: var(--muted); font-size: 11px; line-height: 1.5; }
 .sidebar-text-button { border: 0; background: transparent; color: inherit; padding: 4px 2px; font-size: 11px; cursor: pointer; text-align: left; }
 .sidebar-text-button:hover:not(:disabled) { color: var(--accent); }

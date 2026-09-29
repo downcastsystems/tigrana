@@ -5,23 +5,27 @@ export function statusIcon(status: BulletMethodStatus): BulletMethodIcon | null 
   return status.icon ?? (Object.prototype.hasOwnProperty.call(defaultIcons, status.id) ? defaultIcons[status.id] : null);
 }
 export function statusDims(status: BulletMethodStatus): boolean {
-  return status.dim ?? (status.id === "done" || status.id === "closed");
+  return status.prefix !== null && (status.dim ?? (status.id === "done" || status.id === "closed"));
 }
 export function statusCelebrates(status: BulletMethodStatus): boolean {
   return status.prefix !== null && (status.celebrate ?? status.id === "done");
 }
-function bulletMethodProgression(statuses: readonly BulletMethodStatus[]) {
-  const ids = ["todo", "in-progress", "done", "closed"];
-  return [...ids.flatMap(id => statuses.filter(row => row.id === id && row.prefix !== null)),
-    ...statuses.filter(row => !ids.includes(row.id) && row.prefix !== null && statusIcon(row) !== null)];
+export function statusCycles(status: BulletMethodStatus): boolean {
+  return status.prefix !== null && statusIcon(status) !== null && status.cycle !== false;
 }
 export function firstBulletMethodStatus(statuses: readonly BulletMethodStatus[]) {
-  return bulletMethodProgression(statuses)[0];
+  return [...statuses].reverse().find(statusCycles);
 }
 export function nextBulletMethodStatus(status: BulletMethodStatus, statuses: readonly BulletMethodStatus[], direction: 1 | -1 = 1) {
-  const cycle = bulletMethodProgression(statuses);
-  const index = cycle.findIndex(row => row.id === status.id);
-  return cycle.length > 1 && index >= 0 ? cycle[(index + direction + cycle.length) % cycle.length] : null;
+  const index = statuses.findIndex(row => row.id === status.id);
+  if (index < 0) return null;
+  // Click upward through the sort order; Shift-click goes downward.
+  // An excluded status can still enter the cycle via its icon.
+  for (let step = 1; step < statuses.length; step++) {
+    const candidate = statuses[(index - direction * step + statuses.length) % statuses.length];
+    if (statusCycles(candidate)) return candidate;
+  }
+  return null;
 }
 
 export type BulletMethodStatus = {
@@ -31,6 +35,7 @@ export type BulletMethodStatus = {
   icon?: BulletMethodIcon;
   dim?: boolean;
   celebrate?: boolean;
+  cycle?: boolean;
   shortcut?: string;
 };
 
@@ -40,10 +45,11 @@ export function statusShortcut(status: BulletMethodStatus): string {
 }
 
 export const defaultBulletMethodStatuses: readonly BulletMethodStatus[] = [
+  { id: "question", prefix: "QUESTION", description: "A question waiting for an answer.", icon: "help", shortcut: "?:" },
   { id: "closed", prefix: "CLOSED", description: "No further action needed from you." },
   { id: "done", prefix: "DONE", description: "Completed." },
-  { id: "todo", prefix: "TODO", description: "Waiting to be started." },
   { id: "in-progress", prefix: "IN PROGRESS", description: "Actively working on it." },
+  { id: "todo", prefix: "TODO", description: "Waiting to be started." },
   { id: "no-status", prefix: null, description: "New notes or anything without a recognized status." },
 ];
 export const bulletMethodSettingsKey = "tigrana.bulletMethod.v1";
@@ -58,6 +64,7 @@ export function validateBulletMethodStatuses(statuses: readonly BulletMethodStat
     ids.add(status.id);
     if (status.celebrate !== undefined && typeof status.celebrate !== "boolean") return "Choose whether to celebrate each status.";
     if (status.dim !== undefined && typeof status.dim !== "boolean") return "Choose whether to dim each status.";
+    if (status.cycle !== undefined && typeof status.cycle !== "boolean") return "Choose whether to include each status in the click cycle.";
     if (status.icon !== undefined && !bulletMethodIcons.includes(status.icon)) return "Choose a supported circle icon.";
     if (status.shortcut !== undefined && typeof status.shortcut !== "string") return "Shortcuts must be text.";
     const shortcut = statusShortcut(status);
@@ -84,7 +91,7 @@ export function readBulletMethodStatuses(): readonly BulletMethodStatus[] {
     if (!Array.isArray(stored) || !stored.every(status => status && typeof status === "object"
       && typeof status.id === "string" && (typeof status.prefix === "string" || status.prefix === null)
       && typeof status.description === "string")) return defaultBulletMethodStatuses;
-    // The fixed first-row shortcut replaces any older per-status assignment.
+    // The starting-status shortcut replaces any older per-status assignment.
     const statuses = stored.map(status => status.shortcut === "-:" ? { ...status, shortcut: "" } : status);
     return validateBulletMethodStatuses(statuses) ? defaultBulletMethodStatuses : statuses;
   } catch {

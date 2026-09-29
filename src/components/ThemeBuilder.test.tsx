@@ -380,7 +380,7 @@ it("saves edits to the existing app-wide theme while retaining author credit", a
   try {
     await act(async () =>
       root.render(
-        <ThemeBuilder current={{ ...original, editorFontSize: 22 }} seed={original} onApply={apply} />,
+        <ThemeBuilder current={{ ...original, editorFontSize: 22 }} seed={{ ...original, editorFontSize: 22 }} onApply={apply} />,
       ),
     );
     await act(async () => button(host, "Edit theme").click());
@@ -1019,5 +1019,42 @@ it('offers the promoted Starfall as a built-in update for experimental snapshots
     expect(host.textContent).not.toContain('Make this theme available app-wide?');
     await act(async () => button(host, 'Use the latest version in this notebook only').click());
     expect(apply).toHaveBeenCalledWith(latest);
+  } finally { await act(async () => root.unmount()); }
+});
+
+it.each(['built-in', 'saved'])('carries Quick Appearance into Edit theme and saves it for a %s theme', async kind => {
+  const { captureCurrentThemeSettings } = await import('../lib/currentThemeSettings');
+  const { resolveThemeVariant } = await import('../lib/themes');
+  const based = bundledThemes.find(theme => theme.id === 'builtin-baseline')!;
+  const original = kind === 'built-in' ? based : { ...based, id: 'saved-based', name: 'My Based' };
+  if (kind === 'saved') await saveTheme(original, null);
+  const before = JSON.stringify(original);
+  const asset = { mime: 'image/png', data: 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+/l9sAAAAASUVORK5CYII=' };
+  const seed = captureCurrentThemeSettings(resolveThemeVariant(original, 'blue'), {
+    quickAppearance: { backgroundImage: { name: 'picture.png', asset }, panelOpacity: 35,
+      editorFontFamily: 'Georgia, serif', editorFontSize: 23, editorLineHeight: 1.9, editorLetterSpacing: 0.04, accentColor: '#336699' },
+    navigationStyle: 'dual-pane', rightSidebarOpen: false, accentTitlebar: false,
+    plasma: { enabled: false, frost: 25, backgroundBlur: 5 },
+  });
+  const host = document.createElement('div'), root = createRoot(host), apply = vi.fn();
+  try {
+    await act(async () => root.render(<ThemeBuilder current={original} seed={seed} selectedVariantId="blue" onApply={apply} />));
+    await act(async () => button(host, 'Edit theme').click());
+    expect(host.querySelector<HTMLSelectElement>('[aria-label="Background image"]')!.value).toBe(seed.surfaces!.image);
+    expect(host.querySelector<HTMLInputElement>('[aria-label="dark Accent hex"]')!.value).toBe('#336699');
+    await act(async () => button(host, 'Save and use').click());
+    await act(async () => button(host, 'Confirm and save').click());
+    const saved = apply.mock.calls.at(-1)![0];
+    expect(saved.surfaces).toEqual(seed.surfaces);
+    expect(saved.design.assets[saved.surfaces.image]).toEqual(asset);
+    expect(saved.editorFontFamily).toBe('Georgia, serif');
+    expect(saved.editorFontSize).toBe(23);
+    expect(saved.editorLineHeight).toBe(1.9);
+    expect(saved.editorLetterSpacing).toBe(0.04);
+    expect(saved.plasma).toEqual(seed.plasma);
+    expect(saved.colorVariants.find((variant: { id: string }) => variant.id === 'blue').dark.accent).toBe('#336699');
+    expect(saved.colorVariants.filter((variant: { id: string }) => variant.id !== 'blue')).toEqual(original.colorVariants!.filter(variant => variant.id !== 'blue'));
+    expect(saved.id === original.id).toBe(kind === 'saved');
+    expect(JSON.stringify(original)).toBe(before);
   } finally { await act(async () => root.unmount()); }
 });

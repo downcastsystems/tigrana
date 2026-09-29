@@ -158,7 +158,7 @@ describe("Sort Lines", () => {
           selected.push(node.text!);
         }
       });
-      expect(selected.join("\n")).toBe([lines[1], lines[2], lines[0]].join("\n"));
+      expect(selected.join("\n")).toBe([lines[1], lines[0], lines[2]].join("\n"));
     }
   });
   it.each([false, true])("keeps every sorted line selected when edge lines are only partly selected (reverse: %s)", reverse => {
@@ -169,9 +169,9 @@ describe("Sort Lines", () => {
     const end = positions["TODO: Review"] + 4;
     editor.commands.setTextSelection(reverse ? { from: end, to: start } : { from: start, to: end });
     sort(editor, "sort_bullet_method");
-    expect(texts(editor)).toEqual(["Before", "DONE: Sent", "TODO: Review", "IN PROGRESS: Working on the proposal", "After"]);
+    expect(texts(editor)).toEqual(["Before", "DONE: Sent", "IN PROGRESS: Working on the proposal", "TODO: Review", "After"]);
     const { from, to } = editor.state.selection;
-    expect(editor.state.doc.textBetween(from, to, "\n")).toBe("DONE: Sent\nTODO: Review\nIN PROGRESS: Working on the proposal");
+    expect(editor.state.doc.textBetween(from, to, "\n")).toBe("DONE: Sent\nIN PROGRESS: Working on the proposal\nTODO: Review");
     expect(editor.state.selection.anchor > editor.state.selection.head).toBe(reverse);
   });
   it.each([
@@ -307,7 +307,7 @@ describe("Bullet Statuses", () => {
     const before = editor.state.doc;
     sort(editor, "sort_bullet_method");
     expect(editor.state.doc.firstChild!.content.content.map((item) => item.textContent)).toEqual([
-      "CLOSED: delegated", "done: shipped", "TODO: zebra", "TODO: alpha", "IN PROGRESS: working",
+      "CLOSED: delegated", "done: shipped", "IN PROGRESS: working", "TODO: zebra", "TODO: alpha",
       "General notes", "We are DONE: with this", "DONE without a colon",
     ]);
     expect(editor.getHTML()).toContain("<strong>done:</strong>");
@@ -355,7 +355,7 @@ describe("Bullet Statuses", () => {
 
 it("sorts by saved custom order with unknown statuses in the movable No status group", () => {
   const editor = setup("<ul><li>TODO: next</li><li>WAITING: review</li><li>CLOSED: old prefix</li><li>General notes</li><li>waiting: another</li></ul>");
-  const statuses = [defaultBulletMethodStatuses[4], { id: "waiting", prefix: "WAITING", description: "" }, defaultBulletMethodStatuses[2]];
+  const statuses = [defaultBulletMethodStatuses.find(status => status.id === "no-status")!, { id: "waiting", prefix: "WAITING", description: "" }, defaultBulletMethodStatuses.find(status => status.id === "todo")!];
   const transaction = sortSelectedLines(editor.state, "sort_bullet_method", statuses);
   expect(transaction).not.toBeNull();
   editor.view.dispatch(transaction!);

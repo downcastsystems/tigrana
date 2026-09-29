@@ -485,14 +485,22 @@ export function ThemeBuilder({
                 disabled={busy}
                 onClick={() => {
                   setDraftVariantId(selectedVariantId);
+                  // The seed includes notebook Quick Appearance overrides and assets.
+                  // Capture the active palette without discarding other color variants.
+                  const colorVariants = sourceTheme.colorVariants?.map(variant => variant.id === selectedVariant?.id
+                    ? { ...variant, light: seed.light, dark: seed.dark } : variant);
+                  const defaultVariant = colorVariants?.find(variant => variant.id === sourceTheme.defaultColorVariantId);
                   setDraft({
                     ...sourceTheme,
+                    ...seed,
+                    ...(colorVariants ? { colorVariants, defaultColorVariantId: sourceTheme.defaultColorVariantId,
+                      light: defaultVariant!.light, dark: defaultVariant!.dark } : {}),
                     baseThemeId: sourceOriginal.id,
                     baseThemeSnapshot: sourceOriginal,
                     id: sourceBuiltIn ? crypto.randomUUID() : sourceTheme.id,
                     name: uniqueThemeName(sourceBuiltIn ? `${sourceTheme.name} copy` : sourceTheme.name, themes, sourceBuiltIn ? undefined : sourceTheme.id),
                     plasma:
-                      sourceTheme.plasma ?? seed.plasma ?? defaultPlasmaSettings,
+                      seed.plasma ?? sourceTheme.plasma ?? defaultPlasmaSettings,
                   });
                   setExpected(sourceBuiltIn ? null : themes.find((t) => t.id === sourceTheme.id) ?? null);
                 }}
