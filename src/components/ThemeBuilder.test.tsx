@@ -879,7 +879,7 @@ it("alphabetizes built-in and saved themes, keeping Default first", async () => 
     await act(async () => root.render(<ThemeBuilder current={current} seed={current} builtInThemes={builtIns} onApply={apply} />));
     const picker = host.querySelector<HTMLSelectElement>('select[aria-label="Theme"]')!;
     const builtInNames = [...picker.querySelectorAll('optgroup[label="Built-in"] option')].map(option => option.textContent!);
-    expect(builtInNames).toEqual(['Classic', ...bundledThemes.map(theme => theme.name).sort((a, b) => a.localeCompare(b))]);
+    expect(builtInNames).toEqual(['Tigrana', ...['Classic', ...bundledThemes.filter(theme => theme.name !== 'Tigrana').map(theme => theme.name)].sort((a, b) => a.localeCompare(b))]);
     expect(builtInNames).toContain('Quest');
     expect(builtInNames).not.toContain('Adventure Quest');
     expect([...picker.querySelectorAll('optgroup[label="Custom"] option')].map(option => option.textContent)).toEqual(['Alpha', 'Middle', 'Zulu']);
@@ -956,16 +956,16 @@ it("blocks theme saving until a pending color variant is created or cancelled", 
 it.each([
   ['green', 'Green'],
   ['purple', 'Purple'],
-  ['missing', 'Gray'],
+  ['missing', 'Blue'],
 ])('names the selected %s color scheme in the settings difference message', async (selectedVariantId, label) => {
-  const theme = bundledThemes.find(theme => theme.name === 'Based')!;
+  const theme = bundledThemes.find(theme => theme.name === 'Tigrana')!;
   const host = document.createElement('div'), root = createRoot(host);
   try {
     await act(async () => root.render(<ThemeBuilder current={theme}
       seed={{ ...theme, editorFontSize: theme.editorFontSize + 1 }}
       selectedVariantId={selectedVariantId} onApply={vi.fn()} />));
     expect(host.querySelector('.theme-current-settings strong')?.textContent)
-      .toBe(`Current settings differ from Based (${label}).`);
+      .toBe(`Current settings differ from Tigrana (${label}).`);
   } finally { await act(async () => root.unmount()); }
 });
 
@@ -1042,8 +1042,8 @@ it('offers the promoted Starfall as a built-in update for experimental snapshots
 it.each(['built-in', 'saved'])('carries Quick Appearance into Edit theme and saves it for a %s theme', async kind => {
   const { captureCurrentThemeSettings } = await import('../lib/currentThemeSettings');
   const { resolveThemeVariant } = await import('../lib/themes');
-  const based = bundledThemes.find(theme => theme.id === 'builtin-baseline')!;
-  const original = kind === 'built-in' ? based : { ...based, id: 'saved-based', name: 'My Based' };
+  const tigrana = bundledThemes.find(theme => theme.id === 'builtin-baseline')!;
+  const original = kind === 'built-in' ? tigrana : { ...tigrana, id: 'saved-tigrana', name: 'My Tigrana' };
   if (kind === 'saved') await saveTheme(original, null);
   const before = JSON.stringify(original);
   const asset = { mime: 'image/png', data: 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+/l9sAAAAASUVORK5CYII=' };

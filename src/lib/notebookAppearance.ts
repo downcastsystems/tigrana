@@ -1,6 +1,10 @@
+import { refreshSelectionColors } from "./selectionColors";
 import { recoveryTheme } from "./themeCatalog";
+import { classicThemes, defaultTheme, findBuiltInTheme } from "./bundledThemes";
 import {
   readTheme,
+  resolveThemeVariant,
+  type ThemePalette,
   themeAppearance,
   parsePlasma,
   type PlasmaSettings,
@@ -34,6 +38,60 @@ type NotebookMetadataAdoptionTargets = {
   appearance: (appearance: ResolvedNotebookAppearance) => void;
 };
 
+/** A missing selection follows the app default; explicit legacy presets stay put.
+ * Retained built-in snapshots adopt the current name and known palette corrections. */
+export function notebookTheme(snapshot: unknown, presetId: string) {
+  let theme = readTheme(snapshot);
+  if (theme && findBuiltInTheme(theme.id)) {
+    theme = resolveThemeVariant({
+      ...theme,
+      light: correctedLightSelectedItems(theme.id, refreshSelectionColors(theme.light, 'light')),
+      dark: refreshSelectionColors(theme.dark, 'dark'),
+      ...(theme.colorVariants ? { colorVariants: theme.colorVariants.map(variant => ({
+        ...variant,
+        light: correctedLightSelectedItems(variant.id, refreshSelectionColors(variant.light, 'light')),
+        dark: refreshSelectionColors(variant.dark, 'dark'),
+      })) } : {}),
+    });
+  }
+  if (theme?.id === defaultTheme.id) {
+    theme = resolveThemeVariant({
+      ...theme,
+      name: defaultTheme.name,
+      colorVariants: theme.colorVariants?.map(variant => ({
+        ...variant, light: correctedCatppuccinLight(variant.id, variant.light),
+      })),
+    });
+  } else if (theme) {
+    theme = { ...theme, light: correctedCatppuccinLight(theme.id, theme.light) };
+  }
+  return theme ?? (!snapshot && presetId === defaultTheme.id ? defaultTheme : null);
+}
+
+const previousItemAccents: Record<string, string> = {
+  atom: '#3d74f6', 'catppuccin-frappe': '#40a02b', everforest: '#f85552',
+};
+
+function correctedLightSelectedItems(id: string, palette: ThemePalette): ThemePalette {
+  const old = previousItemAccents[id];
+  const current = old && classicThemes.find(theme => theme.id === id)?.light;
+  if (!current || palette.accent !== old || palette.selectedText !== '#000000'
+    || palette.menuSelectedBackground !== old || palette.menuSelectedText !== '#000000') return palette;
+  return { ...palette, accent: current.accent, selectedText: current.selectedText,
+    menuSelectedBackground: current.menuSelectedBackground, menuSelectedText: current.menuSelectedText,
+    titlebar: palette.titlebar === old ? current.accent : palette.titlebar };
+}
+
+/** Only replace the shipped old palette, leaving user-edited colors intact. */
+function correctedCatppuccinLight(id: string, palette: ThemePalette): ThemePalette {
+  const current = id.startsWith('catppuccin-') ? classicThemes.find(theme => theme.id === id)?.light : undefined;
+  if (!current || palette.surfaceStrong.toLowerCase() !== '#ccd0da') return palette;
+  const old = { ...current, surfaceStrong: '#ccd0da' };
+  return Object.entries(old).every(([key, value]) => palette[key as keyof ThemePalette]?.toLowerCase() === value.toLowerCase())
+    ? { ...palette, surfaceStrong: current.surfaceStrong }
+    : palette;
+}
+
 export function adoptNotebookMetadata(
   metadata: WorkspaceMetadata,
   defaults: ResolvedNotebookAppearance,
@@ -56,7 +114,7 @@ export function resolveNotebookAppearance(
   validThemePresetIds: readonly string[],
 ): ResolvedNotebookAppearance {
   if (!appearance) return cloneResolvedAppearance(defaults);
-  const theme = readTheme(appearance.customTheme);
+  const theme = appearance.customTheme ? notebookTheme(appearance.customTheme, appearance.themePresetId ?? "") : null;
   if (appearance.customTheme && !theme) {
     // Recovery is in-memory only: never overwrite a damaged portable snapshot.
     return resolveNotebookAppearance({ ...themeAppearance(recoveryTheme), colorScheme: appearance.colorScheme }, defaults, validThemePresetIds);
@@ -68,6 +126,16 @@ export function resolveNotebookAppearance(
       wordCountVisible: appearance.wordCountVisible ?? selected.wordCountVisible,
       editorWidthMode: appearance.editorWidthMode ?? selected.editorWidthMode,
       noteAlignment: appearance.noteAlignment ?? selected.noteAlignment };
+  }
+
+  const presetId = appearance.themePresetId ?? '';
+  const oldAccent = previousItemAccents[presetId];
+  if (!theme && oldAccent && appearance.colors?.light?.accentColor === oldAccent) {
+    const current = classicThemes.find(candidate => candidate.id === presetId)!.light;
+    appearance = { ...appearance, colors: { ...appearance.colors, light: {
+      ...appearance.colors.light, accentColor: current.accent,
+      ...(appearance.colors.light.titlebarColor === oldAccent ? { titlebarColor: current.titlebar } : {}),
+    } } };
   }
 
   const navigationStyle = resolveNavigationStyle(

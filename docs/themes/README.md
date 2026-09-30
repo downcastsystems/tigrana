@@ -8,7 +8,7 @@ For a complete illustrated example, see [Starfall](starfall-studio/README.md),
 including an importable package, original character art, and commented CSS for
 light, dark, and Plasma appearances.
 
-The default appearance is unchanged. Settings → Appearance → Create theme opens the
+Tigrana Blue is the default appearance for new users and Restore default appearance. Settings → Appearance → Create theme opens the
 visual builder. Advanced CSS adds component styling without changing note content
 or navigation behavior. Sharing details are optional until publishing a theme.
 

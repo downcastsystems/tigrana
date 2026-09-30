@@ -42,8 +42,8 @@
       "selectedText": "#ffffff",
       "highlightText": "#000000",
       "highlightBackground": "#ffff00",
-      "selectionBackground": "#d2e4fa",
-      "selectionText": "#123e73"
+      "selectionBackground": "#c2dcff",
+      "selectionText": "#084f9e"
     },
     "dark": {
       "surface": "#191a1d",
@@ -60,8 +60,8 @@
       "selectedText": "#ffffff",
       "highlightText": "#000000",
       "highlightBackground": "#ffff00",
-      "selectionBackground": "#032042",
-      "selectionText": "#6da7ec"
+      "selectionBackground": "#103969",
+      "selectionText": "#9fc9ff"
     }
   },
   {
@@ -172,8 +172,8 @@
       "selectedText": "#ffffff",
       "highlightText": "#000000",
       "highlightBackground": "#ffff00",
-      "selectionBackground": "#d4f7e6",
-      "selectionText": "#13623c",
+      "selectionBackground": "#c8f4de",
+      "selectionText": "#115534",
       "linkColor": "#204935"
     },
     "dark": {
@@ -191,8 +191,8 @@
       "selectedText": "#ffffff",
       "highlightText": "#000000",
       "highlightBackground": "#ffff00",
-      "selectionBackground": "#0b3a23",
-      "selectionText": "#7fe6b4",
+      "selectionBackground": "#125e39",
+      "selectionText": "#aaeecd",
       "linkColor": "#84ac99"
     }
   },
@@ -239,8 +239,8 @@
       "selectedText": "#ffffff",
       "highlightText": "#000000",
       "highlightBackground": "#ffff00",
-      "selectionBackground": "#f2d4f7",
-      "selectionText": "#561362",
+      "selectionBackground": "#edc8f4",
+      "selectionText": "#4b1155",
       "linkColor": "#3f2044"
     },
     "dark": {
@@ -258,8 +258,8 @@
       "selectedText": "#ffffff",
       "highlightText": "#000000",
       "highlightBackground": "#ffff00",
-      "selectionBackground": "#330b39",
-      "selectionText": "#d77fe6",
+      "selectionBackground": "#53135e",
+      "selectionText": "#e4aaee",
       "linkColor": "#a283a8"
     }
   },
@@ -300,18 +300,18 @@
       "border": "#dad8d8",
       "text": "#383a42",
       "textMuted": "#636674",
-      "accent": "#3d74f6",
+      "accent": "#3267de",
       "titlebar": "#dbdbdc",
       "editorText": "#383a42",
-      "selectedText": "#000000",
+      "selectedText": "#ffffff",
       "highlightBackground": "#986800",
       "highlightText": "#ffffff",
-      "menuSelectedBackground": "#3d74f6",
-      "menuSelectedText": "#000000",
+      "menuSelectedBackground": "#3267de",
+      "menuSelectedText": "#ffffff",
       "hoverBackground": "#ededed",
       "hoverText": "#383a42",
-      "selectionBackground": "#d2def9",
-      "selectionText": "#052570"
+      "selectionBackground": "#c2d2fa",
+      "selectionText": "#052061"
     },
     "dark": {
       "background": "#272b34",
@@ -332,8 +332,8 @@
       "menuSelectedText": "#000000",
       "hoverBackground": "#303540",
       "hoverText": "#dddedf",
-      "selectionBackground": "#06253f",
-      "selectionText": "#78b8ed"
+      "selectionBackground": "#0f3c61",
+      "selectionText": "#a2d0f6"
     }
   },
   {
@@ -383,8 +383,8 @@
       "menuSelectedText": "#000000",
       "hoverBackground": "#adb8b8",
       "hoverText": "#002b36",
-      "selectionBackground": "#f8ded3",
-      "selectionText": "#642a11"
+      "selectionBackground": "#f5d5c6",
+      "selectionText": "#57250f"
     },
     "dark": {
       "background": "#073642",
@@ -405,8 +405,8 @@
       "menuSelectedText": "#000000",
       "hoverBackground": "#0a4c5c",
       "hoverText": "#fdf6e3",
-      "selectionBackground": "#3b190a",
-      "selectionText": "#e99d7c"
+      "selectionBackground": "#602810",
+      "selectionText": "#f0bea8"
     }
   },
   {
@@ -456,8 +456,8 @@
       "menuSelectedText": "#000000",
       "hoverBackground": "#e5e9f0",
       "hoverText": "#2e3440",
-      "selectionBackground": "#daecf1",
-      "selectionText": "#214954"
+      "selectionBackground": "#cfe6ec",
+      "selectionText": "#1d3f49"
     },
     "dark": {
       "background": "#2e3440",
@@ -478,8 +478,8 @@
       "menuSelectedText": "#000000",
       "hoverBackground": "#3b4252",
       "hoverText": "#eceff4",
-      "selectionBackground": "#132b31",
-      "selectionText": "#91c5d4"
+      "selectionBackground": "#204650",
+      "selectionText": "#b6d8e2"
     }
   },
   {
@@ -529,8 +529,8 @@
       "menuSelectedText": "#000000",
       "hoverBackground": "#f2e5bc",
       "hoverText": "#282828",
-      "selectionBackground": "#f9e4d2",
-      "selectionText": "#6f3806"
+      "selectionBackground": "#fadcc2",
+      "selectionText": "#613005"
     },
     "dark": {
       "background": "#282828",
@@ -551,8 +551,8 @@
       "menuSelectedText": "#000000",
       "hoverBackground": "#32302f",
       "hoverText": "#fbf1c7",
-      "selectionBackground": "#412103",
-      "selectionText": "#edaf78"
+      "selectionBackground": "#61360f",
+      "selectionText": "#f7caa1"
     }
   },
   {
@@ -592,18 +592,18 @@
       "border": "#edead5",
       "text": "#5c6a72",
       "textMuted": "#879686",
-      "accent": "#f85552",
+      "accent": "#cf403d",
       "titlebar": "#f0edd8",
       "editorText": "#5c6a72",
-      "selectedText": "#000000",
+      "selectedText": "#ffffff",
       "highlightBackground": "#bf983d",
       "highlightText": "#000000",
-      "menuSelectedBackground": "#f85552",
-      "menuSelectedText": "#000000",
+      "menuSelectedBackground": "#cf403d",
+      "menuSelectedText": "#ffffff",
       "hoverBackground": "#f3efda",
       "hoverText": "#5c6a72",
-      "selectionBackground": "#f9d3d2",
-      "selectionText": "#700705"
+      "selectionBackground": "#fac3c2",
+      "selectionText": "#620604"
     },
     "dark": {
       "background": "#2f383e",
@@ -624,8 +624,8 @@
       "menuSelectedText": "#000000",
       "hoverBackground": "#374247",
       "hoverText": "#d3c6aa",
-      "selectionBackground": "#380d0d",
-      "selectionText": "#e28483"
+      "selectionBackground": "#5b1615",
+      "selectionText": "#ecadac"
     }
   },
   {
@@ -660,23 +660,23 @@
       "background": "#eff1f5",
       "surface": "#e6e9ef",
       "surfaceSoft": "#eff1f5",
-      "surfaceStrong": "#ccd0da",
+      "surfaceStrong": "#eff1f5",
       "surfaceMuted": "#dce0e8",
       "border": "#bcc0cc",
       "text": "#4c4f69",
       "textMuted": "#6c6f85",
       "editorText": "#4c4f69",
-      "accent": "#40a02b",
-      "titlebar": "#40a02b",
-      "selectedText": "#000000",
+      "accent": "#328323",
+      "titlebar": "#328323",
+      "selectedText": "#ffffff",
       "highlightBackground": "#df8e1d",
       "highlightText": "#000000",
-      "menuSelectedBackground": "#40a02b",
-      "menuSelectedText": "#000000",
+      "menuSelectedBackground": "#328323",
+      "menuSelectedText": "#ffffff",
       "hoverBackground": "#ccd0da",
       "hoverText": "#4c4f69",
-      "selectionBackground": "#dcf4d7",
-      "selectionText": "#255c19"
+      "selectionBackground": "#d2f1cb",
+      "selectionText": "#205016"
     },
     "dark": {
       "background": "#303446",
@@ -697,8 +697,8 @@
       "menuSelectedText": "#303446",
       "hoverBackground": "#414559",
       "hoverText": "#c6d0f5",
-      "selectionBackground": "#1f3213",
-      "selectionText": "#acd491"
+      "selectionBackground": "#33511f",
+      "selectionText": "#c8e2b6"
     }
   },
   {
@@ -733,7 +733,7 @@
       "background": "#eff1f5",
       "surface": "#e6e9ef",
       "surfaceSoft": "#eff1f5",
-      "surfaceStrong": "#ccd0da",
+      "surfaceStrong": "#eff1f5",
       "surfaceMuted": "#dce0e8",
       "border": "#bcc0cc",
       "text": "#4c4f69",
@@ -748,8 +748,8 @@
       "menuSelectedText": "#000000",
       "hoverBackground": "#ccd0da",
       "hoverText": "#4c4f69",
-      "selectionBackground": "#f9e0d2",
-      "selectionText": "#702c05"
+      "selectionBackground": "#fad6c2",
+      "selectionText": "#632603"
     },
     "dark": {
       "background": "#24273a",
@@ -770,8 +770,8 @@
       "menuSelectedText": "#24273a",
       "hoverBackground": "#363a4f",
       "hoverText": "#cad3f5",
-      "selectionBackground": "#401a05",
-      "selectionText": "#eda278"
+      "selectionBackground": "#612c0f",
+      "selectionText": "#f7c0a1"
     }
   },
   {
@@ -806,7 +806,7 @@
       "background": "#eff1f5",
       "surface": "#e6e9ef",
       "surfaceSoft": "#eff1f5",
-      "surfaceStrong": "#ccd0da",
+      "surfaceStrong": "#eff1f5",
       "surfaceMuted": "#dce0e8",
       "border": "#bcc0cc",
       "text": "#4c4f69",
@@ -821,8 +821,8 @@
       "menuSelectedText": "#eff1f5",
       "hoverBackground": "#ccd0da",
       "hoverText": "#4c4f69",
-      "selectionBackground": "#e3d2f9",
-      "selectionText": "#34096d"
+      "selectionBackground": "#dac2fa",
+      "selectionText": "#2d085e"
     },
     "dark": {
       "background": "#1e1e2e",
@@ -843,8 +843,8 @@
       "menuSelectedText": "#1e1e2e",
       "hoverBackground": "#313244",
       "hoverText": "#cdd6f4",
-      "selectionBackground": "#20063f",
-      "selectionText": "#ad78ed"
+      "selectionBackground": "#350f61",
+      "selectionText": "#c8a1f7"
     }
   },
   {
@@ -879,7 +879,7 @@
       "background": "#eff1f5",
       "surface": "#e6e9ef",
       "surfaceSoft": "#eff1f5",
-      "surfaceStrong": "#ccd0da",
+      "surfaceStrong": "#eff1f5",
       "surfaceMuted": "#dce0e8",
       "border": "#bcc0cc",
       "text": "#4c4f69",
@@ -894,8 +894,8 @@
       "menuSelectedText": "#ffffff",
       "hoverBackground": "#ccd0da",
       "hoverText": "#4c4f69",
-      "selectionBackground": "#d2dff9",
-      "selectionText": "#052970"
+      "selectionBackground": "#c2d5fa",
+      "selectionText": "#042462"
     },
     "dark": {
       "background": "#303446",
@@ -916,8 +916,8 @@
       "menuSelectedText": "#303446",
       "hoverBackground": "#414559",
       "hoverText": "#c6d0f5",
-      "selectionBackground": "#09193c",
-      "selectionText": "#7a9ceb"
+      "selectionBackground": "#0f2861",
+      "selectionText": "#a6bdf2"
     }
   }
 ]

@@ -8,11 +8,13 @@ Old notebook preset IDs remain supported. The app overlays their existing font a
 
 Appearance groups Classic’s Blue, Gray, Green, Purple, Atom, Everforest, Gruvbox, Nord, Solarized, Catppuccin Frappe, Catppuccin Latte, Catppuccin Macchiato, and Catppuccin Mocha palettes under one theme. Catppuccin no longer has a separate theme entry. `src/lib/themeFamilies.ts` defines the grouping; each color keeps its existing durable preset ID. Notebook metadata remembers the most recently selected color in each family. Older Catppuccin family preferences remain a fallback when no Classic color is remembered. Changing colors clears an accent override but retains typography, effects, and layout adjustments. Choosing a different theme resets quick appearance settings.
 
-Classic Blue keeps the complete palette and durable `default` ID of the former Classic Default. It is the initial appearance for new users and the target of **Restore default appearance**. Gray, Green, and Purple use Based’s accent and selection colors on Classic’s existing backgrounds and typography. Minimal is no longer bundled; notebook snapshots and user-saved copies remain readable as custom themes.
+Classic Blue keeps the complete palette and durable `default` ID of the former Classic Default. Existing notebooks keep that Classic selection. Tigrana Blue is now the initial appearance for new users and the target of **Restore default appearance**. Gray, Green, and Purple use Tigrana’s accent and selection colors on Classic’s existing backgrounds and typography. Minimal is no longer bundled; notebook snapshots and user-saved copies remain readable as custom themes.
 
 Mode remains System, Light, or Dark. Catppuccin preserves its existing pairs: all light variants use Latte; the Latte choice uses Frappe in dark mode.
 
-Based's Blue, Green, and Purple variants, Classic and Saratoga use paired accent colors for text selection. Dark mode uses a dark accent background and lighter accent text; light mode uses a pale background and darker text. Based Blue and Classic Blue share the reference blue pair, `#032042` behind `#6da7ec` in dark mode. Quick accent overrides derive matching pairs from the chosen hue. Selection text has at least 4.5:1 luminance contrast, including the renderer's 0.99 background opacity, so readability does not rely on distinguishing hues. Explicitly colored text retains its authored color while selected.
+Atom, Catppuccin Frappe, and Everforest use white selected-item labels with deeper light-mode accents in Classic and Tigrana. Their text-selection pairs and dark palettes stay unchanged.
+
+Tigrana's Blue, Green, and Purple variants, Classic and Saratoga use paired accent colors for text selection. Dark mode uses a dark accent background and lighter accent text; light mode uses a more saturated tinted background and deep accent text. Tigrana Blue and Classic Blue share the reference blue pair, `#103969` behind `#9fc9ff` in dark mode. Quick accent overrides derive matching pairs from the chosen hue. Selection text has at least 4.5:1 luminance contrast, including the renderer's 0.99 background opacity, so readability does not rely on distinguishing hues. Explicitly colored text retains its authored color while selected.
 
 Theme editing offers line height from 1.2 to 2.2 and letter spacing from -0.03em to 0.12em. Defaults use each theme’s existing line-height metric and normal letter spacing. Both values display two decimal places and are saved in portable `editorLineHeight` and `editorLetterSpacing` fields. Older notebook overrides remain readable. Navigation style lives in General settings.
 
@@ -20,7 +22,7 @@ Twain was previously named Typewriter. Its source directory, package, and app JS
 
 ## Adaptations
 
-Saratoga and Based default to standard UI and support Plasma when enabled. Starfall and Vampire default to Plasma. Selecting another theme restores that theme's defaults and clears quick appearance overrides. Note rows retain rounded corners; section rows stay rectangular.
+Saratoga and Tigrana default to standard UI and support Plasma when enabled. Starfall and Vampire default to Plasma. Selecting another theme restores that theme's defaults and clears quick appearance overrides. Note rows retain rounded corners; section rows stay rectangular.
 
 Typography, colors, and design metrics use the engine's editable values. Custom CSS refers to theme variables instead of repeating fixed colors. Obsidian-specific layouts, helper classes, alternate task syntax, plugins, and animation systems are not included.
 
@@ -58,14 +60,16 @@ Inter fallback; no proprietary font files are distributed.
 Its internal ID remains `builtin-cupertino` for saved-theme compatibility. The
 original MIT copyright notice remains in the exported license text.
 
-## Based
+## Tigrana
 
 A Tigrana adaptation of [Baseline's default layout](https://github.com/aaaaalexis/obsidian-baseline),
-with neutral gray selections, soft borderless panels, normal-case navigation labels,
+with Blue as its default palette, soft borderless panels, normal-case navigation labels,
 and bundled Inter. White/light-gray and charcoal palettes keep the editor prominent;
 hover states are subtler than selections and links remain underlined. Panels have
 8px gaps, with 4px between the tab bar and panels. The editor toolbar has no divider below it.
 Defaults to Dual pane with sections and Plasma off; writing layout and sidebar visibility keep their current values. Manual width and alignment changes remain available.
+
+The source is `src/themes/tigrana.json`. Its thirteen variants are Blue, Gray, Green, Purple, Atom, Everforest, Gruvbox, Nord, Solarized, Catppuccin Frappe, Catppuccin Latte, Catppuccin Macchiato, and Catppuccin Mocha. The additional named variants carry Classic’s complete light/dark palettes with Tigrana’s panel styling. Palette menus separate the basic colors, named palettes, and Catppuccin colors.
 
 Its internal ID remains `builtin-baseline` so existing saved copies can still
 update or revert to this original. The original MIT copyright notice remains in
@@ -99,9 +103,9 @@ Custom themes may include `navigationStyle` with `dual-pane`, `single-pane`, or 
 
 Themes may also set `rightSidebarOpen` to `true` or `false`. Omit it for Keep current. The theme editor's Default right sidebar control sets this preference. Manual sidebar changes are saved with the notebook and remain until another theme supplies a sidebar default.
 
-Based uses rounded tabs and separate framed panels without an accent border across the title bar or editor.
+Tigrana uses rounded tabs and separate framed panels without an accent border across the title bar or editor.
 
-Classic Blue is the read-only starting point. Other built-ins expose Edit theme, which saves a customized copy with a portable `baseThemeId` pointing to the original built-in. Revert to defaults restores that built-in's settings in the draft while retaining the copy's identity and name; Save and use commits the reset. Existing custom themes without a recorded built-in origin are not guessed from their names.
+Classic Blue remains a protected built-in palette. Other built-ins expose Edit theme, which saves a customized copy with a portable `baseThemeId` pointing to the original built-in. Revert to defaults restores that built-in's settings in the draft while retaining the copy's identity and name; Save and use commits the reset. Existing custom themes without a recorded built-in origin are not guessed from their names.
 
 Plasma rims use the effective accent color, including notebook quick-accent overrides.
 

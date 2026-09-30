@@ -11,7 +11,7 @@ import { authoringOriginal, originalSnapshot, updateDerivedTheme } from "../lib/
 import { ThemeTypographyEditor } from "./ThemeTypographyEditor";
 import { ThemeControlsEditor } from "./ThemeControlsEditor";
 import { ThemeHealthCheck } from "./ThemeHealthCheck";
-import { allBuiltInThemes, bundledThemes, findBuiltInTheme } from "../lib/bundledThemes";
+import { allBuiltInThemes, bundledThemes, defaultTheme, findBuiltInTheme } from "../lib/bundledThemes";
 import { ThemeDeleteDialog } from "./ThemeDeleteDialog";
 import { visualCssHints } from "../lib/themeVisualCss";
 import { ThemeSurfacesEditor } from "./ThemeSurfacesEditor";
@@ -344,9 +344,9 @@ export function ThemeBuilder({
   const builtInOptions = [
     ...themeFamilies.filter(family => builtInThemes.some(theme => family.colors.some(color => color.id === theme.id)))
       .map(family => ({ id: family.colors[0].id, name: family.name, value: `builtin:${family.colors[0].id}` })),
-    ...builtInThemes.filter(theme => !themeFamily(theme.id)).map(theme => ({ ...theme, value: `builtin:${theme.id}` })),
+    ...builtInThemes.filter(theme => !themeFamily(theme.id) && !bundledThemes.some(bundled => bundled.id === theme.id)).map(theme => ({ ...theme, value: `builtin:${theme.id}` })),
     ...bundledThemes.map(theme => ({ ...theme, value: `bundled:${theme.id}` })),
-  ].sort((a, b) => a.id === "default" ? -1 : b.id === "default" ? 1 : a.name.localeCompare(b.name));
+  ].sort((a, b) => a.id === defaultTheme.id ? -1 : b.id === defaultTheme.id ? 1 : a.name.localeCompare(b.name));
   const savedOptions = [
     ...themes.filter(theme => theme.id !== current?.id),
     ...(current && !currentIsBuiltIn && !isDefault ? [current] : []),
@@ -418,7 +418,8 @@ export function ThemeBuilder({
                   const value = e.target.value;
                   if (value === "modified:default") return;
                   if (value === "builtin:default" && defaultModified && onRestoreDefault) {
-                    onRestoreDefault();
+                    if (onUseThemeDefaults) onUseThemeDefaults(sourceTheme, 'all');
+                    else onRestoreDefault();
                   } else if (value.startsWith("builtin:")) {
                     const id = value.slice(8);
                     const family = themeFamily(id);
@@ -469,9 +470,15 @@ export function ThemeBuilder({
               {selectedFamily.colors.map(color => <option key={color.id} value={color.id}>{color.name}</option>)}
             </select>
           </div>}
-          {sourceTheme.id.startsWith('catppuccin-') && <p className="settings-description">Catppuccin colors use Latte in light mode. In dark mode, Catppuccin Latte uses Frappe; the other colors use their named dark palette.</p>}
           {sourceTheme.colorVariants && <div className="setting-row theme-color-presets">
-            <strong>Colors</strong><select className="settings-select" aria-label="Colors" value={sourceTheme.colorVariants.some(v => v.id === selectedVariantId) ? selectedVariantId : sourceTheme.defaultColorVariantId} onChange={e => onVariantChange?.(e.target.value)}>
+            <strong>Colors</strong><select className="settings-select" aria-label="Colors" value={sourceTheme.colorVariants.some(v => v.id === selectedVariantId) ? selectedVariantId : sourceTheme.defaultColorVariantId}
+              ref={select => {
+                if (!select || sourceTheme.id !== defaultTheme.id) return;
+                select.querySelectorAll('hr').forEach(separator => separator.remove());
+                for (const id of ['atom', 'catppuccin-frappe']) {
+                  select.querySelector(`option[value="${id}"]`)?.before(document.createElement('hr'));
+                }
+              }} onChange={e => onVariantChange?.(e.target.value)}>
               {sourceTheme.colorVariants.map(v => <option key={v.id} value={v.id}>{v.name}</option>)}
             </select>
           </div>}

@@ -139,9 +139,9 @@ it('ignores invalid quick colors, opacity and image data', () => {
   expect(applyQuickAppearance(theme, { backgroundImage: { name: 'bad.png', asset: { mime: 'image/png', data: 'bad!' } } })).toEqual(theme);
 });
 
-it('packages a quick background with opacity and the selected Based colors', () => {
-  const based = allBuiltInThemes.find(theme => theme.name === 'Based')!;
-  const source = resolveThemeVariant(based, 'blue');
+it('packages a quick background with opacity and the selected Tigrana colors', () => {
+  const tigrana = allBuiltInThemes.find(theme => theme.name === 'Tigrana')!;
+  const source = resolveThemeVariant(tigrana, 'blue');
   const asset = { mime: 'image/png', data: 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+/l9sAAAAASUVORK5CYII=' };
   const quick = { backgroundImage: { name: 'picture.png', asset }, panelOpacity: 30, accentColor: '#7541c8' };
   const rendered = applyQuickAppearance(source, quick);
@@ -158,11 +158,14 @@ it('packages a quick background with opacity and the selected Based colors', () 
   expect(themeBackgroundImage(applyQuickAppearance(source, null))).toBeUndefined();
 });
 
-it('offers Based schemes while retaining its neutral default', () => {
-  const based = allBuiltInThemes.find(theme => theme.name === 'Based')!;
-  expect(based.colorVariants?.map(variant => variant.name)).toEqual(['Gray', 'Blue', 'Green', 'Purple']);
-  expect(based.dark.accent).toBe('#393939');
-  expect(resolveThemeVariant(based, 'blue').dark.accent).toBe('#0056d6');
+it('offers all Classic color choices in Tigrana and defaults to Blue', () => {
+  const tigrana = allBuiltInThemes.find(theme => theme.name === 'Tigrana')!;
+  expect(tigrana.colorVariants?.map(variant => variant.name)).toEqual(['Blue', 'Gray', 'Green', 'Purple',
+    'Atom', 'Everforest', 'Gruvbox', 'Nord', 'Solarized', 'Catppuccin Frappe', 'Catppuccin Latte', 'Catppuccin Macchiato', 'Catppuccin Mocha']);
+  expect(tigrana.defaultColorVariantId).toBe('blue');
+  expect(tigrana.dark.accent).toBe('#0056d6');
+  expect(resolveThemeVariant(tigrana, 'gray').dark.accent).toBe('#393939');
+  expect(resolveThemeVariant(tigrana, 'blue').dark.accent).toBe('#0056d6');
 });
 
 it('chooses white on dark red and black on a pale selection', () => {

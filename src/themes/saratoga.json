@@ -41,8 +41,8 @@
     "editorText": "#262626",
     "highlightText": "#282015",
     "highlightBackground": "#ffe89a",
-    "selectionBackground": "#d2e6f9",
-    "selectionText": "#053b70"
+    "selectionBackground": "#c2defa",
+    "selectionText": "#033363"
   },
   "dark": {
     "background": "#1e1e1e",
@@ -59,7 +59,7 @@
     "editorText": "#dddddd",
     "highlightText": "#282015",
     "highlightBackground": "#ffe89a",
-    "selectionBackground": "#032142",
-    "selectionText": "#78b0ed"
+    "selectionBackground": "#0f3761",
+    "selectionText": "#a1caf7"
   }
 }

@@ -18,20 +18,43 @@ function contrast(a: string, b: string) {
   return (values[0] + .05) / (values[1] + .05);
 }
 describe('built-in theme catalog', () => {
-  it('ships readable accent selections in Based, Classic, Catppuccin, and Saratoga', () => {
-    const based = bundledThemes.find(theme => theme.name === 'Based')!;
+  it('carries every additional Classic palette in Tigrana with both complete color modes', () => {
+    const tigrana = bundledThemes.find(theme => theme.name === 'Tigrana')!;
+    const added = classicThemes.filter(theme => !theme.plasma?.enabled && !['default', 'classic-gray', 'classic-green', 'classic-purple'].includes(theme.id));
+    expect(added).toHaveLength(9);
+    for (const palette of added) {
+      const variant = resolveThemeVariant(tigrana, palette.id);
+      expect(variant.light).toEqual(palette.light);
+      expect(variant.dark).toEqual(palette.dark);
+      expect(variant.design).toEqual(tigrana.design);
+      for (const mode of ['light', 'dark'] as const) expect(() => themeStylesheet(variant, mode, 'preview')).not.toThrow();
+    }
+  });
+  it.each(['atom', 'catppuccin-frappe', 'everforest'])('uses readable white labels for %s light navigation selections', id => {
+    const theme = classicThemes.find(t => t.id === id)!;
+    expect(theme.light.selectedText).toBe('#ffffff');
+    expect(theme.light.menuSelectedText).toBe('#ffffff');
+    expect(contrast(theme.light.selectedText!, theme.light.accent)).toBeGreaterThanOrEqual(4.5);
+    expect(contrast(theme.light.menuSelectedText!, theme.light.menuSelectedBackground!)).toBeGreaterThanOrEqual(4.5);
+  });
+  it('ships readable accent selections in Tigrana, Classic, Catppuccin, and Saratoga', () => {
+    const tigrana = bundledThemes.find(theme => theme.name === 'Tigrana')!;
     const themes = [
-      ...['blue', 'green', 'purple'].map(id => resolveThemeVariant(based, id)),
+      ...['blue', 'green', 'purple'].map(id => resolveThemeVariant(tigrana, id)),
       ...classicThemes.filter(theme => !theme.plasma?.enabled && theme.id !== 'classic-gray'),
       ...bundledThemes.filter(theme => theme.name === 'Saratoga'),
     ];
     for (const theme of themes) for (const mode of ['light', 'dark'] as const) {
       const p = theme[mode];
-      expect(p).toMatchObject(accentSelectionColors(p.accent, mode));
+      // Navigation accents can be deepened without changing the approved text-selection pair.
+      const selectionAccent = mode === 'light'
+        ? ({ atom: '#3d74f6', 'catppuccin-frappe': '#40a02b', everforest: '#f85552' } as Record<string, string>)[theme.id] ?? p.accent
+        : p.accent;
+      expect(p).toMatchObject(accentSelectionColors(selectionAccent, mode));
       expect(contrast(p.selectionText!, p.selectionBackground!), `${theme.name} ${mode} selection`).toBeGreaterThanOrEqual(4.5);
     }
-    for (const theme of [resolveThemeVariant(based, 'blue'), classicThemes[0]]) {
-      expect(theme.dark).toMatchObject({ selectionBackground: '#032042', selectionText: '#6da7ec' });
+    for (const theme of [resolveThemeVariant(tigrana, 'blue'), classicThemes[0]]) {
+      expect(theme.dark).toMatchObject({ selectionBackground: '#103969', selectionText: '#9fc9ff' });
     }
   });
 
@@ -51,7 +74,7 @@ describe('built-in theme catalog', () => {
   it('offers four Catppuccin flavors with official light and dark bases and distinct accents', () => {
     const expected = [
       ['catppuccin-latte', '#303446', '#8caaee', '#1e66f5'],
-      ['catppuccin-frappe', '#303446', '#a6d189', '#40a02b'],
+      ['catppuccin-frappe', '#303446', '#a6d189', '#328323'],
       ['catppuccin-macchiato', '#24273a', '#f5a97f', '#fe640b'],
       ['catppuccin-mocha', '#1e1e2e', '#cba6f7', '#8839ef'],
     ];
@@ -60,6 +83,7 @@ describe('built-in theme catalog', () => {
       const theme = classicThemes.find(t => t.id === id)!;
       expect(theme.light.background).toBe('#eff1f5');
       expect(theme.light.surface).toBe('#e6e9ef');
+      expect(theme.light.surfaceStrong).toBe('#eff1f5');
       expect(theme.light.editorText).toBe('#4c4f69');
       expect(theme.light.accent).toBe(lightAccent);
       expect(theme.dark.background).toBe(background);
@@ -133,7 +157,7 @@ describe('built-in theme catalog', () => {
     expect(classicThemes.map(t => t.id)).toEqual(['default', 'classic-gray', 'classic-green', 'classic-purple', 'atom', 'solarized', 'nord', 'gruvbox', 'everforest', 'catppuccin-frappe', 'catppuccin-macchiato', 'catppuccin-mocha', 'catppuccin-latte', 'dracula', 'plasma-ooze', 'plasma-undertow', 'plasma-witches-brew']);
     expect(new Set(allBuiltInThemes.map(t => t.id)).size).toBe(allBuiltInThemes.length);
     expect(new Set(allBuiltInThemes.map(t => t.name)).size).toBe(allBuiltInThemes.length);
-    expect(bundledThemes.map(t => t.name)).toEqual(['Saratoga', 'Based', 'Starfall', 'Old Basement PC', 'Quest', 'Twain']);
+    expect(bundledThemes.map(t => t.name)).toEqual(['Saratoga', 'Tigrana', 'Starfall', 'Old Basement PC', 'Quest', 'Twain']);
   });
   for (const theme of allBuiltInThemes) {
     it(`${theme.name} validates, exports, and renders in both modes`, () => {

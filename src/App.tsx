@@ -109,7 +109,7 @@ import {
   writeBulletMethodDisplay,
   writeBulletMethodStatuses,
 } from "./lib/bulletMethod";
-import { classicThemes, themeCatalogWarnings } from "./lib/bundledThemes";
+import { classicThemes, defaultTheme, themeCatalogWarnings } from "./lib/bundledThemes";
 import { captureCurrentThemeSettings } from "./lib/currentThemeSettings";
 import type { AppMenuState } from "./lib/desktop";
 import {
@@ -149,7 +149,7 @@ import {
   visitNoteInTab,
   type NoteTab,
 } from "./lib/noteTabHistory";
-import { adoptNotebookMetadata as applyNotebookMetadataAdoption } from "./lib/notebookAppearance";
+import { adoptNotebookMetadata as applyNotebookMetadataAdoption, notebookTheme } from "./lib/notebookAppearance";
 import {
   addFolderToOrder,
   addToOrder,
@@ -333,10 +333,7 @@ type NotePointerDrag = {
 
 type ColorScheme = "system" | "light" | "dark";
 
-type ThemePresetId =
-  | "default" | "atom" | "solarized" | "dracula" | "nord" | "gruvbox" | "everforest"
-  | "catppuccin-latte" | "catppuccin-frappe" | "catppuccin-macchiato" | "catppuccin-mocha"
-  | "plasma-ooze" | "plasma-undertow" | "plasma-witches-brew";
+type ThemePresetId = (typeof themePresets)[number]['id'];
 
 type NotebookThemeColorSettings = Record<"light" | "dark", NotebookThemeColors>;
 
@@ -361,7 +358,7 @@ type PersistDraftSnapshot = {
   saveRevision: DraftSaveRevision;
 };
 
-const themePresets = classicThemes.map(theme => ({
+const themePresets = [defaultTheme, ...classicThemes].map(theme => ({
   id: theme.id, name: theme.name,
   accent: { light: theme.light.accent, dark: theme.dark.accent },
   appBackground: { light: theme.light.background, dark: theme.dark.background },
@@ -749,7 +746,8 @@ export default function App() {
     }).catch(error => console.error("Could not refresh note links", error));
     return () => { cancelled = true; };
   }, [outlineVisible, rightSidebarMode, workspace]);
-  const customTheme = useMemo(() => readTheme(metadata.appearance?.customTheme), [metadata.appearance?.customTheme]);
+  const customTheme = useMemo(() => notebookTheme(metadata.appearance?.customTheme, themePresetId),
+  [metadata.appearance?.customTheme, themePresetId]);
   const invalidNotebookTheme = !!metadata.appearance?.customTheme && !customTheme;
   const themePreset = useMemo(() => {
     const base = getThemePreset(invalidNotebookTheme ? "default" : themePresetId);
@@ -1869,6 +1867,10 @@ export default function App() {
         ...current,
         appearance: {
           ...previous,
+          // Make an implicit first-launch theme portable as soon as the user
+          // changes appearance, including a palette or quick color override.
+          ...(!previous?.customTheme && !previous?.themePresetId
+            ? { themePresetId, ...(customTheme ? { customTheme } : {}) } : {}),
           ...patch,
           wallpapers: notebookWallpapers(previous?.wallpapers, previous?.quickAppearance?.backgroundImage, patch.quickAppearance?.backgroundImage),
           ...(patch.colors ? { colors } : {}),
@@ -1905,11 +1907,11 @@ export default function App() {
     if (patch.editorFontFamily !== undefined) setEditorFontFamily(patch.editorFontFamily);
     if (patch.editorFontSize !== undefined) setEditorFontSize(patch.editorFontSize);
 
-  }, [updateMetadata]);
+  }, [customTheme, themePresetId, updateMetadata]);
 
   function useThemeDefaults(theme: ThemeDocument, scope: ThemeDefaultsScope) {
     if (workspaceRef.current !== workspace) return;
-    if (theme.id === "default" && scope === "all") {
+    if (theme.id === defaultTheme.id && scope === "all") {
       resetThemeAppearance();
       return;
     }
@@ -1917,12 +1919,10 @@ export default function App() {
   }
 
   function resetThemeAppearance() {
-    const defaultTheme = classicThemes.find(theme => theme.id === "default") ?? recoveryTheme;
     updateNotebookAppearance({
       ...themeDefaultsPatch(defaultTheme, "all"),
-      customTheme: null,
-      themePresetId: "default",
-      themeColorPreferences: { ...metadata.appearance?.themeColorPreferences, classic: "default" },
+      themePresetId: defaultTheme.id,
+      themeColorPreferences: { ...metadata.appearance?.themeColorPreferences, [defaultTheme.id]: "blue" },
       accentColor: null,
       // Full appearance recovery is independent of themes that keep the current layout.
       editorWidthMode: "comfortable",
@@ -6048,7 +6048,7 @@ function readStoredNotebookThemeColors() {
 
 function readStoredThemePreset(): ThemePresetId {
   const value = localStorage.getItem(themePresetKey);
-  return themePresets.some((preset) => preset.id === value) ? (value as ThemePresetId) : "default";
+  return themePresets.some((preset) => preset.id === value) ? (value as ThemePresetId) : defaultTheme.id;
 }
 
 function getThemePreset(id: ThemePresetId) {

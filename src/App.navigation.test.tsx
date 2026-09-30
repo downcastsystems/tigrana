@@ -5,7 +5,7 @@ import { webcrypto } from "node:crypto";
 import { act } from "react";
 import { exampleTheme } from "./lib/themes.fixture";
 import { saveTheme } from "./lib/themes";
-import { classicThemes } from "./lib/bundledThemes";
+import { classicThemes, defaultTheme } from "./lib/bundledThemes";
 import { createRoot } from "react-dom/client";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
@@ -510,7 +510,7 @@ describe("Note navigation persistence", () => {
     } finally { await act(async () => root.unmount()); }
   });
 
-  it("starts with Classic Blue, saves the added colors, and restores Blue defaults", async () => {
+  it("starts with Tigrana Blue, saves Classic colors, and restores Tigrana Blue", async () => {
     const container = document.createElement('div'); document.body.appendChild(container); containers.push(container);
     let root = createRoot(container);
     const appearance = () => JSON.parse(demoPersistence.get('tigrana-meta:/demo/Tigrana') ?? '{}').appearance;
@@ -524,8 +524,12 @@ describe("Note navigation persistence", () => {
       await waitFor(() => !!container.querySelector('.note-title-input'));
       await openAppearance();
       expect(colors().selectedOptions[0].textContent).toBe('Blue');
-      expect(colors().value).toBe('default');
+      expect(colors().value).toBe('blue');
+      const picker = container.querySelector<HTMLSelectElement>('[aria-label="Theme"]')!;
+      expect(picker.value).toBe(`bundled:${defaultTheme.id}`);
+      expect([...picker.options].filter(option => option.textContent === 'Tigrana')).toHaveLength(1);
       expect(container.querySelector('[aria-label="Theme"]')?.textContent).not.toContain('Minimal');
+      await act(async () => { picker.value = 'builtin:default'; picker.dispatchEvent(new Event('change', { bubbles: true })); });
       for (const color of ['gray', 'green', 'purple']) {
         await act(async () => { colors().value = `classic-${color}`; colors().dispatchEvent(new Event('change', { bubbles: true })); });
         await waitFor(() => appearance()?.themePresetId === `classic-${color}`);
@@ -537,10 +541,39 @@ describe("Note navigation persistence", () => {
       await openAppearance();
       expect(colors().selectedOptions[0].textContent).toBe('Purple');
       await act(async () => [...container.querySelectorAll<HTMLButtonElement>('button')].find(b => b.textContent === 'Restore default appearance')!.click());
-      await waitFor(() => appearance()?.themePresetId === 'default');
+      await waitFor(() => appearance()?.themePresetId === defaultTheme.id);
       expect(colors().selectedOptions[0].textContent).toBe('Blue');
-      expect(appearance().themeColorPreferences.classic).toBe('default');
-      expect(appearance().colors.dark.accentColor).toBe('#285b99');
+      expect(appearance().themeColorPreferences[defaultTheme.id]).toBe('blue');
+      expect(appearance().colors.dark.accentColor).toBe('#0056d6');
+    } finally { await act(async () => root.unmount()); }
+  });
+
+  it("persists the new default's palette even when the last-used legacy preset changes", async () => {
+    demoPersistence.set('tigrana-meta:/demo/Tigrana', JSON.stringify({ revision: 0, appearance: { colorScheme: 'dark' } }));
+    const container = document.createElement('div'); document.body.appendChild(container); containers.push(container);
+    let root = createRoot(container);
+    const openAppearance = async () => {
+      await act(async () => window.dispatchEvent(new KeyboardEvent('keydown', { key: ',', metaKey: true })));
+      await act(async () => [...container.querySelectorAll<HTMLButtonElement>('.settings-nav button')].find(b => b.textContent === 'Appearance')!.click());
+    };
+    try {
+      await act(async () => root.render(<App />));
+      await waitFor(() => !!container.querySelector('.note-title-input'));
+      await openAppearance();
+      const colors = container.querySelector<HTMLSelectElement>('[aria-label="Colors"]')!;
+      expect(colors.querySelectorAll('hr')).toHaveLength(2);
+      await act(async () => { colors.value = 'catppuccin-mocha'; colors.dispatchEvent(new Event('change', { bubbles: true })); });
+      await waitFor(() => JSON.parse(demoPersistence.get('tigrana-meta:/demo/Tigrana') ?? '{}').appearance?.customTheme?.id === defaultTheme.id);
+      expect(document.documentElement.style.getPropertyValue('--tigrana-accent')).toBe('#cba6f7');
+      await act(async () => root.unmount());
+      localStorage.setItem('tigrana-theme-preset', 'default');
+      root = createRoot(container);
+      await act(async () => root.render(<App />));
+      await waitFor(() => !!container.querySelector('.note-title-input'));
+      await openAppearance();
+      expect(container.querySelector<HTMLSelectElement>('[aria-label="Colors"]')!.value).toBe('catppuccin-mocha');
+      expect(container.querySelector<HTMLSelectElement>('[aria-label="Theme"]')!.selectedOptions[0].textContent).toBe('Tigrana');
+      expect(document.documentElement.style.getPropertyValue('--tigrana-accent')).toBe('#cba6f7');
     } finally { await act(async () => root.unmount()); }
   });
 
@@ -582,8 +615,8 @@ describe("Note navigation persistence", () => {
       expect(container.querySelector<HTMLSelectElement>('[aria-label="Colors"]')!.value).toBe('catppuccin-mocha');
       expect(container.querySelector<HTMLSelectElement>('[aria-label="Colors"]')!.selectedOptions[0].textContent).toBe('Catppuccin Mocha');
       await act(async () => Array.from(container.querySelectorAll<HTMLButtonElement>('button')).find(b => b.textContent === 'Restore default appearance')!.click());
-      await waitFor(() => appearance().themePresetId === 'default');
-      expect(container.querySelector<HTMLSelectElement>('[aria-label="Colors"]')!.value).toBe('default');
+      await waitFor(() => appearance().themePresetId === defaultTheme.id);
+      expect(container.querySelector<HTMLSelectElement>('[aria-label="Colors"]')!.value).toBe('blue');
       expect(appearance().quickAppearance).toBeNull();
     } finally { await act(async () => root.unmount()); }
   });
@@ -806,7 +839,7 @@ describe("Note navigation persistence", () => {
   });
 
   it("saves a shared theme with the notebook and restores its palette, typography, and Plasma settings after reload", async () => {
-    const defaultTheme = classicThemes.find(theme => theme.id === 'default')!;
+    const classicBlue = classicThemes.find(theme => theme.id === 'default')!;
     const theme = { ...exampleTheme(), rightSidebarOpen: false, schemaVersion: 2 as const, design: { ...defaultThemeDesign, css: ".ProseMirror h1 { color: red; }" }, plasma: { enabled: true, frost: 60, backgroundBlur: 12 } };
     await saveTheme(theme, null);
     const container = document.createElement("div");
@@ -896,10 +929,10 @@ describe("Note navigation persistence", () => {
       expect(document.documentElement.style.getPropertyValue("--app-font-family")).toContain("Inter, ui-sans-serif");
       expect(document.documentElement.style.getPropertyValue("--editor-font-family")).toContain("Inter, ui-sans-serif");
       expect(document.documentElement.style.getPropertyValue("--app-font-size")).toBe("14px");
-      expect(document.documentElement.style.getPropertyValue("--editor-font-size")).toBe(`${defaultTheme.editorFontSize}px`);
+      expect(document.documentElement.style.getPropertyValue("--editor-font-size")).toBe(`${classicBlue.editorFontSize}px`);
       expect(container.querySelector<HTMLSelectElement>('[aria-label="Quick editor font"]')!.value).toBe("");
-      expect(container.querySelector<HTMLInputElement>('[aria-label="Quick editor font size"]')!.value).toBe(String(defaultTheme.editorFontSize));
-      await waitFor(() => JSON.parse(demoPersistence.get("tigrana-meta:/demo/Tigrana") ?? "{}").appearance?.editorFontSize === defaultTheme.editorFontSize);
+      expect(container.querySelector<HTMLInputElement>('[aria-label="Quick editor font size"]')!.value).toBe(String(classicBlue.editorFontSize));
+      await waitFor(() => JSON.parse(demoPersistence.get("tigrana-meta:/demo/Tigrana") ?? "{}").appearance?.editorFontSize === classicBlue.editorFontSize);
       expect(JSON.parse(demoPersistence.get("tigrana-meta:/demo/Tigrana")!).appearance.editorFontFamily).toContain("Inter, ui-sans-serif");
 
       expect(container.querySelector<HTMLElement>(".app-frame")!.style.getPropertyValue("--tigrana-accent")).toBe("");
@@ -923,8 +956,8 @@ describe("Note navigation persistence", () => {
 
       expect(container.querySelector('[data-theme-styles="notebook"]')?.textContent).toContain("color:red");
       await act(async () => window.dispatchEvent(new KeyboardEvent("keydown", { code: "KeyT", metaKey: true, altKey: true, shiftKey: true })));
-      expect(container.querySelector('[data-theme-styles="notebook"]')?.textContent).toContain("--tigrana-accent:#285b99");
-      await waitFor(() => JSON.parse(demoPersistence.get("tigrana-meta:/demo/Tigrana") ?? "{}").appearance?.customTheme === null);
+      expect(container.querySelector('[data-theme-styles="notebook"]')?.textContent).toContain("--tigrana-accent:#0056d6");
+      await waitFor(() => JSON.parse(demoPersistence.get("tigrana-meta:/demo/Tigrana") ?? "{}").appearance?.customTheme?.id === defaultTheme.id);
     } finally { await act(async () => root.unmount()); }
   });
 
@@ -956,8 +989,7 @@ describe("Note navigation persistence", () => {
     } finally { await act(async () => root.unmount()); }
   });
 
-  it("restores the complete Default theme appearance and layout after reload", async () => {
-    const defaultTheme = classicThemes.find(theme => theme.id === 'default')!;
+  it("restores the complete Tigrana Blue appearance and layout after reload", async () => {
     demoPersistence.set("tigrana-meta:/demo/Tigrana", JSON.stringify({ revision: 0, appearance: {
       customTheme: exampleTheme(), themePresetId: 'nord', colorScheme: 'dark',
       navigationStyle: 'single-pane', editorWidthMode: 'full', noteAlignment: 'left',
@@ -976,7 +1008,7 @@ describe("Note navigation persistence", () => {
       expect(frame.classList.contains('is-outline-hidden')).toBe(false);
       expect(container.querySelector('.note-status-bar')).not.toBeNull();
       expect(container.querySelector('.app-shell')?.hasAttribute('data-plasma')).toBe(false);
-      expect(document.documentElement.dataset.themePreset).toBe('default');
+      expect(document.documentElement.dataset.themePreset).toBe('custom');
       expect(document.documentElement.style.getPropertyValue('--accent')).toBe(defaultTheme.dark.accent);
       expect(document.documentElement.style.getPropertyValue('--editor-font-family')).toBe(defaultTheme.editorFontFamily);
       expect(document.documentElement.style.getPropertyValue('--editor-font-size')).toBe(`${defaultTheme.editorFontSize}px`);
@@ -991,11 +1023,11 @@ describe("Note navigation persistence", () => {
       await act(async () => window.dispatchEvent(new KeyboardEvent('keydown', { key: ',', metaKey: true })));
       await act(async () => [...container.querySelectorAll<HTMLButtonElement>('.settings-nav button')].find(b => b.textContent === 'Appearance')!.click());
       await act(async () => [...container.querySelectorAll<HTMLButtonElement>('button')].find(b => b.textContent?.trim() === 'Restore default appearance')!.click());
-      await waitFor(() => JSON.parse(demoPersistence.get('tigrana-meta:/demo/Tigrana')!).appearance.customTheme === null);
+      await waitFor(() => JSON.parse(demoPersistence.get('tigrana-meta:/demo/Tigrana')!).appearance.customTheme?.id === defaultTheme.id);
       assertDefaults();
       const saved = JSON.parse(demoPersistence.get('tigrana-meta:/demo/Tigrana')!).appearance;
       expect(saved).toMatchObject({ navigationStyle: 'section-view', editorWidthMode: 'comfortable', noteAlignment: 'center',
-        rightSidebarOpen: true, wordCountVisible: true, quickAppearance: null, themePresetId: 'default',
+        rightSidebarOpen: true, wordCountVisible: true, quickAppearance: null, themePresetId: defaultTheme.id,
         plasma: { enabled: false, frost: 80, backgroundBlur: 0 } });
       expect(saved.plasma.flow ?? 0).toBe(0);
       expect(container.textContent).not.toContain('Current settings differ from Default');
