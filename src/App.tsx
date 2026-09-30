@@ -47,6 +47,7 @@ import { MoveDialog } from "./components/MoveDialog";
 import { RightSidebar, type RightSidebarMode } from "./components/NoteDetailsSidebar";
 import { EditorErrorBoundary, EditorTopbar, EmptyNoteSurface } from "./components/NoteSurface";
 import { NoteTabs, TabHistoryControls, TabListDropdown } from "./components/NoteTabs";
+import { NoteTitleInput } from "./components/NoteTitleInput";
 import { ContextMenu, FilePathContextMenu, TabContextMenu } from "./components/NotebookContextMenu";
 import { notebookFilePath } from "./lib/filePaths";
 import { PropertyDialog, type PropertyDialogState } from "./components/NotebookPropertyDialog";
@@ -5314,7 +5315,9 @@ export default function App() {
             }}
           >
             <div className="title-shell">
-              <textarea
+              <NoteTitleInput
+                documentKey={JSON.stringify([workspace, activeNoteHistoryKey, editorReloadRequest])}
+                onInsertDate={setTitleDraft}
                 ref={titleInputRef}
                 className="note-title-input"
                 onFocus={() => setTitleFocused(true)}
@@ -5325,8 +5328,8 @@ export default function App() {
                   disarmPendingTitleFocus();
                   setTitleDraft(event.target.value);
                 }}
-                onBlur={() => {
-                  setTitleFocused(false);
+                onBlur={() => setTitleFocused(false)}
+                onCommit={() => {
                   disarmUndoableNewNote(activePath);
                   if (titleEscapeUndoInFlightRef.current) return;
                   if (titleCommitInFlightRef.current) return;

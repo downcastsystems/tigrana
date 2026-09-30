@@ -371,6 +371,36 @@ describe("Note navigation persistence", () => {
     } finally { await act(async () => root.unmount()); }
   });
 
+  it("inserts a date in the title and saves it through the normal portable filename rename", async () => {
+    localStorage.setItem("tigrana-date-format", "m/d/yyyy");
+    const container = document.createElement("div");
+    document.body.appendChild(container); containers.push(container);
+    const root = createRoot(container);
+    try {
+      await act(async () => root.render(<App />));
+      await waitFor(() => Boolean(container.querySelector('[aria-label="Note title"]')));
+      const title = container.querySelector<HTMLTextAreaElement>('[aria-label="Note title"]')!;
+      const originalTitle = title.value;
+      await act(async () => { title.focus(); setReactTextareaValue(title, "Meeting /date"); });
+      const enter = () => document.activeElement!.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", bubbles: true, cancelable: true }));
+      await act(async () => { enter(); });
+      expect(document.querySelector('[aria-label="Insert date"]')).not.toBeNull();
+      expect(container.querySelector('[data-note-path$="Meeting ／date.md"]')).toBeNull();
+      const date = new Date();
+      const expectedTitle = `Meeting ${date.getMonth() + 1}/${date.getDate()}/${date.getFullYear()}`;
+      await act(async () => { enter(); });
+      expect(title.value).toBe(expectedTitle);
+      expect(document.activeElement).toBe(title);
+      await act(async () => { enter(); });
+      const path = expectedTitle.replace(/\//g, "／") + ".md";
+      await waitFor(() => Boolean(JSON.parse(demoPersistence.get("tigrana-demo-v5") ?? "{}").notes?.[path]));
+      const notes = JSON.parse(demoPersistence.get("tigrana-demo-v5")!).notes;
+      expect(notes[originalTitle + ".md"]).toBeUndefined();
+      expect(notes["Meeting ／date.md"]).toBeUndefined();
+      expect(container.querySelector(".app-error")).toBeNull();
+    } finally { await act(async () => root.unmount()); }
+  });
+
   it("enables Insert only from note contents and opens the shared image dialog", async () => {
     const container = document.createElement("div"); document.body.appendChild(container); containers.push(container);
     const root = createRoot(container);

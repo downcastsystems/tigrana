@@ -29,10 +29,23 @@ export function DatePickerDialog({ editor, disabled }: { editor: Editor; disable
   }, [editor, request]);
   useEffect(() => { if (disabled) setRequest(null); }, [disabled]);
   if (!request || disabled) return null;
-  return <DatePickerForm editor={editor} range={request} close={() => setRequest(null)} />;
+  return <DatePickerForm
+    portalTarget={editor.view.dom.closest('[data-theme-region]') ?? document.body}
+    onDismiss={() => { setRequest(null); if (!editor.isDestroyed) editor.view.focus(); }}
+    onInsert={text => {
+      if (editor.isDestroyed || !editor.isEditable) return;
+      editor.chain().focus().command(({ tr }) => { closeHistory(tr); return true; })
+        .insertContentAt(request, { type: "text", text }).run();
+      setRequest(null);
+    }}
+  />;
 }
 
-function DatePickerForm({ editor, range, close }: { editor: Editor; range: Range; close: () => void }) {
+export function DatePickerForm({ portalTarget, onDismiss, onInsert }: {
+  portalTarget: Element;
+  onDismiss: () => void;
+  onInsert: (text: string) => void;
+}) {
   const dateFormat = useDateFormat();
   const [today] = useState(() => new Date());
   const [selected, setSelected] = useState(() => new Date(today.getFullYear(), today.getMonth(), today.getDate()));
@@ -46,13 +59,8 @@ function DatePickerForm({ editor, range, close }: { editor: Editor; range: Range
   const dayLabel = new Intl.DateTimeFormat(undefined, { calendar: "gregory", dateStyle: "full" });
   const weekdayLabel = new Intl.DateTimeFormat(undefined, { weekday: "short" });
   useLayoutEffect(() => { selectedButton.current?.focus(); }, [selected]);
-  const dismiss = () => { close(); if (!editor.isDestroyed) editor.view.focus(); };
-  const insert = () => {
-    if (editor.isDestroyed || !editor.isEditable) return;
-    editor.chain().focus().command(({ tr }) => { closeHistory(tr); return true; })
-      .insertContentAt(range, { type: "text", text: formatInsertedDate(selected, undefined, dateFormat) }).run();
-    close();
-  };
+  const dismiss = onDismiss;
+  const insert = () => onInsert(formatInsertedDate(selected, undefined, dateFormat));
   const moveDays = (amount: number) => setSelected(new Date(year, month, selected.getDate() + amount));
 
   return createPortal(<div className="dialog-backdrop date-picker-backdrop" onMouseDown={event => {
@@ -107,5 +115,5 @@ function DatePickerForm({ editor, range, close }: { editor: Editor; range: Range
         <button type="button" className="date-picker-insert" onClick={insert}>Insert {formatInsertedDate(selected, undefined, dateFormat)}</button>
       </div>
     </div>
-  </div>, editor.view.dom.closest('[data-theme-region]') ?? document.body);
+  </div>, portalTarget);
 }

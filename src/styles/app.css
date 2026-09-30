@@ -3168,6 +3168,26 @@ html[data-theme="dark"] .tab-list-separator {
   border-bottom: 1px solid rgba(52, 48, 43, 0.12);
 }
 
+.title-date-command {
+  position: absolute;
+  z-index: 20;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 12px;
+  border: 1px solid var(--border);
+  border-radius: 7px;
+  color: var(--text);
+  background: var(--surface);
+  box-shadow: var(--shadow-modal);
+  cursor: pointer;
+}
+
+.title-date-command kbd {
+  color: var(--text-muted);
+  font-size: 11px;
+}
+
 .note-title-input {
   display: block;
   width: 100%;
