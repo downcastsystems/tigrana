@@ -7035,7 +7035,7 @@ html[data-theme="light"] .ProseMirror li[data-bullet-method-completed="true"] .b
 .right-sidebar-header .sidebar-tabs { flex-wrap: wrap; }
 .sidebar-scroll-pane { min-height: 0; overflow: auto; }
 .overview-section { flex: 0 0 auto; border-bottom: 1px solid color-mix(in srgb, currentColor 10%, transparent); }
-.overview-section > summary { display: flex; align-items: center; gap: 6px; list-style: none; cursor: pointer; padding: 12px 14px; font-size: 12px; font-weight: 650; user-select: none; }
+.overview-section > summary { display: flex; align-items: center; gap: 6px; list-style: none; cursor: pointer; padding: 12px 14px; font-size: 14px; font-weight: 650; user-select: none; }
 .overview-section > summary::marker { content: ""; }
 .overview-section > summary::-webkit-details-marker { display: none; }
 .overview-section > summary > svg { flex-shrink: 0; }
@@ -7043,7 +7043,8 @@ html[data-theme="light"] .ProseMirror li[data-bullet-method-completed="true"] .b
 /* Summary text begins after 14px padding, a 14px chevron, and a 6px gap. */
 .overview-section > .writing-progress-pane,
 .overview-section > .footnotes-pane { padding-left: 34px; }
-.overview-section > .outline-list { padding-left: 26px; }
+.overview-section > .outline-list { padding-top: 2px; padding-left: 26px; }
+.note-overview .outline-item { font-size: 13px; font-weight: 300; }
 .overview-section > .note-links-pane { padding-left: 26px; }
 .overview-section > .empty-sidebar-note { margin-left: 34px; }
 .overview-section .footnotes-pane > .sidebar-text-button { padding-left: 0; }
@@ -7053,6 +7054,7 @@ html[data-theme="light"] .ProseMirror li[data-bullet-method-completed="true"] .b
 .sidebar-text-button:hover:not(:disabled) { color: var(--accent); }
 .sidebar-text-button:disabled { opacity: 0.5; cursor: default; }
 .writing-progress-pane { padding: 2px 14px 10px; }
+.writing-progress-pane > .sidebar-hint { text-align: center; }
 .writing-progress-rings { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
 .writing-goal { min-width: 0; display: flex; align-items: center; flex-direction: column; gap: 4px; }
 .writing-goal-label { font-size: 11px; text-align: center; }
@@ -7067,12 +7069,17 @@ html[data-theme="light"] .ProseMirror li[data-bullet-method-completed="true"] .b
 .writing-goal-form button { min-height: 28px; font: inherit; padding: 3px 7px; }
 .note-links-pane { padding: 0 6px 10px; }
 .note-links-pane h3 { margin: 8px; font-size: 11px; color: var(--muted); }
+.right-sidebar .note-links-pane h3 { font-size: 13px; }
+.right-sidebar .note-links-pane .backlinks-item { font-size: 14px; font-weight: 300; }
+.right-sidebar .note-overview .note-links-pane .backlinks-item { font-size: 13px; }
 .note-links-pane > section + section { margin-top: 14px; }
 .note-links-pane .empty-sidebar-note,
 .footnotes-pane .empty-sidebar-note { font-size: 11px; }
 .note-links-pane .backlinks-item:disabled { opacity: 0.6; cursor: default; }
 .footnotes-pane { padding: 0 14px 12px; }
+.footnotes-pane > .sidebar-text-button { font-size: 12px; }
 .footnotes-pane .empty-sidebar-note { margin: 6px 0; }
+.footnotes-pane > .sidebar-text-button + .footnote-sidebar-entry { margin-top: 6px; }
 .footnote-sidebar-entry { display: grid; grid-template-columns: 1.5em minmax(0, 1fr) 22px; gap: 2px 8px; padding: 6px 0; }
 .footnote-sidebar-number, .footnote-sidebar-text { appearance: none; border: 0; background: transparent; color: inherit; font: inherit; padding: 0; text-align: left; cursor: pointer; }
 .footnote-sidebar-number { align-self: start; color: var(--link-color); font-size: 11px; line-height: 1.8; text-align: right; }
@@ -7091,7 +7098,7 @@ html[data-theme="light"] .ProseMirror li[data-bullet-method-completed="true"] .b
 .footnote-reference .sr-only { position: absolute; width: 1px; height: 1px; padding: 0; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
 /* Use a hanging indent and only one separator for the whole footnote section. */
 [data-theme-region] .ProseMirror .footnote-definition,
-.ProseMirror .footnote-definition { display: grid; grid-template-columns: 1.5em minmax(0, 1fr); gap: 0 0.6em; margin: 0.5em 0; padding: 0; border: 0; font-size: 0.85em; }
+.ProseMirror .footnote-definition { display: grid; grid-template-columns: 1.5em minmax(0, 1fr); gap: 0 0.6em; margin: 0.5em 0; padding: 0; border: 0; font-size: 0.90em; }
 [data-theme-region] .ProseMirror :not(.footnote-definition) + .footnote-definition,
 .ProseMirror > .footnote-definition:first-child { margin-top: 1.5em; padding-top: 0.75em; border-top: 1px solid color-mix(in srgb, currentColor 18%, transparent); }
 [data-theme-region] .ProseMirror .footnote-backlink { appearance: none; align-self: start; border: 0; background: transparent; color: var(--link-color); font: inherit; font-size: 0.85em; line-height: inherit; padding: 0; text-align: right; cursor: pointer; }
@@ -7105,8 +7112,8 @@ html[data-theme="light"] .ProseMirror li[data-bullet-method-completed="true"] .b
 
 .overview-note-dates { padding: 10px 14px 14px; }
 .overview-note-dates .property-row { gap: 3px; padding: 6px 0; border: 0; }
-.overview-note-dates .property-row span { color: var(--muted); font-size: 11px; font-weight: 500; text-transform: none; }
-.overview-note-dates .property-row strong { color: var(--muted); font-size: 11px; font-weight: 400; }
+.overview-note-dates .property-row span { color: var(--muted); font-size: 12px; font-weight: 500; text-transform: none; }
+.overview-note-dates .property-row strong { color: var(--muted); font-size: 12px; font-weight: 400; }
 
 .date-picker-backdrop { z-index: 100; align-items: center; padding: 16px; }
 .date-picker { width: min(320px, 100%); max-height: calc(100vh - 32px); overflow: auto; padding: 16px; border: 1px solid var(--border); border-radius: 12px; background: var(--surface); color: var(--text); box-shadow: 0 16px 60px #0004; }
