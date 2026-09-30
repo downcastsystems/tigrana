@@ -456,11 +456,20 @@ export function ThemeBuilder({
           {selectedFamily && <div className="setting-row theme-color-presets">
             <span><strong>Colors</strong><small>Keep this theme’s styling and change its palette.</small></span>
             <select className="settings-select" aria-label="Colors" value={sourceTheme.id} disabled={busy}
+              ref={select => {
+                if (!select) return;
+                // Native selects support hr, but React 18's nesting validator
+                // predates that support. Insert separators through the DOM.
+                select.querySelectorAll('hr').forEach(separator => separator.remove());
+                for (const id of ['atom', 'catppuccin-frappe']) {
+                  select.querySelector(`option[value="${id}"]`)?.before(document.createElement('hr'));
+                }
+              }}
               onChange={event => (onColorChange ?? onBuiltInChange)?.(event.target.value)}>
               {selectedFamily.colors.map(color => <option key={color.id} value={color.id}>{color.name}</option>)}
             </select>
           </div>}
-          {selectedFamily?.id === 'catppuccin' && <p className="settings-description">Light mode uses Latte. In dark mode, Latte uses Frappe; the other colors use their named dark palette.</p>}
+          {sourceTheme.id.startsWith('catppuccin-') && <p className="settings-description">Catppuccin colors use Latte in light mode. In dark mode, Catppuccin Latte uses Frappe; the other colors use their named dark palette.</p>}
           {sourceTheme.colorVariants && <div className="setting-row theme-color-presets">
             <strong>Colors</strong><select className="settings-select" aria-label="Colors" value={sourceTheme.colorVariants.some(v => v.id === selectedVariantId) ? selectedVariantId : sourceTheme.defaultColorVariantId} onChange={e => onVariantChange?.(e.target.value)}>
               {sourceTheme.colorVariants.map(v => <option key={v.id} value={v.id}>{v.name}</option>)}

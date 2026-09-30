@@ -294,7 +294,7 @@ export async function saveTheme(
   expected: ThemeDocument | null,
 ): Promise<void> {
   const clean = parseTheme(theme);
-  if (clean.id === "default") throw new Error("Default is a protected built-in theme. Save your changes as a new theme.");
+  if (clean.id === "default") throw new Error("Classic Blue is a protected built-in theme. Save your changes as a new theme.");
   if (isTauri()) {
     await invoke("save_theme", { theme: clean, expected });
     return;

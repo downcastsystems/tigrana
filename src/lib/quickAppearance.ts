@@ -1,7 +1,8 @@
 import type { CSSProperties } from "react";
 import type { NotebookAppearance } from "../types";
 import type { ThemeDocument } from "./themes";
-import { readableThemeText, selectionBackgroundOpacity } from "./themeRuntime";
+import { readableThemeText, themeRenderingMode } from "./themeRuntime";
+import { accentSelectionColors } from "./selectionColors";
 import { allBuiltInThemes } from "./bundledThemes";
 import { defaultThemeDesign, parseThemeDesign } from "./themeDesign";
 import vt323Font from "./vt323Font.json";
@@ -137,10 +138,9 @@ export function applyQuickAppearance(theme: ThemeDocument, quick: NotebookAppear
     const palette = (mode: 'light' | 'dark') => {
       const original = theme[mode];
       const text = original.editorText ?? original.text;
-      const selectionBackground = mixAccentColor(accent, text, 0.65);
       return { ...original, accent, selectedText: readableThemeText(accent),
-        linkColor: mixAccentColor(accent, text, 0.45), selectionBackground,
-        selectionText: readableThemeText(selectionBackground, selectionBackgroundOpacity) };
+        linkColor: mixAccentColor(accent, text, 0.45),
+        ...accentSelectionColors(accent, themeRenderingMode(theme, mode)) };
     };
     result = { ...result, light: palette('light'), dark: palette('dark') };
     rules.push(':scope.app-titlebar.theme-light .note-tab.is-active, :scope.app-titlebar.theme-dark .note-tab.is-active { background: var(--tigrana-accent); color: var(--tigrana-selected-text); }');

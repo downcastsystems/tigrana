@@ -688,7 +688,7 @@ it.each([false, true])("labels local Default changes without replacing the built
     await act(async () => { picker.value = 'builtin:default'; picker.dispatchEvent(new Event('change', { bubbles: true })); });
     expect(restore).toHaveBeenCalledTimes(1);
     await act(async () => button(host, 'Save current settings as new theme').click());
-    expect(host.querySelector<HTMLInputElement>('[aria-label="Theme name"]')?.value).toBe('Default copy');
+    expect(host.querySelector<HTMLInputElement>('[aria-label="Theme name"]')?.value).toBe('Blue copy');
   } finally { await act(async () => root.unmount()); }
 });
 
@@ -702,13 +702,13 @@ it("imports a Default snapshot as a new named copy", async () => {
     Object.defineProperty(file, 'arrayBuffer', { value: async () => new TextEncoder().encode(JSON.stringify(original)).buffer });
     Object.defineProperty(input, 'files', { value: [file] });
     await act(async () => input.dispatchEvent(new Event('change', { bubbles: true })));
-    expect(host.querySelector<HTMLInputElement>('[aria-label="Theme name"]')!.value).toBe('Default copy');
+    expect(host.querySelector<HTMLInputElement>('[aria-label="Theme name"]')!.value).toBe('Blue copy');
     await act(async () => button(host, 'Save and use').click());
     await act(async () => button(host, 'Confirm and save').click());
     const saved = (await listThemes()).themes;
     expect(saved).toHaveLength(1);
     expect(saved[0].id).not.toBe('default');
-    expect(saved[0].name).toBe('Default copy');
+    expect(saved[0].name).toBe('Blue copy');
     expect(apply).toHaveBeenCalledWith(saved[0]);
   } finally { await act(async () => root.unmount()); }
 });
@@ -890,6 +890,19 @@ it("alphabetizes built-in and saved themes, keeping Default first", async () => 
   } finally { await act(async () => root.unmount()); }
 });
 
+it('retains an existing Minimal notebook snapshot as a custom theme after its removal', async () => {
+  const current = { ...exampleTheme(), id: 'builtin-minimal', name: 'Minimal' };
+  const host = document.createElement('div'), root = createRoot(host);
+  try {
+    await act(async () => root.render(<ThemeBuilder current={current} seed={current}
+      builtInThemes={classicThemes} onApply={vi.fn()} />));
+    const picker = host.querySelector<HTMLSelectElement>('[aria-label="Theme"]')!;
+    expect(picker.value).toBe('saved:builtin-minimal');
+    expect(picker.querySelector('optgroup[label="Built-in"]')?.textContent).not.toContain('Minimal');
+    expect(picker.querySelector('optgroup[label="Custom"]')?.textContent).toContain('Minimal');
+  } finally { await act(async () => root.unmount()); }
+});
+
 it('groups palettes and remembers the selected color when returning to a family', async () => {
   const host = document.createElement('div'), root = createRoot(host);
   const choose = vi.fn(), colorChange = vi.fn();
@@ -901,10 +914,14 @@ it('groups palettes and remembers the selected color when returning to a family'
     const picker = host.querySelector<HTMLSelectElement>('[aria-label="Theme"]')!;
     const labels = [...picker.options].map(option => option.textContent);
     expect(labels).toContain('Classic');
-    expect(labels).toContain('Catppuccin');
+    expect(labels).not.toContain('Catppuccin');
     expect(labels).not.toContain('Nord');
     const colors = host.querySelector<HTMLSelectElement>('[aria-label="Colors"]')!;
-    expect([...colors.options].map(option => option.textContent)).toEqual(['Frappe', 'Latte', 'Macchiato', 'Mocha']);
+    expect([...colors.options].map(option => option.textContent)).toEqual([
+      'Blue', 'Gray', 'Green', 'Purple', 'Atom', 'Everforest', 'Gruvbox', 'Nord', 'Solarized',
+      'Catppuccin Frappe', 'Catppuccin Latte', 'Catppuccin Macchiato', 'Catppuccin Mocha',
+    ]);
+    expect(picker.value).toBe('builtin:default');
     expect(colors.value).toBe('catppuccin-mocha');
     await act(async () => { colors.value = 'catppuccin-latte'; colors.dispatchEvent(new Event('change', { bubbles: true })); });
     expect(colorChange).toHaveBeenCalledWith('catppuccin-latte');
@@ -953,9 +970,9 @@ it.each([
 });
 
 it.each([
-  [classicThemes.find(theme => theme.id === 'default')!, 'Classic (Default)'],
+  [classicThemes.find(theme => theme.id === 'default')!, 'Classic (Blue)'],
   [classicThemes.find(theme => theme.id === 'nord')!, 'Classic (Nord)'],
-  [bundledThemes.find(theme => theme.name === 'Minimal')!, 'Minimal'],
+  [bundledThemes.find(theme => theme.name === 'Saratoga')!, 'Saratoga'],
 ])('uses the same difference message for $name appearance and layout changes', async (theme, label) => {
   const host = document.createElement('div'), root = createRoot(host);
   try {

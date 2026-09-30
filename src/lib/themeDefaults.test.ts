@@ -5,10 +5,12 @@ import { themeAppearance } from "./themes";
 import { classicThemes } from "./bundledThemes";
 const theme = { ...exampleTheme(), navigationStyle: "section-view" as const, rightSidebarOpen: true,
   editorWidthMode: "comfortable" as const, noteAlignment: "center" as const, wordCountVisible: true };
-it("keeps Default a built-in preset when restoring all defaults", () => {
+it("restores Classic Blue through the existing default preset", () => {
   const patch = themeDefaultsPatch(classicThemes.find(theme => theme.id === 'default')!, 'all');
   expect(patch.customTheme).toBeNull();
   expect(patch.themePresetId).toBe('default');
+  expect(patch.colors?.light?.accentColor).toBe('#245fa5');
+  expect(patch.colors?.dark?.accentColor).toBe('#285b99');
 });
 it("restores all author defaults and clears quick overrides", () => {
   expect(themeDefaultsPatch(theme, "all")).toEqual({ ...themeAppearance(theme), quickAppearance: null });

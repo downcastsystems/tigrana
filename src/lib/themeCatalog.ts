@@ -2,7 +2,7 @@ import { parseTheme, type ThemeDocument } from './themes';
 
 // Independent of theme packages and custom CSS: always enough to open the app.
 export const recoveryTheme: ThemeDocument = {
-  schemaVersion: 1, id: 'default', name: 'Default', appFontFamily: 'Inter, system-ui, sans-serif',
+  schemaVersion: 1, id: 'default', name: 'Blue', appFontFamily: 'Inter, system-ui, sans-serif',
   editorFontFamily: 'Inter, system-ui, sans-serif', appFontSize: 14, editorFontSize: 16,
   accentTitlebar: false, navigationStyle: 'section-view', rightSidebarOpen: true,
   editorWidthMode: 'comfortable', noteAlignment: 'center',

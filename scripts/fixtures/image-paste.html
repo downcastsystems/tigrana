@@ -1,0 +1,13 @@
+<link rel="stylesheet" href="/src/styles/app.css">
+<style>body{padding:40px;background:#1e1e1e;color:white}.ProseMirror{min-height:200px;width:700px}.ProseMirror img{max-width:100%}</style>
+<div id="root"></div>
+<script type="module">
+import React from 'react';
+import {createRoot} from 'react-dom/client';
+import {NotesEditor} from '/src/editor/NotesEditor.tsx';
+createRoot(document.querySelector('#root')).render(React.createElement(NotesEditor, {
+content:'Some note text.', editable:true, findRequest:0, focusAtEndRequest:0, focusRequest:0,
+historyKey:'images', notePath:'Images.md', workspace:'/Notebook', restorePosition:null, spellcheckEnabled:true,
+onChange:()=>{}, onPendingChange:()=>{}, onPositionChange:()=>{}, onLoadError:e=>{throw e;}
+}));
+</script>

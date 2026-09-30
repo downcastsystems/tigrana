@@ -2,7 +2,8 @@
 import { describe, expect, it } from 'vitest';
 import { readFileSync } from 'node:fs';
 import { allBuiltInThemes, bundledThemes, classicThemes, builtInThemeDocuments, themeCatalogWarnings } from './bundledThemes';
-import { parseTheme, themeAppearance, themesMatch } from './themes';
+import { parseTheme, resolveThemeVariant, themeAppearance, themesMatch } from './themes';
+import { accentSelectionColors } from './selectionColors';
 import { themeStylesheet, readableThemeText, themeRenderingMode } from './themeRuntime';
 import { encodeThemePackage, decodeThemePackage } from './themePackage';
 import { applyQuickAppearanceFonts, quickEditorFonts } from './quickAppearance';
@@ -17,6 +18,23 @@ function contrast(a: string, b: string) {
   return (values[0] + .05) / (values[1] + .05);
 }
 describe('built-in theme catalog', () => {
+  it('ships readable accent selections in Based, Classic, Catppuccin, and Saratoga', () => {
+    const based = bundledThemes.find(theme => theme.name === 'Based')!;
+    const themes = [
+      ...['blue', 'green', 'purple'].map(id => resolveThemeVariant(based, id)),
+      ...classicThemes.filter(theme => !theme.plasma?.enabled && theme.id !== 'classic-gray'),
+      ...bundledThemes.filter(theme => theme.name === 'Saratoga'),
+    ];
+    for (const theme of themes) for (const mode of ['light', 'dark'] as const) {
+      const p = theme[mode];
+      expect(p).toMatchObject(accentSelectionColors(p.accent, mode));
+      expect(contrast(p.selectionText!, p.selectionBackground!), `${theme.name} ${mode} selection`).toBeGreaterThanOrEqual(4.5);
+    }
+    for (const theme of [resolveThemeVariant(based, 'blue'), classicThemes[0]]) {
+      expect(theme.dark).toMatchObject({ selectionBackground: '#032042', selectionText: '#6da7ec' });
+    }
+  });
+
   it.each(['dracula', 'plasma-ooze', 'plasma-undertow', 'plasma-witches-brew'])('uses a lighter accent for %s in light mode', (id) => {
     const vampire = classicThemes.find(theme => theme.id === id)!;
     expect(vampire.light.accent).not.toBe(vampire.dark.accent);
@@ -112,10 +130,10 @@ describe('built-in theme catalog', () => {
     for (const document of builtInThemeDocuments) expect(() => parseTheme(document)).not.toThrow();
   });
   it('retains legacy IDs and has unique names and IDs', () => {
-    expect(classicThemes.map(t => t.id)).toEqual(['default', 'atom', 'solarized', 'nord', 'gruvbox', 'everforest', 'catppuccin-frappe', 'catppuccin-macchiato', 'catppuccin-mocha', 'catppuccin-latte', 'dracula', 'plasma-ooze', 'plasma-undertow', 'plasma-witches-brew']);
+    expect(classicThemes.map(t => t.id)).toEqual(['default', 'classic-gray', 'classic-green', 'classic-purple', 'atom', 'solarized', 'nord', 'gruvbox', 'everforest', 'catppuccin-frappe', 'catppuccin-macchiato', 'catppuccin-mocha', 'catppuccin-latte', 'dracula', 'plasma-ooze', 'plasma-undertow', 'plasma-witches-brew']);
     expect(new Set(allBuiltInThemes.map(t => t.id)).size).toBe(allBuiltInThemes.length);
     expect(new Set(allBuiltInThemes.map(t => t.name)).size).toBe(allBuiltInThemes.length);
-    expect(bundledThemes.map(t => t.name)).toEqual(['Minimal', 'Saratoga', 'Based', 'Starfall', 'Old Basement PC', 'Quest', 'Twain']);
+    expect(bundledThemes.map(t => t.name)).toEqual(['Saratoga', 'Based', 'Starfall', 'Old Basement PC', 'Quest', 'Twain']);
   });
   for (const theme of allBuiltInThemes) {
     it(`${theme.name} validates, exports, and renders in both modes`, () => {
@@ -126,7 +144,7 @@ describe('built-in theme catalog', () => {
       expect(themesMatch(theme, nativeSnapshot)).toBe(true);
       expect(themesMatch(theme, { ...nativeSnapshot, editorFontSize: theme.editorFontSize + 1 })).toBe(false);
       expect(theme.schemaVersion).toBe(2);
-      expect(themeAppearance(theme).rightSidebarOpen).toBe(theme.id === "builtin-minimal" ? false : undefined);
+      expect(themeAppearance(theme).rightSidebarOpen).toBeUndefined();
       expect(themeAppearance(theme).navigationStyle).toBe("section-view");
       expect(themeAppearance(theme)).not.toHaveProperty("editorWidthMode");
       expect(themeAppearance(theme)).not.toHaveProperty("noteAlignment");

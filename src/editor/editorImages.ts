@@ -1,7 +1,7 @@
 import { convertFileSrc } from "@tauri-apps/api/core";
 import { Image } from "@tiptap/extension-image";
 import type { EditorView } from "@tiptap/pm/view";
-import { ReactNodeViewRenderer, type Editor } from "@tiptap/react";
+import { ReactNodeView, ReactNodeViewRenderer, type Editor } from "@tiptap/react";
 import { ResizableImageNodeView } from "./ResizableImageNodeView";
 import { isTauri } from "../lib/desktop";
 import { notebookStorage } from "../lib/notebookStorage";
@@ -29,7 +29,16 @@ export const MarkdownImage = Image.extend({
     };
   },
   addNodeView() {
-    return ReactNodeViewRenderer(ResizableImageNodeView);
+    const render = ReactNodeViewRenderer(ResizableImageNodeView);
+    return props => {
+      const view = render(props);
+      // ProseMirror's selectNode/deselectNode callbacks handle this leaf node.
+      // Tiptap's extra range-selection listener caches its position and can
+      // hide handles after edits above the image. Tracking every position
+      // would instead re-render images on each keystroke above them.
+      if (view instanceof ReactNodeView) props.editor.off('selectionUpdate', view.handleSelectionUpdate);
+      return view;
+    };
   },
 });
 

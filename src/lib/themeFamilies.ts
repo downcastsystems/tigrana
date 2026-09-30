@@ -5,12 +5,13 @@ export const themeFamilies = [
     { id: 'plasma-undertow', name: 'Undertow' }, { id: 'plasma-witches-brew', name: "Witch's Brew" },
   ] },
   { id: 'classic', name: 'Classic', colors: [
-    { id: 'default', name: 'Default' }, { id: 'atom', name: 'Atom' },
+    // Keep the old default ID so existing notebooks and resets select Blue.
+    { id: 'default', name: 'Blue' }, { id: 'classic-gray', name: 'Gray' },
+    { id: 'classic-green', name: 'Green' }, { id: 'classic-purple', name: 'Purple' },
+    { id: 'atom', name: 'Atom' },
     { id: 'everforest', name: 'Everforest' }, { id: 'gruvbox', name: 'Gruvbox' }, { id: 'nord', name: 'Nord' }, { id: 'solarized', name: 'Solarized' },
-  ] },
-  { id: 'catppuccin', name: 'Catppuccin', colors: [
-    { id: 'catppuccin-frappe', name: 'Frappe' }, { id: 'catppuccin-latte', name: 'Latte' },
-    { id: 'catppuccin-macchiato', name: 'Macchiato' }, { id: 'catppuccin-mocha', name: 'Mocha' },
+    { id: 'catppuccin-frappe', name: 'Catppuccin Frappe' }, { id: 'catppuccin-latte', name: 'Catppuccin Latte' },
+    { id: 'catppuccin-macchiato', name: 'Catppuccin Macchiato' }, { id: 'catppuccin-mocha', name: 'Catppuccin Mocha' },
   ] },
 ];
 export function themeFamily(id: string) {
@@ -18,5 +19,8 @@ export function themeFamily(id: string) {
 }
 export function rememberedThemeColor(familyId: string, preferences?: Record<string, string>) {
   const family = themeFamilies.find(family => family.id === familyId);
-  return family?.colors.find(color => color.id === preferences?.[familyId])?.id ?? family?.colors[0].id;
+  return family?.colors.find(color => color.id === preferences?.[familyId])?.id
+    // Older notebooks remembered these palettes under a separate family.
+    ?? (familyId === 'classic' ? family?.colors.find(color => color.id === preferences?.catppuccin)?.id : undefined)
+    ?? family?.colors[0].id;
 }

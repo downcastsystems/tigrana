@@ -6,9 +6,13 @@ Old notebook preset IDs remain supported. The app overlays their existing font a
 
 ## Theme families and colors
 
-Appearance groups Classic’s Default, Atom, Everforest, Gruvbox, Nord, and Solarized palettes under one theme. Catppuccin groups Frappe, Latte, Macchiato, and Mocha. `src/lib/themeFamilies.ts` defines the grouping; each color keeps its existing durable preset ID. Notebook metadata remembers the most recently selected color in each family. Changing colors clears an accent override but retains typography, effects, and layout adjustments. Choosing a different theme resets quick appearance settings.
+Appearance groups Classic’s Blue, Gray, Green, Purple, Atom, Everforest, Gruvbox, Nord, Solarized, Catppuccin Frappe, Catppuccin Latte, Catppuccin Macchiato, and Catppuccin Mocha palettes under one theme. Catppuccin no longer has a separate theme entry. `src/lib/themeFamilies.ts` defines the grouping; each color keeps its existing durable preset ID. Notebook metadata remembers the most recently selected color in each family. Older Catppuccin family preferences remain a fallback when no Classic color is remembered. Changing colors clears an accent override but retains typography, effects, and layout adjustments. Choosing a different theme resets quick appearance settings.
+
+Classic Blue keeps the complete palette and durable `default` ID of the former Classic Default. It is the initial appearance for new users and the target of **Restore default appearance**. Gray, Green, and Purple use Based’s accent and selection colors on Classic’s existing backgrounds and typography. Minimal is no longer bundled; notebook snapshots and user-saved copies remain readable as custom themes.
 
 Mode remains System, Light, or Dark. Catppuccin preserves its existing pairs: all light variants use Latte; the Latte choice uses Frappe in dark mode.
+
+Based's Blue, Green, and Purple variants, Classic and Saratoga use paired accent colors for text selection. Dark mode uses a dark accent background and lighter accent text; light mode uses a pale background and darker text. Based Blue and Classic Blue share the reference blue pair, `#032042` behind `#6da7ec` in dark mode. Quick accent overrides derive matching pairs from the chosen hue. Selection text has at least 4.5:1 luminance contrast, including the renderer's 0.99 background opacity, so readability does not rely on distinguishing hues. Explicitly colored text retains its authored color while selected.
 
 Theme editing offers line height from 1.2 to 2.2 and letter spacing from -0.03em to 0.12em. Defaults use each theme’s existing line-height metric and normal letter spacing. Both values display two decimal places and are saved in portable `editorLineHeight` and `editorLetterSpacing` fields. Older notebook overrides remain readable. Navigation style lives in General settings.
 
@@ -16,13 +20,7 @@ Twain was previously named Typewriter. Its source directory, package, and app JS
 
 ## Adaptations
 
-Minimal is a Tigrana adaptation, not an official port or Obsidian plugin integration. Attribution and its upstream MIT license notice travel inside its exported sharing details.
-
-| Theme | Source inspected | Tigrana choices |
-| --- | --- | --- |
-| Minimal | [kepano/obsidian-minimal](https://github.com/kepano/obsidian-minimal), 9.1.0 | Neutral white/charcoal surfaces, muted blue-gray accent, system interface and editor fonts (San Francisco on macOS), tighter corners and spacing, restrained heading weight. Accent is adjusted for readable selections. |
-
-Minimal, Saratoga, and Based default to standard UI and support Plasma when enabled. Starfall and Vampire default to Plasma. Selecting another theme restores that theme's defaults and clears quick appearance overrides. Note rows retain rounded corners; section rows stay rectangular.
+Saratoga and Based default to standard UI and support Plasma when enabled. Starfall and Vampire default to Plasma. Selecting another theme restores that theme's defaults and clears quick appearance overrides. Note rows retain rounded corners; section rows stay rectangular.
 
 Typography, colors, and design metrics use the engine's editable values. Custom CSS refers to theme variables instead of repeating fixed colors. Obsidian-specific layouts, helper classes, alternate task syntax, plugins, and animation systems are not included.
 
@@ -77,7 +75,7 @@ the exported license text.
 
 `src/lib/builtInThemes.test.ts` checks every built-in for schema validity, package round trips, light/dark rendering, preview/runtime stylesheet agreement, Plasma defaults, unique identity, and at least 4.5:1 contrast for primary editor/interface text, selected text, and marked text against their palette backgrounds. Transparent panels and arbitrary user CSS still require visual inspection against the actual background.
 
-The initial audit corrected automatic foreground selection for pale accents and slightly darkened Solarized's light interface text. Default's selection tint is carried in its portable CSS so copies and previews keep that behavior.
+The initial audit corrected automatic foreground selection for pale accents and slightly darkened Solarized's light interface text. Classic Blue's selection colors are carried in its portable palette so copies and previews keep that behavior.
 
 A read-only audit of the local app-wide collection on 2026-09-18 validated all three saved themes in light and dark modes, including two schema 1 documents. No saved theme files were rewritten.
 
@@ -91,20 +89,19 @@ The theme embeds the unmodified Latin regular WOFF2 of [IBM Plex Mono](https://g
 
 Theme API 1 exposes `--tigrana-panel-gap` and `--tigrana-workspace-inset` in both standard and Plasma layouts. Standard mode also supports `--tigrana-panel-radius`, `--tigrana-panel-shadow`, and `--tigrana-workspace-background`. Values can be set in Advanced CSS on `:scope`; the in-app CSS reference includes a complete example. The app still owns the grid variants and resize handles, so creators do not need to reproduce every sidebar visibility combination. Use gaps of at least 6px to retain a usable drag target. Advanced surfaces continues to control opacity independently.
 
-Minimal uses quieter labels, rounded gray active tabs, a soft blue-gray accent, matching note and text selection colors, bold note titles, and a soft shadow along the left sidebar edge facing the editor. Minimal remains an adaptation, not a pixel-for-pixel Obsidian port. Existing notebook snapshots are preserved; reselect the built-in to adopt the revised design.
 
 Browser layout verification covered all 16 combinations of single/dual navigation, left sidebar visibility, outline visibility, and standard/Plasma mode at 1200px workspace width. All retained the requested 18px inset and splitter width without horizontal overflow.
 
 
-All built-in themes use **Keep current** for editor width, note alignment, and word count. Right-sidebar visibility also uses **Keep current**, except Minimal, which hides it by default. Navigation defaults remain **Dual pane with sections**. Choosing a theme preserves your writing layout.
+All built-in themes use **Keep current** for editor width, note alignment, and word count. Right-sidebar visibility also uses **Keep current**. Navigation defaults remain **Dual pane with sections**. Choosing a theme preserves your writing layout.
 
 Custom themes may include `navigationStyle` with `dual-pane`, `single-pane`, or `section-view`, or omit it to keep the current layout. The theme editor exposes this as **Default navigation style**.
 
 Themes may also set `rightSidebarOpen` to `true` or `false`. Omit it for Keep current. The theme editor's Default right sidebar control sets this preference. Manual sidebar changes are saved with the notebook and remain until another theme supplies a sidebar default.
 
-Minimal defaults to a closed right sidebar. All other built-in themes leave its visibility unchanged. Based uses rounded tabs and separate framed panels without an accent border across the title bar or editor.
+Based uses rounded tabs and separate framed panels without an accent border across the title bar or editor.
 
-Default is a read-only starting point. Other built-ins expose Edit theme, which saves a customized copy with a portable `baseThemeId` pointing to the original built-in. Revert to defaults restores that built-in's settings in the draft while retaining the copy's identity and name; Save and use commits the reset. Existing custom themes without a recorded built-in origin are not guessed from their names.
+Classic Blue is the read-only starting point. Other built-ins expose Edit theme, which saves a customized copy with a portable `baseThemeId` pointing to the original built-in. Revert to defaults restores that built-in's settings in the draft while retaining the copy's identity and name; Save and use commits the reset. Existing custom themes without a recorded built-in origin are not guessed from their names.
 
 Plasma rims use the effective accent color, including notebook quick-accent overrides.
 

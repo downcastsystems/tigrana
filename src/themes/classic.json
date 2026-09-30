@@ -2,7 +2,7 @@
   {
     "schemaVersion": 2,
     "id": "default",
-    "name": "Default",
+    "name": "Blue",
     "navigationStyle": "section-view",
     "appFontFamily": "Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, \"Segoe UI\", sans-serif",
     "editorFontFamily": "Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, \"Segoe UI\", sans-serif",
@@ -17,7 +17,7 @@
     "design": {
       "apiVersion": 1,
       "author": "Tigrana",
-      "version": "1.0.2",
+      "version": "1.1.0",
       "license": "Tigrana built-in palette adaptation",
       "css": ".section-view-folder-pane .folder-row { border-radius: 0; }\n.note-tab.is-active { background: var(--tigrana-accent); border-color: transparent; }\n:scope.theme-light .ProseMirror::selection, :scope.theme-light .ProseMirror *::selection, :scope.theme-light .note-title-input::selection, :scope.theme-light .raw-markdown-input::selection { background-color: color-mix(in srgb, var(--tigrana-accent) 35%, white); color: currentColor; }\n:scope.theme-dark .ProseMirror::selection, :scope.theme-dark .ProseMirror *::selection, :scope.theme-dark .note-title-input::selection, :scope.theme-dark .raw-markdown-input::selection { background-color: color-mix(in srgb, var(--tigrana-accent) 40%, white); color: currentColor; }\n",
       "assets": {},
@@ -41,7 +41,9 @@
       "editorText": "#22211f",
       "selectedText": "#ffffff",
       "highlightText": "#000000",
-      "highlightBackground": "#ffff00"
+      "highlightBackground": "#ffff00",
+      "selectionBackground": "#d2e4fa",
+      "selectionText": "#123e73"
     },
     "dark": {
       "surface": "#191a1d",
@@ -57,7 +59,208 @@
       "editorText": "#eee8df",
       "selectedText": "#ffffff",
       "highlightText": "#000000",
-      "highlightBackground": "#ffff00"
+      "highlightBackground": "#ffff00",
+      "selectionBackground": "#032042",
+      "selectionText": "#6da7ec"
+    }
+  },
+  {
+    "schemaVersion": 2,
+    "id": "classic-gray",
+    "name": "Gray",
+    "navigationStyle": "section-view",
+    "appFontFamily": "Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, \"Segoe UI\", sans-serif",
+    "editorFontFamily": "Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, \"Segoe UI\", sans-serif",
+    "appFontSize": 14,
+    "editorFontSize": 16,
+    "accentTitlebar": false,
+    "plasma": {
+      "enabled": false,
+      "frost": 80,
+      "backgroundBlur": 0
+    },
+    "design": {
+      "apiVersion": 1,
+      "author": "Tigrana",
+      "version": "1.0.0",
+      "license": "Tigrana built-in palette adaptation",
+      "css": ".section-view-folder-pane .folder-row { border-radius: 0; }\n.note-tab.is-active { background: var(--tigrana-accent); border-color: transparent; }\n:scope.theme-light .ProseMirror::selection, :scope.theme-light .ProseMirror *::selection, :scope.theme-light .note-title-input::selection, :scope.theme-light .raw-markdown-input::selection { background-color: color-mix(in srgb, var(--tigrana-accent) 35%, white); color: currentColor; }\n:scope.theme-dark .ProseMirror::selection, :scope.theme-dark .ProseMirror *::selection, :scope.theme-dark .note-title-input::selection, :scope.theme-dark .raw-markdown-input::selection { background-color: color-mix(in srgb, var(--tigrana-accent) 40%, white); color: currentColor; }\n",
+      "assets": {},
+      "metrics": {
+        "radius": 8,
+        "spacing": 1,
+        "lineHeight": 1.72
+      }
+    },
+    "light": {
+      "surface": "#f5f5f5",
+      "surfaceSoft": "#f5f5f5",
+      "surfaceStrong": "#ffffff",
+      "surfaceMuted": "#ececec",
+      "border": "#ebebeb",
+      "text": "#22211f",
+      "textMuted": "#767573",
+      "background": "#ffffff",
+      "accent": "#e2e2e2",
+      "titlebar": "#e2e2e2",
+      "editorText": "#22211f",
+      "selectedText": "#292929",
+      "highlightText": "#000000",
+      "highlightBackground": "#ffff00",
+      "selectionBackground": "#e2e2e2",
+      "selectionText": "#292929"
+    },
+    "dark": {
+      "surface": "#191a1d",
+      "surfaceSoft": "#191a1d",
+      "surfaceStrong": "#2b2c30",
+      "surfaceMuted": "#17181a",
+      "border": "#363638",
+      "text": "#eee8df",
+      "textMuted": "#a09d98",
+      "background": "#212225",
+      "accent": "#393939",
+      "titlebar": "#393939",
+      "editorText": "#eee8df",
+      "selectedText": "#f0f0f0",
+      "highlightText": "#000000",
+      "highlightBackground": "#ffff00",
+      "selectionBackground": "#626262",
+      "selectionText": "#ffffff"
+    }
+  },
+  {
+    "schemaVersion": 2,
+    "id": "classic-green",
+    "name": "Green",
+    "navigationStyle": "section-view",
+    "appFontFamily": "Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, \"Segoe UI\", sans-serif",
+    "editorFontFamily": "Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, \"Segoe UI\", sans-serif",
+    "appFontSize": 14,
+    "editorFontSize": 16,
+    "accentTitlebar": false,
+    "plasma": {
+      "enabled": false,
+      "frost": 80,
+      "backgroundBlur": 0
+    },
+    "design": {
+      "apiVersion": 1,
+      "author": "Tigrana",
+      "version": "1.0.0",
+      "license": "Tigrana built-in palette adaptation",
+      "css": ".section-view-folder-pane .folder-row { border-radius: 0; }\n.note-tab.is-active { background: var(--tigrana-accent); border-color: transparent; }\n:scope.theme-light .ProseMirror::selection, :scope.theme-light .ProseMirror *::selection, :scope.theme-light .note-title-input::selection, :scope.theme-light .raw-markdown-input::selection { background-color: color-mix(in srgb, var(--tigrana-accent) 35%, white); color: currentColor; }\n:scope.theme-dark .ProseMirror::selection, :scope.theme-dark .ProseMirror *::selection, :scope.theme-dark .note-title-input::selection, :scope.theme-dark .raw-markdown-input::selection { background-color: color-mix(in srgb, var(--tigrana-accent) 40%, white); color: currentColor; }\n",
+      "assets": {},
+      "metrics": {
+        "radius": 8,
+        "spacing": 1,
+        "lineHeight": 1.72
+      }
+    },
+    "light": {
+      "surface": "#f5f5f5",
+      "surfaceSoft": "#f5f5f5",
+      "surfaceStrong": "#ffffff",
+      "surfaceMuted": "#ececec",
+      "border": "#ebebeb",
+      "text": "#22211f",
+      "textMuted": "#767573",
+      "background": "#ffffff",
+      "accent": "#167044",
+      "titlebar": "#167044",
+      "editorText": "#22211f",
+      "selectedText": "#ffffff",
+      "highlightText": "#000000",
+      "highlightBackground": "#ffff00",
+      "selectionBackground": "#d4f7e6",
+      "selectionText": "#13623c",
+      "linkColor": "#204935"
+    },
+    "dark": {
+      "surface": "#191a1d",
+      "surfaceSoft": "#191a1d",
+      "surfaceStrong": "#2b2c30",
+      "surfaceMuted": "#17181a",
+      "border": "#363638",
+      "text": "#eee8df",
+      "textMuted": "#a09d98",
+      "background": "#212225",
+      "accent": "#167044",
+      "titlebar": "#167044",
+      "editorText": "#eee8df",
+      "selectedText": "#ffffff",
+      "highlightText": "#000000",
+      "highlightBackground": "#ffff00",
+      "selectionBackground": "#0b3a23",
+      "selectionText": "#7fe6b4",
+      "linkColor": "#84ac99"
+    }
+  },
+  {
+    "schemaVersion": 2,
+    "id": "classic-purple",
+    "name": "Purple",
+    "navigationStyle": "section-view",
+    "appFontFamily": "Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, \"Segoe UI\", sans-serif",
+    "editorFontFamily": "Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, \"Segoe UI\", sans-serif",
+    "appFontSize": 14,
+    "editorFontSize": 16,
+    "accentTitlebar": false,
+    "plasma": {
+      "enabled": false,
+      "frost": 80,
+      "backgroundBlur": 0
+    },
+    "design": {
+      "apiVersion": 1,
+      "author": "Tigrana",
+      "version": "1.0.0",
+      "license": "Tigrana built-in palette adaptation",
+      "css": ".section-view-folder-pane .folder-row { border-radius: 0; }\n.note-tab.is-active { background: var(--tigrana-accent); border-color: transparent; }\n:scope.theme-light .ProseMirror::selection, :scope.theme-light .ProseMirror *::selection, :scope.theme-light .note-title-input::selection, :scope.theme-light .raw-markdown-input::selection { background-color: color-mix(in srgb, var(--tigrana-accent) 35%, white); color: currentColor; }\n:scope.theme-dark .ProseMirror::selection, :scope.theme-dark .ProseMirror *::selection, :scope.theme-dark .note-title-input::selection, :scope.theme-dark .raw-markdown-input::selection { background-color: color-mix(in srgb, var(--tigrana-accent) 40%, white); color: currentColor; }\n",
+      "assets": {},
+      "metrics": {
+        "radius": 8,
+        "spacing": 1,
+        "lineHeight": 1.72
+      }
+    },
+    "light": {
+      "surface": "#f5f5f5",
+      "surfaceSoft": "#f5f5f5",
+      "surfaceStrong": "#ffffff",
+      "surfaceMuted": "#ececec",
+      "border": "#ebebeb",
+      "text": "#22211f",
+      "textMuted": "#767573",
+      "background": "#ffffff",
+      "accent": "#591465",
+      "titlebar": "#591465",
+      "editorText": "#22211f",
+      "selectedText": "#ffffff",
+      "highlightText": "#000000",
+      "highlightBackground": "#ffff00",
+      "selectionBackground": "#f2d4f7",
+      "selectionText": "#561362",
+      "linkColor": "#3f2044"
+    },
+    "dark": {
+      "surface": "#191a1d",
+      "surfaceSoft": "#191a1d",
+      "surfaceStrong": "#2b2c30",
+      "surfaceMuted": "#17181a",
+      "border": "#363638",
+      "text": "#eee8df",
+      "textMuted": "#a09d98",
+      "background": "#212225",
+      "accent": "#591465",
+      "titlebar": "#591465",
+      "editorText": "#eee8df",
+      "selectedText": "#ffffff",
+      "highlightText": "#000000",
+      "highlightBackground": "#ffff00",
+      "selectionBackground": "#330b39",
+      "selectionText": "#d77fe6",
+      "linkColor": "#a283a8"
     }
   },
   {
@@ -78,7 +281,7 @@
     "design": {
       "apiVersion": 1,
       "author": "Tigrana",
-      "version": "1.2.0",
+      "version": "1.2.1",
       "license": "Tigrana Classic styling. Palette colors matched to AnuPpuccin reference images: https://github.com/AnubisNekhet/AnuPpuccin/tree/main/assets/colorschemes . No AnuPpuccin stylesheet code or artwork is included.",
       "css": ".section-view-folder-pane .folder-row { border-radius: 0; }\n.note-tab.is-active { background: var(--tigrana-accent); border-color: transparent; }\n:scope.theme-light .ProseMirror::selection, :scope.theme-light .ProseMirror *::selection, :scope.theme-light .note-title-input::selection, :scope.theme-light .raw-markdown-input::selection { background-color: color-mix(in srgb, var(--tigrana-accent) 35%, white); color: currentColor; }\n:scope.theme-dark .ProseMirror::selection, :scope.theme-dark .ProseMirror *::selection, :scope.theme-dark .note-title-input::selection, :scope.theme-dark .raw-markdown-input::selection { background-color: color-mix(in srgb, var(--tigrana-accent) 40%, white); color: currentColor; }\n",
       "assets": {},
@@ -106,7 +309,9 @@
       "menuSelectedBackground": "#3d74f6",
       "menuSelectedText": "#000000",
       "hoverBackground": "#ededed",
-      "hoverText": "#383a42"
+      "hoverText": "#383a42",
+      "selectionBackground": "#d2def9",
+      "selectionText": "#052570"
     },
     "dark": {
       "background": "#272b34",
@@ -126,7 +331,9 @@
       "menuSelectedBackground": "#61afef",
       "menuSelectedText": "#000000",
       "hoverBackground": "#303540",
-      "hoverText": "#dddedf"
+      "hoverText": "#dddedf",
+      "selectionBackground": "#06253f",
+      "selectionText": "#78b8ed"
     }
   },
   {
@@ -147,7 +354,7 @@
     "design": {
       "apiVersion": 1,
       "author": "Tigrana",
-      "version": "1.2.0",
+      "version": "1.2.1",
       "license": "Tigrana Classic styling. Palette colors matched to AnuPpuccin reference images: https://github.com/AnubisNekhet/AnuPpuccin/tree/main/assets/colorschemes . No AnuPpuccin stylesheet code or artwork is included.",
       "css": ".section-view-folder-pane .folder-row { border-radius: 0; }\n.note-tab.is-active { background: var(--tigrana-accent); border-color: transparent; }\n:scope.theme-light .ProseMirror::selection, :scope.theme-light .ProseMirror *::selection, :scope.theme-light .note-title-input::selection, :scope.theme-light .raw-markdown-input::selection { background-color: color-mix(in srgb, var(--tigrana-accent) 35%, white); color: currentColor; }\n:scope.theme-dark .ProseMirror::selection, :scope.theme-dark .ProseMirror *::selection, :scope.theme-dark .note-title-input::selection, :scope.theme-dark .raw-markdown-input::selection { background-color: color-mix(in srgb, var(--tigrana-accent) 40%, white); color: currentColor; }\n",
       "assets": {},
@@ -175,7 +382,9 @@
       "menuSelectedBackground": "#e38359",
       "menuSelectedText": "#000000",
       "hoverBackground": "#adb8b8",
-      "hoverText": "#002b36"
+      "hoverText": "#002b36",
+      "selectionBackground": "#f8ded3",
+      "selectionText": "#642a11"
     },
     "dark": {
       "background": "#073642",
@@ -195,7 +404,9 @@
       "menuSelectedBackground": "#e38359",
       "menuSelectedText": "#000000",
       "hoverBackground": "#0a4c5c",
-      "hoverText": "#fdf6e3"
+      "hoverText": "#fdf6e3",
+      "selectionBackground": "#3b190a",
+      "selectionText": "#e99d7c"
     }
   },
   {
@@ -216,7 +427,7 @@
     "design": {
       "apiVersion": 1,
       "author": "Tigrana",
-      "version": "1.2.0",
+      "version": "1.2.1",
       "license": "Tigrana Classic styling. Palette colors matched to AnuPpuccin reference images: https://github.com/AnubisNekhet/AnuPpuccin/tree/main/assets/colorschemes . No AnuPpuccin stylesheet code or artwork is included.",
       "css": ".section-view-folder-pane .folder-row { border-radius: 0; }\n.note-tab.is-active { background: var(--tigrana-accent); border-color: transparent; }\n:scope.theme-light .ProseMirror::selection, :scope.theme-light .ProseMirror *::selection, :scope.theme-light .note-title-input::selection, :scope.theme-light .raw-markdown-input::selection { background-color: color-mix(in srgb, var(--tigrana-accent) 35%, white); color: currentColor; }\n:scope.theme-dark .ProseMirror::selection, :scope.theme-dark .ProseMirror *::selection, :scope.theme-dark .note-title-input::selection, :scope.theme-dark .raw-markdown-input::selection { background-color: color-mix(in srgb, var(--tigrana-accent) 40%, white); color: currentColor; }\n",
       "assets": {},
@@ -244,7 +455,9 @@
       "menuSelectedBackground": "#88c0d0",
       "menuSelectedText": "#000000",
       "hoverBackground": "#e5e9f0",
-      "hoverText": "#2e3440"
+      "hoverText": "#2e3440",
+      "selectionBackground": "#daecf1",
+      "selectionText": "#214954"
     },
     "dark": {
       "background": "#2e3440",
@@ -264,7 +477,9 @@
       "menuSelectedBackground": "#88c0d0",
       "menuSelectedText": "#000000",
       "hoverBackground": "#3b4252",
-      "hoverText": "#eceff4"
+      "hoverText": "#eceff4",
+      "selectionBackground": "#132b31",
+      "selectionText": "#91c5d4"
     }
   },
   {
@@ -285,7 +500,7 @@
     "design": {
       "apiVersion": 1,
       "author": "Tigrana",
-      "version": "1.2.0",
+      "version": "1.2.1",
       "license": "Tigrana Classic styling. Palette colors matched to AnuPpuccin reference images: https://github.com/AnubisNekhet/AnuPpuccin/tree/main/assets/colorschemes . No AnuPpuccin stylesheet code or artwork is included.",
       "css": ".section-view-folder-pane .folder-row { border-radius: 0; }\n.note-tab.is-active { background: var(--tigrana-accent); border-color: transparent; }\n:scope.theme-light .ProseMirror::selection, :scope.theme-light .ProseMirror *::selection, :scope.theme-light .note-title-input::selection, :scope.theme-light .raw-markdown-input::selection { background-color: color-mix(in srgb, var(--tigrana-accent) 35%, white); color: currentColor; }\n:scope.theme-dark .ProseMirror::selection, :scope.theme-dark .ProseMirror *::selection, :scope.theme-dark .note-title-input::selection, :scope.theme-dark .raw-markdown-input::selection { background-color: color-mix(in srgb, var(--tigrana-accent) 40%, white); color: currentColor; }\n",
       "assets": {},
@@ -313,7 +528,9 @@
       "menuSelectedBackground": "#f38019",
       "menuSelectedText": "#000000",
       "hoverBackground": "#f2e5bc",
-      "hoverText": "#282828"
+      "hoverText": "#282828",
+      "selectionBackground": "#f9e4d2",
+      "selectionText": "#6f3806"
     },
     "dark": {
       "background": "#282828",
@@ -333,7 +550,9 @@
       "menuSelectedBackground": "#f38019",
       "menuSelectedText": "#000000",
       "hoverBackground": "#32302f",
-      "hoverText": "#fbf1c7"
+      "hoverText": "#fbf1c7",
+      "selectionBackground": "#412103",
+      "selectionText": "#edaf78"
     }
   },
   {
@@ -354,7 +573,7 @@
     "design": {
       "apiVersion": 1,
       "author": "Tigrana",
-      "version": "1.2.0",
+      "version": "1.2.1",
       "license": "Tigrana Classic styling. Palette colors matched to AnuPpuccin reference images: https://github.com/AnubisNekhet/AnuPpuccin/tree/main/assets/colorschemes . No AnuPpuccin stylesheet code or artwork is included.",
       "css": ".section-view-folder-pane .folder-row { border-radius: 0; }\n.note-tab.is-active { background: var(--tigrana-accent); border-color: transparent; }\n:scope.theme-light .ProseMirror::selection, :scope.theme-light .ProseMirror *::selection, :scope.theme-light .note-title-input::selection, :scope.theme-light .raw-markdown-input::selection { background-color: color-mix(in srgb, var(--tigrana-accent) 35%, white); color: currentColor; }\n:scope.theme-dark .ProseMirror::selection, :scope.theme-dark .ProseMirror *::selection, :scope.theme-dark .note-title-input::selection, :scope.theme-dark .raw-markdown-input::selection { background-color: color-mix(in srgb, var(--tigrana-accent) 40%, white); color: currentColor; }\n",
       "assets": {},
@@ -382,7 +601,9 @@
       "menuSelectedBackground": "#f85552",
       "menuSelectedText": "#000000",
       "hoverBackground": "#f3efda",
-      "hoverText": "#5c6a72"
+      "hoverText": "#5c6a72",
+      "selectionBackground": "#f9d3d2",
+      "selectionText": "#700705"
     },
     "dark": {
       "background": "#2f383e",
@@ -402,13 +623,15 @@
       "menuSelectedBackground": "#da6362",
       "menuSelectedText": "#000000",
       "hoverBackground": "#374247",
-      "hoverText": "#d3c6aa"
+      "hoverText": "#d3c6aa",
+      "selectionBackground": "#380d0d",
+      "selectionText": "#e28483"
     }
   },
   {
     "schemaVersion": 2,
     "id": "catppuccin-frappe",
-    "name": "Catppuccin Frapp\u00e9",
+    "name": "Catppuccin Frappe",
     "navigationStyle": "section-view",
     "appFontFamily": "Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, \"Segoe UI\", sans-serif",
     "editorFontFamily": "Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, \"Segoe UI\", sans-serif",
@@ -423,7 +646,7 @@
     "design": {
       "apiVersion": 1,
       "author": "Tigrana",
-      "version": "1.1.1",
+      "version": "1.1.2",
       "license": "Tigrana palette adaptation. Catppuccin palette: https://catppuccin.com/palette/ (MIT, Catppuccin).",
       "css": ".section-view-folder-pane .folder-row { border-radius: 0; }\n.ProseMirror::selection, .ProseMirror *::selection, .note-title-input::selection, .raw-markdown-input::selection { background-color: color-mix(in srgb, var(--surface-strong) 50%, var(--tigrana-background)); color: var(--tigrana-editor-text); }\n.note-status-bar { background: var(--surface); color: var(--tigrana-text); border: 1px solid var(--tigrana-border); box-shadow: none; }\n:scope.theme-light .ProseMirror a { color: #1e66f5; }\n:scope.theme-dark .ProseMirror a { color: #8caaee; }\n",
       "assets": {},
@@ -451,7 +674,9 @@
       "menuSelectedBackground": "#40a02b",
       "menuSelectedText": "#000000",
       "hoverBackground": "#ccd0da",
-      "hoverText": "#4c4f69"
+      "hoverText": "#4c4f69",
+      "selectionBackground": "#dcf4d7",
+      "selectionText": "#255c19"
     },
     "dark": {
       "background": "#303446",
@@ -471,7 +696,9 @@
       "menuSelectedBackground": "#a6d189",
       "menuSelectedText": "#303446",
       "hoverBackground": "#414559",
-      "hoverText": "#c6d0f5"
+      "hoverText": "#c6d0f5",
+      "selectionBackground": "#1f3213",
+      "selectionText": "#acd491"
     }
   },
   {
@@ -492,7 +719,7 @@
     "design": {
       "apiVersion": 1,
       "author": "Tigrana",
-      "version": "1.1.1",
+      "version": "1.1.2",
       "license": "Tigrana palette adaptation. Catppuccin palette: https://catppuccin.com/palette/ (MIT, Catppuccin).",
       "css": ".section-view-folder-pane .folder-row { border-radius: 0; }\n.ProseMirror::selection, .ProseMirror *::selection, .note-title-input::selection, .raw-markdown-input::selection { background-color: color-mix(in srgb, var(--surface-strong) 50%, var(--tigrana-background)); color: var(--tigrana-editor-text); }\n.note-status-bar { background: var(--surface); color: var(--tigrana-text); border: 1px solid var(--tigrana-border); box-shadow: none; }\n:scope.theme-light .ProseMirror a { color: #1e66f5; }\n:scope.theme-dark .ProseMirror a { color: #8aadf4; }\n",
       "assets": {},
@@ -520,7 +747,9 @@
       "menuSelectedBackground": "#fe640b",
       "menuSelectedText": "#000000",
       "hoverBackground": "#ccd0da",
-      "hoverText": "#4c4f69"
+      "hoverText": "#4c4f69",
+      "selectionBackground": "#f9e0d2",
+      "selectionText": "#702c05"
     },
     "dark": {
       "background": "#24273a",
@@ -540,7 +769,9 @@
       "menuSelectedBackground": "#f5a97f",
       "menuSelectedText": "#24273a",
       "hoverBackground": "#363a4f",
-      "hoverText": "#cad3f5"
+      "hoverText": "#cad3f5",
+      "selectionBackground": "#401a05",
+      "selectionText": "#eda278"
     }
   },
   {
@@ -561,7 +792,7 @@
     "design": {
       "apiVersion": 1,
       "author": "Tigrana",
-      "version": "1.1.1",
+      "version": "1.1.2",
       "license": "Tigrana palette adaptation. Catppuccin palette: https://catppuccin.com/palette/ (MIT, Catppuccin).",
       "css": ".section-view-folder-pane .folder-row { border-radius: 0; }\n.ProseMirror::selection, .ProseMirror *::selection, .note-title-input::selection, .raw-markdown-input::selection { background-color: color-mix(in srgb, var(--surface-strong) 50%, var(--tigrana-background)); color: var(--tigrana-editor-text); }\n.note-status-bar { background: var(--surface); color: var(--tigrana-text); border: 1px solid var(--tigrana-border); box-shadow: none; }\n:scope.theme-light .ProseMirror a { color: #1e66f5; }\n:scope.theme-dark .ProseMirror a { color: #89b4fa; }\n",
       "assets": {},
@@ -589,7 +820,9 @@
       "menuSelectedBackground": "#8839ef",
       "menuSelectedText": "#eff1f5",
       "hoverBackground": "#ccd0da",
-      "hoverText": "#4c4f69"
+      "hoverText": "#4c4f69",
+      "selectionBackground": "#e3d2f9",
+      "selectionText": "#34096d"
     },
     "dark": {
       "background": "#1e1e2e",
@@ -609,7 +842,9 @@
       "menuSelectedBackground": "#cba6f7",
       "menuSelectedText": "#1e1e2e",
       "hoverBackground": "#313244",
-      "hoverText": "#cdd6f4"
+      "hoverText": "#cdd6f4",
+      "selectionBackground": "#20063f",
+      "selectionText": "#ad78ed"
     }
   },
   {
@@ -630,7 +865,7 @@
     "design": {
       "apiVersion": 1,
       "author": "Tigrana",
-      "version": "1.1.1",
+      "version": "1.1.2",
       "license": "Tigrana palette adaptation. Catppuccin palette: https://catppuccin.com/palette/ (MIT, Catppuccin).",
       "css": ".section-view-folder-pane .folder-row { border-radius: 0; }\n.ProseMirror::selection, .ProseMirror *::selection, .note-title-input::selection, .raw-markdown-input::selection { background-color: color-mix(in srgb, var(--surface-strong) 50%, var(--tigrana-background)); color: var(--tigrana-editor-text); }\n.note-status-bar { background: var(--surface); color: var(--tigrana-text); border: 1px solid var(--tigrana-border); box-shadow: none; }\n:scope.theme-light .ProseMirror a { color: #1e66f5; }\n:scope.theme-dark .ProseMirror a { color: #8caaee; }\n",
       "assets": {},
@@ -658,7 +893,9 @@
       "menuSelectedBackground": "#1e66f5",
       "menuSelectedText": "#ffffff",
       "hoverBackground": "#ccd0da",
-      "hoverText": "#4c4f69"
+      "hoverText": "#4c4f69",
+      "selectionBackground": "#d2dff9",
+      "selectionText": "#052970"
     },
     "dark": {
       "background": "#303446",
@@ -678,7 +915,9 @@
       "menuSelectedBackground": "#8caaee",
       "menuSelectedText": "#303446",
       "hoverBackground": "#414559",
-      "hoverText": "#c6d0f5"
+      "hoverText": "#c6d0f5",
+      "selectionBackground": "#09193c",
+      "selectionText": "#7a9ceb"
     }
   }
 ]

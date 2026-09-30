@@ -121,7 +121,7 @@ it.each(allBuiltInThemes)('coordinates quick colors and panel opacity in $name w
     const p = rendered[mode];
     expect(p.accent).toBe(quick.accentColor);
     expect(p.linkColor).toBe(mixAccentColor(quick.accentColor, p.editorText ?? p.text, 0.45));
-    expect(p.selectionText).toBe(readableThemeText(p.selectionBackground!, 0.99));
+    expect(p.selectionText).toMatch(/^#[0-9a-f]{6}$/);
     const css = themeStylesheet(rendered, mode, 'notebook');
     expect(css).toContain(p.linkColor);
     expect(css).toContain(p.selectionBackground);
@@ -180,7 +180,9 @@ it('keeps generated selection text above 4.5:1 contrast on light and dark backgr
     return linear[0] * 0.2126 + linear[1] * 0.7152 + linear[2] * 0.0722;
   };
   const source = exampleTheme();
-  // Cover saturated colors, pale tints, dark shades and the foreground switch.
+  // Use distinct bases so both rendering modes are exercised.
+  source.light = { ...source.light, background: '#ffffff', text: '#222222' };
+  // Cover saturated colors, pale tints, dark shades and grayscale accents.
   for (let r = 0; r <= 255; r += 17) for (let g = 0; g <= 255; g += 17) for (let b = 0; b <= 255; b += 17) {
     const accentColor = '#' + [r, g, b].map(channel => channel.toString(16).padStart(2, '0')).join('');
     const theme = applyQuickAppearance(source, { accentColor });
@@ -189,7 +191,8 @@ it('keeps generated selection text above 4.5:1 contrast on light and dark backgr
       const channels = [1, 3, 5].map(index => parseInt(palette.selectionBackground!.slice(index, index + 2), 16));
       for (const underlying of [0, 255]) {
         const background = luminance(channels.map(channel => channel * 0.99 + underlying * 0.01));
-        const contrast = palette.selectionText === '#ffffff' ? 1.05 / (background + 0.05) : (background + 0.05) / 0.05;
+        const foreground = luminance([1, 3, 5].map(index => parseInt(palette.selectionText!.slice(index, index + 2), 16)));
+        const contrast = (Math.max(foreground, background) + 0.05) / (Math.min(foreground, background) + 0.05);
         expect(contrast, `${accentColor} in ${mode} over ${underlying}`).toBeGreaterThanOrEqual(4.5);
       }
     }

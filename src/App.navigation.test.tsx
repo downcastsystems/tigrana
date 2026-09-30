@@ -510,6 +510,40 @@ describe("Note navigation persistence", () => {
     } finally { await act(async () => root.unmount()); }
   });
 
+  it("starts with Classic Blue, saves the added colors, and restores Blue defaults", async () => {
+    const container = document.createElement('div'); document.body.appendChild(container); containers.push(container);
+    let root = createRoot(container);
+    const appearance = () => JSON.parse(demoPersistence.get('tigrana-meta:/demo/Tigrana') ?? '{}').appearance;
+    const openAppearance = async () => {
+      await act(async () => window.dispatchEvent(new KeyboardEvent('keydown', { key: ',', metaKey: true })));
+      await act(async () => [...container.querySelectorAll<HTMLButtonElement>('.settings-nav button')].find(b => b.textContent === 'Appearance')!.click());
+    };
+    const colors = () => container.querySelector<HTMLSelectElement>('[aria-label="Colors"]')!;
+    try {
+      await act(async () => root.render(<App />));
+      await waitFor(() => !!container.querySelector('.note-title-input'));
+      await openAppearance();
+      expect(colors().selectedOptions[0].textContent).toBe('Blue');
+      expect(colors().value).toBe('default');
+      expect(container.querySelector('[aria-label="Theme"]')?.textContent).not.toContain('Minimal');
+      for (const color of ['gray', 'green', 'purple']) {
+        await act(async () => { colors().value = `classic-${color}`; colors().dispatchEvent(new Event('change', { bubbles: true })); });
+        await waitFor(() => appearance()?.themePresetId === `classic-${color}`);
+        expect(appearance().themeColorPreferences.classic).toBe(`classic-${color}`);
+      }
+      await act(async () => root.unmount()); root = createRoot(container);
+      await act(async () => root.render(<App />));
+      await waitFor(() => !!container.querySelector('.note-title-input'));
+      await openAppearance();
+      expect(colors().selectedOptions[0].textContent).toBe('Purple');
+      await act(async () => [...container.querySelectorAll<HTMLButtonElement>('button')].find(b => b.textContent === 'Restore default appearance')!.click());
+      await waitFor(() => appearance()?.themePresetId === 'default');
+      expect(colors().selectedOptions[0].textContent).toBe('Blue');
+      expect(appearance().themeColorPreferences.classic).toBe('default');
+      expect(appearance().colors.dark.accentColor).toBe('#285b99');
+    } finally { await act(async () => root.unmount()); }
+  });
+
   it("keeps typography when switching colors and restores family choices after reload", async () => {
     demoPersistence.set('tigrana-meta:/demo/Tigrana', JSON.stringify({ revision: 0, appearance: {
       themePresetId: 'atom', colorScheme: 'dark', quickAppearance: { editorLineHeight: 1.9, editorLetterSpacing: 0.025, editorFontSize: 20 },
@@ -539,13 +573,14 @@ describe("Note navigation persistence", () => {
       await openAppearance();
       expect(document.documentElement.style.getPropertyValue('--tigrana-line-height')).toBe('1.9');
       expect(document.documentElement.style.getPropertyValue('--tigrana-letter-spacing')).toBe('0.025em');
-      await choose('Theme', 'builtin:catppuccin-frappe');
       await choose('Colors', 'catppuccin-mocha');
-      expect(container.textContent).not.toContain('Save current settings as new theme');
+      await waitFor(() => appearance().themeColorPreferences.classic === 'catppuccin-mocha');
+      expect(appearance().quickAppearance).toMatchObject({ editorLineHeight: 1.9, editorLetterSpacing: 0.025, editorFontSize: 20 });
+      expect(container.textContent).toContain('Current settings differ from Classic (Catppuccin Mocha).');
+      await choose('Theme', 'builtin:dracula');
       await choose('Theme', 'builtin:default');
-      expect(container.querySelector<HTMLSelectElement>('[aria-label="Colors"]')!.value).toBe('nord');
-      await choose('Theme', 'builtin:catppuccin-frappe');
       expect(container.querySelector<HTMLSelectElement>('[aria-label="Colors"]')!.value).toBe('catppuccin-mocha');
+      expect(container.querySelector<HTMLSelectElement>('[aria-label="Colors"]')!.selectedOptions[0].textContent).toBe('Catppuccin Mocha');
       await act(async () => Array.from(container.querySelectorAll<HTMLButtonElement>('button')).find(b => b.textContent === 'Restore default appearance')!.click());
       await waitFor(() => appearance().themePresetId === 'default');
       expect(container.querySelector<HTMLSelectElement>('[aria-label="Colors"]')!.value).toBe('default');
@@ -604,7 +639,7 @@ describe("Note navigation persistence", () => {
       expect(findThemeLayoutAction()).toBeDefined();
       await chooseThemeDefaults(container);
       expect(container.querySelector(".app-frame")?.classList.contains("is-single-col")).toBe(false);
-      await act(async () => { picker.value = "bundled:builtin-minimal"; picker.dispatchEvent(new Event("change", { bubbles: true })); });
+      await act(async () => { picker.value = "bundled:builtin-baseline"; picker.dispatchEvent(new Event("change", { bubbles: true })); });
       expect(container.querySelector(".app-frame")?.classList.contains("is-single-col")).toBe(false);
       expect(findThemeLayoutAction()).toBeUndefined();
       expect(container.querySelector(".app-frame")?.classList.contains("is-single-col")).toBe(false);

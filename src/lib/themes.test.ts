@@ -15,7 +15,7 @@ import { exampleTheme } from "./themes.fixture";
 beforeEach(() => localStorage.clear());
 describe("portable themes", () => {
   it("rejects a shared theme using the reserved Default ID", async () => {
-    await expect(saveTheme({ ...exampleTheme(), id: 'default', name: 'Default' }, null)).rejects.toThrow('Default');
+    await expect(saveTheme({ ...exampleTheme(), id: 'default', name: 'Default' }, null)).rejects.toThrow('Classic Blue');
     expect((await listThemes()).themes).toHaveLength(0);
   });
   it("keeps a legacy Default library file intact without offering it as a saved theme", async () => {

@@ -28,6 +28,13 @@ vi.mock("../lib/markdown", async (importOriginal) => {
   };
 });
 
+vi.mock("../lib/notebookStorage", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("../lib/notebookStorage")>();
+  return { ...actual, notebookStorage: { ...actual.notebookStorage,
+    saveAsset: vi.fn(async () => "blob:pasted-image"),
+  } };
+});
+
 import type { EditorPersistenceHandle } from "./editorContract";
 
 const { NotesEditor } = await import("./NotesEditor");
@@ -156,21 +163,34 @@ describe("Note editor typing performance", () => {
     expect(onChange).not.toHaveBeenCalled();
   });
 
-  it.each(["![Image](image.png)", "- ![Image](image.png)"])("keeps image selection, text stats, and resize stable: %s", async imageMarkdown => {
+  it.each(["![Image](image.png)", "- ![Image](image.png)", "paste", "paste-middle", "paste-edit"])("keeps image selection, text stats, and resize stable: %s", async imageMarkdown => {
+    vi.useFakeTimers();
     const container = document.createElement("div"); document.body.append(container);
     const root = createRoot(container); mounted.push({ container, root });
     const onPositionChange = vi.fn();
-    await act(async () => root.render(<NotesEditor content={`Some note text.\n\n${imageMarkdown}`} editable findRequest={0}
+    await act(async () => root.render(<NotesEditor content={`Some note text.\n\n${imageMarkdown.startsWith("paste") ? "" : imageMarkdown}`} editable findRequest={0}
       focusAtEndRequest={0} focusRequest={0} historyKey="images" notePath="Images.md"
       onChange={() => undefined} onLoadError={error => { throw error; }}
       onPendingChange={() => undefined} onPositionChange={onPositionChange}
       restorePosition={null} spellcheckEnabled workspace="/Notebook" />));
     const pm = container.querySelector<HTMLElement>(".ProseMirror")!;
     const editor = (pm as HTMLElement & { editor: import("@tiptap/core").Editor }).editor;
+    await act(async () => { await vi.advanceTimersByTimeAsync(80); });
+    if (imageMarkdown.startsWith("paste")) {
+      await act(async () => { editor.commands.setTextSelection(imageMarkdown === "paste-middle" ? 6 : editor.state.doc.content.size - 1); });
+      const paste = new Event("paste", { bubbles: true, cancelable: true });
+      Object.defineProperty(paste, "clipboardData", { value: {
+        files: [new File(["image"], "Pasted image.png", { type: "image/png" })],
+        getData: () => "",
+      } });
+      await act(async () => { pm.dispatchEvent(paste); });
+      expect(paste.defaultPrevented).toBe(true);
+      if (imageMarkdown === "paste-edit") {
+        await act(async () => { editor.commands.insertContentAt(1, "Caption: "); });
+      }
+    }
     let imagePos = 0;
     editor.state.doc.descendants((node, pos) => { if (node.type.name === "image") imagePos = pos; });
-    await act(async () => { editor.commands.setNodeSelection(imagePos); });
-    expect(onPositionChange.mock.lastCall?.[0].selectedText).toBe("");
     const img = container.querySelector(".image-resizable img")!;
     const clickImage = () => {
       img.dispatchEvent(new MouseEvent("mousedown", { bubbles: true, cancelable: true, button: 0 }));
@@ -178,7 +198,9 @@ describe("Note editor typing performance", () => {
       img.dispatchEvent(new MouseEvent("click", { bubbles: true }));
     };
     await act(async () => { editor.commands.setTextSelection(1); clickImage(); });
+    await act(async () => { await vi.advanceTimersByTimeAsync(32); });
     expect(editor.state.selection.from).toBe(imagePos);
+    expect(onPositionChange.mock.lastCall?.[0].selectedText).toBe("");
     expect(container.querySelector(".image-resizable.is-selected")).not.toBeNull();
     await act(async () => { clickImage(); });
     expect(container.querySelector(".image-resize-edge")).not.toBeNull();

@@ -123,7 +123,7 @@ export default function SettingsModal(props: {
                     {props.onResetTheme ? (
                       <section className="settings-reset-appearance" aria-label="Default appearance">
                         <h3>Default appearance</h3>
-                        <p>Restore Classic with Default colors, fonts, effects, and layout, including sidebars and word count.</p>
+                        <p>Restore Classic Blue colors, fonts, effects, and layout, including sidebars and word count.</p>
                         <button className="toolbar-button" onClick={props.onResetTheme}>
                           <RotateCcw size={16} aria-hidden="true" />
                           Restore default appearance
