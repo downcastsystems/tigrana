@@ -44,14 +44,33 @@ fn main() {
         assert_eq!(current.items().unwrap().len(), 1);
     }
     #[cfg(target_os = "windows")]
-    windows_accelerators(&mut app);
-    println!("Native application menu transfer, ID lookup, and platform accelerator checks passed");
+    {
+        let window = shortcut_test_window(app.handle());
+        windows_accelerators(&mut app, &window);
+        window.close().unwrap();
+    }
+    println!("Native application menu transfer and ID lookup passed");
+}
+
+// Compile this setup on every platform so private or feature-gated Tauri APIs
+// cannot slip into the Windows test. Only Windows needs to create the webview;
+// the macOS menu test also runs in environments without a graphical session.
+#[cfg_attr(not(target_os = "windows"), allow(dead_code))]
+fn shortcut_test_window(handle: &tauri::AppHandle) -> tauri::WebviewWindow {
+    tauri::WebviewWindowBuilder::new(
+        handle,
+        "shortcut-test",
+        tauri::WebviewUrl::External("about:blank".parse().unwrap()),
+    )
+    .visible(false)
+    .build()
+    .expect("build shortcut test webview")
 }
 
 // Exercise Tauri's actual Win32 message hook, not just the displayed labels.
 #[cfg(target_os = "windows")]
 #[allow(deprecated)]
-fn windows_accelerators(app: &mut tauri::App) {
+fn windows_accelerators(app: &mut tauri::App, window: &tauri::WebviewWindow) {
     use std::{sync::{Arc, Mutex}, time::{Duration, Instant}};
     use tauri::menu::{CheckMenuItem, IconMenuItem};
 
@@ -63,8 +82,6 @@ fn windows_accelerators(app: &mut tauri::App) {
     }
 
     let handle = app.handle().clone();
-    let window = tauri::window::WindowBuilder::new(&handle, "shortcut-test")
-        .visible(false).build().unwrap();
     let events = Arc::new(Mutex::new(Vec::<String>::new()));
     let received = events.clone();
     window.on_menu_event(move |_, event| received.lock().unwrap().push(event.id().as_ref().to_owned()));
@@ -110,5 +127,5 @@ fn windows_accelerators(app: &mut tauri::App) {
             assert_eq!(*events.lock().unwrap(), [expected], "accelerator after refresh {generation}");
         }
     }
-    window.close().unwrap();
+    println!("Windows native accelerator dispatch passed at startup and after refreshes");
 }

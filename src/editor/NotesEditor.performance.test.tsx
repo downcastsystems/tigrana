@@ -49,6 +49,9 @@ function setReactInputValue(input: HTMLInputElement, value: string) {
 describe("Note editor typing performance", () => {
   const mounted: Array<{ container: HTMLElement; root: Root }> = [];
 
+  // Constructing and serializing this 1,000-footnote DOM can exceed Vitest's
+  // five-second default on shared CI runners. Performance is asserted below
+  // by conversion/update counts, not by the runner's wall-clock deadline.
   it('persists renumbering on blur after a typing save in a note with 1,000 footnotes', async () => {
     vi.useFakeTimers();
     const container = document.createElement('div'); document.body.append(container);
@@ -94,7 +97,7 @@ describe("Note editor typing performance", () => {
     expect(saved.match(/^\[\^\d+\]:/gm)).toHaveLength(1000);
     await act(async () => { editor.view.dom.dispatchEvent(new FocusEvent('blur')); handle!.capture(); });
     expect(htmlToMarkdown).toHaveBeenCalledTimes(2);
-  });
+  }, 30_000);
 
   it("publishes numbered footnotes once and keeps sidebar targets correct across pending edits and cached Note switches", async () => {
     vi.useFakeTimers();
