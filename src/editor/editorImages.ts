@@ -2,6 +2,7 @@ import { convertFileSrc } from "@tauri-apps/api/core";
 import { Image } from "@tiptap/extension-image";
 import type { EditorView } from "@tiptap/pm/view";
 import { ReactNodeView, ReactNodeViewRenderer, type Editor } from "@tiptap/react";
+import { imageRangeSelectionPlugin } from "./imageRangeSelection";
 import { ResizableImageNodeView } from "./ResizableImageNodeView";
 import { isTauri } from "../lib/desktop";
 import { notebookStorage } from "../lib/notebookStorage";
@@ -27,6 +28,9 @@ export const MarkdownImage = Image.extend({
         renderHTML: (attributes) => (attributes.width ? { width: String(attributes.width) } : {}),
       },
     };
+  },
+  addProseMirrorPlugins() {
+    return [...(this.parent?.() ?? []), imageRangeSelectionPlugin()];
   },
   addNodeView() {
     const render = ReactNodeViewRenderer(ResizableImageNodeView);

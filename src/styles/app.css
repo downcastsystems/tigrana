@@ -3872,6 +3872,15 @@ html[data-theme="dark"] .tab-list-separator {
 /* Resizable image NodeView */
 .image-resizable-wrapper {
   display: block;
+  -webkit-user-select: none;
+  user-select: none;
+}
+
+/* Keep native selection paint off the image; its outline and handles show selection. */
+.ProseMirror .image-resizable-wrapper::selection,
+.ProseMirror .image-resizable-wrapper *::selection {
+  background: transparent !important;
+  color: inherit !important;
 }
 
 .image-resizable {
@@ -3890,6 +3899,7 @@ html[data-theme="dark"] .tab-list-separator {
   margin: 0;
 }
 
+.image-range-selected .image-resizable img,
 .image-resizable.is-selected img {
   outline: 2px solid var(--accent);
   outline-offset: 2px;

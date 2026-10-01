@@ -163,6 +163,36 @@ describe("Note editor typing performance", () => {
     expect(onChange).not.toHaveBeenCalled();
   });
 
+  it("outlines images inside text ranges without showing resize handles", async () => {
+    const container = document.createElement("div"); document.body.append(container);
+    const root = createRoot(container); mounted.push({ container, root });
+    await act(async () => root.render(<NotesEditor content={"Above.\n\n![First](first.png)\n\nBelow.\n\n- ![Second](second.png)\n\nEnd."} editable findRequest={0}
+      focusAtEndRequest={0} focusRequest={0} historyKey="range-images" notePath="Images.md"
+      onChange={() => undefined} onLoadError={error => { throw error; }}
+      onPendingChange={() => undefined} onPositionChange={() => undefined}
+      restorePosition={null} spellcheckEnabled workspace="/Notebook" />));
+    const pm = container.querySelector<HTMLElement>(".ProseMirror")!;
+    const editor = (pm as HTMLElement & { editor: import("@tiptap/core").Editor }).editor;
+    const imagePositions: number[] = [];
+    editor.state.doc.descendants((node, pos) => { if (node.type.name === "image") imagePositions.push(pos); });
+    for (const reverse of [false, true]) {
+      const from = 1, to = imagePositions[1] + 1;
+      await act(async () => { editor.commands.setTextSelection(reverse ? { from: to, to: from } : { from, to }); });
+      expect(container.querySelectorAll(".image-range-selected")).toHaveLength(2);
+      expect(container.querySelector(".image-resize-handle")).toBeNull();
+    }
+    await act(async () => { editor.commands.setTextSelection({ from: 1, to: imagePositions[0] }); });
+    expect(container.querySelector(".image-range-selected")).toBeNull();
+    await act(async () => { editor.commands.setTextSelection({ from: 1, to: imagePositions[0] + 1 }); });
+    expect(container.querySelectorAll(".image-range-selected")).toHaveLength(1);
+    await act(async () => { editor.commands.setNodeSelection(imagePositions[0]); });
+    expect(container.querySelector(".image-range-selected")).toBeNull();
+    expect(container.querySelectorAll(".image-resize-handle")).toHaveLength(2);
+    await act(async () => { editor.commands.setTextSelection(1); });
+    expect(container.querySelector(".image-range-selected")).toBeNull();
+    expect(container.querySelector(".image-resize-handle")).toBeNull();
+  });
+
   it.each(["![Image](image.png)", "- ![Image](image.png)", "paste", "paste-middle", "paste-edit"])("keeps image selection, text stats, and resize stable: %s", async imageMarkdown => {
     vi.useFakeTimers();
     const container = document.createElement("div"); document.body.append(container);
