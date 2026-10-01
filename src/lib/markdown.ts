@@ -600,7 +600,7 @@ function inlineHtmlToMarkdown(element: Element): string {
       return;
     }
     if (node.getAttribute("data-type") === "footnoteReference") {
-      value += `[^${node.getAttribute("data-label") ?? ""}]`;
+      value += `[^${node.getAttribute("data-markdown-label") ?? node.getAttribute("data-label") ?? ""}]`;
       return;
     }
     if (node.getAttribute("data-type") === "inlineMath") {
@@ -686,11 +686,12 @@ export function htmlToMarkdown(html: string) {
     if (block.getAttribute("data-type") === "footnoteDefinition") {
       const content = block.querySelector(":scope > .footnote-content");
       const original = block.getAttribute("data-markdown") ?? "";
+      const label = block.getAttribute("data-markdown-label") ?? block.getAttribute("data-label") ?? "1";
       const body = content ? htmlToMarkdown(content.innerHTML).trimEnd() : "";
       const originalBody = original ? parseFootnotes(original).definitions[0]?.body : undefined;
       // Keep untouched source, including soft line breaks, until its editable content changes.
       const unchanged = originalBody !== undefined && body === htmlToMarkdown(markdownToHtml(originalBody)).trimEnd();
-      markdown.push(unchanged || !content ? original : footnoteMarkdown(block.getAttribute("data-label") ?? "1", body));
+      markdown.push(unchanged || !content ? original.replace(/^\[\^[^\]]+\]:/, () => `[^${label}]:`) : footnoteMarkdown(label, body));
       return;
     }
     const alignment = readTextAlignment(block.getAttribute("style"));

@@ -1,10 +1,55 @@
 import { closeHistory } from "@tiptap/pm/history";
 import { GapCursor } from "@tiptap/pm/gapcursor";
 import { Extension, InputRule, Node, type Editor } from "@tiptap/core";
-import { NodeSelection, Plugin, PluginKey, TextSelection, type Transaction } from "@tiptap/pm/state";
+import { NodeSelection, Plugin, PluginKey, TextSelection, type Selection, type Transaction } from "@tiptap/pm/state";
 import { Decoration, DecorationSet } from "@tiptap/pm/view";
 import type { Fragment, Node as PMNode } from "@tiptap/pm/model";
 import { footnoteAnchor, footnoteKey, validFootnoteLabel } from "../lib/footnotes";
+
+type FootnoteState = {
+  decorations: DecorationSet;
+  markdownLabels: ReadonlyMap<string, string> | undefined;
+  pendingNormalization: boolean;
+};
+const footnoteNumberingKey = new PluginKey<FootnoteState>("footnoteNumbering");
+const finishFootnoteEdit = "finishFootnoteEdit";
+const normalizeFootnotes = "normalizeFootnotes";
+
+// Keep editor/clipboard identities stable; only the labels written to Markdown
+// follow display order. Renaming the identities would misattach a cut reference
+// when it is pasted after the remaining footnotes have been renumbered.
+export function getMarkdownFootnoteLabels(editor: Editor | undefined): ReadonlyMap<string, string> | undefined {
+  return editor ? footnoteNumberingKey.getState(editor.state)?.markdownLabels : undefined;
+}
+
+function markdownFootnoteLabel(editor: Editor | undefined, label: string) {
+  return getMarkdownFootnoteLabels(editor)?.get(footnoteKey(label)) ?? label;
+}
+
+/** Sidebar commands carry labels from the serialized Markdown. */
+export function resolveMarkdownFootnoteLabel(editor: Editor, label: string, labels = getMarkdownFootnoteLabels(editor)) {
+  if (labels) for (const [identity, markdownLabel] of labels) {
+    if (footnoteKey(markdownLabel) === footnoteKey(label)) return identity;
+  }
+  return label;
+}
+
+function numberedMarkdownLabels(doc: PMNode) {
+  const numbers = new Map<string, number>();
+  const numericLabels = new Set<string>();
+  doc.descendants(node => {
+    if (node.type.name !== "footnoteReference" && node.type.name !== "footnoteDefinition") return;
+    const key = footnoteKey(node.attrs.label);
+    if (/^\d+$/.test(key)) numericLabels.add(key);
+    if (node.type.name === "footnoteReference" && !numbers.has(key)) numbers.set(key, numbers.size + 1);
+  });
+  const labels = new Map<string, string>();
+  // Unreferenced definitions remain editable and must not collide with labels
+  // assigned to references, including references with missing definitions.
+  let unusedNumber = numbers.size;
+  for (const key of numericLabels) labels.set(key, String(numbers.get(key) ?? ++unusedNumber));
+  return labels;
+}
 
 function definitionInsertionPosition(doc: PMNode) {
   let position = doc.content.size;
@@ -55,7 +100,7 @@ export function editFootnote(editor: Editor, label: string) {
   const selection = TextSelection.near(editor.state.doc.resolve(definition.pos + 1));
   editor.view.dispatch(editor.state.tr.setSelection(selection).scrollIntoView());
   editor.view.focus();
-  const dom = editor.view.nodeDOM(definition.pos);
+  const dom = editor.view.nodeDOM(findFootnoteDefinition(editor, label)?.pos ?? definition.pos);
   if (dom instanceof HTMLElement) dom.scrollIntoView?.({ block: "center", inline: "nearest" });
   return true;
 }
@@ -67,10 +112,10 @@ export const FootnoteReferenceNode = Node.create({
   // parse priority keeps Link from consuming reference anchors on paste.
   parseHTML() { return [{ tag: 'sup[data-type="footnoteReference"]', priority: 100 }, { tag: 'a[data-type="footnoteReference"]', priority: 100 }]; },
   renderHTML({ node }) {
-    return ["a", { href: `#${footnoteAnchor(node.attrs.label)}`, "data-type": "footnoteReference", "data-label": node.attrs.label, "data-number": node.attrs.label,
+    return ["a", { href: `#${footnoteAnchor(node.attrs.label)}`, "data-type": "footnoteReference", "data-label": node.attrs.label, "data-markdown-label": markdownFootnoteLabel(this.editor, node.attrs.label), "data-number": node.attrs.label,
       "class": "footnote-reference", "role": "button", "tabindex": "0", "aria-label": `Footnote ${node.attrs.label}` }, ["span", { "class": "sr-only" }, `Footnote ${node.attrs.label}`]];
   },
-  renderText({ node }) { return `[^${node.attrs.label}]`; },
+  renderText({ node }) { return `[^${markdownFootnoteLabel(this.editor, node.attrs.label)}]`; },
   addInputRules() { return [new InputRule({ find: /(?<!\\)\[\^\]$/, handler: ({ state, range }) => {
     if (!this.editor.isEditable) return null;
     for (let depth = state.selection.$from.depth; depth > 0; depth--) {
@@ -93,7 +138,7 @@ export const FootnoteDefinitionNode = Node.create({
   }; },
   parseHTML() { return [{ tag: 'aside[data-type="footnoteDefinition"]', contentElement: '.footnote-content' }]; },
   renderHTML({ node }) {
-    return ["aside", { "data-type": "footnoteDefinition", "data-label": node.attrs.label,
+    return ["aside", { "data-type": "footnoteDefinition", "data-label": node.attrs.label, "data-markdown-label": markdownFootnoteLabel(this.editor, node.attrs.label),
       id: footnoteAnchor(node.attrs.label), "data-markdown": node.attrs.markdown, class: "footnote-definition" },
     ["button", { type: "button", contenteditable: "false", "data-footnote-backlink": node.attrs.label,
       class: "footnote-backlink", "aria-label": "Go to footnote reference" }, node.attrs.label],
@@ -163,7 +208,28 @@ function footnoteStructureChanged(tr: Transaction) {
   });
 }
 
-/** Reorder only after structural footnote edits, never during ordinary typing. */
+function footnoteContentChanged(tr: Transaction) {
+  return tr.steps.some((step, index) => {
+    const { from, pos } = step.toJSON();
+    const position = typeof from === "number" ? from : pos;
+    if (typeof position !== "number") return false;
+    const $position = tr.docs[index].resolve(position);
+    for (let depth = $position.depth; depth > 0; depth--) {
+      if ($position.node(depth).type.name === "footnoteDefinition") return true;
+    }
+    return false;
+  });
+}
+
+function selectedFootnote(selection: Selection) {
+  for (let depth = selection.$from.depth; depth > 0; depth--) {
+    const node = selection.$from.node(depth);
+    if (node.type.name === "footnoteDefinition") return footnoteKey(node.attrs.label);
+  }
+  return null;
+}
+
+/** Reorder after structural edits or after leaving an edited footnote. */
 function orderDefinitions(tr: Transaction) {
   const definitions: { node: PMNode; pos: number }[] = [];
   const numbers = new Map<string, number>();
@@ -197,20 +263,44 @@ function orderDefinitions(tr: Transaction) {
 
 export const FootnoteInteractions = Extension.create({
   name: "footnoteInteractions",
+  onTransaction({ editor, transaction, appendedTransactions }) {
+    const transactions = [transaction, ...appendedTransactions];
+    // Renumbering can change the saved Markdown without changing editor nodes.
+    // Tiptap only emits update for document changes, so publish this case through
+    // the same deferred persistence path as ordinary edits.
+    if (transactions.some(tr => tr.getMeta(normalizeFootnotes)) && !transactions.some(tr => tr.docChanged)) {
+      editor.emit("update", { editor, transaction, appendedTransactions });
+    }
+  },
   addProseMirrorPlugins() {
     const editor = this.editor;
-    return [new Plugin<DecorationSet>({
-      key: new PluginKey("footnoteNumbering"),
+    return [new Plugin<FootnoteState>({
+      key: footnoteNumberingKey,
       state: {
-        init: (_, state) => numberedReferences(state.doc),
+        // Typing only marks numbering as pending. Normalize when the footnote
+        // loses focus, then reuse the map during subsequent content edits.
+        init: (_, state) => ({ decorations: numberedReferences(state.doc), markdownLabels: undefined, pendingNormalization: false }),
         apply: (tr, current) => {
+          if (tr.getMeta(normalizeFootnotes)) return {
+            decorations: tr.docChanged ? numberedReferences(tr.doc) : current.decorations,
+            markdownLabels: numberedMarkdownLabels(tr.doc), pendingNormalization: false,
+          };
           if (!tr.docChanged) return current;
           const changed = footnoteStructureChanged(tr);
-          return changed ? numberedReferences(tr.doc) : current.map(tr.mapping, tr.doc);
+          return changed
+            ? { decorations: numberedReferences(tr.doc), markdownLabels: numberedMarkdownLabels(tr.doc), pendingNormalization: false }
+            : { ...current, decorations: current.decorations.map(tr.mapping, tr.doc),
+              pendingNormalization: current.pendingNormalization || !current.markdownLabels && footnoteContentChanged(tr) };
         },
       },
-      appendTransaction(transactions, _old, state) {
-        const reordered = transactions.some(footnoteStructureChanged) ? orderDefinitions(state.tr) : null;
+      appendTransaction(transactions, old, state) {
+        const finishedEditing = editor.isEditable && footnoteNumberingKey.getState(state)?.pendingNormalization
+          && (transactions.some(tr => tr.getMeta(finishFootnoteEdit)) || selectedFootnote(old.selection) !== selectedFootnote(state.selection));
+        // Append the reorder so it stays in the edit's undo group even if the
+        // user pauses before leaving the footnote.
+        const reordered = finishedEditing
+          ? (orderDefinitions(state.tr) ?? state.tr).setMeta(normalizeFootnotes, true)
+          : transactions.some(footnoteStructureChanged) ? orderDefinitions(state.tr) : null;
         // Mouse clicks and horizontal arrows can create gap selections outside
         // isolating definitions. Keep those selections in editable footnote text.
         if ((reordered ?? state).selection instanceof GapCursor) {
@@ -225,8 +315,14 @@ export const FootnoteInteractions = Extension.create({
         return reordered;
       },
       props: {
-        decorations(state) { return this.getState(state); },
+        decorations(state) { return this.getState(state)?.decorations; },
         handleDOMEvents: {
+          blur(view) {
+            if (editor.isEditable && footnoteNumberingKey.getState(view.state)?.pendingNormalization) {
+              view.dispatch(view.state.tr.setMeta(finishFootnoteEdit, true));
+            }
+            return false;
+          },
           keydown(_view, event) { return handleFootnoteArrow(editor, event); },
           click(_view, event) {
             const element = event.target instanceof Element ? event.target.closest<HTMLElement>('[data-type="footnoteReference"], [data-footnote-backlink]') : null;

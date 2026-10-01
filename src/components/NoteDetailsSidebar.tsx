@@ -76,6 +76,7 @@ export function RightSidebar({
   const linksPane = <NoteLinksPane linkIndex={effectiveIndex} activePath={activePath} selectedFolder={selectedFolder}
     notes={notes} metadata={metadata} onSelect={onSelectBacklink} />;
   const outlineScrollKey = noteIdentity ? JSON.stringify([workspace, noteIdentity]) : null;
+  const sidebarRef = useRef<HTMLElement>(null);
   const overviewRef = useRef<HTMLDivElement>(null);
   const overviewScrollKey = noteIdentity ? JSON.stringify([workspace, noteIdentity, "overview"]) : null;
   useLayoutEffect(() => {
@@ -90,8 +91,16 @@ export function RightSidebar({
       ? "Links"
       : mode === "footnotes" ? "Footnotes"
       : "Properties";
+  function scrollToTop() {
+    const pane = sidebarRef.current?.querySelector<HTMLElement>(
+      ":scope > .note-overview, :scope > .outline-list, :scope > .frontmatter-pane, :scope > .sidebar-scroll-pane, :scope > .properties-list",
+    );
+    if (pane) pane.scrollTop = 0;
+    const scrollKey = mode === "overview" ? overviewScrollKey : mode === "outline" ? outlineScrollKey : null;
+    if (scrollKey) outlineScrollPositions.set(scrollKey, 0);
+  }
   return (
-    <aside id={id} className="right-sidebar">
+    <aside id={id} className="right-sidebar" ref={sidebarRef}>
       {overlayActions}
       <div className="pane-header right-sidebar-header">
         <div className="sidebar-tabs" role="group" aria-label="Note information">
@@ -114,7 +123,7 @@ export function RightSidebar({
             <FileText size={16} />
           </button>
         </div>
-        <strong>{title}</strong>
+        <strong><button type="button" className="sidebar-title-button" title={`Scroll ${title} to the top`} onClick={scrollToTop}>{title}</button></strong>
       </div>
       {mode === "overview" ? (
         <div className="note-overview" ref={overviewRef} onScroll={event => {

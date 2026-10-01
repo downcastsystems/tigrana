@@ -1,11 +1,11 @@
 // @vitest-environment jsdom
 import { serializeEditorSelectionForClipboard } from "./notesEditorBehavior";
-import { NodeSelection } from "@tiptap/pm/state";
+import { EditorState, NodeSelection } from "@tiptap/pm/state";
 import { GapCursor } from "@tiptap/pm/gapcursor";
 import { Editor } from "@tiptap/core";
 import { StarterKit } from "@tiptap/starter-kit";
 import { afterEach, expect, it, vi } from "vitest";
-import { FootnoteDefinitionNode, FootnoteReferenceNode, FootnoteInteractions, selectFootnote, requestFootnote, editFootnote, findFootnoteDefinition, deleteFootnote, handleEmptyFootnoteDelete, handleFootnoteArrow } from "./footnotes";
+import { FootnoteDefinitionNode, FootnoteReferenceNode, FootnoteInteractions, selectFootnote, requestFootnote, editFootnote, findFootnoteDefinition, deleteFootnote, getMarkdownFootnoteLabels, resolveMarkdownFootnoteLabel, handleEmptyFootnoteDelete, handleFootnoteArrow } from "./footnotes";
 import { footnoteEntries, footnotePreview, parseFootnotes } from "../lib/footnotes";
 import { htmlToMarkdown, markdownToHtml } from "../lib/markdown";
 import { measureNoteText } from "../lib/noteTextStats";
@@ -351,6 +351,169 @@ it('creates and focuses an automatically numbered footnote from [^] before exist
   typeText(editor, 'New text');
   expect(findFootnoteDefinition(editor, '2')!.node.textContent).toBe('New text');
   expect(findFootnoteDefinition(editor, '1')!.node.textContent).toBe('Keep');
+  expect(htmlToMarkdown(editor.getHTML()).trim()).toBe('[^1]Existing[^2].\n\n[^1]: New text\n\n[^2]: Keep');
+});
+
+it('writes sequential labels after insertion while preserving rich definition source and focus', () => {
+  const editor = create('First[^8]. Second[^3]. Again[^8].\n\n[^8]: **First**\n    continuation\n\n    Another paragraph.\n\n[^3]: Second');
+  editor.commands.setTextSelection(1);
+  requestFootnote(editor);
+  typeText(editor, 'New');
+  const saved = htmlToMarkdown(editor.getHTML());
+  expect(saved).toContain('[^1]First[^2]. Second[^3]. Again[^2].');
+  expect(parseFootnotes(saved).definitions.map(({ label, body }) => [label, body])).toEqual([
+    ['1', 'New'], ['2', '**First**\ncontinuation\n\nAnother paragraph.'], ['3', 'Second'],
+  ]);
+  expect(saved).toContain('[^2]: **First**\n    continuation\n\n    Another paragraph.');
+  expect(htmlToMarkdown(create(saved).getHTML())).toBe(saved);
+});
+
+it('keeps old labels while typing and normalizes them when the edited footnote loses focus', () => {
+  const editor = create('First[^5]. Second[^3].\n\n[^5]: First\n\n[^3]: Second');
+  editor.commands.setTextSelection(1);
+  typeText(editor, 'Body ');
+  expect(getMarkdownFootnoteLabels(editor)).toBeUndefined();
+  editFootnote(editor, '3');
+  expect(getMarkdownFootnoteLabels(editor)).toBeUndefined();
+  typeText(editor, 'X');
+  expect(getMarkdownFootnoteLabels(editor)).toBeUndefined();
+  typeText(editor, 'YZ');
+  expect(getMarkdownFootnoteLabels(editor)).toBeUndefined();
+  expect(editor.state.selection.$from.node(-1).attrs.label).toBe('3');
+  expect(htmlToMarkdown(editor.getHTML())).toContain('First[^5]. Second[^3].');
+  editor.view.dom.dispatchEvent(new FocusEvent('blur'));
+  const labels = getMarkdownFootnoteLabels(editor);
+  expect(labels).toBeDefined();
+  expect(htmlToMarkdown(editor.getHTML()).trim()).toBe('Body First[^1]. Second[^2].\n\n[^1]: First\n\n[^2]: XYZSecond');
+  typeText(editor, '!');
+  expect(getMarkdownFootnoteLabels(editor)).toBe(labels);
+});
+
+it.each(['typing', 'formatting'])('reorders legacy definitions only after blur following %s, preserving selection and undo', action => {
+  const editor = create('First[^5]. Second[^3].\n\n[^5]: First\n\n[^3]: Second');
+  // A restored editor document may still carry definitions in their old order.
+  const doc = editor.state.doc;
+  editor.view.updateState(EditorState.create({
+    doc: doc.type.create(doc.attrs, [doc.child(0), doc.child(2), doc.child(1)]),
+    plugins: editor.state.plugins,
+  }));
+  editFootnote(editor, '3');
+  const from = editor.state.selection.from;
+  if (action === 'typing') typeText(editor, 'X');
+  else {
+    editor.commands.setTextSelection({ from, to: from + 6 });
+    editor.commands.toggleBold();
+  }
+  expect([...editor.view.dom.querySelectorAll('.footnote-definition')].map(node => node.getAttribute('data-label'))).toEqual(['3', '5']);
+  // Blurring after the normal undo-group timeout must still undo with the edit.
+  vi.spyOn(Date, 'now').mockReturnValue(Date.now() + 5000);
+  editor.view.dom.dispatchEvent(new FocusEvent('blur'));
+  vi.mocked(Date.now).mockRestore();
+  expect([...editor.view.dom.querySelectorAll('.footnote-definition')].map(node => node.getAttribute('data-label'))).toEqual(['5', '3']);
+  expect([...editor.view.dom.querySelectorAll('.footnote-backlink')].map(node => node.textContent)).toEqual(['1', '2']);
+  expect(editor.state.selection.$from.node(-1).attrs.label).toBe('3');
+  const saved = htmlToMarkdown(editor.getHTML());
+  expect(parseFootnotes(saved).definitions.map(item => [item.label, item.body])).toEqual([
+    ['1', 'First'], ['2', action === 'typing' ? 'XSecond' : '**Second**'],
+  ]);
+  editor.commands.undo();
+  expect(findFootnoteDefinition(editor, '3')!.node.textContent).toBe('Second');
+  editor.commands.redo();
+  expect(htmlToMarkdown(editor.getHTML())).toBe(saved);
+});
+
+it.each(['body', 'another footnote'])('normalizes an edited footnote when selection moves to %s', destination => {
+  const editor = create('First[^5]. Second[^3].\n\n[^5]: First\n\n[^3]: Second\n\n    Another paragraph');
+  editFootnote(editor, '3');
+  typeText(editor, 'X');
+  const definition = findFootnoteDefinition(editor, '3')!;
+  editor.commands.setTextSelection(definition.pos + definition.node.nodeSize - 2);
+  expect(getMarkdownFootnoteLabels(editor)).toBeUndefined();
+  if (destination === 'body') editor.commands.setTextSelection(1);
+  else editFootnote(editor, '5');
+  expect(htmlToMarkdown(editor.getHTML())).toContain('First[^1]. Second[^2].');
+  expect(editor.state.selection.$from.parent.textContent).toBe(destination === 'body' ? 'First. Second.' : 'First');
+});
+
+it('does not normalize an untouched or read-only footnote on blur', () => {
+  const editor = create('First[^5].\n\n[^5]: First');
+  editFootnote(editor, '5');
+  editor.view.dom.dispatchEvent(new FocusEvent('blur'));
+  expect(getMarkdownFootnoteLabels(editor)).toBeUndefined();
+  typeText(editor, 'X');
+  editor.setEditable(false, false);
+  editor.view.dom.dispatchEvent(new FocusEvent('blur'));
+  expect(getMarkdownFootnoteLabels(editor)).toBeUndefined();
+});
+
+it('deletes numeric references together, renumbers the remaining definitions, and undoes in one step', () => {
+  const editor = create('First[^1]. Second[^2]. Again[^1]. Third[^3].\n\n[^1]: First\n\n[^2]: Second\n\n[^3]: Third');
+  const before = htmlToMarkdown(editor.getHTML());
+  deleteFootnote(editor, '1');
+  const after = htmlToMarkdown(editor.getHTML());
+  expect(after.trim()).toBe('First. Second[^1]. Again. Third[^2].\n\n[^1]: Second\n\n[^2]: Third');
+  editor.commands.undo();
+  expect(htmlToMarkdown(editor.getHTML())).toBe(before);
+  editor.commands.redo();
+  expect(htmlToMarkdown(editor.getHTML())).toBe(after);
+});
+
+it('preserves descriptive labels and reserves their display numbers when numbering numeric labels', () => {
+  const editor = create('Named[^Source]. Numeric[^7]. Repeat[^source].\n\n[^Source]: Named\n\n[^7]: Numeric');
+  editor.commands.setTextSelection(editor.state.doc.firstChild!.nodeSize - 1);
+  requestFootnote(editor);
+  typeText(editor, 'Last');
+  const saved = htmlToMarkdown(editor.getHTML());
+  expect(parseFootnotes(saved).references.map(({ label, number }) => [label, number])).toEqual([
+    ['Source', 1], ['2', 2], ['source', 1], ['3', 3],
+  ]);
+  expect(parseFootnotes(saved).definitions.map(item => item.label)).toEqual(['Source', '2', '3']);
+});
+
+it.each([0, 1, 2])('keeps cut footnote %i attached to its original definition after renumbering and pasting', index => {
+  const editor = create('First[^1].\n\nSecond[^2].\n\nThird[^3].\n\n[^1]: A\n\n[^2]: B\n\n[^3]: C');
+  let start = 0;
+  for (let i = 0; i < index; i++) start += editor.state.doc.child(i).nodeSize;
+  editor.commands.setTextSelection({ from: start + 1, to: start + editor.state.doc.child(index).nodeSize - 1 });
+  const clipboard = serializeEditorSelectionForClipboard(editor.view)!;
+  editor.commands.deleteSelection();
+  const cut = parseFootnotes(htmlToMarkdown(editor.getHTML()));
+  expect(cut.references.map(item => item.label)).toEqual(['1', '2']);
+  expect(new Set(cut.definitions.map(item => item.label)).size).toBe(3);
+  editor.commands.setTextSelection(1);
+  editor.view.pasteHTML(clipboard.html, new Event('paste') as ClipboardEvent);
+  const saved = htmlToMarkdown(editor.getHTML());
+  const bodies = ['A', 'B', 'C'];
+  const moved = bodies.splice(index, 1)[0];
+  expect(parseFootnotes(saved).references.map(item => item.label)).toEqual(['1', '2', '3']);
+  expect(parseFootnotes(saved).definitions.map(item => item.body)).toEqual([moved, ...bodies]);
+  expect(htmlToMarkdown(create(saved).getHTML())).toBe(saved);
+});
+
+it('keeps missing, unused, and duplicate numeric definitions distinct when labels are reassigned', () => {
+  const editor = create('Missing[^9]. Existing[^2].\n\n[^2]: First\n\n[^2]: Duplicate\n\n[^1]: Unused');
+  editor.commands.setTextSelection(1);
+  requestFootnote(editor);
+  const saved = htmlToMarkdown(editor.getHTML());
+  expect(parseFootnotes(saved).references.map(item => item.label)).toEqual(['1', '2', '3']);
+  expect(footnoteEntries(saved)).toMatchObject([
+    { label: '1', body: '' }, { label: '2', body: null },
+    { label: '3', body: 'First', duplicate: true }, { label: '4', body: 'Unused', references: 0 },
+  ]);
+});
+
+it('resolves sidebar edits, jumps, and deletes from the saved numeric labels', () => {
+  const editor = create('First[^1]. Second[^2].\n\n[^1]: First\n\n[^2]: Second');
+  editor.commands.setTextSelection(1);
+  requestFootnote(editor);
+  const firstLabel = resolveMarkdownFootnoteLabel(editor, '1');
+  expect(firstLabel).toBe('3');
+  editFootnote(editor, firstLabel);
+  typeText(editor, 'New first');
+  selectFootnote(editor, resolveMarkdownFootnoteLabel(editor, '2'));
+  expect((editor.state.selection as NodeSelection).node.attrs.label).toBe('1');
+  deleteFootnote(editor, resolveMarkdownFootnoteLabel(editor, '2'));
+  expect(parseFootnotes(htmlToMarkdown(editor.getHTML())).definitions.map(item => item.body)).toEqual(['New first', 'Second']);
 });
 
 it('undoes shortcut insertion together with its empty definition', () => {

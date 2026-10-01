@@ -1,5 +1,5 @@
 import { formattingSelectionAnchor } from "./formattingSelectionAnchor";
-import { FootnoteDefinitionNode, FootnoteReferenceNode, FootnoteInteractions, requestFootnote, selectFootnote, deleteFootnote, handleEmptyFootnoteDelete, handleFootnoteArrow } from "./footnotes";
+import { FootnoteDefinitionNode, FootnoteReferenceNode, FootnoteInteractions, requestFootnote, selectFootnote, deleteFootnote, getMarkdownFootnoteLabels, resolveMarkdownFootnoteLabel, handleEmptyFootnoteDelete, handleFootnoteArrow } from "./footnotes";
 import { canAlignText, setTextAlignment, TextAlignmentExtension } from "./textAlignment";
 import { SearchResultReveal, useSearchResultReveal } from "./searchResultReveal";
 import { TaskItem, TaskList } from "@tiptap/extension-list";
@@ -144,6 +144,9 @@ export function NotesEditor({ bulletMethodDisplay = defaultBulletMethodDisplay, 
   const slashRef = useRef<SlashState | null>(null);
   const selectedSlashItemRef = useRef<HTMLButtonElement | null>(null);
   const editorRef = useRef<Editor | null>(null);
+  // Sidebar labels belong to the last published Markdown, which can lag behind
+  // a structural edit until the deferred commit runs. Maps are immutable snapshots.
+  const publishedFootnoteLabels = useRef<ReadonlyMap<string, string>>(new Map());
   const editableRef = useRef(editable);
   editableRef.current = editable;
   const findInputRef = useRef<HTMLInputElement | null>(null);
@@ -395,10 +398,11 @@ export function NotesEditor({ bulletMethodDisplay = defaultBulletMethodDisplay, 
     },
     onUpdate({ editor }) {
       const sourceNotePath = lastLoadedNote.current;
-      deferredMarkdownRef.current?.schedule(() => ({
-        markdown: htmlToMarkdown(editor.getHTML()),
-        sourceNotePath,
-      }));
+      deferredMarkdownRef.current?.schedule(() => {
+        const markdown = htmlToMarkdown(editor.getHTML());
+        publishedFootnoteLabels.current = getMarkdownFootnoteLabels(editor) ?? new Map();
+        return { markdown, sourceNotePath };
+      });
       onPendingChangeRef.current(pendingChangeHandleRef.current);
       const match = findSlashQuery(editor);
       const nextSlash = match ? { ...match, selected: 0 } : null;
@@ -580,6 +584,7 @@ export function NotesEditor({ bulletMethodDisplay = defaultBulletMethodDisplay, 
           .run();
         resetEditorHistory(editor);
       }
+      publishedFootnoteLabels.current = getMarkdownFootnoteLabels(editor) ?? new Map();
       lastLoadedNote.current = notePath;
       loadedHistoryKey.current = nextHistoryKey;
       handledReloadRequest.current = reloadRequest ?? 0;
@@ -733,15 +738,15 @@ export function NotesEditor({ bulletMethodDisplay = defaultBulletMethodDisplay, 
   const applyEditorCommand = useCallback((request: EditorCommandRequest) => {
     if (!editor) return;
     if (request.command === "footnote") {
-      requestFootnote(editor, request.src);
+      requestFootnote(editor, request.src ? resolveMarkdownFootnoteLabel(editor, request.src, publishedFootnoteLabels.current) : undefined);
       return;
     }
     if (request.command === "selectFootnote") {
-      if (request.src) selectFootnote(editor, request.src);
+      if (request.src) selectFootnote(editor, resolveMarkdownFootnoteLabel(editor, request.src, publishedFootnoteLabels.current));
       return;
     }
     if (request.command === "deleteFootnote") {
-      if (request.src) deleteFootnote(editor, request.src);
+      if (request.src) deleteFootnote(editor, resolveMarkdownFootnoteLabel(editor, request.src, publishedFootnoteLabels.current));
       return;
     }
     if (request.command === "equation") {

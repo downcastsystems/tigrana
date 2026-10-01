@@ -35,7 +35,7 @@ vi.mock("../lib/notebookStorage", async (importOriginal) => {
   } };
 });
 
-import type { EditorPersistenceHandle } from "./editorContract";
+import type { EditorCommandRequest, EditorPersistenceHandle } from "./editorContract";
 
 const { NotesEditor } = await import("./NotesEditor");
 const { htmlToMarkdown, markdownToHtml } = await import("../lib/markdown");
@@ -48,6 +48,94 @@ function setReactInputValue(input: HTMLInputElement, value: string) {
 
 describe("Note editor typing performance", () => {
   const mounted: Array<{ container: HTMLElement; root: Root }> = [];
+
+  it('persists renumbering on blur after a typing save in a note with 1,000 footnotes', async () => {
+    vi.useFakeTimers();
+    const container = document.createElement('div'); document.body.append(container);
+    const root = createRoot(container); mounted.push({ container, root });
+    const labels = Array.from({ length: 1000 }, (_, index) => 1000 - index);
+    const content = labels.map(label => `Reference[^${label}].`).join('\n\n')
+      + '\n\n' + labels.map(label => `[^${label}]: Definition ${label}`).join('\n\n');
+    const onChange = vi.fn();
+    let handle: EditorPersistenceHandle | null = null;
+    await act(async () => root.render(<NotesEditor content={content} editable findRequest={0}
+      focusAtEndRequest={0} focusRequest={0} historyKey='footnote-blur' notePath='Footnotes.md'
+      onChange={onChange} onLoadError={error => { throw error; }} onPendingChange={() => undefined}
+      onPersistenceReady={next => { handle = next; }} onPositionChange={() => undefined}
+      restorePosition={null} spellcheckEnabled workspace='/Notebook' />));
+    const editor = (container.querySelector('.ProseMirror') as HTMLElement & { editor: import('@tiptap/core').Editor }).editor;
+    const { editFootnote, getMarkdownFootnoteLabels } = await import('./footnotes');
+    await act(async () => { editFootnote(editor, '1000'); });
+    vi.mocked(htmlToMarkdown).mockClear();
+    await act(async () => {
+      for (const character of 'Edited ') editor.view.dispatch(editor.state.tr.insertText(character));
+    });
+    expect(getMarkdownFootnoteLabels(editor)).toBeUndefined();
+    expect(htmlToMarkdown).not.toHaveBeenCalled();
+    await act(async () => { handle!.capture(); });
+    expect(htmlToMarkdown).toHaveBeenCalledTimes(1);
+    expect(onChange.mock.calls[0][0]).toContain('[^1000]: Edited Definition 1000');
+    // The typing save is already complete. A label-only blur still needs to
+    // schedule another save, without replacing the editor document.
+    const doc = editor.state.doc;
+    await act(async () => { editor.view.dom.dispatchEvent(new FocusEvent('blur')); });
+    expect(editor.state.doc).toBe(doc);
+    expect(htmlToMarkdown).toHaveBeenCalledTimes(1);
+    await act(async () => { handle!.capture(); });
+    expect(htmlToMarkdown).toHaveBeenCalledTimes(2);
+    expect(onChange).toHaveBeenCalledTimes(2);
+    const saved = onChange.mock.calls[1][0] as string;
+    expect(saved).toContain('[^1]: Edited Definition 1000');
+    expect(saved).toContain('[^1000]: Definition 1');
+    expect(saved.match(/^\[\^\d+\]:/gm)).toHaveLength(1000);
+    await act(async () => { editor.view.dom.dispatchEvent(new FocusEvent('blur')); handle!.capture(); });
+    expect(htmlToMarkdown).toHaveBeenCalledTimes(2);
+  });
+
+  it("publishes numbered footnotes once and keeps sidebar targets correct across pending edits and cached Note switches", async () => {
+    vi.useFakeTimers();
+    const container = document.createElement("div"); document.body.append(container);
+    const root = createRoot(container); mounted.push({ container, root });
+    let markdown = 'First[^1]. Second[^2].\n\n[^1]: First\n\n[^2]: Second';
+    let handle: EditorPersistenceHandle | null = null;
+    const onChange = vi.fn((next: string) => { markdown = next; });
+    const render = (path = 'A.md', commandRequest: EditorCommandRequest | null = null) => <NotesEditor
+      content={path === 'A.md' ? markdown : 'Other note'} commandRequest={commandRequest}
+      editable findRequest={0} focusAtEndRequest={0} focusRequest={0} historyKey={path} notePath={path}
+      onChange={onChange} onLoadError={error => { throw error; }} onPendingChange={() => undefined}
+      onPersistenceReady={next => { handle = next; }} onPositionChange={() => undefined}
+      restorePosition={null} spellcheckEnabled workspace="/Notebook" />;
+    await act(async () => root.render(render()));
+    const editor = (container.querySelector('.ProseMirror') as HTMLElement & { editor: import('@tiptap/core').Editor }).editor;
+    const setContent = vi.spyOn(editor.commands, 'setContent');
+    vi.mocked(htmlToMarkdown).mockClear();
+    await act(async () => { editor.commands.setTextSelection(1); });
+    await act(async () => root.render(render('A.md', { id: 1, command: 'footnote' })));
+    // Before the deferred publication, the sidebar still calls the old second
+    // footnote "2". The newly computed numbering must not change that target.
+    await act(async () => root.render(render('A.md', { id: 2, command: 'footnote', src: '2' })));
+    expect(editor.state.selection.$from.node(-1).textContent).toBe('Second');
+    expect(htmlToMarkdown).not.toHaveBeenCalled();
+    await act(async () => { handle!.capture(); });
+    expect(htmlToMarkdown).toHaveBeenCalledTimes(1);
+    expect(onChange).toHaveBeenCalledTimes(1);
+    expect(markdown.trim()).toBe('[^1]First[^2]. Second[^3].\n\n[^1]: \n\n[^2]: First\n\n[^3]: Second');
+    await act(async () => root.render(render('A.md', { id: 3, command: 'footnote', src: '2' })));
+    expect(editor.state.selection.$from.node(-1).textContent).toBe('First');
+    expect(setContent).not.toHaveBeenCalled();
+    await act(async () => root.render(render('A.md', { id: 4, command: 'deleteFootnote', src: '2' })));
+    await act(async () => { handle!.capture(); });
+    expect(markdown).toContain('[^2]: Second');
+    expect(markdown).not.toContain('[^2]: First');
+    await act(async () => root.render(render('B.md')));
+    await act(async () => root.render(render()));
+    await act(async () => root.render(render('A.md', { id: 5, command: 'footnote', src: '1' })));
+    // A cached state retains the original internal label and its undo history.
+    expect(editor.state.selection.$from.node(-1).attrs.label).toBe('3');
+    await act(async () => { editor.commands.undo(); handle!.capture(); });
+    expect(markdown).toContain('[^2]: First');
+    expect(markdown).toContain('[^3]: Second');
+  });
 
   it("opens /date with the keyboard and dismisses it on an identical-content Note switch", async () => {
     const container = document.createElement("div"); document.body.append(container);
