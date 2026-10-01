@@ -277,6 +277,27 @@ describe("Note persistence across moves and editor transitions", () => {
     expect(readNotes()["Meetings/Other.md"]).toContain("Other body.");
   });
 
+  it.each([0, 400, 1500, 1800])("preserves undo before navigation with a save delayed after %i ms", async delay => {
+    const container = await mount(true);
+    await act(async () => { editorIn(container).commands.insertContent("Baseline "); await vi.advanceTimersByTimeAsync(300); });
+    await act(async () => { await vi.advanceTimersByTimeAsync(1000); });
+    const original = editorIn(container).state.doc.textContent;
+    delayedSaves.enabled = true;
+    await pendingEdit(container);
+    await act(async () => { await vi.advanceTimersByTimeAsync(Math.min(delay, 300)); });
+    await act(async () => { await vi.advanceTimersByTimeAsync(Math.max(0, delay - 300)); });
+    if (delay >= 1500) expect(delayedSaves.markdown).toHaveLength(1);
+    await act(async () => { editorIn(container).commands.undo(); });
+    expect(editorIn(container).state.doc.textContent).toBe(original);
+    if (delay === 1800) await act(async () => { await vi.advanceTimersByTimeAsync(300); });
+    await act(async () => container.querySelector<HTMLButtonElement>('[data-note-path="Meetings/Other.md"]')!.click());
+    delayedSaves.enabled = false;
+    await act(async () => { delayedSaves.releases.splice(0).forEach(release => release()); await vi.advanceTimersByTimeAsync(2000); });
+    await act(async () => container.querySelector<HTMLButtonElement>('[data-note-path="Meetings/Source.md"]')!.click());
+    expect(editorIn(container).state.doc.textContent).toBe(original);
+    expect(readNotes()["Meetings/Source.md"]).not.toContain(newBody);
+  });
+
   it("preserves frontmatter and supported Markdown through repeated mode switches and reopening", async () => {
     const container = await mount(true);
     const content = "---\ncustom_field: keep-me\n---\n\n## Meeting notes\n\n- [ ] Follow up\n- [x] Sent\n\n1. First\n2. Second\n\n```js\nconst total = 42;\n```\n\n[Reference](Other.md)\n\n2147483648. Literal number";

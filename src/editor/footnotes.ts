@@ -245,14 +245,22 @@ function orderDefinitions(tr: Transaction) {
   const selection = tr.selection;
   const anchor = definitions.find(item => selection.anchor > item.pos && selection.anchor < item.pos + item.node.nodeSize);
   const head = definitions.find(item => selection.head > item.pos && selection.head < item.pos + item.node.nodeSize);
-  // The converter and insertion path keep definitions contiguous at the bottom.
-  // Move each node so selection mappings in the prose stay intact.
-  for (const item of [...definitions].reverse()) tr.delete(item.pos, item.pos + item.node.nodeSize);
   const positions = new Map<PMNode, number>();
-  let insertAt = tr.mapping.map(definitions[0].pos);
+  let insertAt = definitions[0].pos;
+  const contiguous = definitions.every((item, index) => !index || definitions[index - 1].pos + definitions[index - 1].node.nodeSize === item.pos);
+  if (contiguous) {
+    // One replacement keeps reordering linear in the number of definitions,
+    // instead of creating thousands of steps and remapping each through them.
+    const last = definitions[definitions.length - 1];
+    tr.replaceWith(insertAt, last.pos + last.node.nodeSize, ordered.map(item => item.node));
+  } else {
+    // Preserve intervening prose in unusual imported editor documents.
+    for (const item of [...definitions].reverse()) tr.delete(item.pos, item.pos + item.node.nodeSize);
+    insertAt = tr.mapping.map(insertAt);
+    tr.insert(insertAt, ordered.map(item => item.node));
+  }
   for (const item of ordered) {
     positions.set(item.node, insertAt);
-    tr.insert(insertAt, item.node);
     insertAt += item.node.nodeSize;
   }
   if (anchor && head) tr.setSelection(TextSelection.create(tr.doc,

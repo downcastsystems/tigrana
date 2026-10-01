@@ -128,11 +128,13 @@ vi.mock("./editor/NotesEditor", () => ({
     colorsDisabled,
     focusAtEndRequest,
     focusRequest,
+    commandRequest,
   }: {
     content: string;
     colorsDisabled?: boolean;
     focusAtEndRequest?: number;
     focusRequest?: number;
+    commandRequest?: { command: string };
     notePath: string | null;
     onChange: (markdown: string, sourceNotePath: string | null) => void;
   }) => (
@@ -142,6 +144,7 @@ vi.mock("./editor/NotesEditor", () => ({
       data-colors-disabled={colorsDisabled}
       data-focus-at-end-request={focusAtEndRequest}
       data-focus-request={focusRequest}
+      data-command={commandRequest?.command}
       value={content}
       onChange={(event) => onChange(event.target.value, notePath)}
     />
@@ -1482,6 +1485,35 @@ describe("Note navigation persistence", () => {
       .toEqual([subfolder]);
 
     await act(async () => root.unmount());
+  });
+
+  it.each(["ctrlKey", "metaKey"])("routes shifted shortcuts and Bullet Statuses with %s", async modifier => {
+    localStorage.setItem("tigrana.bulletMethod.display.v1", JSON.stringify({ enabled: true }));
+    const container = document.createElement("div"); document.body.appendChild(container); containers.push(container);
+    const root = createRoot(container);
+    try {
+      await act(async () => root.render(<App />));
+      await waitFor(() => Boolean(container.querySelector(".note-title-input")));
+      const title = container.querySelector<HTMLTextAreaElement>(".note-title-input")!.value;
+      const press = async (key: string, extra: KeyboardEventInit = {}) => {
+        await act(async () => {
+          window.dispatchEvent(new KeyboardEvent("keydown", { key, [modifier]: true, bubbles: true, cancelable: true, ...extra }));
+        });
+      };
+      await press("N", { shiftKey: true });
+      expect(container.querySelector("#folder-name")).not.toBeNull();
+      expect(container.querySelector<HTMLTextAreaElement>(".note-title-input")!.value).toBe(title);
+      await act(async () => container.querySelector<HTMLButtonElement>('.dialog button[title="Close"]')!.click());
+      await press("K", { shiftKey: true });
+      expect(container.querySelector(".global-search-modal")).toBeNull();
+      expect(container.querySelector(".ProseMirror")?.getAttribute("data-command")).toBe("link");
+      await press(".", { altKey: true, code: "Period" });
+      expect(container.querySelector(".ProseMirror")?.getAttribute("data-command")).toBe("sort_bullet_method");
+      await press("k");
+      expect(container.querySelector(".global-search-shortcut")?.textContent).toBe("Ctrl+K");
+    } finally {
+      await act(async () => root.unmount());
+    }
   });
 
   it("creates the shortcut Note after the active Note in its nested folder", async () => {

@@ -145,7 +145,7 @@ export function GlobalSearchModal({
               <X size={15} />
             </button>
           ) : null}
-          <span className="global-search-shortcut">⌘ K</span>
+          <span className="global-search-shortcut">{/Mac|iPhone|iPad/.test(navigator.platform) ? "⌘ K" : "Ctrl+K"}</span>
           <button className="global-search-close" type="button" title="Close search" aria-label="Close search" onClick={onClose}>
             <X size={17} />
           </button>

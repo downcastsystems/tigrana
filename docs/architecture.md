@@ -77,6 +77,8 @@ union. Importing these types does not load the editor implementation.
 switches, history, and command routing. Its extensions keep their implementation
 details in feature modules:
 
+- `editorMarkdown.ts` reuses conversions for immutable editor blocks and original Markdown for untouched footnote definitions.
+- `editorFootnoteEntries.ts` reuses sidebar entries across prose saves. Definition nodes, ordered reference nodes, numbering, and literal footnote syntax determine invalidation. Explicit loads seed the cache; Markdown echoes do not.
 - `tableControls.ts` owns table node views, row/column menus, resizing, and cell attributes.
 - `codeBlock.tsx` owns syntax highlighting and code-block controls.
 - `editorImages.tsx` owns image node views, clipboard assets, and preview hydration.

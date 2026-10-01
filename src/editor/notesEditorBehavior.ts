@@ -1,3 +1,4 @@
+import { serializeEditorMarkdown } from "./editorMarkdown";
 import { joinBackward } from "@tiptap/pm/commands";
 import { DOMSerializer, Fragment as ProseMirrorFragment, type Node as ProseMirrorNode, type ResolvedPos } from "@tiptap/pm/model";
 import { liftListItem } from "@tiptap/pm/schema-list";
@@ -90,7 +91,7 @@ export class BoundedNoteStateCache {
 
 export function cacheCurrentNoteEditorState(cache: BoundedNoteStateCache, key: string, editor: Editor) {
   cache.set(key, {
-    markdown: htmlToMarkdown(editor.getHTML()),
+    markdown: serializeEditorMarkdown(editor),
     state: editor.state,
   });
 }

@@ -5,6 +5,9 @@ import type { WritingStyle } from "../lib/writingStyle";
 import type { NotePositionMetadata } from "../types";
 import type { SortCommand } from "./sortLines";
 
+// Wait for a real pause in typing; navigation and explicit saves flush at once.
+export const markdownCommitDelayMs = 300;
+
 export type NotesEditorProps = {
   bulletMethodDisplay?: BulletMethodDisplay;
   bulletMethodStatuses?: readonly BulletMethodStatus[];

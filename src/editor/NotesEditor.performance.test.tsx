@@ -35,7 +35,7 @@ vi.mock("../lib/notebookStorage", async (importOriginal) => {
   } };
 });
 
-import type { EditorCommandRequest, EditorPersistenceHandle } from "./editorContract";
+import { markdownCommitDelayMs, type EditorCommandRequest, type EditorPersistenceHandle } from "./editorContract";
 
 const { NotesEditor } = await import("./NotesEditor");
 const { htmlToMarkdown, markdownToHtml } = await import("../lib/markdown");
@@ -67,11 +67,15 @@ describe("Note editor typing performance", () => {
     const { editFootnote, getMarkdownFootnoteLabels } = await import('./footnotes');
     await act(async () => { editFootnote(editor, '1000'); });
     vi.mocked(htmlToMarkdown).mockClear();
-    await act(async () => {
-      for (const character of 'Edited ') editor.view.dispatch(editor.state.tr.insertText(character));
-    });
+    for (const character of 'Edited ') {
+      await act(async () => {
+        editor.view.dispatch(editor.state.tr.insertText(character));
+        await vi.advanceTimersByTimeAsync(100);
+      });
+    }
     expect(getMarkdownFootnoteLabels(editor)).toBeUndefined();
     expect(htmlToMarkdown).not.toHaveBeenCalled();
+    expect(onChange).not.toHaveBeenCalled();
     await act(async () => { handle!.capture(); });
     expect(htmlToMarkdown).toHaveBeenCalledTimes(1);
     expect(onChange.mock.calls[0][0]).toContain('[^1000]: Edited Definition 1000');
@@ -243,7 +247,7 @@ describe("Note editor typing performance", () => {
         onPersistenceReady={(next) => { handle = next; }}
         reloadRequest={0} restorePosition={null} spellcheckEnabled workspace="/Notebook" />);
     });
-    await act(async () => { await vi.advanceTimersByTimeAsync(80); });
+    await act(async () => { await vi.advanceTimersByTimeAsync(markdownCommitDelayMs); });
     onChange.mockClear();
     await act(async () => {
       expect(handle!.capture()).toBeNull();
@@ -293,7 +297,7 @@ describe("Note editor typing performance", () => {
       restorePosition={null} spellcheckEnabled workspace="/Notebook" />));
     const pm = container.querySelector<HTMLElement>(".ProseMirror")!;
     const editor = (pm as HTMLElement & { editor: import("@tiptap/core").Editor }).editor;
-    await act(async () => { await vi.advanceTimersByTimeAsync(80); });
+    await act(async () => { await vi.advanceTimersByTimeAsync(markdownCommitDelayMs); });
     if (imageMarkdown.startsWith("paste")) {
       await act(async () => { editor.commands.setTextSelection(imageMarkdown === "paste-middle" ? 6 : editor.state.doc.content.size - 1); });
       const paste = new Event("paste", { bubbles: true, cancelable: true });
@@ -357,7 +361,7 @@ describe("Note editor typing performance", () => {
       onChange={() => undefined} onLoadError={error => { throw error; }}
       onPendingChange={() => undefined} onPositionChange={() => undefined}
       onPersistenceReady={next => { handle = next; }} restorePosition={null} spellcheckEnabled workspace="/Notebook" />));
-    await act(async () => { await vi.advanceTimersByTimeAsync(80); });
+    await act(async () => { await vi.advanceTimersByTimeAsync(markdownCommitDelayMs); });
     vi.mocked(htmlToMarkdown).mockClear();
     const grip = container.querySelector('.equation-resize-handle')!;
     const pointer = (target: EventTarget, type: string, x: number) => {
@@ -774,7 +778,7 @@ describe("Note editor typing performance", () => {
     expect(htmlToMarkdown).not.toHaveBeenCalled();
 
     await act(async () => {
-      await vi.advanceTimersByTimeAsync(80);
+      await vi.advanceTimersByTimeAsync(markdownCommitDelayMs);
     });
 
     expect(committedMarkdown).toEqual(["Start abcd\n"]);
@@ -809,7 +813,7 @@ describe("Note editor typing performance", () => {
     });
     for (let i = 0; i < 10; i++) await tab();
     expect(element.textContent).toBe("\u2003".repeat(10) + "Opening");
-    await act(async () => { await vi.advanceTimersByTimeAsync(80); });
+    await act(async () => { await vi.advanceTimersByTimeAsync(markdownCommitDelayMs); });
     expect(onChange).toHaveBeenLastCalledWith(" ".repeat(40) + "Opening\n", "Tabs.md");
     expect(markdownToHtml(onChange.mock.lastCall![0])).toContain("\u2003".repeat(10) + "Opening");
     for (let i = 9; i >= 0; i--) {
@@ -839,7 +843,7 @@ describe("Note editor typing performance", () => {
     expect(container.querySelector(".ProseMirror")).toBe(editorElement);
     expect(editorElement?.querySelector("p")?.getAttribute("data-story-indent")).toBe("indent");
     expect(onChange).not.toHaveBeenCalled();
-    await act(async () => { await vi.advanceTimersByTimeAsync(80); });
+    await act(async () => { await vi.advanceTimersByTimeAsync(markdownCommitDelayMs); });
     expect(onChange).toHaveBeenCalledTimes(1);
     expect(onChange).toHaveBeenCalledWith("<!-- tigrana:paragraph indent -->\nOpening\n", "Story.md");
     expect(htmlToMarkdown).toHaveBeenCalledTimes(1);
@@ -904,7 +908,7 @@ describe("Note editor typing performance", () => {
       );
     });
     await act(async () => {
-      await vi.advanceTimersByTimeAsync(80);
+      await vi.advanceTimersByTimeAsync(markdownCommitDelayMs);
     });
 
     expect(onChange).not.toHaveBeenCalled();
@@ -983,7 +987,7 @@ describe("Note editor typing performance", () => {
     expect(committedMarkdown).toHaveLength(0);
 
     await act(async () => {
-      await vi.advanceTimersByTimeAsync(80);
+      await vi.advanceTimersByTimeAsync(markdownCommitDelayMs);
     });
 
     expect(committedMarkdown).toHaveLength(1);
@@ -1034,7 +1038,7 @@ describe("Note editor typing performance", () => {
       await Promise.resolve();
     });
     await act(async () => {
-      await vi.advanceTimersByTimeAsync(80);
+      await vi.advanceTimersByTimeAsync(markdownCommitDelayMs);
     });
 
     await act(async () => {

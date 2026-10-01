@@ -1,3 +1,4 @@
+import { appShortcutCommand } from "./lib/keyboardShortcuts";
 import { localWritingDay, setWritingGoal, writingProgressMutation } from "./lib/writingProgress";
 import { useRawSearchResultReveal } from "./editor/useRawSearchResultReveal";
 import type { SearchRevealRequest } from "./editor/searchResultReveal";
@@ -633,21 +634,11 @@ export default function App() {
   } | null>(null);
   const titleCommitInFlightRef = useRef(false);
   const keyboardActionsRef = useRef<{
-    addEmptyTab: () => void;
-    chooseWorkspace: (intent: "open" | "new") => void;
-    hasOpenNote: () => boolean;
-    persistDraft: () => void;
-    requestCreateNoteInContext: () => void;
-    toggleRawMarkdown: () => void;
+    handleMenuCommand: (command: string) => void;
     toggleSidebar: () => void;
     toggleRightSidebar: () => void;
   }>({
-    addEmptyTab: () => {},
-    chooseWorkspace: () => {},
-    hasOpenNote: () => false,
-    persistDraft: () => {},
-    requestCreateNoteInContext: () => {},
-    toggleRawMarkdown: () => {},
+    handleMenuCommand: () => {},
     toggleSidebar: () => {},
     toggleRightSidebar: () => {},
   });
@@ -726,7 +717,11 @@ export default function App() {
     input.scrollTop = selection.scrollTop;
     input.scrollLeft = selection.scrollLeft;
   }, [frontmatterError, rawMarkdownDraft, rawMarkdownVisible]);
-  const hasUnsavedBody = Boolean(noteOpen) && rawMarkdownDraft !== savedRawMarkdownText;
+  const queuedMarkdown = activePath
+    ? pendingNoteContentsRef.current.read(activePath, savedRawMarkdownText)
+    : savedRawMarkdownText;
+  const hasUnsavedBody = Boolean(noteOpen)
+    && (rawMarkdownDraft !== savedRawMarkdownText || rawMarkdownDraft !== queuedMarkdown);
   const hasUnsavedChanges = Boolean(noteOpen) && (hasUnsavedBody || titleDraft !== savedTitle);
   const activeNoteEditable = activeNoteAccess === "editable";
   const noteSaveState = !activeNoteEditable ? "read-only" : hasUnsavedChanges ? "unsaved" : "saved";
@@ -2105,6 +2100,9 @@ export default function App() {
         setRecentlyDeletedOpen(true);
         void refreshTrash();
         break;
+      case "open_notebook":
+        await chooseWorkspace("open");
+        break;
       case "new_notebook":
         await chooseWorkspace("new", true);
         break;
@@ -2871,7 +2869,13 @@ export default function App() {
       ? rawMarkdownDraft
       : createNoteDocument({ title: titleDraft, body, frontmatter: frontmatterDraft }).markdown;
     const currentLifecycleState = activeDraftStateRef.current;
-    const bodyHasUnsavedChanges = markdown !== currentLifecycleState.savedRawMarkdownText;
+    // Undo can return to the disk baseline while a different version is still
+    // queued. Compare against the queue's destination so undo is saved after it.
+    const persistenceBaseline = currentLifecycleState.activePath
+      ? pendingNoteContentsRef.current.read(currentLifecycleState.activePath, currentLifecycleState.savedRawMarkdownText)
+      : currentLifecycleState.savedRawMarkdownText;
+    const bodyHasUnsavedChanges = markdown !== currentLifecycleState.savedRawMarkdownText
+      || markdown !== persistenceBaseline;
 
     const title = titleDraft.trim();
     try {
@@ -3128,12 +3132,10 @@ export default function App() {
   }, [activeNoteLifecycle, hasUnsavedChanges, persistDraft]);
 
   keyboardActionsRef.current = {
-    addEmptyTab: () => void addEmptyTab(),
-    chooseWorkspace: (intent: "open" | "new") => void chooseWorkspace(intent),
-    hasOpenNote: () => Boolean(noteOpen),
-    persistDraft: persistDraftInBackground,
-    requestCreateNoteInContext: () => void requestCreateNoteInCurrentContext(),
-    toggleRawMarkdown: toggleRawMarkdownMode,
+    handleMenuCommand: (command: string) => {
+      if (command === "save_note") persistDraftInBackground();
+      else void handleMenuCommand(command);
+    },
     toggleSidebar: toggleLeftSidebar,
     toggleRightSidebar,
   };
@@ -3157,9 +3159,6 @@ export default function App() {
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
       if (document.querySelector(".document-progress-dialog") || userPathMutationRef.current) return;
-      const actions = keyboardActionsRef.current;
-      const command = event.metaKey || event.ctrlKey;
-      const key = event.key.toLowerCase();
       if (event.key === "Escape") {
         setPaneOverlay(null);
         setSearchOpen(false);
@@ -3172,58 +3171,10 @@ export default function App() {
         setTabContextMenu(null);
         setFilePathMenu(null);
       }
-      if (command && event.shiftKey && key === "f") {
+      const command = appShortcutCommand(event);
+      if (command) {
         event.preventDefault();
-        setSearchOpen(true);
-        setSearchFocusRequest((value) => value + 1);
-        return;
-      }
-      if (command && key === "f") {
-        event.preventDefault();
-        if (keyboardActionsRef.current.hasOpenNote()) {
-          setNoteFindRequest((value) => value + 1);
-        }
-        return;
-      }
-      if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === "k") {
-        event.preventDefault();
-        setSearchOpen(true);
-        setSearchFocusRequest((value) => value + 1);
-        return;
-      }
-      if (command && key === "n") {
-        event.preventDefault();
-        actions.requestCreateNoteInContext();
-        return;
-      }
-      if (command && key === "t") {
-        event.preventDefault();
-        actions.addEmptyTab();
-        return;
-      }
-      if (command && event.shiftKey && key === "o") {
-        event.preventDefault();
-        actions.chooseWorkspace("new");
-        return;
-      }
-      if (command && key === "o") {
-        event.preventDefault();
-        actions.chooseWorkspace("open");
-        return;
-      }
-      if (command && event.altKey && key === "r") {
-        event.preventDefault();
-        actions.toggleRawMarkdown();
-        return;
-      }
-      if (command && key === ",") {
-        event.preventDefault();
-        setSettingsOpen(true);
-        return;
-      }
-      if (command && key === "s") {
-        event.preventDefault();
-        actions.persistDraft();
+        keyboardActionsRef.current.handleMenuCommand(command);
       }
     };
     window.addEventListener("keydown", onKeyDown);

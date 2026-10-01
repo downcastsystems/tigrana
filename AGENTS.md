@@ -202,6 +202,18 @@ Performance and stability are the top product constraint. Preserve these rules:
 
 `src/editor/NotesEditor.performance.test.tsx` is the regression gate for these invariants. Prefer deterministic work-count assertions over wall-clock thresholds when extending it.
 
+## Keyboard shortcuts
+
+When creating or modifying shortcuts, verify both macOS and Windows. Use
+`CmdOrCtrl` for Tauri menu accelerators and `Mod` for Tiptap bindings so Command
+on macOS maps to Ctrl on Windows. Keep menu labels, tooltips, and frontend
+handlers consistent. Check exact Shift/Alt modifiers, editor shortcuts, and
+OS-reserved combinations to avoid collisions or double execution. Preserve
+standard editing keys such as Cmd/Ctrl+B and Cmd/Ctrl+I. Test native shortcuts
+at startup and after menu refreshes, including nested menus on Windows; a
+correct label does not prove that the accelerator is registered. Record any
+platform exception and any native check that could not run locally.
+
 ## Markdown Support
 
 Current conversion support in `src/lib/markdown.ts`:

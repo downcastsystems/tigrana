@@ -1,11 +1,11 @@
 import { Trash2 } from "lucide-react";
 import { useMemo } from "react";
-import { footnoteEntries, footnotePreview } from "../lib/footnotes";
+import { footnoteEntries } from "../lib/footnotes";
 
 export function FootnotesPane({ body, onInsert, onEdit, onSelect, onDelete }: {
   body: string; onInsert?: () => void; onEdit?: (label: string) => void; onSelect?: (label: string) => void; onDelete?: (label: string) => void;
 }) {
-  const entries = useMemo(() => footnoteEntries(body).map(entry => ({ ...entry, preview: entry.body ? footnotePreview(entry.body) : "" })), [body]);
+  const entries = useMemo(() => footnoteEntries(body), [body]);
   return <div className="footnotes-pane">
     <button type="button" className="sidebar-text-button" disabled={!onInsert} onClick={onInsert}>Add footnote</button>
     {!entries.length && <p className="empty-sidebar-note">No footnotes yet.</p>}

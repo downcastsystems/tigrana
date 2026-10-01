@@ -134,22 +134,34 @@ export function markdownToHtml(markdown: string, options: MarkdownOptions = {}):
       ...footnotes.references.map(reference => ({ ...reference, html: `<sup data-type="footnoteReference" data-label="${escapeHtml(reference.label)}" data-number="${reference.number}"><a href="#${footnoteAnchor(reference.label)}">${reference.number}</a></sup>`, block: false })),
       ...footnotes.definitions.map(definition => ({ ...definition, html: "", block: true })),
     ].sort((a, b) => a.from - b.from);
-    let source = markdown;
+    // Assemble slices once, rather than copying the entire note for every
+    // reference/definition. Track the suffix's first two characters to preserve
+    // the existing blank-line handling between adjacent definitions.
+    const parts: string[] = [];
+    let cursor = markdown.length;
+    let suffixStart = "";
     for (let n = replacements.length - 1; n >= 0; n--) {
       const replacement = replacements[n];
       const marker = `${token}${n}${token}`;
-      let before = source.slice(0, replacement.from);
-      let after = source.slice(replacement.to);
+      const after = markdown.slice(replacement.to, cursor);
+      const beforeEnd = markdown.slice(Math.max(0, replacement.from - 2), replacement.from);
+      const afterStart = (after.slice(0, 2) + suffixStart).slice(0, 2);
+      let beforePadding = "";
+      let afterPadding = "";
       if (replacement.block) {
-        if (before && !before.endsWith("\n\n")) before += before.endsWith("\n") ? "\n" : "\n\n";
-        if (after && !after.startsWith("\n\n")) after = (after.startsWith("\n") ? "\n" : "\n\n") + after;
+        if (beforeEnd && beforeEnd !== "\n\n") beforePadding = beforeEnd.endsWith("\n") ? "\n" : "\n\n";
+        if (afterStart && afterStart !== "\n\n") afterPadding = afterStart.startsWith("\n") ? "\n" : "\n\n";
       }
-      source = before + marker + after;
+      parts.push(after, afterPadding, marker, beforePadding);
+      suffixStart = (beforePadding + marker).slice(0, 2);
+      cursor = replacement.from;
     }
-    let rendered = markdownToHtml(source, options);
-    replacements.forEach((replacement, n) => {
-      const marker = `${token}${n}${token}`;
-      rendered = rendered.replace(replacement.block ? `<p>${marker}</p>` : marker, () => replacement.html);
+    parts.push(markdown.slice(0, cursor));
+    const source = parts.reverse().join("");
+    const rendered = markdownToHtml(source, options).replace(new RegExp(`<p>${token}(\\d+)${token}</p>|${token}(\\d+)${token}`, "g"), (match, blockIndex, inlineIndex) => {
+      const replacement = replacements[Number(blockIndex ?? inlineIndex)];
+      if (blockIndex !== undefined) return replacement.block ? replacement.html : `<p>${replacement.html}</p>`;
+      return replacement.block ? match : replacement.html;
     });
     const numbers = new Map(footnotes.references.map(reference => [footnoteKey(reference.label), reference.number]));
     const definitions = [...footnotes.definitions].sort((a, b) =>
@@ -675,92 +687,106 @@ function serializeList(list: Element, depth: number): string {
   return lines.join("\n");
 }
 
-export function htmlToMarkdown(html: string) {
-  const doc = new DOMParser().parseFromString(`<main>${html}</main>`, "text/html");
-  const blocks = Array.from(doc.body.firstElementChild?.children ?? []);
+export type MarkdownBlockCache = WeakMap<Element, { neighbors: string; markdown: string[] }>;
+
+/** Immutable offscreen blocks may reuse their conversion between editor saves. */
+export function htmlToMarkdown(html: string | readonly Element[], cache?: MarkdownBlockCache) {
+  const blocks = typeof html === "string"
+    ? Array.from(new DOMParser().parseFromString(`<main>${html}</main>`, "text/html").body.firstElementChild?.children ?? [])
+    : html;
   const markdown: string[] = [];
-
   blocks.forEach((block, index) => {
-    const tag = block.tagName.toLowerCase();
-
-    if (block.getAttribute("data-type") === "footnoteDefinition") {
-      const content = block.querySelector(":scope > .footnote-content");
-      const original = block.getAttribute("data-markdown") ?? "";
-      const label = block.getAttribute("data-markdown-label") ?? block.getAttribute("data-label") ?? "1";
-      const body = content ? htmlToMarkdown(content.innerHTML).trimEnd() : "";
-      const originalBody = original ? parseFootnotes(original).definitions[0]?.body : undefined;
-      // Keep untouched source, including soft line breaks, until its editable content changes.
-      const unchanged = originalBody !== undefined && body === htmlToMarkdown(markdownToHtml(originalBody)).trimEnd();
-      markdown.push(unchanged || !content ? original.replace(/^\[\^[^\]]+\]:/, () => `[^${label}]:`) : footnoteMarkdown(label, body));
-      return;
-    }
-    const alignment = readTextAlignment(block.getAttribute("style"));
-    if ((tag === "p" || /^h[1-6]$/.test(tag)) && (alignment === "center" || alignment === "right")) {
-      const copy = block.cloneNode(true) as HTMLElement;
-      copy.style.removeProperty("text-align");
-      markdown.push(`<div style="text-align: ${alignment}">\n\n${htmlToMarkdown(copy.outerHTML).trimEnd()}\n\n</div>`);
-    } else if (block.getAttribute("data-type") === "blockMath") {
-      markdown.push(`$$\n${block.getAttribute("data-latex") ?? ""}\n$$`);
-    } else if (/^h[1-6]$/.test(tag)) {
-      const level = Number(tag.slice(1));
-      markdown.push(`${"#".repeat(level)} ${inlineHtmlToMarkdown(block)}`);
-    } else if (tag === "p") {
-      const inline = inlineHtmlToMarkdown(block);
-      const storyIndent = block.getAttribute("data-story-indent");
-      const hasIndentOverride = storyIndent === "indent" || storyIndent === "none";
-      if (!hasIndentOverride && !inline.trim() && isCodeBlockNeighbor(blocks, index)) {
-        return;
-      }
-      if (!hasIndentOverride && !inline.trim() && isTableLandingParagraph(blocks, index)) {
-        return;
-      }
-      const segments = inline.split(HARD_BREAK_PLACEHOLDER).map(paragraphIndentToMarkdown);
-      const lastIndex = segments.length - 1;
-      const joined = segments.map((segment, idx) => (idx < lastIndex ? `${segment}  ` : segment)).join("\n");
-      const marker = hasIndentOverride ? `<!-- tigrana:paragraph ${storyIndent} -->\n` : "";
-      markdown.push(marker + joined);
-    } else if (tag === "img") {
-      markdown.push(imageElementToMarkdown(block));
-    } else if (tag === "blockquote") {
-      const text = inlineHtmlToMarkdown(block);
-      markdown.push(text.split("\n").map((line) => `> ${line}`).join("\n"));
-    } else if (tag === "pre") {
-      const codeEl = block.querySelector("code");
-      const className = codeEl?.getAttribute("class") ?? "";
-      const langMatch = /language-([\w+#.-]+)/.exec(className);
-      const language = langMatch ? langMatch[1] : "";
-      const code = block.textContent ?? "";
-      const fence = markdownCodeFenceDelimiter(code);
-      markdown.push(`${fence}${language}\n${code}\n${fence}`);
-    } else if (tag === "hr") {
-      markdown.push("---");
-    } else if (tag === "ul" || tag === "ol") {
-      markdown.push(serializeList(block, 0));
-    } else if (tag === "table" && (block.getAttribute("data-tigrana-table") === "true" || block.querySelector('[data-type="inlineMath"], [data-type="blockMath"]'))) {
-      markdown.push(serializeTigranaHtmlTable(block));
-    } else if (tag === "table") {
-      // Handle both standard <thead>/<tbody> and TipTap's tbody-only structure
-      // (TipTap puts all rows in <tbody>, using <th> for the header row).
-      // Push the entire table as ONE entry so the final \n\n join doesn't insert
-      // blank lines between rows, which would break markdownToHtml's table parser.
-      const allRows = Array.from(block.querySelectorAll("tr"));
-      if (allRows.length > 0) {
-        const tableLines: string[] = [];
-        const firstCells = Array.from(allRows[0].children);
-        // GFM requires a delimiter row, so a headerless HTML table promotes
-        // its first row to a Markdown header instead of producing invalid syntax.
-        tableLines.push("| " + firstCells.map((c) => inlineHtmlToMarkdown(c).trim()).join(" | ") + " |");
-        tableLines.push("| " + firstCells.map(() => "---").join(" | ") + " |");
-        for (const row of allRows.slice(1)) {
-          const cells = Array.from(row.children);
-          tableLines.push("| " + cells.map((c) => inlineHtmlToMarkdown(c).trim()).join(" | ") + " |");
-        }
-        markdown.push(tableLines.join("\n"));
-      }
-    }
+    // Empty landing paragraphs depend on their immediate code/table neighbors.
+    const neighbors = block.tagName.toLowerCase() === "p"
+      ? `${blocks[index - 1]?.tagName ?? ""}/${blocks[index + 1]?.tagName ?? ""}` : "";
+    const cached = cache?.get(block);
+    const converted = cached?.neighbors === neighbors ? cached.markdown : serializeMarkdownBlock(block, index, blocks);
+    if (cache && converted !== cached?.markdown) cache.set(block, { neighbors, markdown: converted });
+    markdown.push(...converted);
   });
-
   return `${normalizeMarkdownImageLines(joinMarkdownBlocks(markdown)).trimEnd()}\n`;
+}
+
+function serializeMarkdownBlock(block: Element, index: number, blocks: readonly Element[]) {
+  const markdown: string[] = [];
+  const tag = block.tagName.toLowerCase();
+
+  if (block.getAttribute("data-type") === "footnoteDefinition") {
+    const content = block.querySelector(":scope > .footnote-content");
+    const original = block.getAttribute("data-markdown") ?? "";
+    const label = block.getAttribute("data-markdown-label") ?? block.getAttribute("data-label") ?? "1";
+    const body = content ? htmlToMarkdown(content.innerHTML).trimEnd() : "";
+    const originalBody = original ? parseFootnotes(original).definitions[0]?.body : undefined;
+    // Keep untouched source, including soft line breaks, until its editable content changes.
+    const unchanged = originalBody !== undefined && body === htmlToMarkdown(markdownToHtml(originalBody)).trimEnd();
+    markdown.push(unchanged || !content ? original.replace(/^\[\^[^\]]+\]:/, () => `[^${label}]:`) : footnoteMarkdown(label, body));
+    return markdown;
+  }
+  const alignment = readTextAlignment(block.getAttribute("style"));
+  if ((tag === "p" || /^h[1-6]$/.test(tag)) && (alignment === "center" || alignment === "right")) {
+    const copy = block.cloneNode(true) as HTMLElement;
+    copy.style.removeProperty("text-align");
+    markdown.push(`<div style="text-align: ${alignment}">\n\n${htmlToMarkdown(copy.outerHTML).trimEnd()}\n\n</div>`);
+  } else if (block.getAttribute("data-type") === "blockMath") {
+    markdown.push(`$$\n${block.getAttribute("data-latex") ?? ""}\n$$`);
+  } else if (/^h[1-6]$/.test(tag)) {
+    const level = Number(tag.slice(1));
+    markdown.push(`${"#".repeat(level)} ${inlineHtmlToMarkdown(block)}`);
+  } else if (tag === "p") {
+    const inline = inlineHtmlToMarkdown(block);
+    const storyIndent = block.getAttribute("data-story-indent");
+    const hasIndentOverride = storyIndent === "indent" || storyIndent === "none";
+    if (!hasIndentOverride && !inline.trim() && isCodeBlockNeighbor(blocks, index)) {
+      return markdown;
+    }
+    if (!hasIndentOverride && !inline.trim() && isTableLandingParagraph(blocks, index)) {
+      return markdown;
+    }
+    const segments = inline.split(HARD_BREAK_PLACEHOLDER).map(paragraphIndentToMarkdown);
+    const lastIndex = segments.length - 1;
+    const joined = segments.map((segment, idx) => (idx < lastIndex ? `${segment}  ` : segment)).join("\n");
+    const marker = hasIndentOverride ? `<!-- tigrana:paragraph ${storyIndent} -->\n` : "";
+    markdown.push(marker + joined);
+  } else if (tag === "img") {
+    markdown.push(imageElementToMarkdown(block));
+  } else if (tag === "blockquote") {
+    const text = inlineHtmlToMarkdown(block);
+    markdown.push(text.split("\n").map((line) => `> ${line}`).join("\n"));
+  } else if (tag === "pre") {
+    const codeEl = block.querySelector("code");
+    const className = codeEl?.getAttribute("class") ?? "";
+    const langMatch = /language-([\w+#.-]+)/.exec(className);
+    const language = langMatch ? langMatch[1] : "";
+    const code = block.textContent ?? "";
+    const fence = markdownCodeFenceDelimiter(code);
+    markdown.push(`${fence}${language}\n${code}\n${fence}`);
+  } else if (tag === "hr") {
+    markdown.push("---");
+  } else if (tag === "ul" || tag === "ol") {
+    markdown.push(serializeList(block, 0));
+  } else if (tag === "table" && (block.getAttribute("data-tigrana-table") === "true" || block.querySelector('[data-type="inlineMath"], [data-type="blockMath"]'))) {
+    markdown.push(serializeTigranaHtmlTable(block));
+  } else if (tag === "table") {
+    // Handle both standard <thead>/<tbody> and TipTap's tbody-only structure
+    // (TipTap puts all rows in <tbody>, using <th> for the header row).
+    // Push the entire table as ONE entry so the final \n\n join doesn't insert
+    // blank lines between rows, which would break markdownToHtml's table parser.
+    const allRows = Array.from(block.querySelectorAll("tr"));
+    if (allRows.length > 0) {
+      const tableLines: string[] = [];
+      const firstCells = Array.from(allRows[0].children);
+      // GFM requires a delimiter row, so a headerless HTML table promotes
+      // its first row to a Markdown header instead of producing invalid syntax.
+      tableLines.push("| " + firstCells.map((c) => inlineHtmlToMarkdown(c).trim()).join(" | ") + " |");
+      tableLines.push("| " + firstCells.map(() => "---").join(" | ") + " |");
+      for (const row of allRows.slice(1)) {
+        const cells = Array.from(row.children);
+        tableLines.push("| " + cells.map((c) => inlineHtmlToMarkdown(c).trim()).join(" | ") + " |");
+      }
+      markdown.push(tableLines.join("\n"));
+    }
+  }
+  return markdown;
 }
 
 function serializeTigranaHtmlTable(table: Element) {
@@ -854,13 +880,13 @@ function serializeTableCellHtml(cell: Element) {
   return clone.innerHTML;
 }
 
-function isCodeBlockNeighbor(blocks: Element[], index: number) {
+function isCodeBlockNeighbor(blocks: readonly Element[], index: number) {
   const previous = blocks[index - 1]?.tagName.toLowerCase();
   const next = blocks[index + 1]?.tagName.toLowerCase();
   return previous === "pre" || next === "pre";
 }
 
-function isTableLandingParagraph(blocks: Element[], index: number) {
+function isTableLandingParagraph(blocks: readonly Element[], index: number) {
   return blocks[index - 1]?.tagName.toLowerCase() === "table";
 }
 

@@ -121,7 +121,7 @@ jobs:
       - name: Install frontend dependencies
         run: npm ci
 
-      - name: Check Windows native menu refresh and lookup
+      - name: Check Windows native menu shortcuts and refresh
         if: runner.os == 'Windows'
         run: cargo test --manifest-path src-tauri/Cargo.toml --test application_menu --locked
 
@@ -170,6 +170,21 @@ jobs:
           generateReleaseNotes: true
           uploadWorkflowArtifacts: false
           args: ${{ matrix.args }}
+
+      - name: Verify Windows GUI executable
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $exe = [System.IO.File]::ReadAllBytes("src-tauri/target/release/tigrana.exe")
+          $peOffset = [BitConverter]::ToInt32($exe, 0x3c)
+          if ([BitConverter]::ToUInt32($exe, $peOffset) -ne 0x00004550) {
+            throw "Invalid PE executable"
+          }
+          # Subsystem is at offset 68 in both PE32 and PE32+ optional headers.
+          $subsystem = [BitConverter]::ToUInt16($exe, $peOffset + 24 + 68)
+          if ($subsystem -ne 2) {
+            throw "Tigrana must use the Windows GUI subsystem (2), got $subsystem"
+          }
 
       - name: Verify macOS release trust
         if: runner.os == 'macOS'

@@ -1,3 +1,6 @@
+import { seedEditorFootnoteEntries } from './editorFootnoteEntries';
+import { seedEditorMarkdownSources, serializeEditorMarkdown } from "./editorMarkdown";
+import { markdownCommitDelayMs } from "./editorContract";
 import { formattingSelectionAnchor } from "./formattingSelectionAnchor";
 import { FootnoteDefinitionNode, FootnoteReferenceNode, FootnoteInteractions, requestFootnote, selectFootnote, deleteFootnote, getMarkdownFootnoteLabels, resolveMarkdownFootnoteLabel, handleEmptyFootnoteDelete, handleFootnoteArrow } from "./footnotes";
 import { canAlignText, setTextAlignment, TextAlignmentExtension } from "./textAlignment";
@@ -60,7 +63,7 @@ import { defaultBulletMethodDisplay, defaultBulletMethodStatuses, type BulletMet
 import { createDeferredCommit, type DeferredCommit } from "../lib/deferredCommit";
 import { openExternal } from "../lib/desktop";
 import { isInlineColorCommand } from "../lib/inlineColors";
-import { htmlToMarkdown, markdownToHtml } from "../lib/markdown";
+import { markdownToHtml } from "../lib/markdown";
 import { BulletMethodMarkers, bulletMethodMarkersKey } from "./bulletMethodMarkers";
 import { CodeBlockWithControls, lowlight } from "./codeBlock";
 import type {
@@ -126,8 +129,6 @@ type SlashState = {
   query: string;
   selected: number;
 };
-
-const markdownCommitDelayMs = 80;
 
 const noteHistoryCacheLimit = 30;
 
@@ -399,7 +400,7 @@ export function NotesEditor({ bulletMethodDisplay = defaultBulletMethodDisplay, 
     onUpdate({ editor }) {
       const sourceNotePath = lastLoadedNote.current;
       deferredMarkdownRef.current?.schedule(() => {
-        const markdown = htmlToMarkdown(editor.getHTML());
+        const markdown = serializeEditorMarkdown(editor);
         publishedFootnoteLabels.current = getMarkdownFootnoteLabels(editor) ?? new Map();
         return { markdown, sourceNotePath };
       });
@@ -583,7 +584,9 @@ export function NotesEditor({ bulletMethodDisplay = defaultBulletMethodDisplay, 
           })
           .run();
         resetEditorHistory(editor);
+        seedEditorMarkdownSources(editor);
       }
+      seedEditorFootnoteEntries(editor, content);
       publishedFootnoteLabels.current = getMarkdownFootnoteLabels(editor) ?? new Map();
       lastLoadedNote.current = notePath;
       loadedHistoryKey.current = nextHistoryKey;

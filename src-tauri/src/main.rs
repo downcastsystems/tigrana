@@ -1,3 +1,6 @@
+// Installed Windows releases are GUI applications; development builds retain console output.
+#![cfg_attr(all(target_os = "windows", not(debug_assertions)), windows_subsystem = "windows")]
+
 use fs2::FileExt;
 mod application_menu;
 mod assets;
@@ -1367,17 +1370,17 @@ fn build_app_menu(
                 .build(),
         ),
     )?;
-    let settings = MenuItem::with_id(handle, "open_settings", "Settings...", true, Some("Cmd+,"))?;
+    let settings = MenuItem::with_id(handle, "open_settings", "Settings...", true, Some("CmdOrCtrl+,"))?;
     // Custom Quit so Cmd+Q closes the window (firing CloseRequested in JS)
     // instead of calling app.exit() directly, which would skip the
     // frontend's metadata-flush handler.
-    let quit_item = MenuItem::with_id(handle, "request_quit", "Quit Tigrana", true, Some("Cmd+Q"))?;
+    let quit_item = MenuItem::with_id(handle, "request_quit", "Quit Tigrana", true, Some("CmdOrCtrl+Q"))?;
     let new_notebook = MenuItem::with_id(
         handle,
         "new_notebook",
         "New Notebook...",
         true,
-        Some("Cmd+Shift+O"),
+        Some("CmdOrCtrl+Shift+O"),
     )?;
     let recently_deleted = MenuItem::with_id(
         handle,
@@ -1391,7 +1394,7 @@ fn build_app_menu(
         "open_notebook",
         "Open Notebook...",
         true,
-        Some("Cmd+O"),
+        Some("CmdOrCtrl+O"),
     )?;
     let open_recent = Submenu::new(handle, "Open Recent", has_workspace)?;
     if state.recent_notes.is_empty() {
@@ -1429,21 +1432,21 @@ fn build_app_menu(
         true,
         None::<&str>,
     )?;
-    let new_note = MenuItem::with_id(handle, "new_note", "New Note", has_workspace, Some("Cmd+N"))?;
+    let new_note = MenuItem::with_id(handle, "new_note", "New Note", has_workspace, Some("CmdOrCtrl+N"))?;
     let new_folder = MenuItem::with_id(
         handle,
         "new_folder",
         "New Folder/Section",
         has_workspace,
-        Some("Cmd+Shift+N"),
+        Some("CmdOrCtrl+Shift+N"),
     )?;
-    let new_tab = MenuItem::with_id(handle, "new_tab", "New Tab", true, Some("Cmd+T"))?;
+    let new_tab = MenuItem::with_id(handle, "new_tab", "New Tab", true, Some("CmdOrCtrl+T"))?;
     let save_note = MenuItem::with_id(
         handle,
         "save_note",
         "Save",
         editable_note && state.has_unsaved_changes,
-        Some("Cmd+S"),
+        Some("CmdOrCtrl+S"),
     )?;
     let import_pdf = MenuItem::with_id(handle, "import_pdf", "PDF...", has_workspace, None::<&str>)?;
     let import_word = MenuItem::with_id(handle, "import_word", "Word document...", has_workspace, None::<&str>)?;
@@ -1466,7 +1469,7 @@ fn build_app_menu(
             format!("print_{scope}"),
             format!("{title}..."),
             *enabled,
-            if *scope == "note" { Some("Cmd+P") } else { None },
+            if *scope == "note" { Some("CmdOrCtrl+P") } else { None },
         )?)?;
     }
 
@@ -1475,21 +1478,21 @@ fn build_app_menu(
         "find_note",
         "Find in Note",
         has_open_note,
-        Some("Cmd+F"),
+        Some("CmdOrCtrl+F"),
     )?;
     let find_next = MenuItem::with_id(
         handle,
         "find_next",
         "Find Next",
         has_open_note,
-        Some("Cmd+G"),
+        Some("CmdOrCtrl+G"),
     )?;
     let find_previous = MenuItem::with_id(
         handle,
         "find_previous",
         "Find Previous",
         has_open_note,
-        Some("Cmd+Shift+G"),
+        Some("CmdOrCtrl+Shift+G"),
     )?;
     let replace_note = MenuItem::with_id(
         handle,
@@ -1510,7 +1513,7 @@ fn build_app_menu(
         "search_notebook",
         "Search Across All Notes",
         has_workspace,
-        Some("Cmd+K"),
+        Some("CmdOrCtrl+K"),
     )?;
     let spellcheck = CheckMenuItem::with_id(
         handle,
@@ -1559,7 +1562,7 @@ fn build_app_menu(
         "Show Raw Markdown",
         has_open_note,
         state.raw_markdown_visible,
-        Some("Cmd+Alt+R"),
+        Some("CmdOrCtrl+Alt+R"),
     )?;
     let zoom_in = MenuItem::with_id(handle, "zoom_in", "Zoom In", true, Some("CmdOrCtrl+="))?;
     let zoom_out = MenuItem::with_id(handle, "zoom_out", "Zoom Out", true, Some("CmdOrCtrl+-"))?;
@@ -1658,14 +1661,14 @@ fn build_app_menu(
         "format_bold",
         "Bold",
         rich_editable_note,
-        Some("Cmd+B"),
+        Some("CmdOrCtrl+B"),
     )?;
     let format_italic = MenuItem::with_id(
         handle,
         "format_italic",
         "Italic",
         rich_editable_note,
-        Some("Cmd+I"),
+        Some("CmdOrCtrl+I"),
     )?;
     let format_strike = MenuItem::with_id(
         handle,
@@ -1693,7 +1696,7 @@ fn build_app_menu(
         "format_link",
         "Link",
         rich_editable_note,
-        Some("Cmd+Shift+K"),
+        Some("CmdOrCtrl+Shift+K"),
     )?;
     let format_clear = MenuItem::with_id(
         handle,
@@ -1864,14 +1867,18 @@ fn build_app_menu(
             &PredefinedMenuItem::separator(handle)?,
             &settings,
             &PredefinedMenuItem::separator(handle)?,
-            &PredefinedMenuItem::services(handle, None)?,
-            &PredefinedMenuItem::separator(handle)?,
-            &PredefinedMenuItem::hide(handle, None)?,
-            &PredefinedMenuItem::hide_others(handle, None)?,
-            &PredefinedMenuItem::separator(handle)?,
-            &quit_item,
         ],
     )?;
+    // These macOS commands must not register Ctrl+H / Ctrl+Alt+H on Windows.
+    #[cfg(target_os = "macos")]
+    tigrana_menu.append_items(&[
+        &PredefinedMenuItem::services(handle, None)?,
+        &PredefinedMenuItem::separator(handle)?,
+        &PredefinedMenuItem::hide(handle, None)?,
+        &PredefinedMenuItem::hide_others(handle, None)?,
+        &PredefinedMenuItem::separator(handle)?,
+    ])?;
+    tigrana_menu.append(&quit_item)?;
     let file_menu = Submenu::with_id_and_items(
         handle,
         "File",
@@ -2047,13 +2054,17 @@ fn build_app_menu(
             &insert_menu,
         ],
     )?;
+    #[cfg(target_os = "windows")]
+    let minimize = MenuItem::with_id(handle, "minimize_window", "Minimize", true, Some("CmdOrCtrl+M"))?;
+    #[cfg(not(target_os = "windows"))]
+    let minimize = PredefinedMenuItem::minimize(handle, None)?;
     let window_menu = Submenu::with_id_and_items(
         handle,
         "Window",
         "Window",
         true,
         &[
-            &PredefinedMenuItem::minimize(handle, None)?,
+            &minimize,
             &PredefinedMenuItem::maximize(handle, None)?,
             &PredefinedMenuItem::separator(handle)?,
             &PredefinedMenuItem::close_window(handle, None)?,
@@ -2062,7 +2073,7 @@ fn build_app_menu(
         ],
     )?;
 
-    Menu::with_items(
+    let menu = Menu::with_items(
         handle,
         &[
             &tigrana_menu,
@@ -2073,7 +2084,9 @@ fn build_app_menu(
             &format_menu,
             &window_menu,
         ],
-    )
+    )?;
+    application_menu::register_menu_accelerators(&menu)?;
+    Ok(menu)
 }
 
 fn rebuild_app_menu(app: &AppHandle, state: &NotebookWindowState) -> Result<(), String> {
@@ -2518,6 +2531,11 @@ pub fn run() {
             "format_image" => emit_menu_command(app, "format_image"),
             "format_equation" => emit_menu_command(app, "format_equation"),
             "format_footnote" => emit_menu_command(app, "format_footnote"),
+            "minimize_window" => {
+                if let Some(window) = active_menu_window(app) {
+                    let _ = window.minimize();
+                }
+            }
             "request_quit" => {
                 let labels: Vec<String> = app.webview_windows().keys().cloned().collect();
                 for label in labels {
