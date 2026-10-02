@@ -427,6 +427,27 @@ describe("Note navigation persistence", () => {
     } finally { await act(async () => root.unmount()); }
   });
 
+  it("keeps Insert enabled after clicking blank note space with the body already focused", async () => {
+    const container = document.createElement("div"); document.body.appendChild(container); containers.push(container);
+    const root = createRoot(container);
+    try {
+      await act(async () => { root.render(<App />); await new Promise(resolve => window.setTimeout(resolve, 50)); });
+      const body = container.querySelector<HTMLTextAreaElement>('[aria-label="Test note body"]')!;
+      await act(async () => body.focus());
+      await act(async () => container.querySelector('.note-surface')!.dispatchEvent(
+        new MouseEvent('mousedown', { bubbles: true, cancelable: true, button: 0 }),
+      ));
+      expect(document.activeElement).toBe(body);
+      await act(async () => container.querySelector<HTMLButtonElement>('[aria-label="Editor options"]')!.click());
+      const insert = [...container.querySelectorAll<HTMLButtonElement>('[role="menuitem"]')].find(button => button.textContent === 'Insert')!;
+      expect(insert.disabled).toBe(false);
+      await act(async () => insert.click());
+      const table = [...container.querySelectorAll<HTMLButtonElement>('[role="menu"][aria-label="Insert"] button')].find(button => button.textContent === 'Table')!;
+      await act(async () => table.click());
+      expect(body.dataset.command).toBe('table');
+    } finally { await act(async () => root.unmount()); }
+  });
+
   it("preserves Insert availability through outline toggles without enabling it from the title", async () => {
     const container = document.createElement("div"); document.body.appendChild(container); containers.push(container);
     const root = createRoot(container);

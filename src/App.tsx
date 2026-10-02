@@ -1176,13 +1176,18 @@ export default function App() {
       if (!(target instanceof Element)) return;
       // Editor menus and pane toggles retain the last editing target.
       if (target.closest(".note-view-menu, .outline-toggle, .sidebar-toggle, .windows-menu-bar, .windows-menu-popup")) return;
-      setContentsActive(!!target.closest(".ProseMirror"));
+      // Blank-space handlers prevent the default blur and refocus the editor.
+      // If it already had focus, no focusin event will arrive to repair this state.
+      const editingTarget = event.type === "mousedown" && event.defaultPrevented
+        ? document.activeElement
+        : target;
+      setContentsActive(!!editingTarget?.closest(".ProseMirror"));
     };
     document.addEventListener("focusin", trackContents);
-    document.addEventListener("mousedown", trackContents, true);
+    document.addEventListener("mousedown", trackContents);
     return () => {
       document.removeEventListener("focusin", trackContents);
-      document.removeEventListener("mousedown", trackContents, true);
+      document.removeEventListener("mousedown", trackContents);
     };
   }, []);
   useEffect(() => { setContentsActive(!!document.activeElement?.closest(".ProseMirror")); }, [activePath]);
