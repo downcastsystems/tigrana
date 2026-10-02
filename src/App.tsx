@@ -817,7 +817,7 @@ export default function App() {
     ),
     [activeNote, currentCreationFolderPath, folders, mainCreationFolderPath, workspace],
   );
-  const bookmarks = useMemo(() => buildBookmarkViews(metadata.bookmarks, folders, notes, metadata, workspace), [folders, metadata, notes, workspace]);
+  const bookmarks = useMemo(() => buildBookmarkViews(metadata.bookmarks, folders, notes, metadata, workspace).map(bookmark => ({ ...bookmark, selected: !bookmark.missing && (bookmark.kind === "note" ? bookmark.path === activePath : bookmark.path === selectedFolder) })), [folders, metadata, notes, workspace, activePath, selectedFolder]);
   const recentNotes = useMemo(
     () => buildRecentNoteViews(notes, metadata),
     [metadata, notes],
@@ -1175,7 +1175,7 @@ export default function App() {
       const target = event.target;
       if (!(target instanceof Element)) return;
       // Editor menus and pane toggles retain the last editing target.
-      if (target.closest(".note-view-menu, .outline-toggle, .sidebar-toggle")) return;
+      if (target.closest(".note-view-menu, .outline-toggle, .sidebar-toggle, .windows-menu-bar, .windows-menu-popup")) return;
       setContentsActive(!!target.closest(".ProseMirror"));
     };
     document.addEventListener("focusin", trackContents);

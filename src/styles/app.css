@@ -1132,11 +1132,6 @@ body.is-dragging-section * {
   cursor: pointer;
 }
 
-.section-header-button:hover {
-  color: var(--accent-contrast);
-  background: var(--accent);
-}
-
 .bookmarks-list {
   display: grid;
   gap: 2px;
@@ -1187,9 +1182,10 @@ body.is-dragging-section * {
   bottom: -2px;
 }
 
-.bookmark-item:hover {
-  color: var(--accent-contrast);
-  background: var(--accent);
+.bookmark-item:hover,
+.bookmark-item.is-active {
+  color: var(--accent-strong);
+  background: var(--accent-active);
 }
 
 .bookmark-item.is-missing {
@@ -5852,7 +5848,8 @@ html[data-theme="dark"] .bookmark-item {
   background: transparent;
 }
 
-html[data-theme="dark"] .bookmark-item:hover {
+html[data-theme="dark"] .bookmark-item:hover,
+html[data-theme="dark"] .bookmark-item.is-active {
   color: var(--accent-contrast);
   background: var(--accent);
 }
@@ -5879,8 +5876,7 @@ html[data-theme="dark"] .note-card.is-active,
 html[data-theme="dark"] .note-tab.is-active,
 html[data-theme="dark"] .slash-item.is-selected,
 html[data-theme="dark"] .slash-item:hover,
-html[data-theme="dark"] .palette-result:hover,
-html[data-theme="dark"] .section-header-button:hover {
+html[data-theme="dark"] .palette-result:hover {
   color: var(--accent-contrast);
   background: var(--accent);
 }
@@ -7155,3 +7151,43 @@ html[data-theme="light"] .ProseMirror li[data-bullet-method-completed="true"] .b
 .date-picker .date-picker-day[aria-pressed="true"], .date-picker .date-picker-insert { background: var(--accent); color: var(--accent-contrast); }
 .date-picker-footer { margin-top: 14px; font-size: 12px; }
 .date-picker-footer button { padding: 7px 9px; }
+
+@layer tigrana-base {
+.windows-menus > button { padding: 0 12px; }
+.windows-menus > button[aria-expanded="true"] { background: var(--accent-soft); }
+.windows-menu-popup {
+  position: fixed;
+  z-index: 1000;
+  min-width: 230px;
+  max-width: min(420px, calc(100vw - 16px));
+  max-height: calc(100vh - 48px);
+  overflow-y: auto;
+  padding: 6px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--surface, #fff);
+  color: var(--text, #222);
+  box-shadow: 0 8px 24px #0003;
+  user-select: none;
+}
+.windows-menu-popup button {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  width: 100%;
+  min-height: 32px;
+  padding: 6px 10px;
+  border: 0;
+  border-radius: 4px;
+  color: inherit;
+  background: transparent;
+  text-align: left;
+  font-size: 13px;
+}
+.windows-menu-popup button:not(:disabled):is(:hover, :focus-visible, .is-open) { background: var(--accent-soft); outline: none; }
+.windows-menu-popup button:disabled { opacity: .45; }
+.windows-menu-check { width: 14px; flex: 0 0 14px; }
+.windows-menu-label { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.windows-menu-shortcut { opacity: .7; white-space: nowrap; font-size: 12px; }
+.windows-menu-divider { height: 1px; margin: 5px 8px; background: var(--border, #ddd); }
+}

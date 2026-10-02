@@ -3,6 +3,7 @@
 
 use fs2::FileExt;
 mod application_menu;
+mod windows_menus;
 mod assets;
 mod document_import;
 mod link_index;
@@ -1093,6 +1094,41 @@ fn popup_windows_menu(window: WebviewWindow, menu: String, x: f64, y: f64) -> Re
 }
 
 #[tauri::command]
+fn windows_menu_entries(window: WebviewWindow) -> Result<Vec<windows_menus::MenuEntry>, String> {
+    let menu = window.menu().ok_or("Window menu is unavailable")?;
+    windows_menus::entries(&menu).map_err(|error| error.to_string())
+}
+
+#[tauri::command]
+fn execute_windows_menu(window: WebviewWindow, id: String) -> Result<(), String> {
+    if !cfg!(target_os = "windows") { return Err("Windows menu command on another platform".into()); }
+    if !window.is_focused().map_err(|error| error.to_string())? { return Ok(()); }
+    let menu = window.menu().ok_or("Window menu is unavailable")?;
+    let item = windows_menus::find_enabled(&menu, &id).map_err(|error| error.to_string())?
+        .ok_or("Menu command is unavailable")?;
+    if let tauri::menu::MenuItemKind::Predefined(item) = item {
+        let text = item.text().map_err(|error| error.to_string())?.replace('&', "");
+        match text.as_str() {
+            "Undo" | "Redo" | "Cut" | "Copy" | "Paste" | "Select All" => {
+                #[cfg(target_os = "windows")]
+                windows_menus::edit_key(match text.as_str() { "Undo" => 0x5A, "Redo" => 0x59, "Cut" => 0x58, "Copy" => 0x43, "Paste" => 0x56, _ => 0x41 })?;
+            }
+            "Close" | "Close Window" => window.close().map_err(|error| error.to_string())?,
+            "Toggle Full Screen" => window.set_fullscreen(!window.is_fullscreen().map_err(|error| error.to_string())?).map_err(|error| error.to_string())?,
+            "Maximize" => window.maximize().map_err(|error| error.to_string())?,
+            "About Tigrana" => {
+                use tauri_plugin_dialog::DialogExt;
+                window.dialog().message(format!("Tigrana {}\nA simple, beautiful, file-native desktop notes app.", window.app_handle().package_info().version)).title("About Tigrana").show(|_| {});
+            }
+            _ => return Err(format!("Unsupported menu command: {text}")),
+        }
+    } else {
+        dispatch_menu_command(window.app_handle(), &id);
+    }
+    Ok(())
+}
+
+#[tauri::command]
 fn write_export_text_file(payload: WriteExportTextPayload) -> Result<(), String> {
     fs::write(payload.path, payload.contents).map_err(|error| error.to_string())
 }
@@ -1826,8 +1862,9 @@ fn build_app_menu(
         rich_editable_note && state.contents_active,
         None::<&str>,
     )?;
-    let insert_menu = Submenu::with_items(
+    let insert_menu = Submenu::with_id_and_items(
         handle,
+        "Insert",
         "Insert",
         rich_editable_note && state.contents_active,
         &[&format_table, &format_image, &format_equation, &format_footnote],
@@ -2050,8 +2087,6 @@ fn build_app_menu(
             &format_quote,
             &format_code_block,
             &format_divider,
-            &PredefinedMenuItem::separator(handle)?,
-            &insert_menu,
         ],
     )?;
     #[cfg(target_os = "windows")]
@@ -2082,6 +2117,7 @@ fn build_app_menu(
             &find_menu,
             &view_menu,
             &format_menu,
+            &insert_menu,
             &window_menu,
         ],
     )?;
@@ -2412,6 +2448,111 @@ fn reveal_in_file_manager(path: &Path) -> Result<(), String> {
     }
 }
 
+fn dispatch_menu_command(app: &AppHandle, command: &str) {
+    match command {
+        "open_settings" => {
+            emit_menu_command(app, "open_settings");
+        }
+        "open_notebook" => {
+            open_notebook_from_menu(app);
+        }
+        "manage_notebooks" => {
+            manage_notebooks_from_menu(app);
+        }
+        "open_recently_deleted" => {
+            emit_menu_command(app, "open_recently_deleted");
+        }
+        id if id.starts_with("open_recent_note:") => emit_menu_command(app, id),
+        "new_notebook" => emit_menu_command(app, "new_notebook"),
+        "new_note" => emit_menu_command(app, "new_note"),
+        "new_folder" => emit_menu_command(app, "new_folder"),
+        "new_tab" => emit_menu_command(app, "new_tab"),
+        "save_note" => emit_menu_command(app, "save_note"),
+        "import_pdf" => emit_menu_command(app, "import_pdf"),
+        "import_word" => emit_menu_command(app, "import_word"),
+        id if id.starts_with("export_note_") || id.starts_with("export_folder_") || id.starts_with("export_section_") => emit_menu_command(app, id),
+        "print_note" | "print_folder" | "print_section" => emit_menu_command(app, command),
+        "sort_az" | "sort_za" | "sort_az_case" | "sort_za_case" | "sort_bullet_method" => {
+            emit_menu_command(app, command);
+        }
+        "find_note" => emit_menu_command(app, "find_note"),
+        "find_next" => emit_menu_command(app, "find_next"),
+        "find_previous" => emit_menu_command(app, "find_previous"),
+        "replace_note" => emit_menu_command(app, "replace_note"),
+        "start_dictation" => emit_menu_command(app, "start_dictation"),
+        "search_notebook" => emit_menu_command(app, "search_notebook"),
+        "toggle_spellcheck" => {
+            #[cfg(target_os = "macos")]
+            toggle_macos_continuous_spellcheck(app);
+            emit_menu_command(app, "toggle_spellcheck");
+        }
+        "toggle_sidebar" => emit_menu_command(app, "toggle_sidebar"),
+        "toggle_outline" => emit_menu_command(app, "toggle_outline"),
+        "toggle_focus" => emit_menu_command(app, "toggle_focus"),
+        "toggle_word_count" => emit_menu_command(app, "toggle_word_count"),
+        "toggle_raw_markdown" => emit_menu_command(app, "toggle_raw_markdown"),
+        "zoom_in" => emit_menu_command(app, "zoom_in"),
+        "zoom_out" => emit_menu_command(app, "zoom_out"),
+        "zoom_reset" => emit_menu_command(app, "zoom_reset"),
+        "navigation_dual_pane" => emit_menu_command(app, "navigation_dual_pane"),
+        "navigation_section_view" => emit_menu_command(app, "navigation_section_view"),
+        "navigation_single_pane" => emit_menu_command(app, "navigation_single_pane"),
+        "width_comfortable" => emit_menu_command(app, "width_comfortable"),
+        "width_narrow" => emit_menu_command(app, "width_narrow"),
+        "width_full" => emit_menu_command(app, "width_full"),
+        "align_left" => emit_menu_command(app, "align_left"),
+        "align_center" => emit_menu_command(app, "align_center"),
+        "format_bold" => emit_menu_command(app, "format_bold"),
+        "format_italic" => emit_menu_command(app, "format_italic"),
+        "format_strike" => emit_menu_command(app, "format_strike"),
+        "format_code" => emit_menu_command(app, "format_code"),
+        "format_highlight" => emit_menu_command(app, "format_highlight"),
+        id if id.starts_with("format_textColor_") || id.starts_with("format_highlightColor_") => {
+            emit_menu_command(app, id)
+        }
+        "format_link" => emit_menu_command(app, "format_link"),
+        "format_clear" => emit_menu_command(app, "format_clear"),
+        "format_paragraph" => emit_menu_command(app, "format_paragraph"),
+        "format_h1" => emit_menu_command(app, "format_h1"),
+        "format_h2" => emit_menu_command(app, "format_h2"),
+        "format_h3" => emit_menu_command(app, "format_h3"),
+        "format_h4" => emit_menu_command(app, "format_h4"),
+        "format_h5" => emit_menu_command(app, "format_h5"),
+        "format_h6" => emit_menu_command(app, "format_h6"),
+        "format_bullet_list" => emit_menu_command(app, "format_bullet_list"),
+        "format_ordered_list" => emit_menu_command(app, "format_ordered_list"),
+        "format_task_list" => emit_menu_command(app, "format_task_list"),
+        "format_quote" => emit_menu_command(app, "format_quote"),
+        "format_code_block" => emit_menu_command(app, "format_code_block"),
+        "format_divider" => emit_menu_command(app, "format_divider"),
+        "format_table" => emit_menu_command(app, "format_table"),
+        "format_image" => emit_menu_command(app, "format_image"),
+        "format_equation" => emit_menu_command(app, "format_equation"),
+        "format_footnote" => emit_menu_command(app, "format_footnote"),
+        "minimize_window" => {
+            if let Some(window) = active_menu_window(app) {
+                let _ = window.minimize();
+            }
+        }
+        "request_quit" => {
+            let labels: Vec<String> = app.webview_windows().keys().cloned().collect();
+            for label in labels {
+                if let Some(win) = app.get_webview_window(&label) {
+                    let _ = win.close();
+                }
+            }
+        }
+        id if id.starts_with("focus_notebook_window:") => {
+            let label = id.trim_start_matches("focus_notebook_window:");
+            if let Some(win) = app.get_webview_window(label) {
+                let _ = win.show();
+                let _ = win.set_focus();
+            }
+        }
+        _ => {}
+    }
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
@@ -2451,108 +2592,7 @@ pub fn run() {
                 _ => {}
             }
         })
-        .on_menu_event(|app, event| match event.id().as_ref() {
-            "open_settings" => {
-                emit_menu_command(app, "open_settings");
-            }
-            "open_notebook" => {
-                open_notebook_from_menu(app);
-            }
-            "manage_notebooks" => {
-                manage_notebooks_from_menu(app);
-            }
-            "open_recently_deleted" => {
-                emit_menu_command(app, "open_recently_deleted");
-            }
-            id if id.starts_with("open_recent_note:") => emit_menu_command(app, id),
-            "new_notebook" => emit_menu_command(app, "new_notebook"),
-            "new_note" => emit_menu_command(app, "new_note"),
-            "new_folder" => emit_menu_command(app, "new_folder"),
-            "new_tab" => emit_menu_command(app, "new_tab"),
-            "save_note" => emit_menu_command(app, "save_note"),
-            "import_pdf" => emit_menu_command(app, "import_pdf"),
-            "import_word" => emit_menu_command(app, "import_word"),
-            id if id.starts_with("export_note_") || id.starts_with("export_folder_") || id.starts_with("export_section_") => emit_menu_command(app, id),
-            "print_note" | "print_folder" | "print_section" => emit_menu_command(app, event.id().as_ref()),
-            "sort_az" | "sort_za" | "sort_az_case" | "sort_za_case" | "sort_bullet_method" => {
-                emit_menu_command(app, event.id().as_ref());
-            }
-            "find_note" => emit_menu_command(app, "find_note"),
-            "find_next" => emit_menu_command(app, "find_next"),
-            "find_previous" => emit_menu_command(app, "find_previous"),
-            "replace_note" => emit_menu_command(app, "replace_note"),
-            "start_dictation" => emit_menu_command(app, "start_dictation"),
-            "search_notebook" => emit_menu_command(app, "search_notebook"),
-            "toggle_spellcheck" => {
-                #[cfg(target_os = "macos")]
-                toggle_macos_continuous_spellcheck(app);
-                emit_menu_command(app, "toggle_spellcheck");
-            }
-            "toggle_sidebar" => emit_menu_command(app, "toggle_sidebar"),
-            "toggle_outline" => emit_menu_command(app, "toggle_outline"),
-            "toggle_focus" => emit_menu_command(app, "toggle_focus"),
-            "toggle_word_count" => emit_menu_command(app, "toggle_word_count"),
-            "toggle_raw_markdown" => emit_menu_command(app, "toggle_raw_markdown"),
-            "zoom_in" => emit_menu_command(app, "zoom_in"),
-            "zoom_out" => emit_menu_command(app, "zoom_out"),
-            "zoom_reset" => emit_menu_command(app, "zoom_reset"),
-            "navigation_dual_pane" => emit_menu_command(app, "navigation_dual_pane"),
-            "navigation_section_view" => emit_menu_command(app, "navigation_section_view"),
-            "navigation_single_pane" => emit_menu_command(app, "navigation_single_pane"),
-            "width_comfortable" => emit_menu_command(app, "width_comfortable"),
-            "width_narrow" => emit_menu_command(app, "width_narrow"),
-            "width_full" => emit_menu_command(app, "width_full"),
-            "align_left" => emit_menu_command(app, "align_left"),
-            "align_center" => emit_menu_command(app, "align_center"),
-            "format_bold" => emit_menu_command(app, "format_bold"),
-            "format_italic" => emit_menu_command(app, "format_italic"),
-            "format_strike" => emit_menu_command(app, "format_strike"),
-            "format_code" => emit_menu_command(app, "format_code"),
-            "format_highlight" => emit_menu_command(app, "format_highlight"),
-            id if id.starts_with("format_textColor_") || id.starts_with("format_highlightColor_") => {
-                emit_menu_command(app, id)
-            }
-            "format_link" => emit_menu_command(app, "format_link"),
-            "format_clear" => emit_menu_command(app, "format_clear"),
-            "format_paragraph" => emit_menu_command(app, "format_paragraph"),
-            "format_h1" => emit_menu_command(app, "format_h1"),
-            "format_h2" => emit_menu_command(app, "format_h2"),
-            "format_h3" => emit_menu_command(app, "format_h3"),
-            "format_h4" => emit_menu_command(app, "format_h4"),
-            "format_h5" => emit_menu_command(app, "format_h5"),
-            "format_h6" => emit_menu_command(app, "format_h6"),
-            "format_bullet_list" => emit_menu_command(app, "format_bullet_list"),
-            "format_ordered_list" => emit_menu_command(app, "format_ordered_list"),
-            "format_task_list" => emit_menu_command(app, "format_task_list"),
-            "format_quote" => emit_menu_command(app, "format_quote"),
-            "format_code_block" => emit_menu_command(app, "format_code_block"),
-            "format_divider" => emit_menu_command(app, "format_divider"),
-            "format_table" => emit_menu_command(app, "format_table"),
-            "format_image" => emit_menu_command(app, "format_image"),
-            "format_equation" => emit_menu_command(app, "format_equation"),
-            "format_footnote" => emit_menu_command(app, "format_footnote"),
-            "minimize_window" => {
-                if let Some(window) = active_menu_window(app) {
-                    let _ = window.minimize();
-                }
-            }
-            "request_quit" => {
-                let labels: Vec<String> = app.webview_windows().keys().cloned().collect();
-                for label in labels {
-                    if let Some(win) = app.get_webview_window(&label) {
-                        let _ = win.close();
-                    }
-                }
-            }
-            id if id.starts_with("focus_notebook_window:") => {
-                let label = id.trim_start_matches("focus_notebook_window:");
-                if let Some(win) = app.get_webview_window(label) {
-                    let _ = win.show();
-                    let _ = win.set_focus();
-                }
-            }
-            _ => {}
-        })
+        .on_menu_event(|app, event| dispatch_menu_command(app, event.id().as_ref()))
         .invoke_handler(tauri::generate_handler![
             themes::list_themes,
             themes::save_theme,
@@ -2592,6 +2632,8 @@ pub fn run() {
             update_app_menu_state,
             prepare_windows_chrome,
             popup_windows_menu,
+            windows_menu_entries,
+            execute_windows_menu,
             focus_notebook_window,
             read_app_preferences,
             write_app_preferences,

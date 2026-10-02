@@ -47,6 +47,33 @@ function setReactInputValue(input: HTMLInputElement, value: string) {
 }
 
 describe("Note editor typing performance", () => {
+  it('returns from a typed footnote on Escape with the complete editor extensions', async () => {
+    const container = document.createElement('div'); document.body.append(container);
+    const root = createRoot(container); mounted.push({ container, root });
+    await act(async () => root.render(<NotesEditor content='Body' editable findRequest={0}
+      focusAtEndRequest={0} focusRequest={0} historyKey='footnote-escape' notePath='Footnotes.md'
+      onChange={() => undefined} onLoadError={error => { throw error; }} onPendingChange={() => undefined}
+      onPositionChange={() => undefined} restorePosition={null} spellcheckEnabled workspace='/Notebook' />));
+    const editor = (container.querySelector('.ProseMirror') as HTMLElement & { editor: import('@tiptap/core').Editor }).editor;
+    await act(async () => {
+      editor.commands.setTextSelection(5);
+      for (const text of '[^]') {
+        const { from, to } = editor.state.selection;
+        const handled = editor.view.someProp('handleTextInput', handler => handler(editor.view, from, to, text, () => editor.state.tr.insertText(text, from, to)));
+        if (!handled) editor.view.dispatch(editor.state.tr.insertText(text, from, to));
+      }
+      editor.commands.insertContent('Footnote text');
+    });
+    expect(editor.state.selection.$from.node(-1).type.name).toBe('footnoteDefinition');
+    await act(async () => {
+      editor.view.dom.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true }));
+    });
+    expect(editor.state.selection.from).toBe(6);
+    expect(editor.state.selection.empty).toBe(true);
+    await act(async () => { editor.commands.insertContent(' continued'); });
+    expect(editor.state.doc.firstChild!.textContent).toBe('Body continued');
+    expect(editor.state.doc.lastChild!.textContent).toBe('Footnote text');
+  });
   const mounted: Array<{ container: HTMLElement; root: Root }> = [];
 
   // Constructing and serializing this 1,000-footnote DOM can exceed Vitest's

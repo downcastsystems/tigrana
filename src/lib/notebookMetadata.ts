@@ -5,6 +5,7 @@ export type FolderNode = FolderEntry & {
 };
 
 export type BookmarkView = BookmarkEntry & {
+  selected?: boolean;
   title: string;
   icon?: string;
   missing: boolean;

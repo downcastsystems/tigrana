@@ -2,6 +2,8 @@
 // entry point instead of running on a libtest worker thread.
 #[path = "../src/application_menu.rs"]
 mod application_menu;
+#[path = "../src/windows_menus.rs"]
+mod windows_menus;
 
 use application_menu::{application_submenu, replace_menu_items};
 use tauri::menu::{Menu, MenuItem, Submenu};
@@ -42,6 +44,29 @@ fn main() {
         assert!(application_submenu(&window_reference, "File").is_ok());
         assert!(application_submenu(&window_reference, "Missing").is_err());
         assert_eq!(current.items().unwrap().len(), 1);
+    }
+    // The web menu snapshot uses the native tree, including parent enablement.
+    let disabled = MenuItem::with_id(handle, "format_table", "Table", true, None::<&str>).unwrap();
+    let insert = Submenu::with_id_and_items(handle, "Insert", "Insert", false, &[&disabled]).unwrap();
+    let snapshot_menu = Menu::with_items(handle, &[&insert]).unwrap();
+    let entries = windows_menus::entries(&snapshot_menu).unwrap();
+    assert_eq!(entries[0].id, "Insert");
+    assert!(!entries[0].enabled);
+    assert!(windows_menus::find_enabled(&snapshot_menu, "format_table").unwrap().is_none());
+    insert.set_enabled(true).unwrap();
+    assert!(windows_menus::find_enabled(&snapshot_menu, "format_table").unwrap().is_some());
+    assert!(windows_menus::find_enabled(&snapshot_menu, "unknown").unwrap().is_none());
+    let close = tauri::menu::PredefinedMenuItem::close_window(handle, None).unwrap();
+    let close_menu = Menu::with_items(handle, &[&close]).unwrap();
+    assert_eq!(windows_menus::entries(&close_menu).unwrap()[0].shortcut, Some("Alt+F4"));
+    // Stable IDs keep predefined actions usable after a menu refresh.
+    for _ in 0..2 {
+        let undo = tauri::menu::PredefinedMenuItem::undo(handle, None).unwrap();
+        let edit = Submenu::with_items(handle, "Edit", true, &[&undo]).unwrap();
+        let menu = Menu::with_items(handle, &[&edit]).unwrap();
+        let entries = windows_menus::entries(&menu).unwrap();
+        assert_eq!(entries[0].children.as_ref().unwrap()[0].id, "predefined:Undo");
+        assert!(windows_menus::find_enabled(&menu, "predefined:Undo").unwrap().is_some());
     }
     #[cfg(target_os = "windows")]
     {

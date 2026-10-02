@@ -126,6 +126,35 @@ it('inserts directly into an editable definition and keeps undo separate from ty
   expect(htmlToMarkdown(editor.getHTML()).trim()).toBe('Before after');
 });
 
+it.each(['command', 'typed syntax'])('returns after the reference on Escape after %s insertion', insertion => {
+  const editor = create('Before after');
+  editor.commands.setTextSelection(7);
+  if (insertion === 'typed syntax') typeText(editor, '[^]');
+  else requestFootnote(editor);
+  editor.commands.insertContent('Footnote text');
+  const before = editor.getJSON();
+  const escape = new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true });
+  editor.view.dom.dispatchEvent(escape);
+  expect(escape.defaultPrevented).toBe(true);
+  expect(editor.state.selection.empty).toBe(true);
+  expect(editor.state.selection.from).toBe(8);
+  expect(editor.getJSON()).toEqual(before);
+  editor.commands.insertContent(' continued');
+  expect(htmlToMarkdown(editor.getHTML()).trim()).toBe('Before[^1] continued after\n\n[^1]: Footnote text');
+});
+
+it('returns from nested footnote text and leaves unreferenced definitions alone', () => {
+  const editor = create('Body[^Source].\n\n[^Source]: - Nested text\n\n[^unused]: Orphan');
+  editFootnote(editor, 'source');
+  editor.view.dom.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true }));
+  expect(editor.state.selection.$from.parent.type.name).toBe('paragraph');
+  expect(editor.state.selection.from).toBe(6);
+  editFootnote(editor, 'unused');
+  const position = editor.state.selection.from;
+  editor.view.dom.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true }));
+  expect(editor.state.selection.from).toBe(position);
+});
+
 it('edits formatted lists inside a definition and reloads them as blocks', () => {
   const editor = create('Text[^1].\n\n[^1]: First\n\n    - One\n    - Two\n\n    > [!NOTE]\n    > A quote');
   editFootnote(editor, '1');

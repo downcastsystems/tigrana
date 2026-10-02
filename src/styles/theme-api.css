@@ -7,7 +7,7 @@
 [data-theme-region][data-theme-api="1"] :is(.ProseMirror, .raw-markdown-input) { letter-spacing: var(--tigrana-letter-spacing, 0em); font-kerning: normal; line-height: var(--tigrana-line-height); color: var(--tigrana-editor-text, var(--text)); }
 [data-theme-region][data-theme-api="1"] .ProseMirror a { color: var(--link-color); }
 [data-theme-region][data-theme-api="1"] :is(.folder-row, .folder-select, .note-card, .note-row, .unified-folder-row, .unified-folder-name, .unified-note-row, .bookmark-item, .note-tab) { color: var(--tigrana-text); }
-[data-theme-region][data-theme-api="1"] :is(.folder-row, .note-card, .note-row, .unified-folder-row, .unified-note-row, .note-tab):is(.is-active, .is-context-target) { color: var(--tigrana-selected-text); }
+[data-theme-region][data-theme-api="1"] :is(.folder-row, .note-card, .note-row, .unified-folder-row, .unified-note-row, .bookmark-item, .note-tab):is(.is-active, .is-context-target) { color: var(--tigrana-selected-text); }
 [data-theme-region][data-theme-api="1"] :is(.folder-row, .note-card, .unified-folder-row, .unified-note-row):is(.is-active, .is-context-target, :hover) :is(.folder-select, .folder-select span, .unified-folder-name, strong, small) { color: inherit; }
 [data-theme-region][data-theme-api="1"] :is(.folder-row, .note-card, .unified-note-row, .unified-folder-row, .toolbar-button, .icon-button, .note-tab) { border-radius: var(--tigrana-radius); }
 [data-theme-region][data-theme-api="1"] :is(.folder-row, .note-card, .unified-note-row, .unified-folder-row) { min-height: calc(32px * var(--tigrana-spacing)); }
@@ -72,8 +72,8 @@ html[data-theme-preset="default"][data-theme="dark"] [data-theme-region] :is(.Pr
 [data-theme-region] .note-view-dropdown button.is-active { background: var(--tigrana-menu-selected-background); color: var(--tigrana-menu-selected-text); }
 [data-theme-region] .note-view-dropdown button:not(:disabled):hover { background: var(--tigrana-hover-background); color: var(--tigrana-hover-text); }
 [data-theme-region] .note-view-dropdown button:is(.is-active, :hover) :is(strong, small) { color: inherit; }
-[data-theme-region][data-theme-api="1"] :is(.folder-row,.note-row,.note-card,.unified-note-row,.unified-folder-row):hover { background: var(--tigrana-hover-background); color: var(--tigrana-hover-text); }
-[data-theme-region][data-theme-api="1"] :is(.folder-row,.note-row,.note-card,.unified-note-row,.unified-folder-row):is(.is-active,.is-context-target) { background: var(--tigrana-accent); color: var(--tigrana-selected-text); }
+[data-theme-region][data-theme-api="1"] :is(.folder-row,.note-row,.note-card,.unified-note-row,.unified-folder-row,.bookmark-item):hover { background: var(--tigrana-hover-background); color: var(--tigrana-hover-text); }
+[data-theme-region][data-theme-api="1"] :is(.folder-row,.note-row,.note-card,.unified-note-row,.unified-folder-row,.bookmark-item):is(.is-active,.is-context-target) { background: var(--tigrana-accent); color: var(--tigrana-selected-text); }
 [data-theme-region] .note-title-input { font-size: var(--tigrana-font-title); }
 [data-theme-region] .topbar-note-title { font-size: var(--tigrana-font-compact-title); }
 [data-theme-region] :is(.folder-row,.note-row,.note-card,.unified-tree-row,.pane-header,.folder-select) { font-size: var(--tigrana-font-navigation); }

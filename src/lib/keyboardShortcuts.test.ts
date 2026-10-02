@@ -47,3 +47,10 @@ it("leaves typing, composition, and already handled editor shortcuts alone", () 
   expect(appShortcutCommand({ ...base, key: "b", ctrlKey: true, defaultPrevented: true })).toBeNull();
   expect(appShortcutCommand({ ...base, key: "n", ctrlKey: true, metaKey: true })).toBeNull();
 });
+
+it("exposes Insert beside Format instead of inside it", () => {
+  const format = nativeMenu.slice(nativeMenu.indexOf("let format_menu ="), nativeMenu.indexOf("let window_menu ="));
+  expect(format).not.toContain("&insert_menu");
+  expect(nativeMenu.match(/&insert_menu/g)).toHaveLength(1);
+  expect(nativeMenu).toContain('&format_menu,\n            &insert_menu,');
+});

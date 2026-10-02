@@ -342,6 +342,22 @@ export const FootnoteInteractions = Extension.create({
           },
         },
         handleKeyDown(_view, event) {
+          if (event.key === "Escape" && !event.isComposing && !event.metaKey && !event.ctrlKey && !event.altKey && !event.shiftKey) {
+            const label = selectedFootnote(editor.state.selection);
+            let referenceEnd: number | undefined;
+            if (label) editor.state.doc.descendants((node, pos) => {
+              if (node.type.name === "footnoteDefinition") return false;
+              if (referenceEnd === undefined && node.type.name === "footnoteReference" && footnoteKey(node.attrs.label) === label)
+                referenceEnd = pos + node.nodeSize;
+            });
+            if (referenceEnd !== undefined) {
+              editor.view.dispatch(editor.state.tr.setSelection(TextSelection.create(editor.state.doc, referenceEnd)).scrollIntoView());
+              editor.view.focus();
+              event.preventDefault();
+              event.stopPropagation();
+              return true;
+            }
+          }
           if (handleEmptyFootnoteDelete(editor, event)) return true;
           const target = event.target;
           if (!(target instanceof HTMLElement) || !target.matches('[data-type="footnoteReference"], [data-footnote-backlink]') || !["Enter", " "].includes(event.key)) return false;
