@@ -1,3 +1,5 @@
+import { WELCOME_NOTE_CONTENT } from "./welcomeNote";
+import { newNotebookAppearance } from "./newNotebookAppearance";
 import { invoke } from "@tauri-apps/api/core";
 import type { FolderEntry, LinkIndex, NotebookSnapshot, NoteEntry, WorkspaceMetadata, WorkspaceMetadataWriteResult } from "../types";
 import {
@@ -13,11 +15,6 @@ export const SAMPLE_WORKSPACE = "/demo/Tigrana";
 
 const DEMO_STORAGE_KEY = "tigrana-demo-v5";
 const WELCOME_NOTE_PATH = "Welcome.md";
-const WELCOME_NOTE_CONTENT =
-  "tih-GRAH-nuh or tee-GRAH-nah\n\n" +
-  "**Tigrana** is named after an ancient archaeological site where a seal bearing early script was found - a reminder that humans have always needed simple ways to preserve thought.\n\n" +
-  "It may or may not also stand for that Time I Got Reincarnated As a Notes App.\n\n" +
-  "Use the + icon to add a note.\n";
 
 type DemoStore = {
   notes: Record<string, string>;
@@ -386,7 +383,14 @@ export function createNativeNotebookStorage(invokeCommand: InvokeCommand = invok
     },
   };
 
-  return addSharedNotebookBehavior(storage);
+  return {
+    ...storage,
+    ensureWelcomeNote: (workspace) => invokeCommand("ensure_welcome_note", {
+      workspace,
+      content: WELCOME_NOTE_CONTENT,
+      appearance: newNotebookAppearance(),
+    }),
+  };
 }
 
 export function createDemoNotebookStorage(persistence: KeyValueStorage): NotebookStorage {
@@ -728,11 +732,12 @@ function addSharedNotebookBehavior(storage: Omit<NotebookStorage, "ensureWelcome
         }
         refreshNeeded = true;
       }
-      const nextMetadata = { ...metadata, welcomeNoteAdded: true };
+      const nextMetadata = { ...metadata, appearance: metadata.appearance ?? newNotebookAppearance(), welcomeNoteAdded: true };
       let result = await storage.writeWorkspaceMetadata(workspace, nextMetadata);
       if (!result.applied && !result.metadata.welcomeNoteAdded) {
         result = await storage.writeWorkspaceMetadata(workspace, {
           ...result.metadata,
+          appearance: result.metadata.appearance ?? newNotebookAppearance(),
           welcomeNoteAdded: true,
         });
       }

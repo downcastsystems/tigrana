@@ -4,7 +4,7 @@
 through `patch-package`; patch failures stop installation.
 
 Vite's dependency cache key includes a content hash of this patch through the
-`plasmaPatchVersion` plugin. Its default patch detection only checks the patches
+`dependencyPatchVersions` plugin. Its default patch detection only checks the patches
 directory's timestamp, which does not change when an existing patch is edited.
 Without this, the desktop webview can retain an older optimized renderer at an
 immutable URL even after an app reload. The plugin restarts the dev server on
@@ -67,3 +67,21 @@ a pointer inside the editor lights the rim at the same height. Normalization
 is bounded when the pointer is directly on the sampled pixel. The browser
 fixture also checks rendered rim highlights along horizontal and vertical edges,
 with the pointer inside and outside a pane, to within 2 px of the cursor axis.
+
+# Table range selection adjustment
+
+`prosemirror-tables` 1.8.5 is patched in both ESM and CommonJS entry points.
+Its across-cell selection predicate also matched ranges with only one endpoint
+in a cell and the other at the start of an outside paragraph. During backward
+WebKit mouse drags from below a table, normalization replaced the original
+anchor with a paragraph inside the table, eventually excluding the table.
+Require both endpoints to be in distinct cells before applying that correction.
+Actual across-cell correction, rectangular cell selection, and table repair
+remain enabled. No document or Markdown content changes.
+
+`npm install` applies this patch through the existing fail-on-error postinstall.
+Vite hashes all dependency patches so an optimized table plugin cannot stay
+stale after a patch edit. On dependency upgrades, check for an upstream fix
+before retaining the patch. Run `src/editor/tableSelection.test.ts` and
+`scripts/check-table-selection.mjs` against Vite using Playwright with WebKit
+and Chromium to verify mouse drags and cell selection.

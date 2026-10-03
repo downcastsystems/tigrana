@@ -190,6 +190,101 @@ async function waitFor(check: () => boolean, timeoutMs = 1_500) {
 describe("Note navigation persistence", () => {
   const containers: HTMLElement[] = [];
 
+  it.each([false, true])("uses system startup lighting and toggles independently of saved notebook preferences (dark: %s)", async (dark) => {
+    let onSystemChange: ((event: { matches: boolean }) => void) | undefined;
+    vi.stubGlobal("matchMedia", vi.fn(() => ({ matches: dark,
+      addEventListener: (_event: string, listener: typeof onSystemChange) => { onSystemChange = listener; },
+      removeEventListener: vi.fn(),
+    })));
+    localStorage.setItem("tigrana-workspace", "");
+    localStorage.setItem("tigrana-theme", dark ? "light" : "dark");
+    const container = document.createElement("div"); document.body.appendChild(container); containers.push(container);
+    const root = createRoot(container);
+    try {
+      await act(async () => root.render(<App />));
+      const shell = container.querySelector<HTMLElement>(".notebook-startup-shell")!;
+      expect(shell.classList.contains(dark ? "theme-dark" : "theme-light")).toBe(true);
+      expect(shell.style.getPropertyValue("--startup-accent")).toBe("#0056d6");
+      await act(async () => onSystemChange?.({ matches: !dark }));
+      expect(shell.classList.contains(dark ? "theme-light" : "theme-dark")).toBe(true);
+      const savedPreference = localStorage.getItem("tigrana-theme");
+      await act(async () => container.querySelector<HTMLButtonElement>(".startup-theme-toggle")!.click());
+      expect(shell.classList.contains(dark ? "theme-dark" : "theme-light")).toBe(true);
+      expect(container.querySelector(".startup-theme-toggle")?.getAttribute("aria-label")).toBe(dark ? "Switch to light mode" : "Switch to dark mode");
+      expect(localStorage.getItem("tigrana-theme")).toBe(savedPreference);
+      await act(async () => root.render(<App key="restart" />));
+      expect(container.querySelector(".notebook-startup-shell")?.classList.contains(dark ? "theme-dark" : "theme-light")).toBe(true);
+    } finally { await act(async () => root.unmount()); vi.unstubAllGlobals(); }
+  });
+
+  it("starts notebook creation by asking for a name before opening the folder picker", async () => {
+    localStorage.setItem("tigrana-workspace", "");
+    const container = document.createElement("div"); document.body.appendChild(container); containers.push(container);
+    const root = createRoot(container);
+    try {
+      await act(async () => root.render(<App />));
+      const create = [...container.querySelectorAll<HTMLButtonElement>("button")].find(button => button.textContent === "Create new notebook")!;
+      await act(async () => create.click());
+      const dialog = container.querySelector('[role="dialog"]')!;
+      expect(dialog.textContent).toContain("Give your notebook a name");
+      expect(dialog.querySelector<HTMLInputElement>("input")!.value).toBe("");
+      const cancel = [...dialog.querySelectorAll<HTMLButtonElement>("button")].find(button => button.textContent === "Cancel")!;
+      await act(async () => cancel.click());
+      expect(container.querySelector('[role="dialog"]')).toBeNull();
+      expect(container.querySelector(".notebook-startup")).not.toBeNull();
+    } finally { await act(async () => root.unmount()); }
+  });
+
+  it("requires folder selection when there is no notebook and can reopen a recent notebook", async () => {
+    localStorage.setItem("tigrana-workspace", "");
+    localStorage.setItem("tigrana-recent-notebooks", JSON.stringify([{ path: "/demo/Tigrana", name: "Tigrana", lastOpenedAt: 1 }]));
+    const container = document.createElement("div"); document.body.appendChild(container); containers.push(container);
+    const root = createRoot(container);
+    try {
+      await act(async () => root.render(<App />));
+      expect(container.querySelector(".notebook-startup")).not.toBeNull();
+      expect(container.querySelector(".ProseMirror")).toBeNull();
+      expect(container.querySelector(".left-panes")).toBeNull();
+      await act(async () => container.querySelector<HTMLButtonElement>(".notebook-startup-recent")!.click());
+      await waitFor(() => Boolean(container.querySelector(".ProseMirror")));
+      expect(container.querySelector(".notebook-startup")).toBeNull();
+    } finally { await act(async () => root.unmount()); }
+  });
+
+  it.each([false, true])("preserves pending edits when removing the last notebook (save fails: %s)", async (fail) => {
+    demoPersistence.set("tigrana-demo-v5", JSON.stringify({ folders: [], notes: { "Welcome.md": "Original" } }));
+    demoPersistence.set("tigrana-meta:/demo/Tigrana", JSON.stringify({ revision: 0, welcomeNoteAdded: true }));
+    window.history.replaceState(null, "", "/?workspace=%2Fdemo%2FTigrana&openKind=note&openPath=Welcome.md");
+    const container = document.createElement("div"); document.body.appendChild(container); containers.push(container);
+    const root = createRoot(container);
+    try {
+      await act(async () => root.render(<App />));
+      await waitFor(() => Boolean(container.querySelector(".ProseMirror")));
+      if (fail) saveFailures.remaining = 100;
+      await act(async () => setReactTextareaValue(container.querySelector<HTMLTextAreaElement>(".ProseMirror")!, "Keep this edit"));
+      await act(async () => container.querySelector<HTMLButtonElement>(".app-menu-button")!.click());
+      const manage = [...container.querySelectorAll<HTMLButtonElement>("button")].find(button => button.textContent === "Manage Notebooks")!;
+      await act(async () => manage.click());
+      await act(async () => container.querySelector<HTMLButtonElement>('[title="Remove from list"]')!.click());
+      if (fail) {
+        expect(container.querySelector(".notebook-startup")).toBeNull();
+        expect(container.querySelector<HTMLTextAreaElement>(".ProseMirror")!.value).toBe("Keep this edit");
+        expect(localStorage.getItem("tigrana-workspace")).toBe("/demo/Tigrana");
+      } else {
+        await waitFor(() => Boolean(container.querySelector(".notebook-startup")));
+        const store = JSON.parse(demoPersistence.get("tigrana-demo-v5")!) as { notes: Record<string, string> };
+        expect(store.notes["Welcome.md"]).toContain("Keep this edit");
+        expect(localStorage.getItem("tigrana-recent-notebooks")).toBe("[]");
+        expect(window.location.search).toBe("");
+        await act(async () => root.render(<App key="restart" />));
+        expect(container.querySelector(".notebook-startup")).not.toBeNull();
+      }
+    } finally {
+      await act(async () => root.unmount());
+      window.history.replaceState(null, "", "/");
+    }
+  });
+
   it.each([
     ['.app-menu-button', '/demo/Tigrana'],
     ['[data-folder-path="Projects"]', '/demo/Tigrana/Projects'],
@@ -421,7 +516,7 @@ describe("Note navigation persistence", () => {
       expect(insert.disabled).toBe(false);
       await act(async () => insert.click());
       const options = [...container.querySelectorAll<HTMLButtonElement>('[role="menu"][aria-label="Insert"] button')];
-      expect(options.map(button => button.textContent)).toEqual(["Table", "Image", "Equation", "Footnote"]);
+      expect(options.map(button => button.textContent)).toEqual(["Bulleted List", "Numbered List", "Task List", "Quote", "Code Block", "Divider", "Table", "Image", "Equation", "Footnote"]);
       await act(async () => options.find(button => button.textContent === "Image")!.click());
       expect([...document.querySelectorAll('h2')].some(heading => heading.textContent === "Insert image")).toBe(true);
     } finally { await act(async () => root.unmount()); }
@@ -2228,6 +2323,24 @@ describe("Note navigation persistence", () => {
     expect(focusButton?.getAttribute("aria-pressed")).toBe("false");
 
     await act(async () => root.unmount());
+  });
+
+  it("dismisses the sidebar context menu when Settings opens and keeps it closed afterward", async () => {
+    demoPersistence.set("tigrana-demo-v5", JSON.stringify({ folders: [], notes: { "Welcome.md": "Text." } }));
+    const container = document.createElement("div");
+    document.body.appendChild(container); containers.push(container);
+    const root = createRoot(container);
+    try {
+      await act(async () => root.render(<App />));
+      await waitFor(() => Boolean(container.querySelector('[data-note-path="Welcome.md"]')));
+      await act(async () => container.querySelector('[data-note-path="Welcome.md"]')!.dispatchEvent(new MouseEvent("contextmenu", { bubbles: true, cancelable: true, clientX: 50, clientY: 50 })));
+      expect(container.querySelector(".context-menu")).not.toBeNull();
+      await act(async () => window.dispatchEvent(new KeyboardEvent("keydown", { key: ",", metaKey: true })));
+      expect(container.querySelector('[aria-label="Close settings"]')).not.toBeNull();
+      expect(container.querySelector(".context-menu")).toBeNull();
+      await act(async () => container.querySelector<HTMLButtonElement>('[aria-label="Close settings"]')!.click());
+      expect(container.querySelector(".context-menu")).toBeNull();
+    } finally { await act(async () => root.unmount()); }
   });
 
   it.each(["n", ","])("dismisses editor options when shortcut %s opens another context", async (key) => {

@@ -42,8 +42,7 @@ export function ManageNotebooksModal({
               <button
                 className="icon-button"
                 type="button"
-                title={activeWorkspace === notebook.path ? "The open notebook cannot be removed" : "Remove from list"}
-                disabled={activeWorkspace === notebook.path}
+                title="Remove from list"
                 onClick={() => onForget(notebook.path)}
               >
                 <Trash2 size={15} />

@@ -1,0 +1,28 @@
+<html data-theme="dark">
+<link rel="stylesheet" href="/src/styles/app.css">
+<style>
+body { display: block; background: #202020; color: #ddd; padding: 60px; }
+#editor { max-width: 850px; }
+.ProseMirror { font: 24px/1.7 sans-serif; padding-bottom: 100px; }
+.ProseMirror p { margin: 20px 0; }
+</style>
+<div id="editor"></div>
+<script type="module">
+import { Editor } from '@tiptap/core';
+import StarterKit from '@tiptap/starter-kit';
+import { TableRow } from '@tiptap/extension-table';
+import { TableWithControls, TigranaTableCell, TigranaTableHeader } from '/src/editor/tableControls.ts';
+const params = new URLSearchParams(location.search);
+const tableAttributes = params.has('rich') ? ' data-tigrana-table="true"' : '';
+window.editor = new Editor({
+  element: document.querySelector('#editor'),
+  extensions: [StarterKit, TableWithControls.configure({ resizable: false, allowTableNodeSelection: true }), TableRow, TigranaTableCell, TigranaTableHeader],
+  content: '<p>The Goal</p><ul><li><p>Throughput</p></li><li><p>Inventory</p></li><li><p>Operational Expense</p></li></ul>' +
+    '<p>So an ideal project would have a yes in all three.</p>' +
+    `<table${tableAttributes}><tr><th><p>Feature</p></th><th><p>Throughput</p></th><th><p>Inventory</p></th></tr>` +
+    '<tr><td><p>MyTime</p></td><td><p></p></td><td><p></p></td></tr>' +
+    '<tr><td><p>FlexBoard</p></td><td><p></p></td><td><p></p></td></tr></table>' +
+    `<p>${params.has('text') ? 'Below table' : ''}</p>`,
+});
+</script>
+</html>

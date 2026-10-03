@@ -1,0 +1,28 @@
+diff --git a/node_modules/prosemirror-tables/dist/index.cjs b/node_modules/prosemirror-tables/dist/index.cjs
+--- a/node_modules/prosemirror-tables/dist/index.cjs
++++ b/node_modules/prosemirror-tables/dist/index.cjs
+@@ -720,7 +720,9 @@
+ 			break;
+ 		}
+ 	}
+-	return fromCellBoundaryNode !== toCellBoundaryNode && $to.parentOffset === 0;
++	// A range crossing a table boundary is an ordinary text selection.
++	// Collapsing it here resets the anchor during backward mouse drags in WebKit.
++	return !!fromCellBoundaryNode && !!toCellBoundaryNode && fromCellBoundaryNode !== toCellBoundaryNode && $to.parentOffset === 0;
+ }
+ function normalizeSelection(state, tr, allowTableNodeSelection) {
+ 	const sel = (tr || state).selection;
+diff --git a/node_modules/prosemirror-tables/dist/index.js b/node_modules/prosemirror-tables/dist/index.js
+--- a/node_modules/prosemirror-tables/dist/index.js
++++ b/node_modules/prosemirror-tables/dist/index.js
+@@ -720,7 +720,9 @@
+ 			break;
+ 		}
+ 	}
+-	return fromCellBoundaryNode !== toCellBoundaryNode && $to.parentOffset === 0;
++	// A range crossing a table boundary is an ordinary text selection.
++	// Collapsing it here resets the anchor during backward mouse drags in WebKit.
++	return !!fromCellBoundaryNode && !!toCellBoundaryNode && fromCellBoundaryNode !== toCellBoundaryNode && $to.parentOffset === 0;
+ }
+ function normalizeSelection(state, tr, allowTableNodeSelection) {
+ 	const sel = (tr || state).selection;

@@ -14,6 +14,7 @@ mod macos_shortcuts;
 mod macos_print;
 mod note_history;
 mod notebook_metadata;
+mod notebook_onboarding;
 mod notebook_paths;
 mod notebook_storage;
 mod notebook_write_coordinator;
@@ -921,6 +922,33 @@ async fn read_workspace_metadata(
     let read_workspace = workspace.clone();
     run_notebook_write(state, read_workspace, move |root| {
         read_metadata_for_notebook(root)
+    })
+    .await
+}
+
+#[tauri::command]
+async fn create_notebook(
+    state: tauri::State<'_, NotebookWriteCoordinator>,
+    parent: String,
+    name: String,
+    content: String,
+    appearance: serde_json::Value,
+) -> Result<String, String> {
+    run_notebook_write(state, parent, move |root| {
+        notebook_onboarding::create_notebook(root, &name, &content, &appearance)
+    })
+    .await
+}
+
+#[tauri::command]
+async fn ensure_welcome_note(
+    state: tauri::State<'_, NotebookWriteCoordinator>,
+    workspace: String,
+    content: String,
+    appearance: serde_json::Value,
+) -> Result<notebook_onboarding::WelcomeNoteResult, String> {
+    run_notebook_write(state, workspace, move |root| {
+        notebook_onboarding::ensure_welcome_note(root, &content, &appearance)
     })
     .await
 }
@@ -1862,12 +1890,22 @@ fn build_app_menu(
         rich_editable_note && state.contents_active,
         None::<&str>,
     )?;
+    let insert_bullet_list = MenuItem::with_id(handle, "insert_bullet_list", "Bulleted List", rich_editable_note && state.contents_active, None::<&str>)?;
+    let insert_ordered_list = MenuItem::with_id(handle, "insert_ordered_list", "Numbered List", rich_editable_note && state.contents_active, None::<&str>)?;
+    let insert_task_list = MenuItem::with_id(handle, "insert_task_list", "Task List", rich_editable_note && state.contents_active, None::<&str>)?;
+    let insert_quote = MenuItem::with_id(handle, "insert_quote", "Quote", rich_editable_note && state.contents_active, None::<&str>)?;
+    let insert_code_block = MenuItem::with_id(handle, "insert_code_block", "Code Block", rich_editable_note && state.contents_active, None::<&str>)?;
     let insert_menu = Submenu::with_id_and_items(
         handle,
         "Insert",
         "Insert",
         rich_editable_note && state.contents_active,
-        &[&format_table, &format_image, &format_equation, &format_footnote],
+        &[
+            &insert_bullet_list, &insert_ordered_list, &insert_task_list,
+            &insert_quote, &insert_code_block, &format_divider,
+            &PredefinedMenuItem::separator(handle)?,
+            &format_table, &format_image, &format_equation, &format_footnote,
+        ],
     )?;
 
     let open_notebooks = Submenu::new(handle, "Open Notebooks", true)?;
@@ -2086,7 +2124,6 @@ fn build_app_menu(
             &format_task_list,
             &format_quote,
             &format_code_block,
-            &format_divider,
         ],
     )?;
     #[cfg(target_os = "windows")]
@@ -2519,11 +2556,11 @@ fn dispatch_menu_command(app: &AppHandle, command: &str) {
         "format_h4" => emit_menu_command(app, "format_h4"),
         "format_h5" => emit_menu_command(app, "format_h5"),
         "format_h6" => emit_menu_command(app, "format_h6"),
-        "format_bullet_list" => emit_menu_command(app, "format_bullet_list"),
-        "format_ordered_list" => emit_menu_command(app, "format_ordered_list"),
-        "format_task_list" => emit_menu_command(app, "format_task_list"),
-        "format_quote" => emit_menu_command(app, "format_quote"),
-        "format_code_block" => emit_menu_command(app, "format_code_block"),
+        "format_bullet_list" | "insert_bullet_list" => emit_menu_command(app, "format_bullet_list"),
+        "format_ordered_list" | "insert_ordered_list" => emit_menu_command(app, "format_ordered_list"),
+        "format_task_list" | "insert_task_list" => emit_menu_command(app, "format_task_list"),
+        "format_quote" | "insert_quote" => emit_menu_command(app, "format_quote"),
+        "format_code_block" | "insert_code_block" => emit_menu_command(app, "format_code_block"),
         "format_divider" => emit_menu_command(app, "format_divider"),
         "format_table" => emit_menu_command(app, "format_table"),
         "format_image" => emit_menu_command(app, "format_image"),
@@ -2626,6 +2663,8 @@ pub fn run() {
             read_note_version,
             restore_note_version,
             read_workspace_metadata,
+            ensure_welcome_note,
+            create_notebook,
             write_workspace_metadata,
             register_notebook_window,
             unregister_notebook_window,

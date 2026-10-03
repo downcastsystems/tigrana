@@ -70,52 +70,40 @@ describe("Notebook storage adapters", () => {
     const ensured = await storage.ensureWelcomeNote("/demo/Test", metadata);
 
     expect(ensured.metadata.welcomeNoteAdded).toBe(true);
+    expect(ensured.metadata.appearance).toMatchObject({ themePresetId: "builtin-baseline", themeColorPreferences: { "builtin-baseline": "blue" }, customTheme: { name: "Tigrana", defaultColorVariantId: "blue" }, colorScheme: "system" });
     expect((await storage.readWorkspaceMetadata("/demo/Test")).welcomeNoteAdded).toBe(true);
   });
 
-  it("does not mark the Welcome Note complete when atomic creation fails", async () => {
-    const invokeCommand = vi.fn(async (command: string) => {
-      if (command === "list_notes") return [];
-      if (command === "create_note") throw new Error("disk full");
-      if (command === "write_workspace_metadata") {
-        throw new Error("metadata must not be marked after a failed Welcome create");
-      }
-      return undefined;
-    });
+  it("delegates Native onboarding to the coordinated command with the complete Welcome body", async () => {
+    const result = { metadata: { ...defaultWorkspaceMetadata(), welcomeNoteAdded: true }, created: true };
+    const invokeCommand = vi.fn(async () => result);
     const storage = createNativeNotebookStorage(
       invokeCommand as unknown as Parameters<typeof createNativeNotebookStorage>[0],
     );
-
-    await expect(storage.ensureWelcomeNote("/Notebook", defaultWorkspaceMetadata()))
-      .rejects.toThrow("disk full");
-    expect(invokeCommand).not.toHaveBeenCalledWith("write_workspace_metadata", expect.anything());
+    expect(await storage.ensureWelcomeNote("/Notebook", defaultWorkspaceMetadata())).toEqual(result);
+    expect(invokeCommand).toHaveBeenCalledWith("ensure_welcome_note", {
+      workspace: "/Notebook",
+      content: expect.stringContaining("Bullet Statuses"),
+      appearance: expect.objectContaining({ themePresetId: "builtin-baseline", themeColorPreferences: { "builtin-baseline": "blue" } }),
+    });
+    expect(invokeCommand).toHaveBeenCalledTimes(1);
   });
 
-  it("creates the Welcome Note with its body in the same Native command", async () => {
-    const invokeCommand = vi.fn(async (command: string) => {
-      if (command === "list_notes") return [];
-      if (command === "create_note") return { path: "Welcome.md", title: "Welcome", parent_path: "" };
-      if (command === "write_workspace_metadata") {
-        return { applied: true, metadata: { ...defaultWorkspaceMetadata(), revision: 1, welcomeNoteAdded: true } };
-      }
-      return undefined;
-    });
+  it("propagates Native onboarding failures without issuing separate writes", async () => {
+    const invokeCommand = vi.fn(async () => { throw new Error("disk full"); });
     const storage = createNativeNotebookStorage(
       invokeCommand as unknown as Parameters<typeof createNativeNotebookStorage>[0],
     );
+    await expect(storage.ensureWelcomeNote("/Notebook", defaultWorkspaceMetadata())).rejects.toThrow("disk full");
+    expect(invokeCommand).toHaveBeenCalledTimes(1);
+  });
 
-    await expect(storage.ensureWelcomeNote("/Notebook", defaultWorkspaceMetadata())).resolves.toMatchObject({
-      created: true,
-      metadata: { welcomeNoteAdded: true },
-    });
-    expect(invokeCommand).toHaveBeenCalledWith("create_note", {
-      payload: expect.objectContaining({
-        workspace: "/Notebook",
-        title: "Welcome",
-        content: expect.stringContaining("Tigrana"),
-      }),
-    });
-    expect(invokeCommand).not.toHaveBeenCalledWith("save_note", expect.anything());
+  it("never recreates a deleted demo Welcome Note", async () => {
+    const storage = createDemoNotebookStorage(memoryStorage());
+    const first = await storage.ensureWelcomeNote("/demo/Test", defaultWorkspaceMetadata());
+    await storage.deleteNote("/demo/Test", "Welcome.md");
+    expect(await storage.ensureWelcomeNote("/demo/Test", first.metadata)).toMatchObject({ created: false });
+    expect((await storage.listNotes("/demo/Test")).some(note => note.path === "Welcome.md")).toBe(false);
   });
 
   it("routes the native adapter through the Tauri command seam", async () => {

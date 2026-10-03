@@ -60,7 +60,7 @@ export function readInitialWorkspace() {
     localStorage.setItem(workspaceKey, workspaceParam);
     return workspaceParam;
   }
-  return localStorage.getItem(workspaceKey) || (isTauri() ? "" : SAMPLE_WORKSPACE);
+  return localStorage.getItem(workspaceKey) ?? (isTauri() ? "" : SAMPLE_WORKSPACE);
 }
 
 export function readRecentNotebooks(): RecentNotebook[] {

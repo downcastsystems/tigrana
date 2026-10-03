@@ -4,17 +4,20 @@ import { fileURLToPath } from "node:url";
 import { defineConfig, type Plugin } from "vite";
 import react from "@vitejs/plugin-react";
 
-function plasmaPatchVersion(): Plugin {
-  const patchPath = fileURLToPath(new URL("./patches/@cruxgarden+plasma-ui+0.3.0.patch", import.meta.url));
-  const version = createHash("sha256").update(readFileSync(patchPath)).digest("hex").slice(0, 12);
+function dependencyPatchVersions(): Plugin {
+  const patchDirectory = fileURLToPath(new URL("./patches/", import.meta.url));
+  const patchPaths = readdirSync(patchDirectory).filter(name => name.endsWith(".patch")).sort().map(name => `${patchDirectory}${name}`);
+  const hash = createHash("sha256");
+  for (const path of patchPaths) hash.update(path).update(readFileSync(path));
+  const version = hash.digest("hex").slice(0, 12);
   return {
     // Vite includes plugin names in its dependency cache key. Hash file contents:
     // its built-in patch detection only checks the patches directory's mtime.
-    name: `tigrana-plasma-patch-${version}`,
+    name: `tigrana-dependency-patches-${version}`,
     configureServer(server) {
-      server.watcher.add(patchPath);
+      server.watcher.add(patchPaths);
       const onChange = (path: string) => {
-        if (path === patchPath) void server.restart();
+        if (patchPaths.includes(path)) void server.restart();
       };
       server.watcher.on("change", onChange);
       server.httpServer?.once("close", () => server.watcher.off("change", onChange));
@@ -47,7 +50,7 @@ function pdfImportResources(): Plugin {
 }
 
 export default defineConfig({
-  plugins: [react(), plasmaPatchVersion(), pdfImportResources()],
+  plugins: [react(), dependencyPatchVersions(), pdfImportResources()],
   worker: { format: "es" },
   clearScreen: false,
   server: {

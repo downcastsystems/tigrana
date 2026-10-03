@@ -118,6 +118,16 @@ Rust is organized by durable concern:
   recovery.
 - `notebook_metadata.rs`: Notebook metadata representation, path repair, and
   atomic writes.
+- `notebook_onboarding.rs`: first-open Welcome Note creation. A pre-existing
+  `.tigrana` directory identifies an initialized Notebook, even when older
+  metadata has no Welcome marker. Initialization runs under the write coordinator
+  before snapshots or watchers can create app files; existing Welcome Notes are
+  preserved and deleted Welcome Notes are never recreated on reopen. New Notebook
+  creation asks for a name and parent folder, previews the complete destination,
+  and creates one child directory only after confirmation. Existing destinations
+  are rejected; the parent folder is never initialized as a Notebook. Creation
+  initializes the Welcome Note before releasing the parent write lane, so a
+  watched parent cannot add a folder sidecar ahead of Notebook initialization.
 - `link_index.rs`: stable identities, Markdown link parsing, backlink repair,
   and Link index writes.
 - `note_history.rs`, `trash.rs`, and `assets.rs`: Note history, Recently

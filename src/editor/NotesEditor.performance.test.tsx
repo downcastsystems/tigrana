@@ -76,6 +76,27 @@ describe("Note editor typing performance", () => {
   });
   const mounted: Array<{ container: HTMLElement; root: Root }> = [];
 
+  it.each([
+    ["bulletList", "bulletList"], ["orderedList", "orderedList"],
+    ["taskList", "taskList"], ["quote", "blockquote"],
+    ["codeBlock", "codeBlock"], ["divider", "horizontalRule"],
+  ] as const)("starts %s on a blank line from a menu command", async (command, nodeType) => {
+    const container = document.createElement("div"); document.body.append(container);
+    const root = createRoot(container); mounted.push({ container, root });
+    const render = (commandRequest: EditorCommandRequest | null) => <NotesEditor
+      content="" commandRequest={commandRequest} editable findRequest={0}
+      focusAtEndRequest={0} focusRequest={0} historyKey="blank-block" notePath="Blank.md"
+      onChange={() => undefined} onLoadError={error => { throw error; }} onPendingChange={() => undefined}
+      onPositionChange={() => undefined} restorePosition={null} spellcheckEnabled workspace="/Notebook" />;
+    await act(async () => root.render(render(null)));
+    await act(async () => root.render(render({ id: 1, command })));
+    // Tiptap restores DOM focus on the next animation frame.
+    await act(async () => { await new Promise(resolve => requestAnimationFrame(resolve)); });
+    const editor = (container.querySelector(".ProseMirror") as HTMLElement & { editor: import("@tiptap/core").Editor }).editor;
+    expect(editor.state.doc.firstChild?.type.name).toBe(nodeType);
+    expect(editor.isFocused).toBe(true);
+  });
+
   // Constructing and serializing this 1,000-footnote DOM can exceed Vitest's
   // five-second default on shared CI runners. Performance is asserted below
   // by conversion/update counts, not by the runner's wall-clock deadline.

@@ -1,3 +1,6 @@
+import { CreateNotebookDialog } from "./components/CreateNotebookDialog";
+import { NotebookStartup, StartupThemeToggle } from "./components/NotebookStartup";
+import { startupThemeStyles } from "./lib/startupAppearance";
 import { appShortcutCommand } from "./lib/keyboardShortcuts";
 import { localWritingDay, setWritingGoal, writingProgressMutation } from "./lib/writingProgress";
 import { useRawSearchResultReveal } from "./editor/useRawSearchResultReveal";
@@ -372,6 +375,8 @@ export default function App() {
   const [workspace, setWorkspace] = useState(() => readInitialWorkspace());
   const [colorScheme, setColorScheme] = useState<ColorScheme>(() => readStoredColorScheme());
   const [prefersDark, setPrefersDark] = useState(() => window.matchMedia?.("(prefers-color-scheme: dark)").matches ?? false);
+  const [startupModeOverride, setStartupModeOverride] = useState<"light" | "dark" | null>(null);
+  const startupMode = startupModeOverride ?? (prefersDark ? "dark" : "light");
   const resolvedTheme = colorScheme === "system" ? (prefersDark ? "dark" : "light") : colorScheme;
   const [plasmaBackgroundBlur, setPlasmaBackgroundBlur] = useState(() => {
     const stored = Number(localStorage.getItem(plasmaBackgroundBlurKey) ?? 0);
@@ -433,6 +438,7 @@ export default function App() {
   }, []);
   const [settingsSection, setSettingsSection] = useState<SettingsSection>("general");
   const [notebooksManageOpen, setNotebooksManageOpen] = useState(false);
+  const [createNotebookInNewWindow, setCreateNotebookInNewWindow] = useState<boolean | null>(null);
   const [recentlyDeletedOpen, setRecentlyDeletedOpen] = useState(false);
   const [trashEntries, setTrashEntries] = useState<TrashEntry[]>([]);
   const [trashLoading, setTrashLoading] = useState(false);
@@ -734,13 +740,13 @@ export default function App() {
   }, [draftSaveRevisions, rawMarkdownDraft]);
   backlinkPaneVisibleRef.current = outlineVisible && (rightSidebarMode === "links" || rightSidebarMode === "overview");
   useEffect(() => {
-    if (!workspace || !outlineVisible || !["links", "overview"].includes(rightSidebarMode) || !notebookStorage.capabilities.durableLinkIndex) return;
+    if (!workspace || !metadataLoaded || !outlineVisible || !["links", "overview"].includes(rightSidebarMode) || !notebookStorage.capabilities.durableLinkIndex) return;
     let cancelled = false;
     void readLinkIndex(workspace).then(index => {
       if (!cancelled && metadataSessionRef.current.isActive(workspace)) setLinkIndex(index);
     }).catch(error => console.error("Could not refresh note links", error));
     return () => { cancelled = true; };
-  }, [outlineVisible, rightSidebarMode, workspace]);
+  }, [metadataLoaded, outlineVisible, rightSidebarMode, workspace]);
   const customTheme = useMemo(() => notebookTheme(metadata.appearance?.customTheme, themePresetId),
   [metadata.appearance?.customTheme, themePresetId]);
   const invalidNotebookTheme = !!metadata.appearance?.customTheme && !customTheme;
@@ -930,8 +936,9 @@ export default function App() {
       });
   }, [spellcheckEnabled]);
 
+  const restoreStartupWorkspaceRef = useRef(!workspace);
   useEffect(() => {
-    if (workspace || !isTauri()) return;
+    if (workspace || !isTauri() || !restoreStartupWorkspaceRef.current) return;
     let disposed = false;
     void readAppPreferences()
       .then((preferences) => {
@@ -940,7 +947,9 @@ export default function App() {
           localStorage.setItem(spellcheckKey, String(preferences.spellcheckEnabled));
         }
         const lastWorkspace = preferences.lastWorkspace;
-        if (disposed || !lastWorkspace) return;
+        if (disposed) return;
+        restoreStartupWorkspaceRef.current = false;
+        if (!lastWorkspace) return;
         localStorage.setItem(workspaceKey, lastWorkspace);
         setWorkspace(lastWorkspace);
       })
@@ -1245,12 +1254,12 @@ export default function App() {
   ]);
 
   useEffect(() => {
-    if (!workspace) return;
+    if (!workspace || !metadataLoaded) return;
     void cleanupTrash(workspace).catch(() => {});
-  }, [workspace]);
+  }, [metadataLoaded, workspace]);
 
   useEffect(() => {
-    if (!workspace || !isTauri()) return;
+    if (!workspace || !metadataLoaded || !isTauri()) return;
     void watchWorkspace(workspace).catch((error) => {
       setAppError(error instanceof Error ? error.message : String(error));
     });
@@ -1265,7 +1274,7 @@ export default function App() {
     });
 
     return () => unlisten?.();
-  }, [isWorkspaceActive, workspace]);
+  }, [isWorkspaceActive, metadataLoaded, workspace]);
 
   useEffect(() => {
     if (!workspace) return;
@@ -1276,13 +1285,6 @@ export default function App() {
         const ensured = await ensureWelcomeNote(workspace, nextMetadata);
         if (disposed) return;
         adoptAuthoritativeMetadata(workspace, ensured.metadata);
-        if (ensured.created) {
-          void refreshWorkspace(workspace).catch((error) => {
-            if (metadataSessionRef.current.isActive(workspace)) {
-              setAppError(error instanceof Error ? error.message : String(error));
-            }
-          });
-        }
       })
       .catch((error) => {
         if (disposed) return;
@@ -1295,7 +1297,6 @@ export default function App() {
     return () => {
       disposed = true;
     };
-  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [adoptAuthoritativeMetadata, workspace]);
 
   useEffect(() => {
@@ -1474,6 +1475,14 @@ export default function App() {
     setWidthMenuOpen(false);
   }, [activePath, workspace, settingsOpen]);
 
+  useEffect(() => {
+    if (!settingsOpen) return;
+    setContextMenu(null);
+    setTabContextMenu(null);
+    setFilePathMenu(null);
+    setAppMenuOpen(false);
+  }, [settingsOpen]);
+
   const refreshWorkspace = useCallback(async (nextWorkspace = workspace) => {
     if (!nextWorkspace) {
       latestNotebookSnapshotRef.current.invalidate();
@@ -1486,7 +1495,7 @@ export default function App() {
       setLinkIndex(null);
       return;
     }
-    if (!isWorkspaceActive(nextWorkspace)) return;
+    if (!metadataLoaded || !isWorkspaceActive(nextWorkspace)) return;
 
     const loaded = await latestNotebookSnapshotRef.current.load(
       nextWorkspace,
@@ -1502,7 +1511,7 @@ export default function App() {
     setSelectedFolder((current) => (snapshot.folders.some((folder) => folder.path === current) ? current : ""));
 
     setLinkIndex(snapshot.linkIndex);
-  }, [isWorkspaceActive, workspace]);
+  }, [isWorkspaceActive, metadataLoaded, workspace]);
 
   useEffect(() => {
     pendingNoteContentsRef.current.clear();
@@ -3149,7 +3158,7 @@ export default function App() {
     // Handle sidebar shortcuts before editor key handlers see them. Plain
     // slashes still reach the editor for typing and slash commands.
     const onShortcutCapture = (event: KeyboardEvent) => {
-      if (document.querySelector(".document-progress-dialog") || userPathMutationRef.current || event.isComposing || event.defaultPrevented) return;
+      if (document.querySelector(".document-progress-dialog, .create-notebook-dialog") || userPathMutationRef.current || event.isComposing || event.defaultPrevented) return;
       if (!(event.metaKey || event.ctrlKey) || event.shiftKey || event.altKey) return;
       if (event.key !== "/" && event.key !== "\\") return;
       event.preventDefault();
@@ -3163,7 +3172,7 @@ export default function App() {
 
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
-      if (document.querySelector(".document-progress-dialog") || userPathMutationRef.current) return;
+      if (document.querySelector(".document-progress-dialog, .create-notebook-dialog") || userPathMutationRef.current) return;
       if (event.key === "Escape") {
         setPaneOverlay(null);
         setSearchOpen(false);
@@ -3542,6 +3551,11 @@ export default function App() {
     if (path === workspaceRef.current) return;
     void releaseActiveNoteLock();
     localStorage.setItem(workspaceKey, path);
+    if (!path) {
+      const url = new URL(window.location.href);
+      for (const key of ["workspace", "openKind", "openPath"]) url.searchParams.delete(key);
+      window.history.replaceState(null, "", url);
+    }
     metadataSessionRef.current.activate(path);
     latestNotebookSnapshotRef.current.invalidate();
     latestTrashSnapshotRef.current.invalidate();
@@ -3593,8 +3607,9 @@ export default function App() {
     setSearchQuery("");
     setAppMenuOpen(false);
     setSettingsOpen(false);
+    setCreateNotebookInNewWindow(null);
     setAppError(null);
-    setRecentNotebooks((current) => writeRecentNotebooks(touchRecentNotebook(current, path)));
+    if (path) setRecentNotebooks((current) => writeRecentNotebooks(touchRecentNotebook(current, path)));
   }
 
   async function openNotebookInNewWindow(path: string) {
@@ -3636,22 +3651,43 @@ export default function App() {
   }
 
   async function chooseWorkspace(intent: "open" | "new" = "open", openInNewWindow = false) {
+    if (intent === "new") {
+      setCreateNotebookInNewWindow(openInNewWindow && Boolean(workspace));
+      setAppMenuOpen(false);
+      return;
+    }
     try {
       const selected = await open({
         directory: true,
         multiple: false,
-        title: intent === "new" ? "Choose notebook folder" : "Open notebook",
+        title: "Open notebook",
       });
       if (typeof selected !== "string") return;
-      if (openInNewWindow) await openNotebookInNewWindow(selected);
+      if (openInNewWindow && workspace) await openNotebookInNewWindow(selected);
       else switchNotebook(selected);
     } catch (error) {
       setAppError(error instanceof Error ? error.message : String(error));
     }
   }
 
-  function forgetNotebook(path: string) {
-    setRecentNotebooks((current) => writeRecentNotebooks(current.filter((notebook) => notebook.path !== path)));
+  async function forgetNotebook(path: string) {
+    try {
+      if (path === workspace) {
+        if (!await persistDraftForNavigation()) return;
+        if (workspaceRef.current !== path) return;
+        await activeNoteLifecycle.flushPendingSaves();
+        await notebookMetadataPersistence.flush(path);
+        if (workspaceRef.current !== path) return;
+        await writeAppPreferences({ lastWorkspace: null, spellcheckEnabled });
+        if (workspaceRef.current !== path) return;
+        restoreStartupWorkspaceRef.current = false;
+        switchNotebook("");
+        setNotebooksManageOpen(false);
+      }
+      setRecentNotebooks((current) => writeRecentNotebooks(current.filter((notebook) => notebook.path !== path)));
+    } catch (error) {
+      setAppError(error instanceof Error ? error.message : String(error));
+    }
   }
 
   async function handleDeleteNote(path: string) {
@@ -4781,6 +4817,31 @@ export default function App() {
     if (isTauri()) void getCurrentWindow().toggleMaximize();
   }
 
+  const createNotebookDialog = createNotebookInNewWindow !== null ? <CreateNotebookDialog
+    onClose={() => setCreateNotebookInNewWindow(null)}
+    onCreated={async (path) => {
+      if (createNotebookInNewWindow) await openNotebookInNewWindow(path);
+      else switchNotebook(path);
+      setCreateNotebookInNewWindow(null);
+    }} /> : null;
+
+  if (!workspace) {
+    return (
+      <div className={`app-shell notebook-startup-shell theme-${startupMode}`} style={startupThemeStyles(startupMode)} ref={appShellRef}>
+        {isWindowsDesktop() ? <WindowsMenuBar onError={setAppError} onMouseDown={handleChromeMouseDown} onDoubleClick={handleChromeDoubleClick} /> : null}
+        <header className="app-titlebar" data-tauri-drag-region="" onMouseDown={handleChromeMouseDown} onDoubleClick={handleChromeDoubleClick}>
+          <span className="titlebar-traffic-padding" data-tauri-drag-region="" />
+          <StartupThemeToggle mode={startupMode} onToggle={() => setStartupModeOverride(startupMode === "dark" ? "light" : "dark")} />
+        </header>
+        <NotebookStartup appError={appError} notebooks={recentNotebooks}
+          onChooseFolder={() => void chooseWorkspace("new")}
+          onOpenFolder={() => void chooseWorkspace("open")}
+          onSelectNotebook={switchNotebook} />
+        {createNotebookDialog}
+      </div>
+    );
+  }
+
   return (
     <div className="app-shell" ref={appShellRef} onContextMenuCapture={(event) => {
       const target = (event.target as Element).closest<HTMLElement>("[data-notebook-path], [data-copy-note-path], [data-copy-folder-path]");
@@ -5221,6 +5282,16 @@ export default function App() {
                     </EditorOptionsSubmenu>
                     <div className="note-view-menu-divider" />
                     <EditorOptionsSubmenu label="Insert" disabled={!contentsActive || !activeNoteEditable || rawMarkdownVisible || Boolean(frontmatterError)}>
+                      {([
+                        ["Bulleted List", "bulletList"], ["Numbered List", "orderedList"],
+                        ["Task List", "taskList"], ["Quote", "quote"],
+                        ["Code Block", "codeBlock"], ["Divider", "divider"],
+                      ] as const).map(([label, command]) => <button key={command} type="button" role="menuitem"
+                        onMouseDown={event => event.preventDefault()}
+                        onClick={() => { requestEditorCommand(command); setWidthMenuOpen(false); }}>
+                        <span><strong>{label}</strong></span>
+                      </button>)}
+                      <div className="note-view-menu-divider" />
                       <button type="button" role="menuitem"
                         onMouseDown={event => event.preventDefault()}
                         onClick={() => { void handleMenuCommand("format_table"); setWidthMenuOpen(false); }}>
@@ -5836,7 +5907,7 @@ export default function App() {
           activeWorkspace={workspace}
           notebooks={recentNotebooks}
           onClose={() => setNotebooksManageOpen(false)}
-          onForget={forgetNotebook}
+          onForget={(path) => void forgetNotebook(path)}
           onSelect={(path) => {
             if (path === workspace) {
               setNotebooksManageOpen(false);
@@ -5893,6 +5964,7 @@ export default function App() {
       ) : null}
 
       </div>
+      {createNotebookDialog}
     </div>
   );
 }
