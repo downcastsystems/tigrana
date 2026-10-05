@@ -47,6 +47,23 @@ function setReactInputValue(input: HTMLInputElement, value: string) {
 }
 
 describe("Note editor typing performance", () => {
+  it("moves Up Arrow from the first body line into the title", async () => {
+    const container = document.createElement("div"); document.body.append(container);
+    const root = createRoot(container); mounted.push({ container, root });
+    const focusTitle = vi.fn();
+    await act(async () => root.render(<NotesEditor content="Body" editable findRequest={0}
+      focusAtEndRequest={0} focusRequest={0} historyKey="title-navigation" notePath="Note.md"
+      onChange={() => undefined} onLoadError={error => { throw error; }} onPendingChange={() => undefined}
+      onPositionChange={() => undefined} onFocusTitle={focusTitle} restorePosition={null}
+      spellcheckEnabled workspace="/Notebook" />));
+    const editor = (container.querySelector(".ProseMirror") as HTMLElement & { editor: import("@tiptap/core").Editor }).editor;
+    vi.spyOn(editor.view, "endOfTextblock").mockReturnValue(true);
+    await act(async () => {
+      editor.commands.setTextSelection(3);
+      editor.view.dom.dispatchEvent(new KeyboardEvent("keydown", { key: "ArrowUp", bubbles: true, cancelable: true }));
+    });
+    expect(focusTitle).toHaveBeenCalledOnce();
+  });
   it('expands the QUESTION shortcut :? with the complete editor extensions', async () => {
     const { defaultBulletMethodStatuses } = await import('../lib/bulletMethod');
     const statuses = defaultBulletMethodStatuses.map(status => status.id === 'question' ? { ...status, shortcut: ':?' } : status);

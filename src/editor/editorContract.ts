@@ -33,6 +33,7 @@ export type NotesEditorProps = {
   onLoadError: (error: unknown) => void;
   onPositionChange: (position: { selectedText: string; selectionFrom: number; selectionTo: number }) => void;
   onInternalLinkClick?: (href: string) => void;
+  onFocusTitle?: () => void;
   onRequestEmoji?: () => Promise<string | null>;
   onRequestLink?: () => Promise<{ href: string; title: string } | null>;
   onRequestImage?: () => Promise<{ src: string; alt?: string } | null>;

@@ -1,12 +1,14 @@
 import { forwardRef, useEffect, useImperativeHandle, useLayoutEffect, useRef, useState, type TextareaHTMLAttributes } from "react";
 import { CalendarDays } from "lucide-react";
 import { DatePickerForm } from "../editor/DatePickerDialog";
+import { isTitleCaretOnLastLine } from "../lib/titleArrowNavigation";
 
 type Props = Omit<TextareaHTMLAttributes<HTMLTextAreaElement>, "value"> & {
   value: string;
   documentKey: string;
   onInsertDate: (title: string) => void;
   onCommit: () => void;
+  onFocusContent?: () => void;
 };
 
 type DateRequest = { value: string; documentKey: string; from: number; to: number };
@@ -19,7 +21,7 @@ function dateCommand(input: HTMLTextAreaElement) {
 }
 
 export const NoteTitleInput = forwardRef<HTMLTextAreaElement, Props>(function NoteTitleInput({
-  value, documentKey, onInsertDate, onCommit, disabled, onChange, onKeyDown, onBlur, onFocus, onSelect, ...props
+  value, documentKey, onInsertDate, onCommit, onFocusContent, disabled, onChange, onKeyDown, onBlur, onFocus, onSelect, ...props
 }, forwardedRef) {
   const inputRef = useRef<HTMLTextAreaElement>(null);
   useImperativeHandle(forwardedRef, () => inputRef.current!, []);
@@ -83,6 +85,13 @@ export const NoteTitleInput = forwardRef<HTMLTextAreaElement, Props>(function No
       }}
       onKeyDown={event => {
         if (event.nativeEvent.isComposing || event.keyCode === 229) return;
+        if (!disabled && onFocusContent && event.key === "ArrowDown"
+          && !event.shiftKey && !event.altKey && !event.ctrlKey && !event.metaKey
+          && isTitleCaretOnLastLine(event.currentTarget)) {
+          event.preventDefault();
+          onFocusContent();
+          return;
+        }
         if (!disabled && (event.key === "Enter" || event.key === "Tab") && dateCommand(event.currentTarget)) {
           event.preventDefault();
           event.stopPropagation();

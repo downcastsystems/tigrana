@@ -5356,6 +5356,7 @@ export default function App() {
                   setTitleDraft(event.target.value);
                 }}
                 onBlur={() => setTitleFocused(false)}
+                onFocusContent={() => void commitTitleAndFocusEditor()}
                 onCommit={() => {
                   disarmUndoableNewNote(activePath);
                   if (titleEscapeUndoInFlightRef.current) return;
@@ -5528,6 +5529,13 @@ export default function App() {
                   onLoadError={handleNoteLoadError}
                   onPositionChange={handleEditorPositionChange}
                   onInternalLinkClick={handleInternalLinkClick}
+                  onFocusTitle={() => {
+                    disarmPendingTitleFocus();
+                    const titleInput = titleInputRef.current;
+                    if (!titleInput || titleInput.disabled) return;
+                    titleInput.focus();
+                    titleInput.setSelectionRange(titleInput.value.length, titleInput.value.length);
+                  }}
                   onRequestEmoji={requestEmoji}
                   onRequestLink={requestLink}
                   onRequestImage={requestImage}

@@ -1,4 +1,5 @@
 import { handleEditorTabKeyDown } from "./editorTab";
+import { handleEditorTitleArrow } from "./editorTitleNavigation";
 import { seedEditorFootnoteEntries } from './editorFootnoteEntries';
 import { seedEditorMarkdownSources, serializeEditorMarkdown } from "./editorMarkdown";
 import { markdownCommitDelayMs } from "./editorContract";
@@ -133,7 +134,9 @@ type SlashState = {
 
 const noteHistoryCacheLimit = 30;
 
-export function NotesEditor({ bulletMethodDisplay = defaultBulletMethodDisplay, bulletMethodStatuses = defaultBulletMethodStatuses, writingStyle = "notes", colorsDisabled = false, colorToolbarElement, content, commandRequest, focusRequest, focusAtEndRequest, findRequest, searchRevealRequest, historyKey, reloadRequest, notePath, restorePosition, editable, spellcheckEnabled, workspace, onChange, onPendingChange, onPersistenceReady, onLoadError, onPositionChange, onInternalLinkClick, onRequestEmoji, onRequestLink, onRequestImage }: NotesEditorProps) {
+export function NotesEditor({ bulletMethodDisplay = defaultBulletMethodDisplay, bulletMethodStatuses = defaultBulletMethodStatuses, writingStyle = "notes", colorsDisabled = false, colorToolbarElement, content, commandRequest, focusRequest, focusAtEndRequest, findRequest, searchRevealRequest, historyKey, reloadRequest, notePath, restorePosition, editable, spellcheckEnabled, workspace, onChange, onPendingChange, onPersistenceReady, onLoadError, onPositionChange, onInternalLinkClick, onFocusTitle, onRequestEmoji, onRequestLink, onRequestImage }: NotesEditorProps) {
+  const onFocusTitleRef = useRef(onFocusTitle);
+  onFocusTitleRef.current = onFocusTitle;
   const writingStyleRef = useRef(writingStyle);
   writingStyleRef.current = writingStyle;
   const [slash, setSlash] = useState<SlashState | null>(null);
@@ -365,6 +368,7 @@ export function NotesEditor({ bulletMethodDisplay = defaultBulletMethodDisplay, 
           if (handleEmptyListItemDelete(_view, event)) return true;
           if (handleOutermostListItemBackspace(_view, event)) return true;
           if (handleSlashKeyDown(event)) return true;
+          if (handleEditorTitleArrow(_view, event, onFocusTitleRef.current)) return true;
           const currentEditor = editorRef.current;
           if (currentEditor && handleStoryParagraphKey(currentEditor, event, writingStyleRef.current)) return true;
           if (currentEditor && handleEditorTabKeyDown(currentEditor, event)) return true;

@@ -5,16 +5,21 @@ import { afterEach, expect, it, vi } from "vitest";
 import { NoteTitleInput } from "./NoteTitleInput";
 import { writeDateFormat } from "../lib/dateFormat";
 
+Object.defineProperty(Range.prototype, "getBoundingClientRect", {
+  configurable: true, value: () => new DOMRect(),
+});
+
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 let root: Root;
 let host: HTMLDivElement;
 const commit = vi.fn();
 const blur = vi.fn();
+const focusContent = vi.fn();
 function Harness({ documentKey = "one", disabled = false, initial = "Meeting /date notes" }) {
   const [value, setValue] = useState(initial);
   return <NoteTitleInput value={value} documentKey={documentKey} disabled={disabled}
     onChange={event => setValue(event.target.value)} onInsertDate={setValue}
-    onKeyDown={commit} onCommit={commit} onBlur={blur} aria-label="Note title" />;
+    onFocusContent={focusContent} onKeyDown={commit} onCommit={commit} onBlur={blur} aria-label="Note title" />;
 }
 async function setup(initial?: string) {
   vi.useFakeTimers({ toFake: ["Date"] });
@@ -34,7 +39,7 @@ async function key(key: string, isComposing = false) {
 }
 afterEach(async () => {
   await act(async () => root?.unmount());
-  host?.remove(); localStorage.clear(); vi.useRealTimers(); vi.clearAllMocks();
+  host?.remove(); localStorage.clear(); vi.useRealTimers(); vi.clearAllMocks(); vi.restoreAllMocks();
 });
 
 it("replaces only /date at the caret, preserves the suffix, and delays title commit until the next Enter", async () => {
@@ -94,4 +99,39 @@ it.each(["switch", "disable"])("dismisses an open calendar on %s even with ident
   expect(document.querySelector('[role="dialog"]')).not.toBeNull();
   await act(async () => root.render(<Harness documentKey={action === "switch" ? "two" : "one"} disabled={action === "disable"} />));
   expect(document.querySelector('[role="dialog"]')).toBeNull();
+});
+
+it("moves Down Arrow from a single-line title into the content", async () => {
+  const input = await setup("Title");
+  const rect = vi.spyOn(Range.prototype, "getBoundingClientRect").mockReturnValue(new DOMRect(0, 0, 0, 20));
+  await act(async () => input.setSelectionRange(2, 2));
+  await key("ArrowDown");
+  expect(focusContent).toHaveBeenCalledOnce();
+  expect(commit).not.toHaveBeenCalled();
+  rect.mockRestore();
+});
+
+it("keeps Down Arrow inside earlier wrapped title lines", async () => {
+  const input = await setup("A long wrapped title");
+  const rect = vi.spyOn(Range.prototype, "getBoundingClientRect")
+    .mockReturnValueOnce(new DOMRect(0, 0, 0, 20))
+    .mockReturnValueOnce(new DOMRect(0, 20, 0, 20));
+  await act(async () => input.setSelectionRange(2, 2));
+  await key("ArrowDown");
+  expect(focusContent).not.toHaveBeenCalled();
+  expect(commit).toHaveBeenCalledOnce();
+  rect.mockRestore();
+});
+
+it("preserves modified arrows, selected text, and composition", async () => {
+  const input = await setup("Title");
+  for (const modifier of ["shiftKey", "altKey", "ctrlKey", "metaKey"]) {
+    await act(async () => input.dispatchEvent(new KeyboardEvent("keydown", {
+      key: "ArrowDown", [modifier]: true, bubbles: true, cancelable: true,
+    })));
+  }
+  await act(async () => input.setSelectionRange(0, 3));
+  await key("ArrowDown");
+  await key("ArrowDown", true);
+  expect(focusContent).not.toHaveBeenCalled();
 });
