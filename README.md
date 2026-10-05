@@ -53,6 +53,17 @@ Prerequisites:
 - [Rust](https://www.rust-lang.org/tools/install)
 - Xcode Command Line Tools (`xcode-select --install`)
 
+Install Rust through [rustup](https://rustup.rs/), then close and reopen Terminal.
+Before building, verify that Rust and its Cargo build tool are available:
+
+```bash
+cargo --version
+rustc --version
+```
+
+If Rust was already installed through rustup but `cargo` is not found, load its
+environment with `source "$HOME/.cargo/env"` and check again.
+
 Clone the repository, install dependencies, then build and install Tigrana:
 
 ```bash
@@ -77,6 +88,15 @@ Prerequisites:
 - [Rust](https://www.rust-lang.org/tools/install) using the MSVC toolchain
 - Microsoft C++ Build Tools and WebView2, as described in the [Tauri Windows prerequisites](https://v2.tauri.app/start/prerequisites/#windows)
 
+In the Microsoft C++ Build Tools installer, select **Desktop development with C++**.
+After installing Rust and the build tools, close and reopen PowerShell (and your
+IDE if using its terminal), then verify:
+
+```powershell
+cargo --version
+rustc --version
+```
+
 In PowerShell:
 
 ```powershell
@@ -99,6 +119,17 @@ src-tauri\target\release\bundle\nsis\
 ```
 
 ## Development
+
+Native development requires the same platform prerequisites listed under
+**Install from Source**, including Rust/Cargo. `npm install` installs JavaScript
+dependencies; it does not install Rust or native build tools. Running a prebuilt
+release does not require the Rust toolchain, but `npm run tauri -- dev`,
+`npm run tauri -- build`, and the macOS-only `npm run install:app` do.
+
+If Tauri reports `failed to run 'cargo metadata'` with `No such file or directory`
+or a command-not-found error, it cannot find Cargo. Install Rust or fix the
+terminal's `PATH`, reopen the terminal/IDE, and confirm `cargo --version` and
+`rustc --version` succeed before retrying.
 
 Install dependencies and start the native desktop app:
 

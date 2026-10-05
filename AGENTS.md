@@ -299,7 +299,24 @@ Known warning: Vite may warn that the bundle is over 500 kB. That is acceptable 
 
 ## Tauri Notes
 
-Rust/Tauri are installed via Homebrew in the current development environment.
+Before running native development or builds on any machine, verify
+`cargo --version` and `rustc --version` succeed in the same terminal environment.
+Do not assume Rust is installed: `npm install` only installs JavaScript
+dependencies. Native development/builds require Rust/Cargo; running a prebuilt
+release does not require the Rust toolchain.
+
+For a missing toolchain, follow the platform setup in `README.md`:
+
+- macOS: Rust (prefer rustup for new setups) and Xcode Command Line Tools.
+- Windows: Rust with the MSVC toolchain, Microsoft C++ Build Tools with
+  **Desktop development with C++**, and WebView2.
+
+If Tauri cannot run `cargo metadata` because Cargo is missing, resolve the
+toolchain installation or `PATH` before investigating application code. After
+installation, reopen the terminal/IDE and verify again. For an existing rustup
+installation on macOS, `source "$HOME/.cargo/env"` can load the environment.
+`npm run install:app` is macOS-only; on Windows use `npm run tauri -- dev` for
+development or `npm run tauri -- build` to build installers.
 
 Open-folder dialogs require the permission in:
 
