@@ -27,6 +27,12 @@ function sort(editor: Editor, command: SortCommand = "sort_az") {
 function texts(editor: Editor) { return editor.state.doc.content.content.map((node) => node.textContent); }
 
 describe("Bullet Statuses at the cursor", () => {
+  it("sorts QUESTION after TODO and before unmarked notes by default", () => {
+    const editor = setup(markdownToHtml('- QUESTION: Ask\n- Unmarked\n- TODO: Start\n- CLOSED: Closed\n- IN PROGRESS: Work\n- DONE: Finished'));
+    sort(editor, "sort_bullet_method");
+    expect(editor.state.doc.firstChild!.content.content.map(node => node.textContent))
+      .toEqual(['CLOSED: Closed', 'DONE: Finished', 'IN PROGRESS: Work', 'TODO: Start', 'QUESTION: Ask', 'Unmarked']);
+  });
   function cursorIn(editor: Editor, text: string, offset = 3) {
     let position = 0;
     editor.state.doc.descendants((node, pos) => { if (node.isText && node.text === text) position = pos + offset; });

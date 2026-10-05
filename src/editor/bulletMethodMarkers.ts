@@ -119,12 +119,12 @@ export const BulletMethodMarkers = Extension.create({
   name: "bulletMethodMarkers",
   addInputRules() {
     return [new InputRule({
-      find: /^(-[^\s:][^:\r\n]*:|\S{1,8}:) $/,
+      find: /^(-[^\s:][^:\r\n]*:|(?=\S*:)\S{2,9}) $/,
       handler: ({ state, range, match, chain }) => {
         const settings = bulletMethodMarkersKey.getState(state);
         if (!settings?.display.enabled || settings.display.shortcutsEnabled === false) return null;
         const typed = match[1];
-        const namedStatus = typed.startsWith("-")
+        const namedStatus = typed.startsWith("-") && typed.endsWith(":")
           ? settings.statuses.find(row => row.prefix !== null && row.prefix.trim().toUpperCase() === typed.slice(1, -1).toUpperCase())
           : undefined;
         const status = typed === "-:" ? firstBulletMethodStatus(settings.statuses)

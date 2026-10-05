@@ -10,6 +10,39 @@ function BulletMethodSettings(props: ComponentProps<typeof Settings>) {
 }
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 
+it("connects shortcut errors to their fields and clears them when corrected", async () => {
+  const host = document.createElement("div"); document.body.append(host);
+  const root = createRoot(host);
+  const saved = vi.fn();
+  const field = (name: string) => host.querySelector<HTMLInputElement>(`[aria-label="Shortcut for ${name}"]`)!;
+  const input = async (value: string) => act(async () => {
+    Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")!.set!.call(field("QUESTION"), value);
+    field("QUESTION").dispatchEvent(new Event("input", { bubbles: true }));
+  });
+  try {
+    await act(async () => root.render(<BulletMethodSettings statuses={defaultBulletMethodStatuses} onChange={saved} />));
+    for (const value of ["?", "has space:", "123456789:", "-:", "::"]) {
+      await input(value);
+      const shortcut = field("QUESTION");
+      expect(shortcut.getAttribute("aria-invalid")).toBe("true");
+      const error = document.getElementById(shortcut.getAttribute("aria-describedby")!);
+      expect(error?.getAttribute("role")).toBe("alert");
+      expect(error?.closest("li")).toBe(shortcut.closest("li"));
+      expect(host.querySelector('.bullet-status-transfer + [role="alert"]')).toBeNull();
+      expect(saved).not.toHaveBeenCalled();
+    }
+    expect(field("TODO").getAttribute("aria-invalid")).toBe("true");
+    await input(":!");
+    expect(host.querySelector('[aria-invalid="true"]')).toBeNull();
+    expect(host.querySelector('[role="alert"]')).toBeNull();
+    expect(field("QUESTION").hasAttribute("aria-describedby")).toBe(false);
+    expect(saved.mock.lastCall![0].find((status: BulletMethodStatus) => status.id === "question").shortcut).toBe(":!");
+    await input("");
+    expect(field("QUESTION").getAttribute("aria-invalid")).toBe("false");
+    expect(saved.mock.lastCall![0].find((status: BulletMethodStatus) => status.id === "question").shortcut).toBe("");
+  } finally { await act(async () => root.unmount()); host.remove(); }
+});
+
 it("explains cycle direction and saves Cycle choices independently of Dim and Celebrate", async () => {
   const host = document.createElement('div');
   const root = createRoot(host);
@@ -80,10 +113,10 @@ it("edits, validates, reorders by buttons and drag, removes, saves and restores 
     await click("Icon for CLOSED");
     await click("circle-x");
     expect(saved.mock.lastCall![0].find((status: BulletMethodStatus) => status.id === "closed").icon).toBe("x");
-    expect(saved.mock.lastCall![0].map((status: BulletMethodStatus) => status.prefix)).toEqual(["WAITING", "QUESTION", "CLOSED", "IN PROGRESS", null, "TODO"]);
+    expect(saved.mock.lastCall![0].map((status: BulletMethodStatus) => status.prefix)).toEqual(["WAITING", "CLOSED", "IN PROGRESS", "TODO", null, "QUESTION"]);
     await click("Restore defaults");
     expect(saved.mock.lastCall![0]).toEqual(defaultBulletMethodStatuses);
-    expect(host.querySelector<HTMLInputElement>('[aria-label="Status 1 name"]')!.value).toBe("QUESTION");
+    expect(host.querySelector<HTMLInputElement>('[aria-label="Status 1 name"]')!.value).toBe("CLOSED");
   } finally {
     await act(async () => root.unmount()); host.remove();
   }
@@ -95,7 +128,7 @@ it("keeps edits available when saving fails", async () => {
     await act(async () => root.render(<BulletMethodSettings statuses={defaultBulletMethodStatuses} onChange={() => { throw new Error("Storage full"); }} />));
     await act(async () => host.querySelector<HTMLButtonElement>('[aria-label="Move CLOSED down"]')!.click());
     expect(host.querySelector('[role="alert"]')!.textContent).toContain("Could not save");
-    expect(host.querySelector<HTMLInputElement>('[aria-label="Status 2 name"]')!.value).toBe("DONE");
+    expect(host.querySelector<HTMLInputElement>('[aria-label="Status 2 name"]')!.value).toBe("CLOSED");
   } finally { await act(async () => root.unmount()); }
 });
 
@@ -122,9 +155,9 @@ it.each(["drop", "pointercancel", "blur", "unmount", "outside", "click"])("handl
     expect(document.body.classList.contains("is-dragging-bullet-status")).toBe(false);
     if (!unmounted) {
       const names = [...host.querySelectorAll<HTMLInputElement>('input[aria-label$=" name"]')].map(input => input.value);
-      expect(names).toEqual(completion === "drop" ? ["QUESTION", "DONE", "IN PROGRESS", "TODO", "CLOSED"] : ["QUESTION", "CLOSED", "DONE", "IN PROGRESS", "TODO"]);
+      expect(names).toEqual(completion === "drop" ? ["DONE", "IN PROGRESS", "TODO", "QUESTION", "CLOSED"] : ["CLOSED", "DONE", "IN PROGRESS", "TODO", "QUESTION"]);
       if (completion === "drop") {
-        expect(saved.mock.lastCall![0].map((status: BulletMethodStatus) => status.prefix)).toEqual(["QUESTION", "DONE", "IN PROGRESS", "TODO", null, "CLOSED"]);
+        expect(saved.mock.lastCall![0].map((status: BulletMethodStatus) => status.prefix)).toEqual(["DONE", "IN PROGRESS", "TODO", "QUESTION", null, "CLOSED"]);
       }
     }
   } finally {
@@ -276,7 +309,7 @@ it("updates the dimming label live and preserves spaces while autosaving names",
     expect(globalLabel()).toContain('Dim CLOSED, DONE');
     await act(async () => host.querySelector<HTMLInputElement>('[aria-label="Dim TODO"]')!.click());
     expect(globalLabel()).toContain('Dim CLOSED, DONE, TODO');
-    const field = host.querySelector<HTMLInputElement>('[aria-label="Status 5 name"]')!;
+    const field = host.querySelector<HTMLInputElement>('[aria-label="Status 4 name"]')!;
     for (const value of ['NEXT ', 'NEXT UP']) {
       await act(async () => {
         Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')!.set!.call(field, value);

@@ -6866,7 +6866,8 @@ html[data-theme="dark"] .bullet-method-order-section { background: rgb(0 0 0 / 1
 
 
 @layer tigrana-base {
-.bullet-method-settings { max-width: 760px; }
+.bullet-method-settings { max-width: 760px; --bullet-method-error: #b83232; }
+html[data-theme="dark"] .bullet-method-settings { --bullet-method-error: #ff9292; }
 .bullet-method-heading { display: flex; align-items: center; gap: 12px; }
 .bullet-method-settings p { color: var(--text-muted); line-height: 1.55; margin: 0 0 16px; }
 .bullet-method-settings h3 { margin: 24px 0 8px; font-size: 15px; }
@@ -6896,6 +6897,8 @@ body.is-dragging-bullet-status, body.is-dragging-bullet-status * { cursor: grabb
 .bullet-method-grip:active { cursor: grabbing; }
 .bullet-method-fields { display: flex; flex: 1; min-width: 0; flex-direction: column; gap: 6px; }
 .bullet-method-fields .settings-text-input { box-sizing: border-box; width: 100%; min-width: 0; padding: 7px 8px; border: 1px solid var(--border); border-radius: 5px; color: var(--text); background: var(--surface); font: inherit; }
+.bullet-method-fields .settings-text-input[aria-invalid="true"] { border-color: var(--bullet-method-error); background: color-mix(in srgb, var(--bullet-method-error) 8%, var(--surface)); }
+.bullet-method-fields .settings-text-input[aria-invalid="true"]:focus { outline: 2px solid var(--bullet-method-error); outline-offset: 1px; }
 .bullet-method-unmarked { padding: 7px 8px; font-size: 14px; }
 .bullet-method-row-actions { display: flex; gap: 2px; }
 .bullet-method-settings .toolbar-button { display: inline-flex; align-items: center; gap: 6px; }
@@ -6903,7 +6906,8 @@ body.is-dragging-bullet-status, body.is-dragging-bullet-status * { cursor: grabb
 .bullet-method-actions { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; }
 .bullet-method-actions [role="status"] { font-size: 12px; color: var(--text-muted); }
 .bullet-method-settings button:disabled { opacity: .4; cursor: default; }
-.bullet-method-settings [role="alert"] { color: var(--text); border-left: 3px solid var(--settings-focus); padding-left: 10px; }
+.bullet-method-settings [role="alert"] { margin: 12px 0; padding: 10px 12px; border: 1px solid color-mix(in srgb, var(--bullet-method-error) 35%, transparent); border-radius: 6px; background: color-mix(in srgb, var(--bullet-method-error) 6%, transparent); color: var(--bullet-method-error); font-size: 12px; line-height: 1.5; }
+.bullet-method-settings .bullet-method-shortcut-error { grid-column: 4 / -1; margin: 0; padding: 0 0 2px; border: 0; border-radius: 0; background: none; }
 
 }
 

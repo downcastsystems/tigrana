@@ -47,6 +47,28 @@ function setReactInputValue(input: HTMLInputElement, value: string) {
 }
 
 describe("Note editor typing performance", () => {
+  it('expands the QUESTION shortcut :? with the complete editor extensions', async () => {
+    const { defaultBulletMethodStatuses } = await import('../lib/bulletMethod');
+    const statuses = defaultBulletMethodStatuses.map(status => status.id === 'question' ? { ...status, shortcut: ':?' } : status);
+    const container = document.createElement('div'); document.body.append(container);
+    const root = createRoot(container); mounted.push({ container, root });
+    await act(async () => root.render(<NotesEditor content='' editable findRequest={0}
+      focusAtEndRequest={0} focusRequest={0} historyKey='question-shortcut' notePath='Question.md'
+      bulletMethodStatuses={statuses} bulletMethodDisplay={{ enabled: true, replaceBullets: true, dimCompleted: true }}
+      onChange={() => undefined} onLoadError={error => { throw error; }} onPendingChange={() => undefined}
+      onPositionChange={() => undefined} restorePosition={null} spellcheckEnabled workspace='/Notebook' />));
+    const editor = (container.querySelector('.ProseMirror') as HTMLElement & { editor: import('@tiptap/core').Editor }).editor;
+    await act(async () => {
+      editor.commands.setTextSelection(1);
+      for (const text of ':? ') {
+        const { from, to } = editor.state.selection;
+        const handled = editor.view.someProp('handleTextInput', handler => handler(editor.view, from, to, text, () => editor.state.tr.insertText(text, from, to)));
+        if (!handled) editor.view.dispatch(editor.state.tr.insertText(text, from, to));
+      }
+    });
+    expect(editor.state.doc.firstChild?.type.name).toBe('bulletList');
+    expect(editor.state.doc.textContent).toBe('QUESTION: ');
+  });
   it('returns from a typed footnote on Escape with the complete editor extensions', async () => {
     const container = document.createElement('div'); document.body.append(container);
     const root = createRoot(container); mounted.push({ container, root });

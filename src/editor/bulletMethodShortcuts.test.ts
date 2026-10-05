@@ -54,6 +54,21 @@ it("uses live custom shortcuts and names without rebuilding the editor", () => {
   type(editor, " ");
   expect(editor.state.doc.textContent).toBe("NEXT: ");
 });
+it.each([":q", "q:q", "q:", "-:q", ":12345678"])("accepts and expands custom shortcut %s with a colon anywhere", shortcut => {
+  const statuses = defaultBulletMethodStatuses.map(row => row.id === "todo" ? { ...row, prefix: "NEXT", shortcut } : row);
+  expect(validateBulletMethodStatuses(statuses)).toBeNull();
+  const editor = create(`<p>${shortcut}</p>`);
+  editor.view.dispatch(editor.state.tr.setMeta(bulletMethodMarkersKey, statuses));
+  type(editor, " ");
+  expect(editor.state.doc.firstChild?.type.name).toBe("bulletList");
+  expect(editor.state.doc.textContent).toBe("NEXT: ");
+  expect(htmlToMarkdown(editor.getHTML())).toContain("- NEXT:");
+  expect(editor.commands.undoInputRule()).toBe(true);
+  expect(editor.state.doc.textContent).toBe(`${shortcut} `);
+});
+it.each(["q", ":", "has space:", ":123456789", "-:"])("rejects invalid custom shortcut %s", shortcut => {
+  expect(validateBulletMethodStatuses(defaultBulletMethodStatuses.map(row => row.id === "todo" ? { ...row, shortcut } : row))).not.toBeNull();
+});
 it("converts inside an empty bullet without nesting another list", () => {
   const editor = create("<ul><li><p>::</p></li></ul>");
   editor.commands.setTextSelection(5);
@@ -104,13 +119,13 @@ it.each(["x:", "*:", ">:", ":::"])("keeps unassigned shortcut %s as ordinary tex
 it("starts from the bottom of the current order and follows renaming", () => {
   const editor = create("<p>-:</p>");
   type(editor, " ");
-  expect(editor.state.doc.textContent).toBe("TODO: ");
+  expect(editor.state.doc.textContent).toBe("QUESTION: ");
   editor.commands.undoInputRule();
   editor.commands.setContent("<p>-:</p>");
   editor.commands.setTextSelection(3);
   const statuses = [...defaultBulletMethodStatuses].reverse().filter(row => row.prefix !== null);
-  const questionIndex = statuses.findIndex(row => row.id === "question");
-  statuses[questionIndex] = { ...statuses[questionIndex], prefix: "WORKING" };
+  const closedIndex = statuses.findIndex(row => row.id === "closed");
+  statuses[closedIndex] = { ...statuses[closedIndex], prefix: "WORKING" };
   editor.view.dispatch(editor.state.tr.setMeta(bulletMethodMarkersKey, statuses));
   type(editor, " ");
   expect(editor.state.doc.textContent).toBe("WORKING: ");
@@ -120,7 +135,7 @@ it("ignores No status at the bottom of the order and respects the global switch"
   editor.view.dispatch(editor.state.tr.setMeta(bulletMethodMarkersKey, defaultBulletMethodStatuses));
   type(editor, " ");
   expect(editor.state.doc.firstChild?.type.name).toBe("bulletList");
-  expect(editor.state.doc.textContent).toBe("TODO: ");
+  expect(editor.state.doc.textContent).toBe("QUESTION: ");
   expect(editor.commands.undoInputRule()).toBe(true);
   expect(editor.state.doc.textContent).toBe("-: ");
   const disabled = create("<p>-:</p>");
@@ -136,15 +151,15 @@ it("reserves the fixed shortcut and preserves other settings when migrating an o
     expect(readBulletMethodStatuses().find(row => row.id === "done")).toMatchObject({ prefix: "FINISHED", shortcut: "" });
   } finally { localStorage.removeItem(bulletMethodSettingsKey); }
 });
-it("starts with IN PROGRESS when TODO has been removed", () => {
+it("starts with TODO when QUESTION has been removed", () => {
   const editor = create("<p>-:</p>");
-  editor.view.dispatch(editor.state.tr.setMeta(bulletMethodMarkersKey, defaultBulletMethodStatuses.filter(row => row.id !== "todo")));
+  editor.view.dispatch(editor.state.tr.setMeta(bulletMethodMarkersKey, defaultBulletMethodStatuses.filter(row => row.id !== "question")));
   type(editor, " ");
-  expect(editor.state.doc.textContent).toBe("IN PROGRESS: ");
+  expect(editor.state.doc.textContent).toBe("TODO: ");
 });
 it("skips excluded starting statuses but keeps their explicit shortcuts available", () => {
-  const statuses = defaultBulletMethodStatuses.map(s => ({ ...s, cycle: s.id !== "todo" }));
-  for (const [shortcut, expected] of [["-:", "IN PROGRESS: "], ["::", "TODO: "], ["-TODO:", "TODO: "]]) {
+  const statuses = defaultBulletMethodStatuses.map(s => ({ ...s, cycle: s.id !== "question" }));
+  for (const [shortcut, expected] of [["-:", "TODO: "], ["::", "TODO: "], ["-TODO:", "TODO: "]]) {
     const editor = create(`<p>${shortcut}</p>`);
     editor.view.dispatch(editor.state.tr.setMeta(bulletMethodMarkersKey, statuses));
     type(editor, " ");

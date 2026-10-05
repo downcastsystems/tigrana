@@ -45,20 +45,29 @@ export function statusShortcut(status: BulletMethodStatus): string {
 }
 
 export const defaultBulletMethodStatuses: readonly BulletMethodStatus[] = [
-  { id: "question", prefix: "QUESTION", description: "A question waiting for an answer.", icon: "help", shortcut: "?:" },
   { id: "closed", prefix: "CLOSED", description: "No further action needed from you." },
   { id: "done", prefix: "DONE", description: "Completed." },
   { id: "in-progress", prefix: "IN PROGRESS", description: "Actively working on it." },
   { id: "todo", prefix: "TODO", description: "Waiting to be started." },
+  { id: "question", prefix: "QUESTION", description: "A question waiting for an answer.", icon: "help", shortcut: "?:" },
   { id: "no-status", prefix: null, description: "New notes or anything without a recognized status." },
 ];
 export const bulletMethodSettingsKey = "tigrana.bulletMethod.v1";
+
+export function validateBulletMethodShortcut(status: BulletMethodStatus, statuses: readonly BulletMethodStatus[]): string | null {
+  if (status.shortcut !== undefined && typeof status.shortcut !== "string") return "Shortcuts must be text.";
+  const shortcut = statusShortcut(status);
+  if (shortcut === "-:") return "-: is reserved for the starting status in the progression.";
+  if (!shortcut) return null;
+  if (!/^\S{2,9}$/.test(shortcut) || !shortcut.includes(":")) return "Use 2–9 characters with a colon anywhere and no spaces (e.g. :q or q:).";
+  if (statuses.some(other => other !== status && statusShortcut(other) === shortcut)) return "Each shortcut must be unique.";
+  return null;
+}
 
 export function validateBulletMethodStatuses(statuses: readonly BulletMethodStatus[]): string | null {
   if (statuses.filter(status => status.prefix === null).length !== 1) return "Keep exactly one No status row.";
   const prefixes = new Set<string>();
   const ids = new Set<string>();
-  const shortcuts = new Set<string>();
   for (const status of statuses) {
     if (!status.id || ids.has(status.id)) return "Each status must have a unique identity.";
     ids.add(status.id);
@@ -66,14 +75,8 @@ export function validateBulletMethodStatuses(statuses: readonly BulletMethodStat
     if (status.dim !== undefined && typeof status.dim !== "boolean") return "Choose whether to dim each status.";
     if (status.cycle !== undefined && typeof status.cycle !== "boolean") return "Choose whether to include each status in the click cycle.";
     if (status.icon !== undefined && !bulletMethodIcons.includes(status.icon)) return "Choose a supported circle icon.";
-    if (status.shortcut !== undefined && typeof status.shortcut !== "string") return "Shortcuts must be text.";
-    const shortcut = statusShortcut(status);
-    if (shortcut === "-:") return "-: is reserved for the starting status in the progression.";
-    if (shortcut) {
-      if (!/^\S{1,8}:$/.test(shortcut)) return "Use 1–8 characters followed by a colon, without spaces, for each shortcut.";
-      if (shortcuts.has(shortcut)) return "Each shortcut must be unique.";
-      shortcuts.add(shortcut);
-    }
+    const shortcutError = validateBulletMethodShortcut(status, statuses);
+    if (shortcutError) return shortcutError;
     if (status.prefix === null) continue;
     const prefix = status.prefix.trim();
     if (!prefix) return "Give each status a name.";

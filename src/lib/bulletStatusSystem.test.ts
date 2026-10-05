@@ -4,7 +4,7 @@ import { defaultBulletMethodStatuses, statusCelebrates, statusCycles, statusDims
 
 it('round trips order, custom names, icons, shortcuts and dim choices without display settings', () => {
   const rows = [...defaultBulletMethodStatuses].reverse().map(row => ({ ...row, dim: false, cycle: row.id !== "done", celebrate: row.id === "todo" }));
-  rows[1] = { ...rows[1], prefix: 'WAITING', icon: 'x', shortcut: 'w:' };
+  rows[1] = { ...rows[1], prefix: 'WAITING', icon: 'x', shortcut: ':w' };
   const encoded = encodeBulletStatusSystem(rows);
   const imported = decodeBulletStatusSystem(encoded);
   expect(imported.map(s => s.id)).toEqual(rows.map(s => s.id));
@@ -19,7 +19,7 @@ it('round trips order, custom names, icons, shortcuts and dim choices without di
   expect(Object.keys(JSON.parse(encoded))).toEqual(['format', 'version', 'statuses']);
   const withExtras = { ...JSON.parse(encoded), display: { enabled: true }, statuses: imported.map(s => ({ ...s, enabled: true })) };
   expect(decodeBulletStatusSystem(JSON.stringify(withExtras))).toEqual(imported);
-  expect(defaultBulletMethodStatuses[0].prefix).toBe('QUESTION');
+  expect(defaultBulletMethodStatuses[0].prefix).toBe('CLOSED');
 });
 
 it('rejects malformed, unsupported and conflicting systems', () => {

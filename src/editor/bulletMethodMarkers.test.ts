@@ -216,7 +216,7 @@ it("follows custom status order and moves a visible outside caret into the click
   const cursor = textPosition(editor, "Outside") + 4;
   editor.commands.setTextSelection(cursor);
   editor.view.dom.querySelector<HTMLButtonElement>('button')!.click();
-  expect(itemTexts(editor)).toEqual(["DONE: Second", "QUESTION: First", "DONE: Child"]);
+  expect(itemTexts(editor)).toEqual(["QUESTION: First", "DONE: Child", "DONE: Second"]);
   expect(editor.state.selection.head).toBe(textPosition(editor, "First"));
 });
 

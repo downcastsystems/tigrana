@@ -1,8 +1,8 @@
 import { decodeBulletStatusSystem, encodeBulletStatusSystem } from "../lib/bulletStatusSystem";
 import { exportTextFile } from "../lib/desktop";
-import { useEffect, useRef, useState, type PointerEvent as ReactPointerEvent } from "react";
+import { useEffect, useId, useRef, useState, type PointerEvent as ReactPointerEvent } from "react";
 import { ArrowDown, ArrowUp, GripVertical, Plus, RotateCcw, Trash2 } from "lucide-react";
-import { bulletMethodDimPercent, defaultBulletMethodDisplay, type BulletMethodDisplay, statusCelebrates, statusCycles, statusDims, statusIcon, defaultBulletMethodStatuses, validateBulletMethodStatuses, type BulletMethodStatus, statusShortcut } from "../lib/bulletMethod";
+import { bulletMethodDimPercent, defaultBulletMethodDisplay, type BulletMethodDisplay, statusCelebrates, statusCycles, statusDims, statusIcon, defaultBulletMethodStatuses, validateBulletMethodStatuses, validateBulletMethodShortcut, type BulletMethodStatus, statusShortcut } from "../lib/bulletMethod";
 
 import { BulletMethodIconPicker } from "./BulletMethodIconPicker";
 
@@ -31,6 +31,9 @@ export default function BulletMethodSettings({ statuses, onChange, display = def
     setDraft(current => JSON.stringify(current.map(status => ({ ...status, prefix: status.prefix?.trim() ?? null }))) === JSON.stringify(statuses) ? current : statuses);
   }, [statuses]);
   const error = validateBulletMethodStatuses(draft);
+  const errorId = useId();
+  const shortcutErrors = draft.map(status => status.prefix === null ? null : validateBulletMethodShortcut(status, draft));
+  const hasInlineError = shortcutErrors.some(shortcutError => shortcutError === error);
   const dimNames = draft.filter(statusDims).map(status => status.prefix?.trim() || "No status");
   const dimLabel = dimNames.length ? `Dim ${dimNames.join(", ")}` : "Dim selected statuses (none selected)";
   useEffect(() => {
@@ -201,6 +204,7 @@ export default function BulletMethodSettings({ statuses, onChange, display = def
       </details>
       {display.enabled && <p>Inside a list, choose Edit -&gt; Sort Lines -&gt; Bullet Statuses to sort by the status.</p>}
       <p className="bullet-method-help">Drag a handle or use the arrows to reorder. Clicking a status icon cycles from bottom to top. Shift-click reverses it. <code>-:</code> + Space starts the cycle.</p>
+      <p className="bullet-method-help">Shortcuts are typed text followed by Space. Use 2–9 characters with a colon anywhere, such as <code>:q</code> or <code>q:</code>, and no spaces. Leave blank for no shortcut.</p>
       <section className="bullet-method-order-section" aria-labelledby="bullet-method-status-order-heading">
         <h3 id="bullet-method-status-order-heading">Status order</h3>
         <div className="bullet-method-status-table">
@@ -210,6 +214,8 @@ export default function BulletMethodSettings({ statuses, onChange, display = def
         <ol ref={listRef} className="bullet-method-statuses" aria-label="Bullet Statuses status order">
           {draft.map((status, index) => {
             const name = status.prefix ?? "No status";
+            const shortcutError = shortcutErrors[index];
+            const shortcutErrorId = `${errorId}-shortcut-${status.id}`;
             return (
               <li key={status.id} data-bullet-status-id={status.id}
                 className={`bullet-method-status${draggedId === status.id ? " is-dragging" : ""}${dropTarget?.id === status.id ? (dropTarget.after ? " is-drop-after" : " is-drop-before") : ""}`}>
@@ -225,6 +231,7 @@ export default function BulletMethodSettings({ statuses, onChange, display = def
                 </div>
                 <div className="bullet-method-fields">
                   {status.prefix !== null ? <input className="settings-text-input" aria-label={`Shortcut for ${name}`} placeholder="None" value={statusShortcut(status)}
+                    aria-invalid={Boolean(shortcutError)} aria-describedby={shortcutError ? shortcutErrorId : undefined}
                     onChange={event => update(status.id, { shortcut: event.target.value })} /> : <span className="bullet-method-no-shortcut" aria-label="No shortcut">—</span>}
                 </div>
                 {status.prefix === null ? <span className="bullet-method-unavailable" aria-label="Dimming unavailable for No status">—</span> : <label className="bullet-method-dim-choice">
@@ -250,6 +257,7 @@ export default function BulletMethodSettings({ statuses, onChange, display = def
                   <button className="icon-button" aria-label={`Remove ${name}`} title={status.prefix === null ? "No status is always available" : "Remove status"} disabled={status.prefix === null}
                     onClick={() => { setDraft(current => current.filter(row => row.id !== status.id)); setMessage(""); }}><Trash2 size={16} /></button>
                 </div>
+                {shortcutError && <p className="bullet-method-shortcut-error" id={shortcutErrorId} role="alert">{shortcutError}</p>}
               </li>
             );
           })}
@@ -282,7 +290,7 @@ export default function BulletMethodSettings({ statuses, onChange, display = def
           }}>Export</button>
         </div>
         {transferError && <p role="alert">{transferError}</p>}
-        {error ? <p role="alert">{error}</p> : null}
+        {error && !hasInlineError ? <p role="alert">{error}</p> : null}
         {saveError ? <p role="alert">{saveError}</p> : null}
         {saveError && <button className="toolbar-button" disabled={Boolean(error)} onClick={() => save(draft, "Settings saved.")}>Retry</button>}
         {message && <span role="status">{message}</span>}

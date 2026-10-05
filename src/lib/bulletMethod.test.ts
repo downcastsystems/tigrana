@@ -5,14 +5,14 @@ import { firstBulletMethodStatus, nextBulletMethodStatus, statusCycles, statusDi
 beforeEach(() => localStorage.clear());
 describe("shared sort and cycle order", () => {
   it("sorts downward and cycles upward, wrapping in both directions", () => {
-    expect(defaultBulletMethodStatuses.map(s => s.prefix)).toEqual(["QUESTION", "CLOSED", "DONE", "IN PROGRESS", "TODO", null]);
+    expect(defaultBulletMethodStatuses.map(s => s.prefix)).toEqual(["CLOSED", "DONE", "IN PROGRESS", "TODO", "QUESTION", null]);
     let current = firstBulletMethodStatus(defaultBulletMethodStatuses)!;
-    expect(current.prefix).toBe("TODO");
-    for (const prefix of ["IN PROGRESS", "DONE", "CLOSED", "QUESTION", "TODO"]) {
+    expect(current.prefix).toBe("QUESTION");
+    for (const prefix of ["TODO", "IN PROGRESS", "DONE", "CLOSED", "QUESTION"]) {
       current = nextBulletMethodStatus(current, defaultBulletMethodStatuses)!;
       expect(current.prefix).toBe(prefix);
     }
-    expect(nextBulletMethodStatus(current, defaultBulletMethodStatuses, -1)?.prefix).toBe("QUESTION");
+    expect(nextBulletMethodStatus(current, defaultBulletMethodStatuses, -1)?.prefix).toBe("CLOSED");
   });
 
   it("uses the same order for custom statuses and skips excluded rows without changing ranks", () => {
@@ -117,10 +117,10 @@ it("keeps dimming percentages as bounded integers and preserves separate mode va
 });
 
 it("preserves per-status dim choices and gives old configurations sensible defaults", () => {
-  expect(defaultBulletMethodStatuses.map(statusDims)).toEqual([false, true, true, false, false, false]);
+  expect(defaultBulletMethodStatuses.map(statusDims)).toEqual([true, true, false, false, false, false]);
   const statuses = defaultBulletMethodStatuses.map(status => ({ ...status, dim: status.id === "todo" }));
   writeBulletMethodStatuses(statuses);
-  expect(readBulletMethodStatuses().map(statusDims)).toEqual([false, false, false, false, true, false]);
+  expect(readBulletMethodStatuses().map(statusDims)).toEqual([false, false, false, true, false, false]);
   expect(statusDims({ id: "custom", prefix: "WAITING", description: "" })).toBe(false);
   localStorage.setItem(bulletMethodSettingsKey, JSON.stringify(statuses.map(status => status.prefix === null ? { ...status, dim: true } : status)));
   expect(statusDims(readBulletMethodStatuses().find(status => status.prefix === null)!)).toBe(false);
