@@ -1862,6 +1862,17 @@ export default function App() {
     }));
   }, [updateMetadata]);
 
+  const setPaneExpanded = useCallback((paths: string[], expanded: boolean, includeBookmarks: boolean) => {
+    updateMetadata((current) => ({
+      ...current,
+      expandedFolders: {
+        ...current.expandedFolders,
+        ...Object.fromEntries(paths.map(path => [path, expanded])),
+      },
+      ...(includeBookmarks ? { bookmarksExpanded: expanded } : {}),
+    }));
+  }, [updateMetadata]);
+
   const updateNotebookAppearance = useCallback((patch: Partial<NonNullable<WorkspaceMetadata["appearance"]>>) => {
     const next = updateMetadata((current) => {
       const previous = current.appearance;
@@ -4995,6 +5006,7 @@ export default function App() {
               onSelectNotebook={openNotebookInNewWindow}
               onSelectNote={handleNoteSelectFromCard}
               onSetFolderExpanded={setFolderExpanded}
+              onSetPaneExpanded={setPaneExpanded}
               onToggleBookmarksExpanded={toggleBookmarksExpanded}
               onToggleMenu={(event) => {
                 event.stopPropagation();
@@ -5065,6 +5077,7 @@ export default function App() {
                   handleNoteSelectFromCard(path, { preserveSelectedFolder: true });
                 }}
                 onSetFolderExpanded={setFolderExpanded}
+                onSetPaneExpanded={setPaneExpanded}
               />
             </>
           ) : (
@@ -5099,6 +5112,7 @@ export default function App() {
                 onSelectNotebook={openNotebookInNewWindow}
                 onSelectFolder={(path) => setSelectedFolder(path)}
                 onSetFolderExpanded={setFolderExpanded}
+                onSetPaneExpanded={setPaneExpanded}
                 onToggleBookmarksExpanded={toggleBookmarksExpanded}
                 onToggleSearch={() => setSearchOpen((value) => !value)}
                 onToggleMenu={(event) => {

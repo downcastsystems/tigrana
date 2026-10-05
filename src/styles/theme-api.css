@@ -6,7 +6,7 @@
 }
 [data-theme-region][data-theme-api="1"] :is(.ProseMirror, .raw-markdown-input) { letter-spacing: var(--tigrana-letter-spacing, 0em); font-kerning: normal; line-height: var(--tigrana-line-height); color: var(--tigrana-editor-text, var(--text)); }
 [data-theme-region][data-theme-api="1"] .ProseMirror a { color: var(--link-color); }
-[data-theme-region][data-theme-api="1"] :is(.folder-row, .folder-select, .note-card, .note-row, .unified-folder-row, .unified-folder-name, .unified-note-row, .bookmark-item, .note-tab) { color: var(--tigrana-text); }
+[data-theme-region][data-theme-api="1"] :is(.folder-row, .folder-select, .note-card, .note-row, .unified-folder-row, .unified-folder-name, .unified-note-row, .bookmark-item, .note-tab, .section-header-button.matches-folder-row) { color: var(--tigrana-text); }
 [data-theme-region][data-theme-api="1"] :is(.folder-row, .note-card, .note-row, .unified-folder-row, .unified-note-row, .bookmark-item, .note-tab):is(.is-active, .is-context-target) { color: var(--tigrana-selected-text); }
 [data-theme-region][data-theme-api="1"] :is(.folder-row, .note-card, .unified-folder-row, .unified-note-row):is(.is-active, .is-context-target, :hover) :is(.folder-select, .folder-select span, .unified-folder-name, strong, small) { color: inherit; }
 [data-theme-region][data-theme-api="1"] :is(.folder-row, .note-card, .unified-note-row, .unified-folder-row, .toolbar-button, .icon-button, .note-tab) { border-radius: var(--tigrana-radius); }
@@ -76,7 +76,7 @@ html[data-theme-preset="default"][data-theme="dark"] [data-theme-region] :is(.Pr
 [data-theme-region][data-theme-api="1"] :is(.folder-row,.note-row,.note-card,.unified-note-row,.unified-folder-row,.bookmark-item):is(.is-active,.is-context-target) { background: var(--tigrana-accent); color: var(--tigrana-selected-text); }
 [data-theme-region] .note-title-input { font-size: var(--tigrana-font-title); }
 [data-theme-region] .topbar-note-title { font-size: var(--tigrana-font-compact-title); }
-[data-theme-region] :is(.folder-row,.note-row,.note-card,.unified-tree-row,.pane-header,.folder-select) { font-size: var(--tigrana-font-navigation); }
+[data-theme-region] :is(.folder-row,.note-row,.note-card,.unified-tree-row,.pane-header,.folder-select,.section-header-button.matches-folder-row) { font-size: var(--tigrana-font-navigation); }
 [data-theme-region] .note-tab { font-size: var(--tigrana-font-tab); }
 [data-theme-region] .note-view-dropdown strong { font-size: var(--tigrana-font-menu); }
 [data-theme-region] :is(.note-view-dropdown small,.note-view-menu-label) { font-size: var(--tigrana-font-secondary); }

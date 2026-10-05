@@ -1,3 +1,4 @@
+import { PaneExpansionButton, type SetPaneExpanded } from "./PaneExpansionButton";
 import { ChevronDown, ChevronRight, Folder, Plus, Search } from "lucide-react";
 import type { BookmarkView, FolderNode } from "../../lib/notebookMetadata";
 import type { RecentNotebook } from "../../lib/notebookSession";
@@ -34,6 +35,7 @@ export function FolderPane({
   onSelectNotebook,
   onSelectFolder,
   onSetFolderExpanded,
+  onSetPaneExpanded,
   onToggleBookmarksExpanded,
   onToggleSearch,
   onToggleMenu,
@@ -64,10 +66,19 @@ export function FolderPane({
   onSelectNotebook: (path: string) => void;
   onSelectFolder: (path: string) => void;
   onSetFolderExpanded: (path: string, expanded: boolean) => void;
+  onSetPaneExpanded: SetPaneExpanded;
   onToggleBookmarksExpanded: () => void;
   onToggleSearch: () => void;
   onToggleMenu: (event: React.MouseEvent) => void;
 }) {
+  const expandablePaths: string[] = [];
+  const collectPaths = (nodes: FolderNode[]) => {
+    for (const folder of nodes) {
+      if (folder.children.length) expandablePaths.push(folder.path);
+      collectPaths(folder.children);
+    }
+  };
+  collectPaths(folders);
   const getDropItem = (event: React.DragEvent): Exclude<DragItem, null> | undefined => {
     const notePath = event.dataTransfer.getData("application/tigrana-note-path") || event.dataTransfer.getData("text/plain");
     if (notePath) return { kind: "note", path: notePath };
@@ -84,12 +95,15 @@ export function FolderPane({
           <button className="icon-button" type="button" disabled={disabled} title="Search" onClick={onToggleSearch}>
             <Search size={16} />
           </button>
+          <PaneExpansionButton paths={expandablePaths} metadata={metadata} includeBookmarks={bookmarks.length > 0}
+            disabled={disabled} onSetExpanded={onSetPaneExpanded} />
           <button className="icon-button" type="button" disabled={disabled} title="Add" onClick={() => onCreateFolder(selectedFolder)}>
             <Plus size={16} />
           </button>
         </div>
       </div>
       <BookmarksSection
+        matchFolderRows
         bookmarks={bookmarks}
         expanded={bookmarksExpanded}
         onRemove={onRemoveBookmark}

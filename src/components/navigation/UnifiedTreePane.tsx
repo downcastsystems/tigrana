@@ -1,3 +1,4 @@
+import { PaneExpansionButton, type SetPaneExpanded } from "./PaneExpansionButton";
 import { ChevronDown, ChevronRight, FileText, Folder, Pin, Search } from "lucide-react";
 import { useLayoutEffect, useMemo, useRef } from "react";
 import { orderFolders, orderNotes, type BookmarkView } from "../../lib/notebookMetadata";
@@ -299,6 +300,7 @@ export function UnifiedTreePane({
   onSelectFolder,
   onSelectNote,
   onSetFolderExpanded,
+  onSetPaneExpanded,
   onToggleBookmarksExpanded,
   onToggleMenu,
   onToggleSearch,
@@ -343,10 +345,16 @@ export function UnifiedTreePane({
   onSelectFolder?: (path: string) => void;
   onSelectNote: (path: string) => void;
   onSetFolderExpanded: (path: string, expanded: boolean) => void;
+  onSetPaneExpanded?: SetPaneExpanded;
   onToggleBookmarksExpanded?: () => void;
   onToggleMenu?: (event: React.MouseEvent) => void;
   onToggleSearch?: () => void;
 }) {
+  const expandablePaths = hiddenFolderParentPath === rootPath ? [] : folders
+    .filter(folder => folder.path !== "" && folder.path !== rootPath
+      && (!rootPath || folder.path.startsWith(`${rootPath}/`)))
+    .map(folder => folder.path);
+  const includeBookmarks = showBookmarks && bookmarks.length > 0 && Boolean(onToggleBookmarksExpanded);
   const parentForCreate = createParentPath ?? rootPath;
   const noteTargetsForCreate = createNoteTargets ?? [{ parentName: title, parentPath: parentForCreate }];
   const folderTargetsForCreate = noteTargetsForCreate.map(({ parentName, parentPath }) => ({ parentName, parentPath }));
@@ -397,6 +405,10 @@ export function UnifiedTreePane({
             <button className="icon-button" type="button" disabled={!workspace} title="Search" onClick={onToggleSearch}>
               <Search size={16} />
             </button>
+          ) : null}
+          {onSetPaneExpanded && (expandablePaths.length > 0 || includeBookmarks) ? (
+            <PaneExpansionButton paths={expandablePaths} metadata={metadata} includeBookmarks={includeBookmarks}
+              disabled={!workspace} onSetExpanded={onSetPaneExpanded} />
           ) : null}
           {onCreateNote ? (
             <PaneCreateMenu

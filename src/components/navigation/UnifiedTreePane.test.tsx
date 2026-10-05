@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { act } from "react";
+import { act, useState } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { defaultWorkspaceMetadata } from "../../lib/notebookStorage";
@@ -61,4 +61,48 @@ it("leaves already visible notes in place and scrolls upward only as far as need
   await render("Meetings", notes[35].path);
   await render("Meetings", notes[2].path);
   expect(pane.querySelector<HTMLElement>(".is-active")!.getBoundingClientRect().top).toBe(50);
+});
+
+it("collapses nested folders in this section, then expands them without reopening the active note", async () => {
+  const folderEntries = [
+    { path: "Meetings/Month", parent_path: "Meetings", name: "Month" },
+    { path: "Meetings/Month/Week", parent_path: "Meetings/Month", name: "Week" },
+    { path: "Projects/Other", parent_path: "Projects", name: "Other" },
+  ];
+  const bulkUpdate = vi.fn();
+  function Pane() {
+    const [current, setCurrent] = useState({ ...metadata, expandedFolders: { "Meetings/Month": true, "Meetings/Month/Week": false } });
+    return <UnifiedTreePane activePath={notes[0].path} rootPath="Meetings" title="Meetings"
+      folders={folderEntries} notes={notes} metadata={current} contents={new Map()} workspace="/Notebook"
+      suppressFolderClickRef={{ current: false }} onContextMenu={noop} onFolderPointerDragStart={noop}
+      onPin={noop} onPointerDragStart={noop} onSelectNote={noop} onSetFolderExpanded={expand}
+      onCreateNote={noop} onSetPaneExpanded={(paths, expanded, includeBookmarks) => {
+        bulkUpdate(paths, expanded, includeBookmarks);
+        setCurrent(value => ({ ...value, expandedFolders: { ...value.expandedFolders,
+          ...Object.fromEntries(paths.map(path => [path, expanded])) } }));
+      }} />;
+  }
+  await act(async () => root.render(<Pane />));
+  expand.mockClear();
+  const click = async (label: string) => {
+    const button = mount.querySelector<HTMLButtonElement>(`[aria-label="${label}"]`)!;
+    expect(button.nextElementSibling?.classList.contains("pane-create-control")).toBe(true);
+    await act(async () => button.click());
+  };
+  await click("Collapse all");
+  expect(bulkUpdate).toHaveBeenLastCalledWith(["Meetings/Month", "Meetings/Month/Week"], false, false);
+  expect(mount.querySelector(".unified-note-row")).toBeNull();
+  expect(expand).not.toHaveBeenCalled();
+  await click("Expand all");
+  expect(bulkUpdate).toHaveBeenLastCalledWith(["Meetings/Month", "Meetings/Month/Week"], true, false);
+  expect(mount.querySelector(".unified-note-row.is-active")).not.toBeNull();
+});
+
+it("omits the toggle when the pane hides its folders", async () => {
+  await act(async () => root.render(<UnifiedTreePane activePath={null} rootPath="" title="Uncategorized"
+    hiddenFolderParentPath="" folders={[{ path: "Meetings", parent_path: "", name: "Meetings" }]}
+    notes={[]} metadata={metadata} contents={new Map()} workspace="/Notebook" suppressFolderClickRef={{ current: false }}
+    onContextMenu={noop} onFolderPointerDragStart={noop} onPin={noop} onPointerDragStart={noop}
+    onSelectNote={noop} onSetFolderExpanded={expand} onSetPaneExpanded={noop} />));
+  expect(mount.querySelector('[aria-label="Collapse all"], [aria-label="Expand all"]')).toBeNull();
 });

@@ -8,6 +8,7 @@ import type { DropPlacement } from "../../lib/notebookNavigation";
 export function BookmarksSection({
   bookmarks,
   expanded,
+  matchFolderRows = false,
   onRemove,
   onReorder,
   onSelect,
@@ -15,6 +16,7 @@ export function BookmarksSection({
 }: {
   bookmarks: BookmarkView[];
   expanded: boolean;
+  matchFolderRows?: boolean;
   onRemove: (id: string) => void;
   onReorder: (draggedId: string, targetId: string, placement: DropPlacement) => void;
   onSelect: (bookmark: BookmarkEntry) => void;
@@ -92,10 +94,14 @@ export function BookmarksSection({
     window.addEventListener("pointercancel", handlePointerCancel, { once: true });
   };
 
+  const caret = expanded
+    ? <ChevronDown size={matchFolderRows ? 15 : 14} />
+    : <ChevronRight size={matchFolderRows ? 15 : 14} />;
+
   return (
     <section className="bookmarks-section">
-      <button className="section-header-button" type="button" onClick={onToggle}>
-        {expanded ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
+      <button className={`section-header-button${matchFolderRows ? " matches-folder-row" : ""}`} type="button" onClick={onToggle}>
+        {matchFolderRows ? <span className="tree-toggle" aria-hidden="true">{caret}</span> : caret}
         <span>Bookmarks</span>
       </button>
       {expanded ? (

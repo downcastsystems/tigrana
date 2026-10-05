@@ -1132,6 +1132,24 @@ body.is-dragging-section * {
   cursor: pointer;
 }
 
+/* Align the dual-pane Bookmarks label with the folder icon column. */
+.section-header-button.matches-folder-row {
+  display: grid;
+  grid-template-columns: 22px minmax(0, 1fr);
+  gap: 0;
+  min-height: 32px;
+  padding: 0 4px;
+  font-weight: 650;
+  color: #4c4842;
+}
+
+.section-header-button.matches-folder-row > :last-child {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .bookmarks-list {
   display: grid;
   gap: 2px;
@@ -1151,11 +1169,7 @@ body.is-dragging-section * {
   background: transparent;
   color: var(--text);
   text-align: left;
-  cursor: grab;
-}
-
-.bookmark-item:active {
-  cursor: grabbing;
+  cursor: pointer;
 }
 
 .bookmark-item.is-dragging {
