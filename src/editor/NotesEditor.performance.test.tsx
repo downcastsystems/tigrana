@@ -847,6 +847,28 @@ describe("Note editor typing performance", () => {
     expect(container.querySelector(".ProseMirror")?.textContent).toBe("Start");
   });
 
+  it.each([false, true])("indents selected bullets ending at the following paragraph, reverse: %s", async reverse => {
+    const container = document.createElement("div"); document.body.append(container);
+    const root = createRoot(container); mounted.push({ container, root });
+    await act(async () => root.render(<NotesEditor content={"- Parent\n- Second\n- Third\n\nAfter"} writingStyle="notes" editable findRequest={0}
+      focusAtEndRequest={0} focusRequest={0} historyKey="list-tabs" notePath="Tabs.md"
+      onChange={() => undefined} onLoadError={error => { throw error; }} onPendingChange={() => undefined}
+      onPositionChange={() => undefined} restorePosition={null} spellcheckEnabled workspace="/Notebook" />));
+    const editor = (container.querySelector(".ProseMirror") as HTMLElement & { editor: import("@tiptap/core").Editor }).editor;
+    const list = editor.state.doc.firstChild!;
+    const from = 3 + list.firstChild!.nodeSize;
+    const to = list.nodeSize + 1;
+    await act(async () => {
+      editor.commands.setTextSelection(reverse ? { from: to, to: from } : { from, to });
+      editor.view.dom.dispatchEvent(new KeyboardEvent("keydown", { key: "Tab", bubbles: true, cancelable: true }));
+    });
+    expect(editor.state.doc.textContent).toBe("ParentSecondThirdAfter");
+    const parent = editor.state.doc.firstChild!.firstChild!;
+    expect(parent.childCount).toBe(2);
+    expect(parent.lastChild!.type.name).toBe("bulletList");
+    expect(parent.lastChild!.textContent).toBe("SecondThird");
+  });
+
   it.each(["notes", "story"] as const)("allows ten manual indents and removes them one at a time in %s", async writingStyle => {
     vi.useFakeTimers();
     const container = document.createElement("div"); document.body.appendChild(container);
