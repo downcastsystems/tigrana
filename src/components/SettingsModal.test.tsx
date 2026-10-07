@@ -34,6 +34,7 @@ it.each(["Create theme", "Edit theme"])(
       root = createRoot(host),
       apply = vi.fn(),
       changeWordCount = vi.fn(),
+      changeFolding = vi.fn(),
       resetAppearance = vi.fn();
     const click = async (name: string) =>
       act(async () => {
@@ -58,6 +59,7 @@ it.each(["Create theme", "Edit theme"])(
             wordCountVisible
             onWordCountVisibleChange={changeWordCount}
             spellcheckEnabled
+            onListFoldingEnabledChange={changeFolding}
             onSpellcheckEnabledChange={vi.fn()}
             onClose={vi.fn()}
             onResetTheme={resetAppearance}
@@ -72,9 +74,13 @@ it.each(["Create theme", "Edit theme"])(
       expect(host.querySelector('[aria-label="Date format"]')).not.toBeNull();
       const generalLabels = [...host.querySelectorAll(".setting-row")].filter(row => !row.querySelector('[aria-label="Date format"]'));
       expect(generalLabels.map((label) => label.textContent?.trim())).toEqual([
-        "Navigation styleDual paneDual pane with sections (recommended)Single pane", "Editor widthComfortable WidthNarrow WidthFull Width", "Editor AlignmentAlign leftAlign center", "New Note Writing StyleFor this notebookLast used writing style (Notes)NotesStory", "Check spelling while typing", "Show word count",
+        "Navigation styleDual paneDual pane with sections (recommended)Single pane", "Editor widthComfortable WidthNarrow WidthFull Width", "Editor AlignmentAlign leftAlign center", "New Note Writing StyleFor this notebookLast used writing style (Notes)NotesStory", "Bullet foldingCollapse sub-bullets in Notes style", "Check spelling while typing", "Show word count",
       ]);
-      const wordCount = generalLabels[5].querySelector<HTMLInputElement>("input")!;
+      const folding = generalLabels[4].querySelector<HTMLInputElement>("input")!;
+      expect(folding.checked).toBe(true);
+      await act(async () => folding.click());
+      expect(changeFolding).toHaveBeenCalledWith(false);
+      const wordCount = generalLabels[6].querySelector<HTMLInputElement>("input")!;
       expect(wordCount.checked).toBe(true);
       await act(async () => wordCount.click());
       expect(changeWordCount).toHaveBeenCalledWith(false);

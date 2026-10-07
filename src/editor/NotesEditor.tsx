@@ -63,10 +63,14 @@ import { createPortal } from "react-dom";
 import { BulletMethodIcon } from "../components/BulletMethodIcon";
 import { defaultBulletMethodDisplay, defaultBulletMethodStatuses, type BulletMethodStatus } from "../lib/bulletMethod";
 import { createDeferredCommit, type DeferredCommit } from "../lib/deferredCommit";
+import { restorableListFolding } from "../lib/noteListFolding";
+import { ListFoldingPersistence } from "./listFoldingPersistence";
 import { openExternal } from "../lib/desktop";
 import { isInlineColorCommand } from "../lib/inlineColors";
 import { markdownToHtml } from "../lib/markdown";
 import { BulletMethodMarkers, bulletMethodMarkersKey } from "./bulletMethodMarkers";
+import { ListFolding, listFoldingKey } from "./listFolding";
+import { getFoldedListCutDeleteRange } from "./foldedListClipboard";
 import { CodeBlockWithControls, lowlight } from "./codeBlock";
 import type {
   EditorCommandRequest,
@@ -134,11 +138,13 @@ type SlashState = {
 
 const noteHistoryCacheLimit = 30;
 
-export function NotesEditor({ bulletMethodDisplay = defaultBulletMethodDisplay, bulletMethodStatuses = defaultBulletMethodStatuses, writingStyle = "notes", colorsDisabled = false, colorToolbarElement, content, commandRequest, focusRequest, focusAtEndRequest, findRequest, searchRevealRequest, historyKey, reloadRequest, notePath, restorePosition, editable, spellcheckEnabled, workspace, onChange, onPendingChange, onPersistenceReady, onLoadError, onPositionChange, onInternalLinkClick, onFocusTitle, onRequestEmoji, onRequestLink, onRequestImage }: NotesEditorProps) {
+export function NotesEditor({ bulletMethodDisplay = defaultBulletMethodDisplay, bulletMethodStatuses = defaultBulletMethodStatuses, listFoldingEnabled = true, writingStyle = "notes", colorsDisabled = false, colorToolbarElement, content, commandRequest, focusRequest, focusAtEndRequest, findRequest, searchRevealRequest, historyKey, reloadRequest, notePath, restorePosition, restoreListFolding, onListFoldingChange, editable, spellcheckEnabled, workspace, onChange, onPendingChange, onPersistenceReady, onLoadError, onPositionChange, onInternalLinkClick, onFocusTitle, onRequestEmoji, onRequestLink, onRequestImage }: NotesEditorProps) {
   const onFocusTitleRef = useRef(onFocusTitle);
   onFocusTitleRef.current = onFocusTitle;
   const writingStyleRef = useRef(writingStyle);
   writingStyleRef.current = writingStyle;
+  const listFoldingEnabledRef = useRef(listFoldingEnabled);
+  listFoldingEnabledRef.current = listFoldingEnabled;
   const [slash, setSlash] = useState<SlashState | null>(null);
   const [findOpen, setFindOpen] = useState(false);
   const [replaceOpen, setReplaceOpen] = useState(false);
@@ -167,6 +173,16 @@ export function NotesEditor({ bulletMethodDisplay = defaultBulletMethodDisplay, 
   const onPendingChangeRef = useRef(onPendingChange);
   const deferredMarkdownRef = useRef<DeferredCommit<EditorMarkdownSnapshot> | null>(null);
   const pendingChangeHandleRef = useRef<PendingEditorChange | null>(null);
+  const restoreListFoldingRef = useRef(restoreListFolding);
+  restoreListFoldingRef.current = restoreListFolding;
+  const onListFoldingChangeRef = useRef(onListFoldingChange);
+  onListFoldingChangeRef.current = onListFoldingChange;
+  const foldingPersistenceRef = useRef<ListFoldingPersistence | null>(null);
+  if (!foldingPersistenceRef.current) {
+    foldingPersistenceRef.current = new ListFoldingPersistence((saved, sourceWorkspace, path) => {
+      onListFoldingChangeRef.current?.(saved, sourceWorkspace, path);
+    });
+  }
 
   onChangeRef.current = onChange;
   onPendingChangeRef.current = onPendingChange;
@@ -178,7 +194,11 @@ export function NotesEditor({ bulletMethodDisplay = defaultBulletMethodDisplay, 
   }
   if (!pendingChangeHandleRef.current) {
     pendingChangeHandleRef.current = {
-      flush: () => deferredMarkdownRef.current?.flush() ?? null,
+      flush: () => {
+        const snapshot = deferredMarkdownRef.current?.flush() ?? null;
+        if (editorRef.current) foldingPersistenceRef.current?.flush(editorRef.current);
+        return snapshot;
+      },
     };
   }
   if (!noteHistoryCache.current) {
@@ -240,6 +260,7 @@ export function NotesEditor({ bulletMethodDisplay = defaultBulletMethodDisplay, 
       FootnoteInteractions,
       OrderedListWithGutter,
       BulletMethodMarkers,
+      ListFolding,
       CodeBlockWithControls.configure({ lowlight }),
       TextColor,
       ColorHighlight,
@@ -380,7 +401,7 @@ export function NotesEditor({ bulletMethodDisplay = defaultBulletMethodDisplay, 
           return writeEditorSelectionToClipboard(view, event);
         },
         cut(view, event) {
-          return cutSelectedTaskLines(view, event);
+          return cutSelectedListLines(view, event);
         },
       },
       handlePaste(view, event) {
@@ -407,6 +428,7 @@ export function NotesEditor({ bulletMethodDisplay = defaultBulletMethodDisplay, 
       deferredMarkdownRef.current?.schedule(() => {
         const markdown = serializeEditorMarkdown(editor);
         publishedFootnoteLabels.current = getMarkdownFootnoteLabels(editor) ?? new Map();
+        if (onListFoldingChangeRef.current) foldingPersistenceRef.current?.serialized(editor, markdown);
         return { markdown, sourceNotePath };
       });
       onPendingChangeRef.current(pendingChangeHandleRef.current);
@@ -443,6 +465,7 @@ export function NotesEditor({ bulletMethodDisplay = defaultBulletMethodDisplay, 
   useLayoutEffect(() => {
     if (!editor || !onPersistenceReady) return;
     onPersistenceReady({
+      flushViewState() { foldingPersistenceRef.current?.flush(editor); },
       capture() {
         if (!editableRef.current) return null;
         if (editor.view.composing) throw new Error("Finish entering text before moving this Note.");
@@ -467,7 +490,9 @@ export function NotesEditor({ bulletMethodDisplay = defaultBulletMethodDisplay, 
         if (!visible.eq(editor.state.doc)) {
           editor.view.dispatch(editor.state.tr.replaceWith(0, editor.state.doc.content.size, visible.content));
         }
-        return deferredMarkdownRef.current?.flush() ?? null;
+        const snapshot = deferredMarkdownRef.current?.flush() ?? null;
+        foldingPersistenceRef.current?.flush(editor);
+        return snapshot;
       },
       setReadOnly(readOnly) {
         setEditorEditableSilently(editor, !readOnly && editableRef.current);
@@ -494,8 +519,24 @@ export function NotesEditor({ bulletMethodDisplay = defaultBulletMethodDisplay, 
 
   useEffect(() => () => {
     deferredMarkdownRef.current?.flush();
+    if (editorRef.current && !editorRef.current.isDestroyed) foldingPersistenceRef.current?.flush(editorRef.current);
+    foldingPersistenceRef.current?.cancel();
     onPendingChangeRef.current(null);
   }, []);
+
+  useLayoutEffect(() => {
+    if (!editor) return;
+    let previous = listFoldingKey.getState(editor.state);
+    const changed = ({ transaction }: { transaction: import("@tiptap/pm/state").Transaction }) => {
+      const next = listFoldingKey.getState(editor.state);
+      if (onListFoldingChangeRef.current && (transaction.docChanged || previous?.decorations !== next?.decorations)) {
+        foldingPersistenceRef.current?.changed(editor, transaction.docChanged, () => deferredMarkdownRef.current?.flush());
+      }
+      previous = next;
+    };
+    editor.on("transaction", changed);
+    return () => { editor.off("transaction", changed); };
+  }, [editor]);
 
   useEffect(() => {
     if (!editor) return;
@@ -524,11 +565,14 @@ export function NotesEditor({ bulletMethodDisplay = defaultBulletMethodDisplay, 
       return;
     }
     if (loadAction === "preserve") {
+      foldingPersistenceRef.current?.relocate(workspace, notePath);
       lastLoadedNote.current = notePath;
       loadedHistoryKey.current = nextHistoryKey;
       handledReloadRequest.current = reloadRequest ?? 0;
       return;
     }
+    foldingPersistenceRef.current?.flush(editor);
+    foldingPersistenceRef.current?.cancel();
     deferredMarkdownRef.current?.cancel();
     onPendingChangeRef.current(null);
     const previousHistoryKey = loadedHistoryKey.current;
@@ -572,6 +616,7 @@ export function NotesEditor({ bulletMethodDisplay = defaultBulletMethodDisplay, 
         && noteHistoryCache.current
         && restoreCachedNoteEditorState(noteHistoryCache.current, nextHistoryKey, content, editor),
       );
+      const savedFolding = restorableListFolding(restoreListFoldingRef.current, content);
       if (!restoredHistory) {
         editor
           .chain()
@@ -588,7 +633,7 @@ export function NotesEditor({ bulletMethodDisplay = defaultBulletMethodDisplay, 
             return true;
           })
           .run();
-        resetEditorHistory(editor);
+        resetEditorHistory(editor, { listFolding: { writingStyle: writingStyleRef.current, foldingEnabled: listFoldingEnabledRef.current, saved: savedFolding } });
         seedEditorMarkdownSources(editor);
       }
       seedEditorFootnoteEntries(editor, content);
@@ -596,6 +641,7 @@ export function NotesEditor({ bulletMethodDisplay = defaultBulletMethodDisplay, 
       lastLoadedNote.current = notePath;
       loadedHistoryKey.current = nextHistoryKey;
       handledReloadRequest.current = reloadRequest ?? 0;
+      foldingPersistenceRef.current?.load(editor, workspace, notePath, content, savedFolding);
       if (wasFocused) {
         editor.view.dom.focus({ preventScroll: true });
       }
@@ -610,6 +656,15 @@ export function NotesEditor({ bulletMethodDisplay = defaultBulletMethodDisplay, 
   useEffect(() => {
     if (editor) editor.view.dispatch(editor.state.tr.setMeta(bulletMethodMarkersKey, bulletMethodStatuses).setMeta("bulletMethodDisplay", bulletMethodDisplay));
   }, [editor, bulletMethodStatuses, bulletMethodDisplay, historyKey, notePath, reloadRequest, workspace]);
+
+  useEffect(() => {
+    if (!editor) return;
+    if (listFoldingKey.getState(editor.state)?.enabled && (!listFoldingEnabled || writingStyle !== "notes")) {
+      deferredMarkdownRef.current?.flush();
+      foldingPersistenceRef.current?.flush(editor);
+    }
+    editor.view.dispatch(editor.state.tr.setMeta(listFoldingKey, { writingStyle, foldingEnabled: listFoldingEnabled }));
+  }, [editor, writingStyle, listFoldingEnabled, historyKey, notePath, reloadRequest, workspace]);
 
   useEffect(() => {
     if (!editor || !focusRequest) return;
@@ -1544,8 +1599,8 @@ function writeEditorSelectionToClipboard(view: EditorView, event: ClipboardEvent
   return true;
 }
 
-function cutSelectedTaskLines(view: EditorView, event: ClipboardEvent) {
-  const deleteRange = getTaskLineCutDeleteRange(view.state.selection);
+function cutSelectedListLines(view: EditorView, event: ClipboardEvent) {
+  const deleteRange = getFoldedListCutDeleteRange(view.state) ?? getTaskLineCutDeleteRange(view.state.selection);
   if (!deleteRange) return false;
   if (!writeEditorSelectionToClipboard(view, event)) return false;
 

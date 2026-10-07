@@ -33,6 +33,15 @@ export type NotePositionMetadata = {
   contentLength: number;
   selectionFrom?: number;
   selectionTo?: number;
+  listFolding?: NoteListFoldingMetadata | null;
+};
+
+/** Editor view state only; the Markdown body is never decorated on disk. */
+export type NoteListFoldingMetadata = {
+  version: 1;
+  contentFingerprint: string;
+  docSize: number;
+  collapsed: [position: number, nodeSize: number, paragraphSize: number][];
 };
 
 export type BookmarkEntry = {

@@ -1,4 +1,13 @@
-import type { BookmarkEntry, FolderEntry, NoteEntry, NavigationStyle, WorkspaceMetadata } from "../types";
+import type { BookmarkEntry, FolderEntry, NoteEntry, NavigationStyle, WorkspaceMetadata, NotePositionMetadata } from "../types";
+
+/** Position and folding mutations replay independently after metadata CAS conflicts. */
+export function updateNoteViewMetadata(metadata: WorkspaceMetadata, position: NotePositionMetadata, foldingOnly = false): WorkspaceMetadata {
+  const current = metadata.notePositions[position.path];
+  const next = foldingOnly
+    ? { ...(current ?? position), listFolding: position.listFolding }
+    : { ...position, listFolding: current?.listFolding };
+  return { ...metadata, notePositions: { ...metadata.notePositions, [position.path]: next } };
+}
 
 export type FolderNode = FolderEntry & {
   children: FolderNode[];

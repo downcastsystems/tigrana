@@ -19,8 +19,9 @@ import {
   replaceFolderPathPrefix,
   replaceOrderedPath,
   setMetadataValue,
+  updateNoteViewMetadata,
 } from "./notebookMetadata";
-import type { FolderEntry, NoteEntry, WorkspaceMetadata } from "../types";
+import type { FolderEntry, NoteEntry, WorkspaceMetadata, NoteListFoldingMetadata } from "../types";
 
 function metadata(overrides: Partial<WorkspaceMetadata> = {}): WorkspaceMetadata {
   return {
@@ -49,6 +50,24 @@ function folder(path: string, name: string, parentPath = ""): FolderEntry {
 }
 
 describe("notebook metadata", () => {
+  it("keeps folding independent of cursor updates and carries it through file/folder moves", () => {
+    const folding: NoteListFoldingMetadata = { version: 1, contentFingerprint: "test", docSize: 20, collapsed: [[1, 18, 8]] };
+    const position = { path: "Draft.md", lastOpenedAt: 1, scrollTop: 40, contentLength: 20, selectionFrom: 5 };
+    const base = metadata({ notePositions: { "Draft.md": position } });
+    const folded = updateNoteViewMetadata(base, { ...position, scrollTop: 0, listFolding: folding }, true);
+    expect(folded.notePositions["Draft.md"]).toEqual({ ...position, listFolding: folding });
+    const scrolled = updateNoteViewMetadata(folded, { ...position, scrollTop: 60 });
+    expect(scrolled.notePositions["Draft.md"]).toEqual({ ...position, scrollTop: 60, listFolding: folding });
+    const moved = replaceOrderedPath(scrolled, "Draft.md", "Drafts/Renamed.md");
+    expect(moved.notePositions["Drafts/Renamed.md"].listFolding).toEqual(folding);
+    const folderMoved = replaceFolderPathPrefix(moved, "Drafts", "Stories");
+    expect(folderMoved.notePositions["Stories/Renamed.md"].listFolding).toEqual(folding);
+    expect(removeNoteFromMetadata(folderMoved, "Stories/Renamed.md").notePositions).toEqual({});
+    const unfolded = updateNoteViewMetadata(scrolled, { ...position, listFolding: null }, true);
+    expect(unfolded.notePositions["Draft.md"].scrollTop).toBe(60);
+    expect(unfolded.notePositions["Draft.md"].listFolding).toBeNull();
+  });
+
   it("rebases local metadata changes without discarding newer durable fields", () => {
     const base = metadata({
       revision: 1,

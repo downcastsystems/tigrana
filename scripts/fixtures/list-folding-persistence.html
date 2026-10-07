@@ -1,0 +1,61 @@
+<link rel="stylesheet" href="/src/styles/app.css">
+<style>
+  body { padding: 32px; background: #23272b; color: #eeece8; --text: #eeece8; --text-muted: #aaa; --surface: #23272b; --surface-strong: #292d32; --border: #464c53; --link-color: #9fbada; }
+  button.preview-control { background: transparent; border: 1px solid currentColor; border-radius: 4px; padding: 6px 10px; margin-right: 8px; }
+  .note-surface { height: 75vh; overflow: auto; padding: 32px; }
+  .ProseMirror { font: 20px/1.7 Arial; max-width: 760px; }
+  output { display: block; margin-top: 12px; color: #9fbada; }
+</style>
+<div id="app"></div>
+<script type="module">
+  import React from 'react';
+  import { createRoot } from 'react-dom/client';
+  import { NotesEditor } from '/src/editor/NotesEditor.tsx';
+  import SettingsModal from '/src/components/SettingsModal.tsx';
+  import { defaultBulletMethodStatuses } from '/src/lib/bulletMethod.ts';
+  import { useListFoldingPreference } from '/src/lib/useListFoldingPreference.ts';
+  const h = React.createElement;
+  document.documentElement.dataset.theme = 'dark';
+  const large = new URL(location.href).searchParams.has('long');
+  const key = `tigrana:folding-persistence-preview:${large ? 'long' : 'small'}`;
+  const sample = large ? Array.from({length:1000}, (_, i) => `- Parent ${i}\n  - Child ${i}`).join('\n')
+    : '# Folding persistence\n\n- DONE: Review the release\n  - Review changes\n  - Deploy\n    - Development\n    - Production\n- A plain parent\n  - Child\n\nText after the list.';
+  const saved = JSON.parse(localStorage.getItem(key) || 'null') || { notes: { 'Preview.md': sample, 'Other.md': 'Another note.' }, folds: {} };
+  const persist = () => localStorage.setItem(key, JSON.stringify(saved));
+  function Preview() {
+    const [foldingEnabled, setFoldingEnabled] = useListFoldingPreference();
+    const [settingsOpen, setSettingsOpen] = React.useState(false);
+    const [path, setPath] = React.useState('Preview.md');
+    const [body, setBody] = React.useState(saved.notes[path]);
+    const [message, setMessage] = React.useState('Fold a list, then restart the editor.');
+    const handle = React.useRef(null), pending = React.useRef(null);
+    const flush = () => { pending.current?.flush(); handle.current?.flushViewState?.(); };
+    return h(React.Fragment, null,
+      h('button', { className:'preview-control', onClick:() => { flush(); const next = path === 'Preview.md' ? 'Other.md' : 'Preview.md'; setPath(next); setBody(saved.notes[next]); } }, 'Switch note'),
+      h('button', { className:'preview-control', onClick:() => { flush(); location.reload(); } }, 'Restart editor'),
+      h('button', { className:'preview-control', onClick:() => setSettingsOpen(true) }, 'Settings'),
+      h('output', null, message),
+      h('div', { className:'note-surface writing-style-notes' }, h(NotesEditor, {
+        content:body, editable:true, findRequest:0, focusAtEndRequest:0, focusRequest:0, listFoldingEnabled:foldingEnabled,
+        historyKey:path, notePath:path, restorePosition:null, restoreListFolding:saved.folds[path],
+        spellcheckEnabled:true, workspace:'/Preview notebook',
+        bulletMethodDisplay:{enabled:true, replaceBullets:true, dimCompleted:true},
+        onPersistenceReady:value => { handle.current = value; },
+        onPendingChange:value => { pending.current = value; },
+        onPositionChange:() => {}, onLoadError:error => { throw error; },
+        onChange:(markdown, sourcePath) => { saved.notes[sourcePath] = markdown; persist(); if (sourcePath === path) setBody(markdown); },
+        onListFoldingChange:(folds, _workspace, sourcePath) => { saved.folds[sourcePath] = folds; persist(); setMessage(`Saved ${folds?.collapsed.length || 0} collapsed sections for ${sourcePath}.`); },
+      })),
+      settingsOpen && h(SettingsModal, {
+        listFoldingEnabled:foldingEnabled, onListFoldingEnabledChange:setFoldingEnabled,
+        bulletMethodStatuses:defaultBulletMethodStatuses, onBulletMethodStatusesChange:() => {},
+        newNoteWritingStyle:'notes', lastWritingStyle:'notes', onNewNoteWritingStyleChange:() => {},
+        navigationStyle:'section-view', onNavigationStyleChange:() => {},
+        editorWidthMode:'comfortable', onEditorWidthModeChange:() => {},
+        noteAlignment:'center', onNoteAlignmentChange:() => {}, spellcheckEnabled:true, onSpellcheckEnabledChange:() => {},
+        wordCountVisible:true, onWordCountVisibleChange:() => {}, themeContent:null, onClose:() => setSettingsOpen(false),
+      }),
+    );
+  }
+  createRoot(document.getElementById('app')).render(h(Preview));
+</script>

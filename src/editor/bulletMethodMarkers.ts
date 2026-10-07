@@ -6,6 +6,7 @@ import { closeHistory } from "@tiptap/pm/history";
 import { canJoin, Mapping } from "@tiptap/pm/transform";
 import { bulletMoveHighlightKey, createBulletMoveHighlightPlugin } from "./bulletMoveHighlight";
 import { sortAfterStatusClick } from "./sortLines";
+import { listFoldingKey } from "./listFolding";
 import { Plugin, PluginKey, TextSelection } from "@tiptap/pm/state";
 import { Decoration, DecorationSet } from "@tiptap/pm/view";
 import { bulletMethodDimPercent, defaultBulletMethodDisplay, type BulletMethodDisplay, defaultBulletMethodStatuses, firstBulletMethodStatus, statusShortcut, statusCelebrates, statusDims, statusIcon, nextBulletMethodStatus, type BulletMethodStatus } from "../lib/bulletMethod";
@@ -85,6 +86,8 @@ function decorationsIn(doc: ProseMirrorNode, from: number, to: number, statuses:
           clicked = sortAfterStatusClick(tr, clicked, settings?.statuses ?? statuses);
         }
         tr.setMeta(bulletMoveHighlightKey, clicked !== beforeSort ? tr.doc.resolve(clicked).before() : null);
+        // Resolve after sorting so the fold follows the clicked parent.
+        if (destination.id === "done") tr.setMeta(listFoldingKey, { position: tr.doc.resolve(clicked).before(-1), collapsed: true });
         if (statusCelebrates(destination)) tr.setMeta(bulletCelebrationKey, tr.doc.resolve(clicked).before());
         view.dispatch(tr);
         // Keep the same point of the clicked bullet under the pointer. The

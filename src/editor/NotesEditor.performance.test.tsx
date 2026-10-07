@@ -36,6 +36,8 @@ vi.mock("../lib/notebookStorage", async (importOriginal) => {
 });
 
 import { markdownCommitDelayMs, type EditorCommandRequest, type EditorPersistenceHandle } from "./editorContract";
+import { foldingContentFingerprint } from "../lib/noteListFolding";
+import type { NoteListFoldingMetadata } from "../types";
 
 const { NotesEditor } = await import("./NotesEditor");
 const { htmlToMarkdown, markdownToHtml } = await import("../lib/markdown");
@@ -47,6 +49,178 @@ function setReactInputValue(input: HTMLInputElement, value: string) {
 }
 
 describe("Note editor typing performance", () => {
+  it("applies the folding setting without replacing the editor, serializing Markdown, or leaking it across cached notes", async () => {
+    const container = document.createElement("div"); document.body.append(container);
+    const root = createRoot(container); mounted.push({ container, root });
+    const onChange = vi.fn();
+    const onFolding = vi.fn();
+    const render = (enabled: boolean, path = "One.md") => <NotesEditor
+      content={"- Parent\n  - Child"} editable findRequest={0} listFoldingEnabled={enabled}
+      focusAtEndRequest={0} focusRequest={0} historyKey={path} notePath={path}
+      onChange={onChange} onLoadError={error => { throw error; }} onPendingChange={() => undefined}
+      onPositionChange={() => undefined} restorePosition={null} onListFoldingChange={onFolding} spellcheckEnabled workspace="/Notebook" />;
+    await act(async () => root.render(render(true)));
+    const editor = (container.querySelector(".ProseMirror") as HTMLElement & { editor: import("@tiptap/core").Editor }).editor;
+    const setContent = vi.spyOn(editor.commands, "setContent");
+    await act(async () => container.querySelector<HTMLButtonElement>(".list-fold-button")!.click());
+    expect(container.querySelector('[data-list-collapsed="true"]')).not.toBeNull();
+    await act(async () => root.render(render(false)));
+    expect(onFolding).toHaveBeenCalledOnce();
+    expect(onFolding.mock.calls[0][0].collapsed).toHaveLength(1);
+    expect(container.querySelector(".list-fold-button")).toBeNull();
+    expect(container.querySelector('[data-list-collapsed="true"]')).toBeNull();
+    await act(async () => root.render(render(true)));
+    expect(container.querySelector('[data-list-collapsed="true"]')).not.toBeNull();
+    expect(setContent).not.toHaveBeenCalled(); expect(htmlToMarkdown).not.toHaveBeenCalled(); expect(onChange).not.toHaveBeenCalled();
+    await act(async () => root.render(render(false, "Two.md")));
+    await act(async () => root.render(render(false)));
+    expect((container.querySelector(".ProseMirror") as HTMLElement & { editor: unknown }).editor).toBe(editor);
+    expect(container.querySelector(".list-fold-button")).toBeNull();
+    setContent.mockRestore();
+  });
+
+  it("copies and cuts a collapsed row through the real clipboard handlers, then pastes all descendants", async () => {
+    const container = document.createElement("div"); document.body.append(container);
+    const root = createRoot(container); mounted.push({ container, root });
+    await act(async () => root.render(<NotesEditor content={"- Parent\n  - Child\n    - Grandchild\n- Sibling"} editable findRequest={0}
+      focusAtEndRequest={0} focusRequest={0} historyKey="One.md" notePath="One.md"
+      onChange={() => undefined} onLoadError={error => { throw error; }} onPendingChange={() => undefined}
+      onPositionChange={() => undefined} restorePosition={null} spellcheckEnabled workspace="/Notebook" />));
+    const editor = (container.querySelector(".ProseMirror") as HTMLElement & { editor: import("@tiptap/core").Editor }).editor;
+    const clipboard = new Map<string, string>();
+    const send = (type: "copy" | "cut" | "paste") => {
+      const event = new Event(type, { bubbles: true, cancelable: true });
+      Object.defineProperty(event, "clipboardData", { value: {
+        setData: (format: string, value: string) => clipboard.set(format, value),
+        getData: (format: string) => clipboard.get(format) ?? "", files: [], items: [], types: ["text/plain", "text/html"],
+      } });
+      editor.view.dom.dispatchEvent(event);
+      expect(event.defaultPrevented).toBe(true);
+    };
+    await act(async () => {
+      container.querySelector<HTMLButtonElement>(".list-fold-button")!.click();
+      editor.commands.setTextSelection({ from: 3, to: 9 });
+      send("copy");
+    });
+    expect(clipboard.get("text/plain")).toBe("- Parent\n  - Child\n    - Grandchild");
+    expect(editor.state.doc.textContent).toContain("Child");
+    await act(async () => send("cut"));
+    expect(editor.state.doc.textContent).toBe("Sibling");
+    await act(async () => { editor.commands.setTextSelection(editor.state.doc.content.size - 1); send("paste"); });
+    expect(editor.state.doc.textContent).toContain("ParentChildGrandchild");
+    expect(editor.state.doc.textContent).toContain("Sibling");
+  });
+
+  it("restores 1000 saved folds on a fresh mount, keeps typing local, and publishes one snapshot per burst", async () => {
+    vi.useFakeTimers();
+    const container = document.createElement("div"); document.body.append(container);
+    const root = createRoot(container); mounted.push({ container, root });
+    let markdown = Array.from({ length: 1000 }, (_, index) => `- Parent ${index}\n  - Child ${index}`).join("\n");
+    let saved: NoteListFoldingMetadata | null = null;
+    const onFolding = vi.fn((next: NoteListFoldingMetadata | null) => { saved = next; });
+    const onChange = vi.fn((next: string) => { markdown = next; });
+    const render = (path = "Long.md") => <NotesEditor
+      content={path === "Long.md" ? markdown : "Other"} editable findRequest={0}
+      focusAtEndRequest={0} focusRequest={0} historyKey={path} notePath={path}
+      onChange={onChange} onLoadError={error => { throw error; }} onPendingChange={() => undefined}
+      onPositionChange={() => undefined} restorePosition={null} restoreListFolding={path === "Long.md" ? saved : null}
+      onListFoldingChange={onFolding} spellcheckEnabled workspace="/Notebook" />;
+    await act(async () => root.render(render()));
+    const originalEditor = (container.querySelector(".ProseMirror") as HTMLElement & { editor: import("@tiptap/core").Editor }).editor;
+    const collapsed: NoteListFoldingMetadata["collapsed"] = [];
+    originalEditor.state.doc.descendants((node, pos) => {
+      if (node.type.name === "listItem" && node.childCount > 1) collapsed.push([pos, node.nodeSize, node.firstChild!.nodeSize]);
+    });
+    saved = { version: 1, contentFingerprint: foldingContentFingerprint(markdown), docSize: originalEditor.state.doc.content.size, collapsed };
+    await act(async () => root.render(<div />));
+    vi.mocked(htmlToMarkdown).mockClear();
+    await act(async () => root.render(render()));
+    const editor = (container.querySelector(".ProseMirror") as HTMLElement & { editor: import("@tiptap/core").Editor }).editor;
+    expect(editor).not.toBe(originalEditor);
+    expect(container.querySelectorAll('[data-list-collapsed="true"]')).toHaveLength(1000);
+    expect(htmlToMarkdown).not.toHaveBeenCalled(); expect(onChange).not.toHaveBeenCalled(); expect(onFolding).not.toHaveBeenCalled();
+    const setContent = vi.spyOn(editor.commands, "setContent");
+    await act(async () => {
+      editor.commands.setTextSelection(5);
+      for (let index = 0; index < 20; index++) editor.commands.insertContent("x");
+    });
+    expect(htmlToMarkdown).not.toHaveBeenCalled(); expect(onChange).not.toHaveBeenCalled(); expect(onFolding).not.toHaveBeenCalled();
+    await act(async () => { await vi.advanceTimersByTimeAsync(markdownCommitDelayMs); });
+    expect(htmlToMarkdown).toHaveBeenCalledOnce(); expect(onChange).toHaveBeenCalledOnce(); expect(onFolding).toHaveBeenCalledOnce();
+    expect(setContent).not.toHaveBeenCalled();
+    expect(onFolding.mock.calls[0].slice(1)).toEqual(["/Notebook", "Long.md"]);
+    expect(saved?.collapsed).toHaveLength(1000);
+    // A new editor simulates restarting the app; the committed Markdown and saved ranges still match.
+    await act(async () => root.render(<div />));
+    await act(async () => root.render(render()));
+    expect(container.querySelectorAll('[data-list-collapsed="true"]')).toHaveLength(1000);
+    // Same-length external edits must not restore stale positions.
+    markdown = markdown.replace("Parent 999", "Change 999");
+    setContent.mockRestore();
+    await act(async () => root.render(<div />));
+    await act(async () => root.render(render()));
+    expect(container.querySelectorAll('[data-list-collapsed="true"]')).toHaveLength(0);
+  });
+
+  it("flushes a pending fold before switching notes and never applies it to the next note", async () => {
+    vi.useFakeTimers();
+    const container = document.createElement("div"); document.body.append(container);
+    const root = createRoot(container); mounted.push({ container, root });
+    const onFolding = vi.fn();
+    let persistenceHandle: EditorPersistenceHandle | null = null;
+    const render = (path: string) => <NotesEditor content={"- Parent\n  - Child"} editable findRequest={0}
+      focusAtEndRequest={0} focusRequest={0} historyKey={path} notePath={path}
+      onChange={() => undefined} onLoadError={error => { throw error; }} onPendingChange={() => undefined}
+      onPersistenceReady={handle => { persistenceHandle = handle; }}
+      onPositionChange={() => undefined} onListFoldingChange={onFolding} restorePosition={null} spellcheckEnabled workspace="/Notebook" />;
+    await act(async () => root.render(render("A.md")));
+    expect(container.innerHTML).toContain("list-fold-button");
+    await act(async () => container.querySelector<HTMLButtonElement>(".list-fold-button")!.click());
+    expect(onFolding).not.toHaveBeenCalled();
+    await act(async () => root.render(render("B.md")));
+    expect(onFolding).toHaveBeenCalledOnce();
+    expect(onFolding.mock.calls[0].slice(1)).toEqual(["/Notebook", "A.md"]);
+    expect(container.querySelector('[data-list-collapsed="true"]')).toBeNull();
+    await act(async () => { await vi.advanceTimersByTimeAsync(markdownCommitDelayMs * 2); });
+    expect(onFolding).toHaveBeenCalledOnce();
+    // Closing without a Markdown edit flushes view state without parsing/serializing the body.
+    vi.mocked(htmlToMarkdown).mockClear();
+    await act(async () => {
+      container.querySelector<HTMLButtonElement>(".list-fold-button")!.click();
+      persistenceHandle?.flushViewState?.();
+    });
+    expect(onFolding).toHaveBeenCalledTimes(2);
+    expect(onFolding.mock.calls[1].slice(1)).toEqual(["/Notebook", "B.md"]);
+    expect(htmlToMarkdown).not.toHaveBeenCalled();
+  });
+
+  it("keeps folding local, scopes it to Notes style, and restores it when revisiting a cached note", async () => {
+    const container = document.createElement("div"); document.body.append(container);
+    const root = createRoot(container); mounted.push({ container, root });
+    const onChange = vi.fn();
+    const contents = { "Parent.md": "- Parent\n  - Child", "Other.md": "Other" };
+    const render = (path: keyof typeof contents, writingStyle: "notes" | "story" = "notes") => <NotesEditor
+      content={contents[path]} editable findRequest={0} writingStyle={writingStyle}
+      focusAtEndRequest={0} focusRequest={0} historyKey={path} notePath={path}
+      onChange={onChange} onLoadError={error => { throw error; }} onPendingChange={() => undefined}
+      onPositionChange={() => undefined} restorePosition={null} spellcheckEnabled workspace="/Notebook" />;
+    await act(async () => root.render(render("Parent.md")));
+    const editor = (container.querySelector(".ProseMirror") as HTMLElement & { editor: import("@tiptap/core").Editor }).editor;
+    const caret = () => container.querySelector<HTMLButtonElement>(".list-fold-button")!;
+    vi.mocked(htmlToMarkdown).mockClear();
+    await act(async () => caret().click());
+    expect(container.querySelector('[data-list-collapsed="true"]')).not.toBeNull();
+    expect(htmlToMarkdown).not.toHaveBeenCalled(); expect(onChange).not.toHaveBeenCalled();
+    await act(async () => root.render(render("Other.md")));
+    await act(async () => root.render(render("Parent.md")));
+    expect(container.querySelector('[data-list-collapsed="true"]')).not.toBeNull();
+    await act(async () => root.render(render("Parent.md", "story")));
+    expect(caret()).toBeNull();
+    expect(container.querySelector('[data-list-collapsed="true"]')).toBeNull();
+    await act(async () => root.render(render("Parent.md")));
+    expect(caret()).not.toBeNull();
+    expect((container.querySelector(".ProseMirror") as HTMLElement & { editor: import("@tiptap/core").Editor }).editor).toBe(editor);
+  });
   it("moves Up Arrow from the first body line into the title", async () => {
     const container = document.createElement("div"); document.body.append(container);
     const root = createRoot(container); mounted.push({ container, root });

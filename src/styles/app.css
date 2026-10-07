@@ -4050,6 +4050,76 @@ html[data-theme="dark"] .tab-list-separator {
 }
 .ProseMirror .bullet-method-marker-button:focus-visible { outline: 2px solid currentColor; outline-offset: 3px; }
 
+/* Use the outer gutter without moving the marker, text, or nested indentation. */
+.ProseMirror li[data-list-foldable] { position: relative; --list-fold-gutter: 2.5em; }
+.ProseMirror li[data-list-foldable] > p { transform: translate(0); }
+/* Bridge the first row's gutter so moving between text, marker, and caret
+   stays over that paragraph. The controls sit above this transparent area. */
+.ProseMirror li[data-list-foldable] > p:first-of-type::before {
+  content: "";
+  position: absolute;
+  inset-inline-end: 100%;
+  top: 0;
+  width: calc(var(--list-fold-gutter) + 2px);
+  height: 1lh;
+}
+.ProseMirror li[data-list-foldable] > .bullet-method-marker-button,
+.ProseMirror li[data-list-foldable] > .list-fold-button { z-index: 1; }
+.ProseMirror ul:has(> li[data-list-foldable])::selection,
+.ProseMirror ol:has(> li[data-list-foldable])::selection,
+.ProseMirror li[data-list-foldable]::selection { background: transparent !important; }
+.ProseMirror li[data-list-collapsed="true"] > ul,
+.ProseMirror li[data-list-collapsed="true"] > ol { display: none; }
+.ProseMirror .list-fold-button {
+  position: absolute;
+  inset-inline-start: calc(-1 * var(--list-fold-gutter));
+  top: calc((1lh - 0.9em) / 2);
+  /* Include the empty gutter beside the glyph without changing its position. */
+  width: calc(var(--list-fold-gutter) - 0.75em);
+  height: 0.9em;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  cursor: pointer;
+  user-select: none;
+  -webkit-user-select: none;
+}
+.ProseMirror li[data-bullet-method-marker] > .list-fold-button { width: 1.25em; }
+.ProseMirror .list-fold-button[aria-expanded="true"] { opacity: 0; }
+.ProseMirror li[data-list-foldable]:has(> p:first-of-type:hover) > .list-fold-button,
+.ProseMirror li[data-list-foldable]:has(> .bullet-method-marker-button:hover) > .list-fold-button,
+.ProseMirror .list-fold-button:hover,
+.ProseMirror .list-fold-button:focus-visible { opacity: 1; }
+@media (hover: none) {
+  .ProseMirror .list-fold-button[aria-expanded="true"] { opacity: 1; }
+}
+.ProseMirror .list-fold-button::before {
+  content: "";
+  position: absolute;
+  width: 0.3em;
+  height: 0.3em;
+  left: 0.2em;
+  top: 0.25em;
+  border-top: 1.5px solid currentColor;
+  border-left: 1.5px solid currentColor;
+  transform: rotate(225deg);
+}
+.ProseMirror ol > li[data-list-foldable] {
+  --list-fold-gutter: calc(max(1.35em, calc(var(--ordered-list-marker-width, 1ch) + 0.75em)) + 1.15em);
+}
+.ProseMirror ol > li[data-list-foldable] > .list-fold-button { width: 1.15em; }
+.ProseMirror .list-fold-button[aria-expanded="false"]::before { transform: rotate(135deg); }
+.ProseMirror .list-fold-button[aria-expanded="true"]::before { top: calc(0.25em - 1.5px); }
+.ProseMirror .list-fold-button:focus-visible { outline: 2px solid currentColor; outline-offset: 2px; border-radius: 2px; }
+@media print {
+  .ProseMirror .list-fold-button { display: none; }
+  .ProseMirror li[data-list-collapsed="true"] .list-fold-summary-button { display: none; }
+  .ProseMirror li[data-list-collapsed="true"] > ul,
+  .ProseMirror li[data-list-collapsed="true"] > ol { display: block; }
+}
+
 .ProseMirror ul[data-type="taskList"] {
   padding-left: 0;
   list-style: none;
@@ -6954,14 +7024,40 @@ html[data-theme="light"] .ProseMirror li[data-bullet-method-completed="true"] p,
 
 .ProseMirror li[data-bullet-method-completed="true"] li::marker,
 .ProseMirror li[data-bullet-method-completed="true"]::marker,
-.ProseMirror li[data-bullet-method-completed="true"] .bullet-method-marker-button {
+.ProseMirror li[data-bullet-method-completed="true"] .bullet-method-marker-button,
+.ProseMirror li[data-bullet-method-completed="true"] .list-fold-button {
   color: color-mix(in srgb, currentColor var(--bullet-dim-dark, 70%), transparent);
 }
 html[data-theme="light"] .ProseMirror li[data-bullet-method-completed="true"] li::marker,
 html[data-theme="light"] .ProseMirror li[data-bullet-method-completed="true"]::marker,
-html[data-theme="light"] .ProseMirror li[data-bullet-method-completed="true"] .bullet-method-marker-button {
+html[data-theme="light"] .ProseMirror li[data-bullet-method-completed="true"] .bullet-method-marker-button,
+html[data-theme="light"] .ProseMirror li[data-bullet-method-completed="true"] .list-fold-button {
   color: color-mix(in srgb, currentColor var(--bullet-dim-light, 65%), transparent);
 }
+
+/* Collapsed fold indicators keep the theme's full link color, including DONE items. */
+.ProseMirror li[data-list-collapsed="true"] {
+  --list-fold-color: var(--link-color);
+}
+.ProseMirror li[data-list-foldable][data-list-collapsed="true"] > .list-fold-button,
+html[data-theme="light"] .ProseMirror li[data-list-foldable][data-list-collapsed="true"] > .list-fold-button {
+  color: var(--list-fold-color);
+}
+.ProseMirror .list-fold-summary-button {
+  display: inline;
+  margin-inline-start: 0.25em;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--list-fold-color);
+  font: inherit;
+  font-weight: normal;
+  font-style: normal;
+  cursor: pointer;
+  user-select: none;
+  -webkit-user-select: none;
+}
+.ProseMirror .list-fold-summary-button:focus-visible { outline: 2px solid currentColor; outline-offset: 2px; border-radius: 2px; }
 
 .bullet-method-settings .bullet-method-enable label { display: flex; align-items: flex-start; gap: 12px; margin-bottom: 16px; }
 .bullet-method-enable small { display: block; margin-top: 2px; font-size: 12px; line-height: 1.4; color: var(--text-muted); }

@@ -7,6 +7,7 @@ import { type EditorProps, type EditorView } from "@tiptap/pm/view";
 import { type Editor } from "@tiptap/react";
 import { htmlToMarkdown, markdownToHtml } from "../lib/markdown";
 import { normalizeNoteMarkdown } from "../lib/noteDocument";
+import { getFoldedListClipboardRange } from "./foldedListClipboard";
 
 type EditableEditor = {
   setEditable(editable: boolean, emitUpdate?: boolean): void;
@@ -41,11 +42,12 @@ export function setEditorSpellcheck(editor: SpellcheckEditor | null, enabled: bo
   });
 }
 
-export function resetEditorHistory(editor: Editor) {
+export function resetEditorHistory(editor: Editor, pluginConfig: Record<string, unknown> = {}) {
   // Tiptap has no public command for clearing the history plugin. Recreating
   // state at a Note boundary keeps the loaded document and selection while
   // reinitializing history (and other document-scoped plugin state).
   editor.view.updateState(EditorState.create({
+    ...pluginConfig,
     doc: editor.state.doc,
     selection: editor.state.selection,
     plugins: editor.state.plugins,
@@ -410,8 +412,9 @@ export function deleteEmptyListItem(view: EditorView, item: ListItemRange, bias:
 
 export function serializeEditorSelectionForClipboard(view: EditorView) {
   if (view.state.selection.empty) return null;
-  const slice = view.state.selection.content();
-  const clipboardFragment = isPartialSelectionWithinSingleListLine(view.state.selection)
+  const foldedRange = getFoldedListClipboardRange(view.state);
+  const slice = foldedRange ? view.state.doc.slice(foldedRange.from, foldedRange.to, true) : view.state.selection.content();
+  const clipboardFragment = !foldedRange && isPartialSelectionWithinSingleListLine(view.state.selection)
     ? getSelectedTextblockFragment(slice.content)
     : trimUnselectedListAncestorShells(slice.content);
   const html = serializeClipboardHtmlFragment(view, clipboardFragment);

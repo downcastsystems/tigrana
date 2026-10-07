@@ -2,7 +2,7 @@ import type { SearchRevealRequest } from "./searchResultReveal";
 import type { BulletMethodDisplay, BulletMethodStatus } from "../lib/bulletMethod";
 import type { InlineColorCommand } from "../lib/inlineColors";
 import type { WritingStyle } from "../lib/writingStyle";
-import type { NotePositionMetadata } from "../types";
+import type { NotePositionMetadata, NoteListFoldingMetadata } from "../types";
 import type { SortCommand } from "./sortLines";
 
 // Wait for a real pause in typing; navigation and explicit saves flush at once.
@@ -11,6 +11,7 @@ export const markdownCommitDelayMs = 300;
 export type NotesEditorProps = {
   bulletMethodDisplay?: BulletMethodDisplay;
   bulletMethodStatuses?: readonly BulletMethodStatus[];
+  listFoldingEnabled?: boolean;
   colorToolbarElement?: HTMLElement | null;
   writingStyle?: WritingStyle;
   colorsDisabled?: boolean;
@@ -24,6 +25,8 @@ export type NotesEditorProps = {
   reloadRequest?: number;
   notePath: string | null;
   restorePosition: NotePositionMetadata | null;
+  restoreListFolding?: NoteListFoldingMetadata | null;
+  onListFoldingChange?: (saved: NoteListFoldingMetadata | null, workspace: string, path: string) => void;
   editable: boolean;
   spellcheckEnabled: boolean;
   workspace: string;
@@ -46,6 +49,7 @@ export type EditorMarkdownSnapshot = {
 
 export type EditorPersistenceHandle = {
   capture(): EditorMarkdownSnapshot | null;
+  flushViewState?(): void;
   setReadOnly(readOnly: boolean): void;
 };
 

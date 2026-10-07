@@ -1,0 +1,38 @@
+<link rel="stylesheet" href="/src/styles/app.css">
+<style>
+  body { padding: 32px; background: #23272b; color: #eeece8; --text: #eeece8; --link-color: #9fbada; }
+  html[data-theme="light"] body { background: #f7f4ef; color: #22211f; --text: #22211f; --link-color: #356a9e; }
+  body > button { background: transparent; border: 1px solid currentColor; border-radius: 4px; padding: 6px 10px; margin-right: 8px; }
+  .note-surface { height: 70vh; overflow: auto; padding: 32px; }
+  .ProseMirror { font: 20px/1.7 Arial; max-width: 760px; }
+</style>
+<button id="style">Switch writing style</button>
+<button id="theme">Switch theme</button>
+<button id="statuses">Toggle Bullet Statuses</button>
+<div class="note-surface writing-style-notes"><div id="editor"></div></div>
+<script type="module">
+  import { Editor } from '@tiptap/core';
+  import StarterKit from '@tiptap/starter-kit';
+  import { BulletMethodMarkers } from '/src/editor/bulletMethodMarkers.ts';
+  import { ListFolding, listFoldingKey } from '/src/editor/listFolding.ts';
+  import { OrderedListWithGutter } from '/src/editor/orderedList.ts';
+  document.documentElement.dataset.theme = 'dark';
+  const editor = window.editor = new Editor({
+    element: document.querySelector('#editor'),
+    extensions: [StarterKit.configure({ orderedList: false }), OrderedListWithGutter, BulletMethodMarkers, ListFolding],
+    content: '<h1>Nested list experiment</h1><ul><li><p>DONE: Finished leaf</p></li><li><p>IN PROGRESS: Review the release</p><ul><li><p>DONE: Review the changes</p></li><li><p>TODO: Deploy</p><ul><li><p>Check development</p></li><li><p>Check production</p></li></ul></li></ul></li><li><p>Plain parent with a longer line that wraps without moving its text or the bullet marker from their existing positions</p><ul><li><p>Plain child</p></li></ul></li></ul><ol><li><p>Numbered parent</p><ul><li><p>Nested bullet</p></li></ul></li></ol><p>Text after the lists.</p>',
+  });
+  let enabled = true;
+  const settings = () => editor.view.dispatch(editor.state.tr.setMeta('bulletMethodDisplay', { enabled, replaceBullets: true, dimCompleted: true }));
+  settings();
+  let writingStyle = 'notes';
+  document.querySelector('#style').onclick = () => {
+    writingStyle = writingStyle === 'notes' ? 'story' : 'notes';
+    document.querySelector('.note-surface').className = `note-surface writing-style-${writingStyle}`;
+    editor.view.dispatch(editor.state.tr.setMeta(listFoldingKey, { writingStyle }));
+  };
+  document.querySelector('#theme').onclick = () => {
+    document.documentElement.dataset.theme = document.documentElement.dataset.theme === 'dark' ? 'light' : 'dark';
+  };
+  document.querySelector('#statuses').onclick = () => { enabled = !enabled; settings(); };
+</script>

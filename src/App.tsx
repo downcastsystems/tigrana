@@ -61,6 +61,7 @@ import { QuickAppearanceControls } from "./components/QuickAppearanceControls";
 import { RecentlyDeletedDialog } from "./components/RecentlyDeletedDialog";
 import { ReleaseNotice } from "./components/ReleaseNotice";
 import SettingsModal, { type SettingsSection } from "./components/SettingsModal";
+import { useListFoldingPreference } from "./lib/useListFoldingPreference";
 import { ThemeBuilder, ThemeReconciliation } from "./components/ThemeBuilder";
 import { ThemeStyles } from "./components/ThemeStyles";
 import { VersionHistoryDialog, type VersionHistoryState } from "./components/VersionHistoryDialog";
@@ -169,6 +170,7 @@ import {
   reorderBookmarks,
   setFolderColor,
   setMetadataValue,
+  updateNoteViewMetadata,
 } from "./lib/notebookMetadata";
 import { NotebookMetadataPersistence } from "./lib/notebookMetadataPersistence";
 import { NotebookMetadataSession } from "./lib/notebookMetadataSession";
@@ -223,6 +225,7 @@ import type {
   NavigationStyle,
   NoteEntry,
   NotePositionMetadata,
+  NoteListFoldingMetadata,
   NotebookSnapshot,
   NotebookThemeColors,
   WorkspaceMetadata,
@@ -426,6 +429,7 @@ export default function App() {
   const [noteFindRequest, setNoteFindRequest] = useState(0);
   const [appError, setAppError] = useState<string | null>(null);
   const [settingsOpen, setSettingsOpen] = useState(false);
+  const [listFoldingEnabled, setListFoldingEnabled] = useListFoldingPreference();
   const [bulletMethodDisplay, setBulletMethodDisplay] = useState(readBulletMethodDisplay);
   const [bulletMethodStatuses, setBulletMethodStatuses] = useState(readBulletMethodStatuses);
   useEffect(() => {
@@ -1403,9 +1407,9 @@ export default function App() {
     chooseWorkspaceRef.current = (intent, openInNewWindow) => void chooseWorkspace(intent, openInNewWindow);
   });
 
-  // Window size and session tabs live in localStorage (sync writes), so the
-  // only debounced write left is recordNotePosition. Flush it on close so the
-  // last scroll/selection position survives a quick quit.
+  // Window size and session tabs live in localStorage (sync writes).
+  // Flush deferred positions and folding on close, including a quick quit
+  // immediately after a view-only fold with no Markdown edits.
   useEffect(() => {
     if (!isTauri()) return;
     const win = getCurrentWindow();
@@ -1423,6 +1427,7 @@ export default function App() {
         if (shell) shell.inert = true;
         const flushMetadata = async () => {
           if (!workspacePath) return;
+          editorPersistenceRef.current?.flushViewState?.();
           if (positionWriteTimerRef.current !== null) {
             window.clearTimeout(positionWriteTimerRef.current);
             positionWriteTimerRef.current = null;
@@ -1535,15 +1540,11 @@ export default function App() {
       contentLength: markdown.length,
       selectionFrom: existing?.selectionFrom,
       selectionTo: existing?.selectionTo,
+      listFolding: existing?.listFolding,
       ...patch,
     };
-    const updater = (value: WorkspaceMetadata): WorkspaceMetadata => ({
-      ...value,
-      notePositions: {
-        ...value.notePositions,
-        [path]: nextPosition,
-      },
-    });
+    const foldingOnly = Object.prototype.hasOwnProperty.call(patch, "listFolding");
+    const updater = (value: WorkspaceMetadata): WorkspaceMetadata => updateNoteViewMetadata(value, nextPosition, foldingOnly);
 
     const next = metadataSessionRef.current.updateActive(workspace, updater);
     if (!next) return;
@@ -1553,7 +1554,7 @@ export default function App() {
       updater,
       next,
       acceptPersistedMetadata,
-      { defer: true, coalesceKey: `note-position:${path}` },
+      { defer: true, coalesceKey: `${foldingOnly ? "note-folding" : "note-position"}:${path}` },
     ).catch((error) => {
       setAppError(error instanceof Error ? error.message : String(error));
     });
@@ -1565,6 +1566,12 @@ export default function App() {
       });
     }, 300);
   }, [acceptPersistedMetadata, workspace]);
+
+  const recordNoteFolding = useCallback((saved: NoteListFoldingMetadata | null, sourceWorkspace: string, path: string) => {
+    if (sourceWorkspace !== workspace) return;
+    const existing = metadataSessionRef.current.read(workspace)?.notePositions[path];
+    recordNotePosition(path, "", { listFolding: saved, contentLength: existing?.contentLength ?? 0 });
+  }, [recordNotePosition, workspace]);
 
   const releaseActiveNoteLock = useCallback(async () => {
     await activeNoteLifecycle.releaseLock();
@@ -2349,6 +2356,7 @@ export default function App() {
 
   const flushPendingEditorBody = useCallback(() => {
     const snapshot = pendingEditorChangeRef.current?.flush() ?? null;
+    editorPersistenceRef.current?.flushViewState?.();
     if (!snapshot) return null;
     if (!shouldApplyEditorUpdate(activePath, snapshot.sourceNotePath, activeNoteEditable)) return null;
     return snapshot.markdown;
@@ -3139,6 +3147,7 @@ export default function App() {
   }, [activeNoteEditable, captureNoteNavigation, disarmPendingTitleFocus, hasUnsavedChanges, isCurrentNoteNavigation, isWorkspaceActive, persistDraft, titleDraft, workspace]);
 
   async function persistDraftForNavigation() {
+    editorPersistenceRef.current?.flushViewState?.();
     if (!hasUnsavedChanges && !pendingEditorChangeRef.current) return true;
     try {
       await persistDraft();
@@ -3560,6 +3569,11 @@ export default function App() {
 
   function switchNotebook(path: string) {
     if (path === workspaceRef.current) return;
+    editorPersistenceRef.current?.flushViewState?.();
+    const previousWorkspace = workspaceRef.current;
+    // Begin draining the old notebook's deferred view metadata without delaying
+    // the new notebook. Mutation waiters already report any write failure.
+    if (previousWorkspace) void notebookMetadataPersistence.flush(previousWorkspace).catch(() => undefined);
     void releaseActiveNoteLock();
     localStorage.setItem(workspaceKey, path);
     if (!path) {
@@ -5513,6 +5527,7 @@ export default function App() {
             ) : (
               <EditorErrorBoundary resetKey={activePath ?? "pending-note"} onError={handleNoteLoadError}>
                 <NotesEditor
+                  listFoldingEnabled={listFoldingEnabled}
                   bulletMethodDisplay={bulletMethodDisplay}
                   bulletMethodStatuses={bulletMethodStatuses}
                   writingStyle={writingStyle}
@@ -5528,6 +5543,8 @@ export default function App() {
                   commandRequest={editorCommandRequest}
                   notePath={activePath}
                   restorePosition={editorRestorePosition}
+                  restoreListFolding={activePath ? metadataRef.current.notePositions[activePath]?.listFolding : null}
+                  onListFoldingChange={recordNoteFolding}
                   editable={activeNoteEditable}
                   spellcheckEnabled={spellcheckEnabled}
                   workspace={workspace}
@@ -5863,6 +5880,8 @@ export default function App() {
       <ThemeStyles theme={renderedTheme} mode={resolvedTheme} onReset={resetThemeAppearance} />
       {settingsOpen ? (
           <SettingsModal
+            listFoldingEnabled={listFoldingEnabled}
+            onListFoldingEnabledChange={setListFoldingEnabled}
             colorMode={renderedColorMode}
             bulletMethodDisplay={bulletMethodDisplay}
                   bulletMethodStatuses={bulletMethodStatuses}

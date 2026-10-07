@@ -30,6 +30,8 @@ export default function SettingsModal(props: {
   onNoteAlignmentChange: (value: "left" | "center") => void;
   spellcheckEnabled: boolean;
   onSpellcheckEnabledChange: (value: boolean) => void;
+  listFoldingEnabled?: boolean;
+  onListFoldingEnabledChange?: (value: boolean) => void;
   wordCountVisible: boolean;
   onWordCountVisibleChange: (value: boolean) => void;
   onClose: () => void;
@@ -163,6 +165,11 @@ export default function SettingsModal(props: {
                       </select>
                     </label>
                     <DateFormatSetting />
+                    <label className="setting-row">
+                      <span>Bullet folding<small>Collapse sub-bullets in Notes style</small></span>
+                      <input type="checkbox" checked={props.listFoldingEnabled ?? true}
+                        onChange={event => props.onListFoldingEnabledChange?.(event.target.checked)} />
+                    </label>
                     <label className="setting-row">
                       Check spelling while typing
                       <input

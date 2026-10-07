@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 import type { NotePositionMetadata, WorkspaceMetadata } from "../types";
-import { getFolderColors, setFolderColor, replaceOrderedPath } from "./notebookMetadata";
+import { getFolderColors, setFolderColor, replaceOrderedPath, updateNoteViewMetadata } from "./notebookMetadata";
 import {
   type MetadataUpdater,
   NotebookMetadataPersistence,
@@ -8,6 +8,36 @@ import {
 import { defaultWorkspaceMetadata } from "./notebookStorage";
 
 describe("Notebook metadata persistence", () => {
+  it("coalesces fold writes separately from positions and preserves both after a CAS conflict", async () => {
+    const position: NotePositionMetadata = { path: "Note.md", lastOpenedAt: 1, scrollTop: 0, contentLength: 20 };
+    const folding = { version: 1 as const, contentFingerprint: "test", docSize: 20, collapsed: [[1, 18, 8] as [number, number, number]] };
+    const durable = { ...defaultWorkspaceMetadata(), revision: 2,
+      notePositions: { "Note.md": { ...position, selectionFrom: 8 }, "Other.md": { ...position, path: "Other.md", scrollTop: 99 } },
+    };
+    const written: WorkspaceMetadata[] = [];
+    const persistence = new NotebookMetadataPersistence({ writeWorkspaceMetadata: async (_workspace, requested) => {
+      written.push(requested);
+      return written.length === 1 ? { applied: false, metadata: durable }
+        : { applied: true, metadata: { ...requested, revision: requested.revision + 1 } };
+    } });
+    let local = defaultWorkspaceMetadata();
+    const pending: Promise<void>[] = [];
+    for (const patch of [{ listFolding: folding }, { scrollTop: 40 }, { listFolding: null }, { listFolding: folding }, { scrollTop: 60 }]) {
+      const foldingOnly = "listFolding" in patch;
+      const updater: MetadataUpdater = current => updateNoteViewMetadata(current, { ...position, ...patch }, foldingOnly);
+      local = updater(local);
+      pending.push(persistence.mutate("/Notebook", updater, local, (_workspace, next) => { local = next; }, {
+        defer: true, coalesceKey: `${foldingOnly ? "note-folding" : "note-position"}:Note.md`,
+      }));
+    }
+    expect(written).toHaveLength(0);
+    await Promise.all([...pending, persistence.flush("/Notebook")]);
+    expect(written).toHaveLength(2);
+    expect(local.notePositions["Note.md"].listFolding).toEqual(folding);
+    expect(local.notePositions["Note.md"].scrollTop).toBe(60);
+    expect(local.notePositions["Other.md"].scrollTop).toBe(99);
+  });
+
   it("replays a color edit over another window's style colors", async () => {
     const stale = defaultWorkspaceMetadata();
     let durable = { ...setFolderColor(stale, "dual-pane", "Projects", "#123456"), revision: 1 };

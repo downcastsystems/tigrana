@@ -83,6 +83,10 @@ details in feature modules:
 - `codeBlock.tsx` owns syntax highlighting and code-block controls.
 - `editorImages.tsx` owns image node views, clipboard assets, and preview hydration.
 - `searchHighlight.ts` owns match discovery, decorations, and match scrolling.
+- `listFolding.ts` owns Notes-style list folding decorations and maps them through local edits and sorting. Folding does not change the editor document, Markdown, or Undo history.
+- Bullet folding is an app-wide, default-on General setting, saved locally like Bullet Statuses. Disabling it shows all children and suppresses automatic DONE folding. Unchanged folds return when re-enabled; editing while disabled clears the suspended ranges without doing folding work during typing.
+- `foldedListClipboard.ts` expands full-row clipboard selections over collapsed list items to include hidden descendants. Partial-text selections keep their normal semantics.
+- `listFoldingPersistence.ts` captures compact fold ranges at idle or navigation/close boundaries. Document edits share the existing deferred Markdown conversion; fold-only changes do not serialize the document.
 - `textExtensions.ts` owns emoji input rules, manual spacing, and list separators.
 
 These modules do not import `NotesEditor.tsx`. Extension configuration remains in
@@ -90,6 +94,20 @@ the editor's existing memoized initialization. Moving a feature into a module mu
 not add transaction subscriptions, React updates, or Markdown conversions. Use
 the real-editor performance tests to verify that short and long Notes retain the
 same deferred work counts, editor identity, Undo history, and stale-update rejection.
+
+Saved folds live in `notePositions[path].listFolding` in the notebook's existing
+`.tigrana/metadata.json`. Existing path-repair operations carry the entry through
+Note and Folder moves/renames. Folding and cursor updates use separate coalescing
+keys and replay independent fields after metadata revision conflicts. Closing the
+window flushes view state even when no Markdown edit is pending.
+
+Restoration uses metadata already loaded for the notebook, validates a fingerprint
+of the normalized Markdown plus document/range sizes, and applies folds during
+the normal decoration initialization before paint. Externally changed content
+opens expanded; the saved positions are never guessed against a different body.
+New or unfolded Notes skip fingerprinting and fold snapshot scans. The real-editor
+performance gate covers restoring 1,000 folds, one snapshot/conversion per typing
+burst, fresh mounts, quick close, and stale-work isolation when switching Notes.
 
 ## Notebook storage adapters
 
