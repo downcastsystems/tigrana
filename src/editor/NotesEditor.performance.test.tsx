@@ -111,6 +111,9 @@ describe("Note editor typing performance", () => {
     expect(editor.state.doc.textContent).toContain("Sibling");
   });
 
+  // Four mounts of this 1,000-fold DOM can exceed Vitest's five-second default
+  // on shared CI runners. Performance is asserted by conversion/update counts;
+  // allow time for the fixture setup and restart checks to complete.
   it("restores 1000 saved folds on a fresh mount, keeps typing local, and publishes one snapshot per burst", async () => {
     vi.useFakeTimers();
     const container = document.createElement("div"); document.body.append(container);
@@ -160,7 +163,7 @@ describe("Note editor typing performance", () => {
     await act(async () => root.render(<div />));
     await act(async () => root.render(render()));
     expect(container.querySelectorAll('[data-list-collapsed="true"]')).toHaveLength(0);
-  });
+  }, 30_000);
 
   it("flushes a pending fold before switching notes and never applies it to the next note", async () => {
     vi.useFakeTimers();
