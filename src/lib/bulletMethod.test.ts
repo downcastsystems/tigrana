@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { beforeEach, describe, expect, it } from "vitest";
-import { firstBulletMethodStatus, nextBulletMethodStatus, statusCycles, statusDims, bulletMethodDimPercent, bulletMethodDisplayKey, defaultBulletMethodDisplay, readBulletMethodDisplay, writeBulletMethodDisplay, bulletMethodRank, bulletMethodSettingsKey, defaultBulletMethodStatuses, readBulletMethodStatuses, validateBulletMethodStatuses, writeBulletMethodStatuses } from "./bulletMethod";
+import { firstBulletMethodStatus, nextBulletMethodStatus, statusBolds, statusCycles, statusDims, bulletMethodDimPercent, bulletMethodDisplayKey, defaultBulletMethodDisplay, readBulletMethodDisplay, writeBulletMethodDisplay, bulletMethodRank, bulletMethodSettingsKey, defaultBulletMethodStatuses, readBulletMethodStatuses, validateBulletMethodStatuses, writeBulletMethodStatuses } from "./bulletMethod";
 
 beforeEach(() => localStorage.clear());
 describe("shared sort and cycle order", () => {
@@ -97,12 +97,17 @@ it("persists icon choices while accepting older settings without icons", () => {
   expect(readBulletMethodStatuses()).toEqual(defaultBulletMethodStatuses);
 });
 
-it("defaults both display options on and persists each independently", () => {
+it("persists icon choices and ignores obsolete global Bold and Dim switches", () => {
   expect(readBulletMethodDisplay()).toEqual(defaultBulletMethodDisplay);
-  writeBulletMethodDisplay({ replaceBullets: false, dimCompleted: true });
+  writeBulletMethodDisplay({ replaceBullets: false });
   expect(readBulletMethodDisplay()).toEqual({ ...defaultBulletMethodDisplay, replaceBullets: false });
-  writeBulletMethodDisplay({ replaceBullets: true, dimCompleted: false });
-  expect(readBulletMethodDisplay()).toEqual({ ...defaultBulletMethodDisplay, dimCompleted: false });
+  localStorage.setItem(bulletMethodDisplayKey, JSON.stringify({ enabled: true, replaceBullets: true, autoBoldStatus: false, dimCompleted: false, lightPercent: 55, darkPercent: 75 }));
+  expect(readBulletMethodDisplay()).toEqual({ ...defaultBulletMethodDisplay, enabled: true, lightPercent: 55, darkPercent: 75 });
+  expect(readBulletMethodStatuses().map(statusBolds)).toEqual([false, false, true, true, true, false]);
+  expect(readBulletMethodStatuses().map(statusDims)).toEqual([true, true, false, false, false, false]);
+  writeBulletMethodDisplay(readBulletMethodDisplay());
+  expect(JSON.parse(localStorage.getItem(bulletMethodDisplayKey)!)).not.toHaveProperty('autoBoldStatus');
+  expect(JSON.parse(localStorage.getItem(bulletMethodDisplayKey)!)).not.toHaveProperty('dimCompleted');
   localStorage.setItem(bulletMethodDisplayKey, "invalid");
   expect(readBulletMethodDisplay()).toEqual(defaultBulletMethodDisplay);
 });
@@ -134,12 +139,40 @@ it("defaults click sorting on and persists an explicit off choice", () => {
   expect(readBulletMethodDisplay().autoSortOnClick).toBe(true);
 });
 
-it("defaults DONE collapsing off and status bolding on for new and legacy preferences", () => {
-  expect(readBulletMethodDisplay()).toMatchObject({ autoCollapseDone: false, autoBoldStatus: true });
-  localStorage.setItem(bulletMethodDisplayKey, JSON.stringify({ enabled: true, replaceBullets: false, dimCompleted: false }));
-  expect(readBulletMethodDisplay()).toMatchObject({ enabled: true, replaceBullets: false, dimCompleted: false, autoCollapseDone: false, autoBoldStatus: true });
-  writeBulletMethodDisplay({ ...readBulletMethodDisplay(), autoCollapseDone: true, autoBoldStatus: false });
-  expect(readBulletMethodDisplay()).toMatchObject({ enabled: true, replaceBullets: false, dimCompleted: false, autoCollapseDone: true, autoBoldStatus: false });
-  localStorage.setItem(bulletMethodDisplayKey, JSON.stringify({ autoCollapseDone: "true", autoBoldStatus: "false" }));
+it("defaults DONE collapsing off and preserves an explicit on choice", () => {
+  expect(readBulletMethodDisplay().autoCollapseDone).toBe(false);
+  writeBulletMethodDisplay({ ...defaultBulletMethodDisplay, autoCollapseDone: true });
+  expect(readBulletMethodDisplay().autoCollapseDone).toBe(true);
+  localStorage.setItem(bulletMethodDisplayKey, JSON.stringify({ autoCollapseDone: "true" }));
   expect(readBulletMethodDisplay()).toEqual(defaultBulletMethodDisplay);
+});
+
+it("defaults Bold by stable identity for legacy statuses, and persists independent per-status choices", () => {
+  expect(defaultBulletMethodStatuses.map(statusBolds)).toEqual([false, false, true, true, true, false]);
+  expect(statusBolds({ id: 'custom', prefix: 'WAITING', description: '' })).toBe(false);
+  expect(statusBolds({ id: 'todo', prefix: 'NEXT', description: '' })).toBe(true);
+  const statuses = defaultBulletMethodStatuses.map(status => ({ ...status, bold: status.id === 'done' }));
+  writeBulletMethodStatuses(statuses);
+  expect(readBulletMethodStatuses().map(statusBolds)).toEqual([false, true, false, false, false, false]);
+  expect(readBulletMethodStatuses().map(statusDims)).toEqual([true, true, false, false, false, false]);
+  localStorage.setItem(bulletMethodSettingsKey, JSON.stringify(defaultBulletMethodStatuses));
+  expect(readBulletMethodStatuses().map(statusBolds)).toEqual([false, false, true, true, true, false]);
+  const invalid = defaultBulletMethodStatuses.map(status => ({ ...status, bold: 'yes' }));
+  expect(validateBulletMethodStatuses(invalid as unknown as typeof defaultBulletMethodStatuses)).toContain('bold');
+  localStorage.setItem(bulletMethodSettingsKey, JSON.stringify(invalid));
+  expect(readBulletMethodStatuses()).toEqual(defaultBulletMethodStatuses);
+});
+
+it("defaults all feature switches on, persists off choices, and ignores obsolete switches", () => {
+  const on = { boldStatusesEnabled: true, dimmedStatusesEnabled: true, celebrationsEnabled: true };
+  expect(readBulletMethodDisplay()).toMatchObject(on);
+  localStorage.setItem(bulletMethodDisplayKey, JSON.stringify({ autoBoldStatus: false, dimCompleted: false }));
+  expect(readBulletMethodDisplay()).toMatchObject(on);
+  const off = { boldStatusesEnabled: false, dimmedStatusesEnabled: false, celebrationsEnabled: false };
+  writeBulletMethodDisplay({ ...defaultBulletMethodDisplay, ...off });
+  expect(readBulletMethodDisplay()).toMatchObject(off);
+  for (const flag of Object.keys(on)) {
+    localStorage.setItem(bulletMethodDisplayKey, JSON.stringify({ ...off, [flag]: 'false' }));
+    expect(readBulletMethodDisplay()).toMatchObject({ ...off, [flag]: true });
+  }
 });

@@ -6,7 +6,7 @@ import Settings from "./BulletMethodSettings";
 import { defaultBulletMethodStatuses, type BulletMethodStatus } from "../lib/bulletMethod";
 // Existing configuration tests exercise the enabled controls.
 function BulletMethodSettings(props: ComponentProps<typeof Settings>) {
-  return <Settings {...props} display={{ replaceBullets: true, dimCompleted: true, ...props.display, enabled: true }} />;
+  return <Settings {...props} display={{ replaceBullets: true, ...props.display, enabled: true }} />;
 }
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 
@@ -173,24 +173,20 @@ it("applies display toggles immediately without changing status drafts", async (
   try {
     await act(async () => root.render(<BulletMethodSettings statuses={defaultBulletMethodStatuses} onChange={statusesChanged} onDisplayChange={changed} />));
     const boxes = host.querySelectorAll<HTMLInputElement>('.bullet-method-display-options input[type="checkbox"]');
-    expect([...boxes].map(box => box.checked)).toEqual([true, true, true, false, true, true]);
+    expect([...boxes].map(box => box.checked)).toEqual([true, true, true, false, true, true, true]);
     await act(async () => boxes[0].click());
-    expect(changed).toHaveBeenLastCalledWith({ enabled: true, replaceBullets: false, dimCompleted: true });
+    expect(changed).toHaveBeenLastCalledWith({ enabled: true, replaceBullets: false });
     await act(async () => boxes[1].click());
-    expect(changed).toHaveBeenLastCalledWith({ enabled: true, replaceBullets: true, dimCompleted: true, shortcutsEnabled: false });
+    expect(changed).toHaveBeenLastCalledWith({ enabled: true, replaceBullets: true, shortcutsEnabled: false });
     await act(async () => boxes[2].click());
-    expect(changed).toHaveBeenLastCalledWith({ enabled: true, replaceBullets: true, dimCompleted: true, autoSortOnClick: false });
+    expect(changed).toHaveBeenLastCalledWith({ enabled: true, replaceBullets: true, autoSortOnClick: false });
     await act(async () => boxes[3].click());
-    expect(changed).toHaveBeenLastCalledWith({ enabled: true, replaceBullets: true, dimCompleted: true, autoCollapseDone: true });
-    await act(async () => boxes[4].click());
-    expect(changed).toHaveBeenLastCalledWith({ enabled: true, replaceBullets: true, dimCompleted: true, autoBoldStatus: false });
-    await act(async () => boxes[5].click());
-    expect(changed).toHaveBeenLastCalledWith({ enabled: true, replaceBullets: true, dimCompleted: false });
+    expect(changed).toHaveBeenLastCalledWith({ enabled: true, replaceBullets: true, autoCollapseDone: true });
     expect(statusesChanged).not.toHaveBeenCalled();
   } finally { await act(async () => root.unmount()); host.remove(); }
 });
 
-it("collapses meanings and shows a bounded percentage slider only when dimming is enabled", async () => {
+it("keeps a labeled percentage slider available even when no statuses are dimmed", async () => {
   const host = document.createElement("div"); document.body.append(host);
   const root = createRoot(host);
   try {
@@ -199,8 +195,11 @@ it("collapses meanings and shows a bounded percentage slider only when dimming i
     expect(host.querySelector('summary')!.textContent).toBe("What the default statuses mean");
     const slider = host.querySelector<HTMLInputElement>('input[type="range"]')!;
     expect([slider.min, slider.max, slider.step, slider.value]).toEqual(['40', '90', '1', '70']);
-    await act(async () => root.render(<BulletMethodSettings statuses={defaultBulletMethodStatuses} onChange={vi.fn()} display={{ replaceBullets: true, dimCompleted: false }} />));
-    expect(host.querySelector('input[type="range"]')).toBeNull();
+    await act(async () => root.render(<BulletMethodSettings onChange={vi.fn()} statuses={defaultBulletMethodStatuses.map(status => ({ ...status, dim: false }))} display={{ replaceBullets: true }} />));
+    expect(host.querySelector<HTMLInputElement>('input[type="range"]')!.value).toBe('65');
+    expect(host.querySelector('.bullet-method-dim-slider')!.textContent).toContain('Status dimming (light mode)');
+    expect(host.textContent).not.toContain('Automatically bold the status and colon');
+    expect(host.textContent).not.toContain('Dim CLOSED, DONE');
   } finally { await act(async () => root.unmount()); host.remove(); }
 });
 
@@ -209,14 +208,14 @@ it.each(['light', 'dark'] as const)('restores both dimming percentages and updat
   const root = createRoot(host);
   const saved = vi.fn();
   function Harness() {
-    const [display, setDisplay] = useState({ replaceBullets: true, dimCompleted: true, lightPercent: 42, darkPercent: 51 });
+    const [display, setDisplay] = useState({ replaceBullets: true, lightPercent: 42, darkPercent: 51 });
     return <BulletMethodSettings statuses={defaultBulletMethodStatuses} onChange={vi.fn()} colorMode={mode} display={display}
       onDisplayChange={next => { saved(next); setDisplay(next as typeof display); }} />;
   }
   try {
     await act(async () => root.render(<Harness />));
     await act(async () => [...host.querySelectorAll('button')].find(button => button.textContent?.includes('Restore defaults'))!.click());
-    expect(saved).toHaveBeenCalledWith({ enabled: true, replaceBullets: true, dimCompleted: true, lightPercent: 65, darkPercent: 70 });
+    expect(saved).toHaveBeenCalledWith({ enabled: true, replaceBullets: true, lightPercent: 65, darkPercent: 70, boldStatusesEnabled: true, dimmedStatusesEnabled: true, celebrationsEnabled: true });
     expect(host.querySelector<HTMLInputElement>('input[type="range"]')!.value).toBe(mode === 'light' ? '65' : '70');
   } finally { await act(async () => root.unmount()); host.remove(); }
 });
@@ -225,7 +224,7 @@ it("starts off, hides subordinate controls, and reveals them when enabled", asyn
   const host = document.createElement('div'); document.body.append(host);
   const root = createRoot(host);
   function Harness() {
-    const [display, setDisplay] = useState({ enabled: false, replaceBullets: true, dimCompleted: true });
+    const [display, setDisplay] = useState({ enabled: false, replaceBullets: true });
     return <Settings statuses={defaultBulletMethodStatuses} onChange={vi.fn()} display={display} onDisplayChange={next => setDisplay({ ...next, enabled: Boolean(next.enabled) })} />;
   }
   try {
@@ -233,10 +232,12 @@ it("starts off, hides subordinate controls, and reveals them when enabled", asyn
     expect(host.querySelectorAll('.bullet-method-enable input[type="checkbox"], .bullet-method-display-options input[type="checkbox"]')).toHaveLength(1);
     expect(host.textContent).not.toContain('Inside a list');
     await act(async () => host.querySelector<HTMLInputElement>('input[type="checkbox"]')!.click());
-    expect(host.querySelectorAll('.bullet-method-enable input[type="checkbox"], .bullet-method-display-options input[type="checkbox"]')).toHaveLength(7);
+    expect(host.querySelectorAll('.bullet-method-enable input[type="checkbox"], .bullet-method-display-options input[type="checkbox"]')).toHaveLength(8);
     expect(host.textContent).toContain('Inside a list');
     await act(async () => host.querySelector<HTMLInputElement>('input[type="checkbox"]')!.click());
     expect(host.querySelector('input[type="range"]')).toBeNull();
+    expect(host.textContent).not.toContain('Automatically bold the status and colon');
+    expect(host.textContent).not.toContain('Dim CLOSED, DONE');
   } finally { await act(async () => root.unmount()); host.remove(); }
 });
 
@@ -245,7 +246,7 @@ it.each(['light', 'dark'] as const)('resets only the current %s dimming value an
   const root = createRoot(host);
   const saved = vi.fn();
   function Harness() {
-    const [display, setDisplay] = useState({ enabled: true, replaceBullets: true, dimCompleted: true, lightPercent: 42, darkPercent: 51 });
+    const [display, setDisplay] = useState({ enabled: true, replaceBullets: true, lightPercent: 42, darkPercent: 51 });
     return <BulletMethodSettings statuses={defaultBulletMethodStatuses} onChange={vi.fn()} colorMode={mode} display={display}
       onDisplayChange={next => { saved(next); setDisplay(next as typeof display); }} />;
   }
@@ -300,7 +301,7 @@ it("automatically saves per-status celebration choices and restores their defaul
   } finally { await act(async () => root.unmount()); host.remove(); }
 });
 
-it("updates the dimming label live and preserves spaces while autosaving names", async () => {
+it("preserves per-status dim choices and spaces while autosaving names", async () => {
   const host = document.createElement('div'); document.body.append(host);
   const root = createRoot(host);
   function Harness() {
@@ -309,10 +310,8 @@ it("updates the dimming label live and preserves spaces while autosaving names",
   }
   try {
     await act(async () => root.render(<Harness />));
-    const globalLabel = () => host.querySelector('.bullet-method-display-options')!.textContent;
-    expect(globalLabel()).toContain('Dim CLOSED, DONE');
     await act(async () => host.querySelector<HTMLInputElement>('[aria-label="Dim TODO"]')!.click());
-    expect(globalLabel()).toContain('Dim CLOSED, DONE, TODO');
+    expect(host.querySelector<HTMLInputElement>('[aria-label="Dim TODO"]')!.checked).toBe(true);
     const field = host.querySelector<HTMLInputElement>('[aria-label="Status 4 name"]')!;
     for (const value of ['NEXT ', 'NEXT UP']) {
       await act(async () => {
@@ -321,9 +320,10 @@ it("updates the dimming label live and preserves spaces while autosaving names",
       });
       expect(field.value).toBe(value);
     }
-    expect(globalLabel()).toContain('Dim CLOSED, DONE, NEXT UP');
+    expect(host.querySelector<HTMLInputElement>('[aria-label="Dim NEXT UP"]')!.checked).toBe(true);
     for (const name of ['CLOSED', 'DONE', 'NEXT UP']) await act(async () => host.querySelector<HTMLInputElement>(`[aria-label="Dim ${name}"]`)!.click());
-    expect(globalLabel()).toContain('none selected');
+    expect(['CLOSED', 'DONE', 'NEXT UP'].map(name => host.querySelector<HTMLInputElement>(`[aria-label="Dim ${name}"]`)!.checked)).toEqual([false, false, false]);
+    expect(host.querySelector('input[type="range"]')).not.toBeNull();
     expect([...host.querySelectorAll('button')].some(button => /Save changes|Discard changes/.test(button.textContent ?? ''))).toBe(false);
   } finally { await act(async () => root.unmount()); host.remove(); }
 });
@@ -349,5 +349,64 @@ it('imports only status rows and restores the original system afterward', async 
     expect(host.querySelector('[role="alert"]')?.textContent).toContain('supported');
     await act(async () => [...host.querySelectorAll('button')].find(b => b.textContent?.includes('Restore defaults'))!.click());
     expect(saved.mock.lastCall![0]).toEqual(defaultBulletMethodStatuses);
+  } finally { await act(async () => root.unmount()); host.remove(); }
+});
+
+
+it("defaults Bold by status identity, saves it independently, and restores defaults", async () => {
+  const host = document.createElement('div'); document.body.append(host);
+  const root = createRoot(host);
+  const changed = vi.fn();
+  const bold = (name: string) => host.querySelector<HTMLInputElement>(`[aria-label="Bold ${name}"]`)!;
+  try {
+    await act(async () => root.render(<BulletMethodSettings statuses={defaultBulletMethodStatuses} onChange={changed} />));
+    expect(host.querySelector('.bullet-method-column-headings')!.textContent).toContain('BoldDim');
+    expect(['CLOSED', 'DONE', 'IN PROGRESS', 'TODO', 'QUESTION'].map(name => bold(name).checked)).toEqual([false, false, true, true, true]);
+    expect(host.querySelector('[aria-label="Bolding unavailable for No status"]')!.textContent).toBe('—');
+    await act(async () => bold('DONE').click());
+    expect(changed.mock.lastCall![0].find((s: BulletMethodStatus) => s.id === 'done')).toMatchObject({ bold: true });
+    expect(host.querySelector<HTMLInputElement>('[aria-label="Dim DONE"]')!.checked).toBe(true);
+    expect(host.querySelector<HTMLInputElement>('[aria-label="Celebrate DONE"]')!.checked).toBe(true);
+    await act(async () => bold('TODO').click());
+    expect(changed.mock.lastCall![0].find((s: BulletMethodStatus) => s.id === 'todo')).toMatchObject({ bold: false });
+    await act(async () => [...host.querySelectorAll('button')].find(b => b.textContent?.includes('Restore defaults'))!.click());
+    expect(['CLOSED', 'DONE', 'IN PROGRESS', 'TODO', 'QUESTION'].map(name => bold(name).checked)).toEqual([false, false, true, true, true]);
+    expect(host.textContent).not.toContain('Include dimmed statuses when bolding automatically');
+  } finally { await act(async () => root.unmount()); host.remove(); }
+});
+
+it.each([
+  ['Enable bold statuses', 'Bold', 'boldStatusesEnabled'],
+  ['Enable dimmed statuses', 'Dim', 'dimmedStatusesEnabled'],
+  ['Enable celebrations', 'Celebrate', 'celebrationsEnabled'],
+] as const)("disables the %s column while preserving its row choices", async (label, column, flag) => {
+  const host = document.createElement('div'); document.body.append(host);
+  const root = createRoot(host), changed = vi.fn(), displayChanged = vi.fn();
+  function Harness() {
+    const [display, setDisplay] = useState<import('../lib/bulletMethod').BulletMethodDisplay>({ enabled: true, replaceBullets: true });
+    return <Settings statuses={defaultBulletMethodStatuses} onChange={changed} display={display}
+      onDisplayChange={next => { displayChanged(next); setDisplay(next); }} />;
+  }
+  const rows = () => [...host.querySelectorAll<HTMLInputElement>(`input[aria-label^="${column} "]`)];
+  const master = () => [...host.querySelectorAll<HTMLInputElement>('.bullet-method-display-options input[type="checkbox"]')].find(input => input.parentElement!.textContent!.trim() === label)!;
+  try {
+    await act(async () => root.render(<Harness />));
+    const choices = rows().map(input => input.checked);
+    expect(master().checked).toBe(true);
+    expect(rows().every(input => !input.disabled)).toBe(true);
+    await act(async () => master().click());
+    expect(displayChanged.mock.lastCall![0][flag]).toBe(false);
+    expect(rows().every(input => input.disabled && input.parentElement!.classList.contains('is-disabled'))).toBe(true);
+    expect(rows().map(input => input.checked)).toEqual(choices);
+    expect([...host.querySelectorAll('.bullet-method-column-headings span')].find(span => span.textContent === column)!.classList.contains('is-disabled')).toBe(true);
+    expect(host.querySelector<HTMLInputElement>('[aria-label="Cycle DONE"]')!.disabled).toBe(false);
+    if (column === 'Dim') expect(host.querySelector<HTMLInputElement>('input[type="range"]')!.disabled).toBe(true);
+    await act(async () => rows()[0].click());
+    expect(changed).not.toHaveBeenCalled();
+    await act(async () => master().click());
+    expect(rows().every(input => !input.disabled)).toBe(true);
+    expect(rows().map(input => input.checked)).toEqual(choices);
+    expect(changed).not.toHaveBeenCalled();
+    if (column === 'Dim') expect(host.querySelector<HTMLInputElement>('input[type="range"]')!.disabled).toBe(false);
   } finally { await act(async () => root.unmount()); host.remove(); }
 });

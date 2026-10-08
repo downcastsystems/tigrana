@@ -13,7 +13,7 @@ afterEach(() => editors.splice(0).forEach(editor => editor.destroy()));
 function create(content: string, enabled = true) {
   const editor = new Editor({ extensions: [StarterKit, BulletMethodMarkers], content });
   editors.push(editor);
-  editor.view.dispatch(editor.state.tr.setMeta("bulletMethodDisplay", { enabled, replaceBullets: true, dimCompleted: true }));
+  editor.view.dispatch(editor.state.tr.setMeta("bulletMethodDisplay", { enabled, replaceBullets: true }));
   editor.commands.setTextSelection(editor.state.doc.content.size - 1);
   return editor;
 }
@@ -100,7 +100,7 @@ it("persists custom and cleared shortcuts and the global switch", () => {
     const statuses = defaultBulletMethodStatuses.map(row => ({ ...row, shortcut: row.id === "todo" ? "next:" : "" }));
     writeBulletMethodStatuses(statuses);
     expect(readBulletMethodStatuses()).toEqual(statuses);
-    writeBulletMethodDisplay({ enabled: true, shortcutsEnabled: false, replaceBullets: true, dimCompleted: true });
+    writeBulletMethodDisplay({ enabled: true, shortcutsEnabled: false, replaceBullets: true });
     expect(readBulletMethodDisplay().shortcutsEnabled).toBe(false);
     const editor = create("<p>::</p>");
     editor.view.dispatch(editor.state.tr.setMeta(bulletMethodMarkersKey, readBulletMethodStatuses()));
@@ -174,6 +174,7 @@ it("skips excluded starting statuses but keeps their explicit shortcuts availabl
 });
 it.each(["TODO", "IN PROGRESS", "DONE", "CLOSED", "QUESTION", "todo"])("converts the automatic named shortcut -%s: and supports immediate reversal", name => {
   const editor = create(`<p>-${name}:</p>`);
+  editor.view.dispatch(editor.state.tr.setMeta(bulletMethodMarkersKey, defaultBulletMethodStatuses.map(status => ({ ...status, bold: true }))));
   type(editor, " ");
   expect(editor.state.doc.firstChild?.type.name).toBe("bulletList");
   expect(editor.state.doc.textContent).toBe(`${name.toUpperCase()}: `);
@@ -274,16 +275,16 @@ it.each(["::", ".:", "-:", "-TODO:"])("bolds only the status and colon for %s, p
   expect(editor.getHTML()).toContain(`<strong>${label}</strong> Body`);
 });
 
-it("uses the live bold switch without removing manually bold text or changing other marks", () => {
+it("uses live per-status Bold choices without changing other marks", () => {
   const editor = create('<p><em>::</em></p>');
-  editor.view.dispatch(editor.state.tr.setMeta("bulletMethodDisplay", { enabled: true, autoBoldStatus: false }));
+  editor.view.dispatch(editor.state.tr.setMeta(bulletMethodMarkersKey, defaultBulletMethodStatuses.map(status => ({ ...status, bold: false }))));
   type(editor, " ");
   expect(editor.getHTML()).not.toContain("<strong>");
   expect(editor.state.doc.firstChild!.firstChild!.firstChild!.firstChild!.marks.map(mark => mark.type.name)).toEqual(["italic"]);
   editor.commands.undoInputRule();
   editor.commands.setContent('<p><em>::</em></p>');
   editor.commands.setTextSelection(3);
-  editor.view.dispatch(editor.state.tr.setMeta("bulletMethodDisplay", { enabled: true, autoBoldStatus: true }));
+  editor.view.dispatch(editor.state.tr.setMeta(bulletMethodMarkersKey, defaultBulletMethodStatuses));
   type(editor, " ");
   type(editor, "Body");
   const paragraph = editor.state.doc.firstChild!.firstChild!.firstChild!;
@@ -293,14 +294,16 @@ it("uses the live bold switch without removing manually bold text or changing ot
   expect(paragraph.lastChild!.marks.map(mark => mark.type.name)).toEqual(["italic"]);
   editor.commands.setContent('<p><strong>::</strong></p>');
   editor.commands.setTextSelection(3);
-  editor.view.dispatch(editor.state.tr.setMeta("bulletMethodDisplay", { enabled: true, autoBoldStatus: false }));
+  editor.view.dispatch(editor.state.tr.setMeta(bulletMethodMarkersKey, defaultBulletMethodStatuses.map(status => ({ ...status, bold: false }))));
   type(editor, " ");
-  expect(editor.getHTML()).toContain("<strong>TODO: </strong>");
+  expect(editor.getHTML()).not.toContain("<strong>TODO:</strong>");
+  expect(editor.state.doc.textContent).toBe("TODO: ");
 });
 
 
 it.each(["TODO", "IN PROGRESS", "DONE", "CLOSED", "QUESTION", "todo"])("bolds typed %s: immediately in a bullet, without bolding following text", prefix => {
   const editor = create('<ul><li><p></p></li></ul>');
+  editor.view.dispatch(editor.state.tr.setMeta(bulletMethodMarkersKey, defaultBulletMethodStatuses.map(status => ({ ...status, bold: true }))));
   editor.commands.setTextSelection(3);
   for (const character of prefix) type(editor, character);
   expect(editor.getHTML()).not.toContain('<strong>');
@@ -316,7 +319,7 @@ it.each(["TODO", "IN PROGRESS", "DONE", "CLOSED", "QUESTION", "todo"])("bolds ty
   expect(htmlToMarkdown(editor.getHTML())).toContain(`- **${prefix}:** Body`);
 });
 
-it("uses live custom names and the bold switch independently of status shortcuts", () => {
+it("uses live custom names and per-status Bold independently of status shortcuts", () => {
   const editor = create('<ul><li><p></p><ul><li><p></p></li></ul></li></ul>');
   editor.commands.setTextSelection(7);
   const statuses = defaultBulletMethodStatuses.map(status => status.id === 'todo' ? { ...status, prefix: 'Waiting (on review)' } : status);
@@ -326,13 +329,13 @@ it("uses live custom names and the bold switch independently of status shortcuts
   expect(editor.getHTML()).toContain('<strong>Waiting (on review):</strong> Body');
   editor.commands.setContent('<ul><li><p>Waiting (on review)</p></li></ul>');
   editor.commands.setTextSelection(3 + 'Waiting (on review)'.length);
-  editor.view.dispatch(editor.state.tr.setMeta('bulletMethodDisplay', { enabled: true, autoBoldStatus: false }));
+  editor.view.dispatch(editor.state.tr.setMeta(bulletMethodMarkersKey, statuses.map(status => ({ ...status, bold: false }))));
   type(editor, ':');
   expect(editor.getHTML()).not.toContain('<strong>');
   editor.commands.undo();
   editor.commands.setContent('<ul><li><p>Waiting (on review)</p></li></ul>');
   editor.commands.setTextSelection(3 + 'Waiting (on review)'.length);
-  editor.view.dispatch(editor.state.tr.setMeta('bulletMethodDisplay', { enabled: true, autoBoldStatus: true }));
+  editor.view.dispatch(editor.state.tr.setMeta(bulletMethodMarkersKey, statuses));
   type(editor, ':');
   expect(editor.getHTML()).toContain('<strong>Waiting (on review):</strong>');
 });
@@ -368,4 +371,80 @@ it("preserves split label formatting and explicit colors when typing the colon",
   expect(paragraph.lastChild!.marks.map(mark => mark.type.name)).toEqual(['bold', 'textColor']);
   type(editor, ' Body');
   expect(editor.state.doc.firstChild!.firstChild!.firstChild!.lastChild!.marks.map(mark => mark.type.name)).toEqual(['textColor']);
+});
+
+
+it.each([
+  { prefix: 'DONE', include: false }, { prefix: 'DONE', include: true },
+  { prefix: 'CLOSED', include: false }, { prefix: 'CLOSED', include: true },
+])("honors per-status Bold for typed and shortcut $prefix (bold: $include)", ({ prefix, include }) => {
+  for (const shortcut of [false, true]) {
+    const editor = create(shortcut ? `<p>-${prefix}:</p>` : `<ul><li><p>${prefix}</p></li></ul>`);
+    editor.view.dispatch(editor.state.tr.setMeta(bulletMethodMarkersKey, defaultBulletMethodStatuses.map(status => ({ ...status, bold: include }))));
+    if (!shortcut) editor.commands.setTextSelection(3 + prefix.length);
+    type(editor, shortcut ? ' ' : ':');
+    type(editor, shortcut ? 'Body' : ' Body');
+    expect(editor.getHTML().includes(`<strong>${prefix}:</strong>`)).toBe(include);
+    expect(htmlToMarkdown(editor.getHTML())).toContain(include ? `- **${prefix}:** Body` : `- ${prefix}: Body`);
+    expect(editor.state.doc.textContent).toBe(`${prefix}: Body`);
+  }
+});
+
+it.each([
+  { dim: true, bold: false, expected: false },
+  { dim: false, bold: true, expected: true },
+  { dim: true, bold: true, expected: true },
+])("uses the Bold choice independently of dimming: %j", ({ dim, bold, expected }) => {
+  const statuses = defaultBulletMethodStatuses.map(status => status.id === 'todo' ? { ...status, prefix: 'WAITING', dim, bold } : status);
+  for (const shortcut of [false, true]) {
+    const editor = create(shortcut ? '<p>::</p>' : '<ul><li><p>WAITING</p></li></ul>');
+    editor.view.dispatch(editor.state.tr.setMeta(bulletMethodMarkersKey, statuses)
+      .setMeta('bulletMethodDisplay', { enabled: true, replaceBullets: true }));
+    if (!shortcut) editor.commands.setTextSelection(10);
+    type(editor, shortcut ? ' ' : ':');
+    expect(editor.getHTML().includes('<strong>WAITING:</strong>')).toBe(expected);
+  }
+});
+
+it("preserves deliberately bold typed dimmed labels while skipping automatic bolding", () => {
+  const editor = create('<ul><li><p><strong>DONE</strong></p></li></ul>');
+  editor.commands.setTextSelection(7);
+  type(editor, ':');
+  expect(editor.getHTML()).toContain('<strong>DONE:</strong>');
+  expect(editor.commands.undoInputRule()).toBe(false);
+});
+
+it("can disable TODO and enable a custom status independently for typing and shortcuts", () => {
+  const statuses = [...defaultBulletMethodStatuses.map(status => status.id === 'todo' ? { ...status, bold: false } : status), { id: 'waiting', prefix: 'WAITING', description: '', bold: true, shortcut: ':w' }];
+  for (const [text, shortcut, expected] of [['TODO', '::', false], ['WAITING', ':w', true]] as const) {
+    for (const useShortcut of [true, false]) {
+      const editor = create(useShortcut ? `<p>${shortcut}</p>` : `<ul><li><p>${text}</p></li></ul>`);
+      editor.view.dispatch(editor.state.tr.setMeta(bulletMethodMarkersKey, statuses));
+      if (!useShortcut) editor.commands.setTextSelection(3 + text.length);
+      type(editor, useShortcut ? ' ' : ':');
+      expect(editor.getHTML().includes(`<strong>${text}:</strong>`)).toBe(expected);
+    }
+  }
+});
+
+it("suspends automatic bold for typing and shortcuts until the global switch is restored", () => {
+  for (const shortcut of [false, true]) {
+    const editor = create(shortcut ? '<p>::</p>' : '<ul><li><p>TODO</p></li></ul>');
+    const display = { enabled: true, replaceBullets: true };
+    editor.view.dispatch(editor.state.tr.setMeta('bulletMethodDisplay', { ...display, boldStatusesEnabled: false }));
+    if (!shortcut) editor.commands.setTextSelection(7);
+    type(editor, shortcut ? ' ' : ':');
+    expect(editor.getHTML()).not.toContain('<strong>');
+    const saved = editor.getHTML();
+    editor.view.dispatch(editor.state.tr.setMeta('bulletMethodDisplay', display));
+    expect(editor.getHTML()).toBe(saved);
+    editor.commands.setContent(shortcut ? '<p>::</p>' : '<ul><li><p>TODO</p></li></ul>');
+    editor.commands.setTextSelection(shortcut ? 3 : 7);
+    type(editor, shortcut ? ' ' : ':');
+    expect(editor.getHTML()).toContain('<strong>TODO:</strong>');
+  }
+  const manual = create('<ul><li><p><strong>TODO</strong></p></li></ul>');
+  manual.view.dispatch(manual.state.tr.setMeta('bulletMethodDisplay', { enabled: true, replaceBullets: true, boldStatusesEnabled: false }));
+  manual.commands.setTextSelection(7); type(manual, ':');
+  expect(manual.getHTML()).toContain('<strong>TODO:</strong>');
 });

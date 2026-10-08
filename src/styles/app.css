@@ -6407,7 +6407,7 @@ html[data-theme-preset="default"][data-accent-titlebar="true"] .app-shell .app-t
 .theme-conflict-previews { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
 .theme-conflict-previews .theme-preview-body { grid-template-columns: 90px minmax(0, 1fr); }
 @media (max-width: 760px) { .theme-conflict-previews { grid-template-columns: 1fr; } .theme-color-grid { grid-template-columns: 1fr; } }
-.settings-modal { width: min(820px, calc(100vw - 48px)); height: min(900px, calc(100dvh - 48px)); min-height: 0; grid-template-columns: 180px minmax(0, 1fr); }
+.settings-modal { width: min(1040px, calc(100vw - 48px)); height: min(900px, calc(100dvh - 48px)); min-height: 0; grid-template-columns: 180px minmax(0, 1fr); }
 .settings-content { display: flex; flex-direction: column; overflow: hidden; }
 .settings-content-header { flex-shrink: 0; }
 .settings-scroll { min-height: 0; overflow: auto; scrollbar-gutter: stable; padding-right: 16px; }
@@ -6558,7 +6558,7 @@ html[data-theme] .settings-modal .toolbar-button:hover:not(:disabled) {
 }
 .settings-preview-host:empty { display: none; }
 .settings-preview-host:not(:empty) {
-  width: clamp(340px, calc(100vw - 880px), 560px);
+  width: clamp(340px, calc(100vw - 1100px), 560px);
   height: min(900px, calc(100dvh - 48px));
   min-width: 0;
   padding: 18px;
@@ -7011,11 +7011,15 @@ html[data-theme="dark"] .bullet-method-settings { --bullet-method-error: #ff9292
 .bullet-method-status-table { overflow-x: auto; margin: 12px 0; }
 .bullet-method-statuses { list-style: none; margin: 0; padding: 0; }
 .bullet-method-status,
-.bullet-method-column-headings { display: grid; grid-template-columns: 14px 18px minmax(136px, 1fr) 76px 36px 64px 40px 30px 94px; align-items: center; gap: 8px; min-width: 572px; }
+.bullet-method-column-headings { display: grid; grid-template-columns: 14px 18px minmax(136px, 1fr) 76px 36px 36px 64px 40px 30px 94px; align-items: center; gap: 8px; min-width: 616px; }
+.bullet-method-settings .is-disabled { opacity: .4; }
+.bullet-method-dim-choice:has(input:disabled) { cursor: default; }
+.bullet-method-dim-choice input:disabled { cursor: default; }
 .bullet-method-column-headings { padding: 0 0 8px; color: var(--text-muted); font-size: 12px; font-weight: 600; }
 .bullet-method-column-headings > :nth-child(5),
 .bullet-method-column-headings > :nth-child(6),
-.bullet-method-column-headings > :nth-child(7) { text-align: center; }
+.bullet-method-column-headings > :nth-child(7),
+.bullet-method-column-headings > :nth-child(8) { text-align: center; }
 .bullet-method-status { padding: 8px 0; border-top: 1px solid var(--border); }
 .bullet-method-no-shortcut { padding-left: 8px; color: var(--text-muted); }
 .bullet-method-unavailable { text-align: center; color: var(--text-muted); }

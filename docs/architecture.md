@@ -85,7 +85,7 @@ details in feature modules:
 - `searchHighlight.ts` owns match discovery, decorations, and match scrolling.
 - `listFolding.ts` owns Notes-style list folding decorations and maps them through local edits and sorting. Folding does not change the editor document, Markdown, or Undo history.
 - Bullet folding is an app-wide, default-on General setting, saved locally like Bullet Statuses. Automatic DONE folding is a separate Bullet Statuses option, off by default, applied on status-icon clicks. Disabling general folding shows all children and suppresses automatic DONE folding. Unchanged folds return when re-enabled; editing while disabled clears the suspended ranges without doing folding work during typing.
-- Bullet Statuses automatically bolds converted or cycled status labels, including the colon, by default. Typing a recognized label and colon at the start of an ordinary bullet also applies bold immediately, independently of the shortcut switch. This can be disabled independently; existing formatting is preserved. The bold marks persist as ordinary Markdown (`**TODO:**`).
+- Bullet Statuses automatically bolds converted, typed, or cycled status labels, including the colon, when the status's Bold choice is enabled. TODO, IN PROGRESS, and QUESTION default to bold; other statuses default off. Bold and Dim choices are independent and travel with status system exports. The Enable bold statuses, Enable dimmed statuses, and Enable celebrations switches default on. Switching one off disables its column and behavior while preserving each row’s choices. The obsolete autoBoldStatus and dimCompleted preferences are ignored. Bolding changes apply on typing or conversion; disabling automatic bolding preserves existing and manually applied marks. Cycling to an unchecked status clears bold on that label only. Status dimming percentages remain separate for light and dark modes, and the slider remains visible whenever Bullet Statuses is enabled and is disabled while Enable dimmed statuses is off. Existing notes are not rewritten when choices change. The bold marks persist as ordinary Markdown (`**TODO:**`).
 - `foldedListClipboard.ts` expands full-row clipboard selections over collapsed list items to include hidden descendants. Partial-text selections keep their normal semantics.
 - `listFoldingPersistence.ts` captures compact fold ranges at idle or navigation/close boundaries. Document edits share the existing deferred Markdown conversion; fold-only changes do not serialize the document.
 - `textExtensions.ts` owns emoji input rules, manual spacing, and list separators.
@@ -516,9 +516,11 @@ individual display choices remain saved when disabling the master switch.
 Each status row has a Dim checkbox. Missing saved dim choices default to true
 for DONE/CLOSED identities and false otherwise. Choices travel with a status
 when renamed or reordered. Valid edits save automatically; invalid names remain
-local until corrected. The dimming label lists the checked statuses live. Dim selected statuses
-is the global dimming switch. Selecting No status dims unmatched/unmarked bullets.
-COMPLETE uses the DONE choice unless configured as its own status.
+local until corrected. Enable dimmed statuses is the global dimming switch; turning
+it off disables the Dim column and percentage slider without clearing row choices.
+No status cannot be dimmed. COMPLETE uses the DONE choice unless configured as its
+own status. Enable bold statuses and Enable celebrations similarly disable their
+columns and suspend automatic bolding or click celebrations. All three default on.
 
 ### Printing and document exports
 

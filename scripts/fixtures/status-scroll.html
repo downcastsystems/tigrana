@@ -4,5 +4,5 @@
 <script type="module">
 import {Editor} from '@tiptap/core';import StarterKit from '@tiptap/starter-kit';import {BulletMethodMarkers} from '/src/editor/bulletMethodMarkers.ts';
 window.editor=new Editor({element:document.querySelector('#editor'),extensions:[StarterKit,BulletMethodMarkers],editorProps:{scrollThreshold:{top:32,right:8,bottom:160,left:8},scrollMargin:{top:56,right:8,bottom:220,left:8}},content:'<ul><li><p>IN PROGRESS: First task</p></li><li><p>TODO: Second task</p></li></ul>'+Array.from({length:35},(_,i)=>`<p>More content ${i}</p>`).join('')});
-editor.view.dispatch(editor.state.tr.setMeta('bulletMethodDisplay',{enabled:true,replaceBullets:true,dimCompleted:true}));
+editor.view.dispatch(editor.state.tr.setMeta('bulletMethodDisplay',{enabled:true,replaceBullets:true}));
 </script>

@@ -248,7 +248,7 @@ describe("Note editor typing performance", () => {
     const root = createRoot(container); mounted.push({ container, root });
     await act(async () => root.render(<NotesEditor content='' editable findRequest={0}
       focusAtEndRequest={0} focusRequest={0} historyKey='question-shortcut' notePath='Question.md'
-      bulletMethodStatuses={statuses} bulletMethodDisplay={{ enabled: true, replaceBullets: true, dimCompleted: true }}
+      bulletMethodStatuses={statuses} bulletMethodDisplay={{ enabled: true, replaceBullets: true }}
       onChange={() => undefined} onLoadError={error => { throw error; }} onPendingChange={() => undefined}
       onPositionChange={() => undefined} restorePosition={null} spellcheckEnabled workspace='/Notebook' />));
     const editor = (container.querySelector('.ProseMirror') as HTMLElement & { editor: import('@tiptap/core').Editor }).editor;
@@ -271,6 +271,37 @@ describe("Note editor typing performance", () => {
     });
     expect(editor.getHTML()).toContain('<strong>QUESTION:</strong> Body');
   });
+  it("applies a newly checked DONE Bold choice when clicking an existing IN PROGRESS icon", async () => {
+    const { default: BulletMethodSettings } = await import('../components/BulletMethodSettings');
+    const { defaultBulletMethodStatuses, writeBulletMethodStatuses } = await import('../lib/bulletMethod');
+    const container = document.createElement('div'); document.body.append(container);
+    const root = createRoot(container); mounted.push({ container, root });
+    const display = { enabled: true, replaceBullets: true, autoSortOnClick: false };
+    function Harness() {
+      const [statuses, setStatuses] = useState(defaultBulletMethodStatuses);
+      return <>
+        <BulletMethodSettings statuses={statuses} onChange={next => setStatuses(writeBulletMethodStatuses(next))} display={display} />
+        <NotesEditor content='- **IN PROGRESS:** Test bold setting' editable findRequest={0}
+          focusAtEndRequest={0} focusRequest={0} historyKey='live-done-bold' notePath='Live.md'
+          bulletMethodDisplay={display} bulletMethodStatuses={statuses}
+          onChange={() => undefined} onLoadError={error => { throw error; }} onPendingChange={() => undefined}
+          onPositionChange={() => undefined} restorePosition={null} spellcheckEnabled workspace='/Notebook' />
+      </>;
+    }
+    await act(async () => root.render(<Harness />));
+    const editor = (container.querySelector('.ProseMirror') as HTMLElement & { editor: import('@tiptap/core').Editor }).editor;
+    vi.spyOn(editor.view, 'coordsAtPos').mockReturnValue({ top: 20, bottom: 40, left: 20, right: 20 });
+    const setContent = vi.spyOn(editor.commands, 'setContent');
+    const choice = container.querySelector<HTMLInputElement>('[aria-label="Bold DONE"]')!;
+    expect(choice.checked).toBe(false);
+    await act(async () => choice.click());
+    expect(choice.checked).toBe(true);
+    expect(editor.getHTML()).toContain('<strong>IN PROGRESS:</strong>');
+    await act(async () => container.querySelector<HTMLButtonElement>('.bullet-method-marker-button')!.click());
+    expect(editor.getHTML()).toContain('<strong>DONE:</strong> Test bold setting');
+    expect((container.querySelector('.ProseMirror') as HTMLElement & { editor: import('@tiptap/core').Editor }).editor).toBe(editor);
+    expect(setContent).not.toHaveBeenCalled();
+  });
   it('bolds a directly typed bullet status locally and saves one Markdown update per burst', async () => {
     vi.useFakeTimers();
     const container = document.createElement('div'); document.body.append(container);
@@ -278,7 +309,7 @@ describe("Note editor typing performance", () => {
     const changed = vi.fn();
     await act(async () => root.render(<NotesEditor content='- TODO' editable findRequest={0}
       focusAtEndRequest={0} focusRequest={0} historyKey='typed-status' notePath='Typed.md'
-      bulletMethodDisplay={{ enabled: true, replaceBullets: true, dimCompleted: true, shortcutsEnabled: false }}
+      bulletMethodDisplay={{ enabled: true, replaceBullets: true, shortcutsEnabled: false }}
       onChange={changed} onLoadError={error => { throw error; }} onPendingChange={() => undefined}
       onPositionChange={() => undefined} restorePosition={null} spellcheckEnabled workspace='/Notebook' />));
     await act(async () => { await vi.advanceTimersByTimeAsync(markdownCommitDelayMs); });
@@ -469,7 +500,7 @@ describe("Note editor typing performance", () => {
   it("keeps current Bullet Statuses settings after fresh loads, cached switches, and reloads", async () => {
     const container = document.createElement("div"); document.body.append(container);
     const root = createRoot(container); mounted.push({ container, root });
-    const display = { enabled: true, replaceBullets: true, dimCompleted: true };
+    const display = { enabled: true, replaceBullets: true };
     const off = { ...display, enabled: false };
     const render = (path: string, settings = display, reloadRequest = 0) => <NotesEditor
       content={"- DONE: Finished\n- TODO: Work"} bulletMethodDisplay={settings}

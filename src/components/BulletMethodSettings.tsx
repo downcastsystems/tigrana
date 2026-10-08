@@ -2,7 +2,7 @@ import { decodeBulletStatusSystem, encodeBulletStatusSystem } from "../lib/bulle
 import { exportTextFile } from "../lib/desktop";
 import { useEffect, useId, useRef, useState, type PointerEvent as ReactPointerEvent } from "react";
 import { ArrowDown, ArrowUp, GripVertical, Plus, RotateCcw, Trash2 } from "lucide-react";
-import { bulletMethodDimPercent, defaultBulletMethodDisplay, type BulletMethodDisplay, statusCelebrates, statusCycles, statusDims, statusIcon, defaultBulletMethodStatuses, validateBulletMethodStatuses, validateBulletMethodShortcut, type BulletMethodStatus, statusShortcut } from "../lib/bulletMethod";
+import { bulletMethodDimPercent, defaultBulletMethodDisplay, type BulletMethodDisplay, statusBolds, statusCelebrates, statusCycles, statusDims, statusIcon, defaultBulletMethodStatuses, validateBulletMethodStatuses, validateBulletMethodShortcut, type BulletMethodStatus, statusShortcut } from "../lib/bulletMethod";
 
 import { BulletMethodIconPicker } from "./BulletMethodIconPicker";
 
@@ -13,6 +13,9 @@ export default function BulletMethodSettings({ statuses, onChange, display = def
   statuses: readonly BulletMethodStatus[];
   onChange: (statuses: readonly BulletMethodStatus[]) => void;
 }) {
+  const boldEnabled = display.boldStatusesEnabled !== false;
+  const dimEnabled = display.dimmedStatusesEnabled !== false;
+  const celebrationsEnabled = display.celebrationsEnabled !== false;
   const [draft, setDraft] = useState(statuses);
   const [draggedId, setDraggedId] = useState<string | null>(null);
   const [dropTarget, setDropTarget] = useState<{ id: string; after: boolean } | null>(null);
@@ -34,8 +37,6 @@ export default function BulletMethodSettings({ statuses, onChange, display = def
   const errorId = useId();
   const shortcutErrors = draft.map(status => status.prefix === null ? null : validateBulletMethodShortcut(status, draft));
   const hasInlineError = shortcutErrors.some(shortcutError => shortcutError === error);
-  const dimNames = draft.filter(statusDims).map(status => status.prefix?.trim() || "No status");
-  const dimLabel = dimNames.length ? `Dim ${dimNames.join(", ")}` : "Dim selected statuses (none selected)";
   useEffect(() => {
     if (error) return;
     const normalized = draft.map(status => ({ ...status, prefix: status.prefix?.trim() ?? null }));
@@ -127,11 +128,12 @@ export default function BulletMethodSettings({ statuses, onChange, display = def
     window.addEventListener("blur", cleanup);
     window.addEventListener("keydown", onKey);
   }
-  function save(next: readonly BulletMethodStatus[], feedback: string, restoreDimming = false) {
+  function save(next: readonly BulletMethodStatus[], feedback: string, restoreDisplay = false) {
     setTransferError("");
     try {
-      if (restoreDimming) onDisplayChange?.({
+      if (restoreDisplay) onDisplayChange?.({
         ...display,
+        boldStatusesEnabled: true, dimmedStatusesEnabled: true, celebrationsEnabled: true,
         lightPercent: bulletMethodDimPercent(defaultBulletMethodDisplay, "light"),
         darkPercent: bulletMethodDimPercent(defaultBulletMethodDisplay, "dark"),
       });
@@ -170,17 +172,17 @@ export default function BulletMethodSettings({ statuses, onChange, display = def
           try { onDisplayChange?.({ ...display, autoCollapseDone: event.target.checked }); setSaveError(null); }
           catch { setSaveError("Could not save collapse settings. Please try again."); }
         }} /> Auto-collapse DONE on status click</label>
-        <label><input type="checkbox" checked={display.autoBoldStatus !== false} onChange={event => {
-          try { onDisplayChange?.({ ...display, autoBoldStatus: event.target.checked }); setSaveError(null); }
+        <label><input type="checkbox" checked={boldEnabled} onChange={event => {
+          try { onDisplayChange?.({ ...display, boldStatusesEnabled: event.target.checked }); setSaveError(null); }
           catch { setSaveError("Could not save bold settings. Please try again."); }
-        }} /> Automatically bold the status and colon</label>
-        <label><input type="checkbox" checked={display.dimCompleted} onChange={event => {
-          try { onDisplayChange?.({ ...display, dimCompleted: event.target.checked }); setSaveError(null); }
-          catch { setSaveError("Could not save display settings. Please try again."); }
-        }} /> {dimLabel}</label>
-        {display.dimCompleted && <div className="bullet-method-dim-slider">
-          <span>Dimming ({colorMode} mode)</span>
-          <input type="range" min={40} max={90} step={1} aria-label={`Dimming percentage for ${colorMode} mode`}
+        }} /> Enable bold statuses</label>
+        <label><input type="checkbox" checked={dimEnabled} onChange={event => {
+          try { onDisplayChange?.({ ...display, dimmedStatusesEnabled: event.target.checked }); setSaveError(null); }
+          catch { setSaveError("Could not save dimming settings. Please try again."); }
+        }} /> Enable dimmed statuses</label>
+        <div className={`bullet-method-dim-slider${dimEnabled ? "" : " is-disabled"}`}>
+          <span>Status dimming ({colorMode} mode)</span>
+          <input type="range" disabled={!dimEnabled} min={40} max={90} step={1} aria-label={`Status dimming percentage for ${colorMode} mode`}
             value={bulletMethodDimPercent(display, colorMode)} onChange={event => {
               try { onDisplayChange?.({ ...display, [colorMode === "light" ? "lightPercent" : "darkPercent"]: Number(event.target.value) }); setSaveError(null); }
               catch { setSaveError("Could not save display settings. Please try again."); }
@@ -188,13 +190,17 @@ export default function BulletMethodSettings({ statuses, onChange, display = def
           <output>{bulletMethodDimPercent(display, colorMode)}%</output>
           <span className="bullet-method-dim-reset-slot">
           {bulletMethodDimPercent(display, colorMode) !== bulletMethodDimPercent(defaultBulletMethodDisplay, colorMode) && <button
-            type="button" className="icon-button" aria-label={`Reset ${colorMode} dimming to default`}
+            type="button" className="icon-button" disabled={!dimEnabled} aria-label={`Reset ${colorMode} dimming to default`}
             title={`Reset to ${bulletMethodDimPercent(defaultBulletMethodDisplay, colorMode)}%`} onClick={() => {
               try { onDisplayChange?.({ ...display, [colorMode === "light" ? "lightPercent" : "darkPercent"]: bulletMethodDimPercent(defaultBulletMethodDisplay, colorMode) }); setSaveError(null); }
               catch { setSaveError("Could not save display settings. Please try again."); }
             }}><RotateCcw size={16} /></button>}
           </span>
-        </div>}
+        </div>
+        <label><input type="checkbox" checked={celebrationsEnabled} onChange={event => {
+          try { onDisplayChange?.({ ...display, celebrationsEnabled: event.target.checked }); setSaveError(null); }
+          catch { setSaveError("Could not save celebration settings. Please try again."); }
+        }} /> Enable celebrations</label>
       </div>
       </>}
       <section className="bullet-method-status-section" aria-labelledby="bullet-method-statuses-heading">
@@ -217,7 +223,7 @@ export default function BulletMethodSettings({ statuses, onChange, display = def
         <h3 id="bullet-method-status-order-heading">Status order</h3>
         <div className="bullet-method-status-table">
         <div className="bullet-method-column-headings" aria-hidden="true">
-          <span /><span /><span>Status</span><span>Shortcut</span><span>Dim</span><span>Celebrate</span><span>Cycle</span><span /><span />
+          <span /><span /><span>Status</span><span>Shortcut</span><span className={boldEnabled ? undefined : "is-disabled"}>Bold</span><span className={dimEnabled ? undefined : "is-disabled"}>Dim</span><span className={celebrationsEnabled ? undefined : "is-disabled"}>Celebrate</span><span>Cycle</span><span /><span />
         </div>
         <ol ref={listRef} className="bullet-method-statuses" aria-label="Bullet Statuses status order">
           {draft.map((status, index) => {
@@ -242,12 +248,17 @@ export default function BulletMethodSettings({ statuses, onChange, display = def
                     aria-invalid={Boolean(shortcutError)} aria-describedby={shortcutError ? shortcutErrorId : undefined}
                     onChange={event => update(status.id, { shortcut: event.target.value })} /> : <span className="bullet-method-no-shortcut" aria-label="No shortcut">—</span>}
                 </div>
-                {status.prefix === null ? <span className="bullet-method-unavailable" aria-label="Dimming unavailable for No status">—</span> : <label className="bullet-method-dim-choice">
-                  <input type="checkbox" aria-label={`Dim ${name}`} checked={statusDims(status)}
+                {status.prefix === null ? <span className={`bullet-method-unavailable${boldEnabled ? "" : " is-disabled"}`} aria-label="Bolding unavailable for No status">—</span> : <label className={`bullet-method-dim-choice${boldEnabled ? "" : " is-disabled"}`}>
+                  <input type="checkbox" disabled={!boldEnabled} aria-label={`Bold ${name}`} checked={statusBolds(status)}
+                    title="Bold the status and colon automatically"
+                    onChange={event => update(status.id, { bold: event.target.checked })} />
+                </label>}
+                {status.prefix === null ? <span className={`bullet-method-unavailable${dimEnabled ? "" : " is-disabled"}`} aria-label="Dimming unavailable for No status">—</span> : <label className={`bullet-method-dim-choice${dimEnabled ? "" : " is-disabled"}`}>
+                  <input type="checkbox" disabled={!dimEnabled} aria-label={`Dim ${name}`} checked={statusDims(status)}
                     onChange={event => update(status.id, { dim: event.target.checked })} />
                 </label>}
-                {status.prefix === null ? <span className="bullet-method-unavailable" aria-label="Celebration unavailable for No status">—</span> : <label className="bullet-method-dim-choice">
-                  <input type="checkbox" aria-label={`Celebrate ${name}`} checked={statusCelebrates(status)}
+                {status.prefix === null ? <span className={`bullet-method-unavailable${celebrationsEnabled ? "" : " is-disabled"}`} aria-label="Celebration unavailable for No status">—</span> : <label className={`bullet-method-dim-choice${celebrationsEnabled ? "" : " is-disabled"}`}>
+                  <input type="checkbox" disabled={!celebrationsEnabled} aria-label={`Celebrate ${name}`} checked={statusCelebrates(status)}
                     title="Show a pixel burst when switching to this status"
                     onChange={event => update(status.id, { celebrate: event.target.checked })} />
                 </label>}
@@ -306,7 +317,7 @@ export default function BulletMethodSettings({ statuses, onChange, display = def
       </section>
       <section className="settings-reset-appearance">
         <h3>Default Bullet Statuses</h3>
-        <p>Restore the default statuses, icons, order, cycle choices, and celebrations, plus dimming to 65% in light mode and 70% in dark mode. Your notes stay unchanged.</p>
+        <p>Restore the default status names, icons, order, shortcuts, and row choices. Enable bolding, dimming, and celebrations, with dimming at 65% in light mode and 70% in dark mode. Your notes stay unchanged.</p>
         <button className="toolbar-button" onClick={() => save(defaultBulletMethodStatuses, "Bullet Statuses defaults restored.", true)}><RotateCcw size={16} /> Restore defaults</button>
       </section>
     </div>

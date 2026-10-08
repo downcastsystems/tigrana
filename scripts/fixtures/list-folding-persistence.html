@@ -39,7 +39,7 @@
         content:body, editable:true, findRequest:0, focusAtEndRequest:0, focusRequest:0, listFoldingEnabled:foldingEnabled,
         historyKey:path, notePath:path, restorePosition:null, restoreListFolding:saved.folds[path],
         spellcheckEnabled:true, workspace:'/Preview notebook',
-        bulletMethodDisplay:{enabled:true, replaceBullets:true, dimCompleted:true},
+        bulletMethodDisplay:{enabled:true, replaceBullets:true},
         onPersistenceReady:value => { handle.current = value; },
         onPendingChange:value => { pending.current = value; },
         onPositionChange:() => {}, onLoadError:error => { throw error; },

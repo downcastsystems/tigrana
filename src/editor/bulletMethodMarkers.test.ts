@@ -12,7 +12,7 @@ const editors: Editor[] = [];
 afterEach(() => { editors.splice(0).forEach(editor => editor.destroy()); vi.restoreAllMocks(); });
 function make(content: string, extraExtensions: Extensions = []) {
   const editor = new Editor({ editorProps: { handleScrollToSelection: () => true }, extensions: [StarterKit, TaskList, TaskItem.configure({ nested: true }), BulletMethodMarkers, ...extraExtensions], content });
-  editor.view.dispatch(editor.state.tr.setMeta("bulletMethodDisplay", { enabled: true, replaceBullets: true, dimCompleted: true }));
+  editor.view.dispatch(editor.state.tr.setMeta("bulletMethodDisplay", { enabled: true, replaceBullets: true }));
   vi.spyOn(editor.view, "coordsAtPos").mockReturnValue({ top: 20, bottom: 40, left: 20, right: 20 });
   editors.push(editor);
   return editor;
@@ -142,18 +142,19 @@ it("bolds the full cycled label and colon, preserving body marks, colors, and is
 
 it("honors live status bolding choices without rewriting existing formatting", () => {
   const editor = make('<ul><li><p>TODO: Plain</p></li></ul>');
-  const display = { enabled: true, replaceBullets: true, dimCompleted: true, autoSortOnClick: false };
+  const display = { enabled: true, replaceBullets: true, autoSortOnClick: false };
+  const statuses = (bold: boolean) => defaultBulletMethodStatuses.map(status => ({ ...status, bold }));
   const click = () => editor.view.dom.querySelector<HTMLButtonElement>('.bullet-method-marker-button')!.click();
-  editor.view.dispatch(editor.state.tr.setMeta('bulletMethodDisplay', { ...display, autoBoldStatus: false }));
+  editor.view.dispatch(editor.state.tr.setMeta('bulletMethodDisplay', display).setMeta(bulletMethodMarkersKey, statuses(false)));
   click();
   expect(editor.getHTML()).not.toContain('<strong>');
-  editor.view.dispatch(editor.state.tr.setMeta('bulletMethodDisplay', { ...display, autoBoldStatus: true }));
+  editor.view.dispatch(editor.state.tr.setMeta(bulletMethodMarkersKey, statuses(true)));
   expect(editor.getHTML()).not.toContain('<strong>');
   click();
   expect(editor.getHTML()).toContain('<strong>DONE:</strong> Plain');
-  editor.view.dispatch(editor.state.tr.setMeta('bulletMethodDisplay', { ...display, autoBoldStatus: false }));
+  editor.view.dispatch(editor.state.tr.setMeta(bulletMethodMarkersKey, statuses(false)));
   click();
-  expect(editor.getHTML()).toContain('<strong>CLOSED:</strong> Plain');
+  expect(editor.getHTML()).toContain('<p>CLOSED: Plain</p>');
 });
 
 it("does not carry generated status bolding into typing after a label-only bullet", () => {
@@ -169,16 +170,17 @@ it("dims completed paragraphs independently of icons without modifying nested st
   expect(dimmed()).toEqual(['DONE: Parent', 'CLOSED: Finished']);
   expect(editor.view.dom.querySelectorAll('li[data-bullet-method-completed]')).toHaveLength(2);
   expect(editor.getHTML()).not.toContain('data-bullet-method-dim');
-  editor.view.dispatch(editor.state.tr.setMeta('bulletMethodDisplay', { enabled: true, replaceBullets: false, dimCompleted: true }));
+  editor.view.dispatch(editor.state.tr.setMeta('bulletMethodDisplay', { enabled: true, replaceBullets: false }));
   expect(editor.view.dom.querySelector('button')).toBeNull();
   expect(markers(editor)).toEqual([null, null, null]);
   expect(dimmed()).toEqual(['DONE: Parent', 'CLOSED: Finished']);
   expect(editor.view.dom.querySelectorAll('li[data-bullet-method-completed]')).toHaveLength(2);
-  editor.view.dispatch(editor.state.tr.setMeta('bulletMethodDisplay', { enabled: true, replaceBullets: true, dimCompleted: false }));
+  editor.view.dispatch(editor.state.tr.setMeta('bulletMethodDisplay', { enabled: true, replaceBullets: true })
+    .setMeta(bulletMethodMarkersKey, defaultBulletMethodStatuses.map(status => ({ ...status, dim: false }))));
   expect(dimmed()).toEqual([]);
   expect(editor.view.dom.querySelectorAll('li[data-bullet-method-completed]')).toHaveLength(0);
   expect(markers(editor)).toEqual(['check', 'circle', 'slash']);
-  editor.view.dispatch(editor.state.tr.setMeta('bulletMethodDisplay', { enabled: true, replaceBullets: true, dimCompleted: true }));
+  editor.view.dispatch(editor.state.tr.setMeta(bulletMethodMarkersKey, defaultBulletMethodStatuses));
   editor.view.dom.querySelector<HTMLButtonElement>('button')!.click();
   expect(dimmed()).toEqual(['CLOSED: Parent', 'CLOSED: Finished']);
   editor.view.dom.querySelector<HTMLButtonElement>('button')!.click();
@@ -193,7 +195,7 @@ it("composites uncolored bold runs without dimming explicit colors or highlights
   expect(editor.view.dom.querySelector('[data-text-color] .bullet-method-dim-bold, mark .bullet-method-dim-bold')).toBeNull();
   expect(editor.view.dom.querySelector('.bullet-method-dim-bold .bullet-method-dim-bold')).toBeNull();
   expect(saved).not.toContain('bullet-method-dim-bold');
-  editor.view.dispatch(editor.state.tr.setMeta('bulletMethodDisplay', { enabled: true, replaceBullets: false, dimCompleted: false }));
+  editor.view.dispatch(editor.state.tr.setMeta('bulletMethodDisplay', { enabled: false, replaceBullets: false }));
   expect(runs()).toEqual([]);
   expect(editor.getHTML()).toBe(saved);
 });
@@ -203,7 +205,7 @@ it("keeps bold fade ranges current through typing, partial formatting, colors, a
   const ranges = () => bulletMethodMarkersKey.getState(editor.state)!.decorations.find().filter(d => d.spec.dimBold).map(d => [d.from, d.to]);
   const check = () => {
     const incremental = ranges();
-    editor.view.dispatch(editor.state.tr.setMeta('bulletMethodDisplay', { enabled: true, replaceBullets: true, dimCompleted: true }));
+    editor.view.dispatch(editor.state.tr.setMeta('bulletMethodDisplay', { enabled: true, replaceBullets: true }));
     expect(incremental).toEqual(ranges());
     expect(editor.view.dom.querySelector('.bullet-method-dim-bold .bullet-method-dim-bold')).toBeNull();
   };
@@ -231,9 +233,9 @@ it("defaults off and removes all appearance decorations when disabled", () => {
   vi.spyOn(editor.view, "coordsAtPos").mockReturnValue({ top: 20, bottom: 40, left: 20, right: 20 });
   editors.push(editor);
   expect(editor.view.dom.querySelector('[data-bullet-method-completed],button')).toBeNull();
-  editor.view.dispatch(editor.state.tr.setMeta('bulletMethodDisplay', { enabled: true, replaceBullets: true, dimCompleted: true }));
+  editor.view.dispatch(editor.state.tr.setMeta('bulletMethodDisplay', { enabled: true, replaceBullets: true }));
   expect(editor.view.dom.querySelector('button')).not.toBeNull();
-  editor.view.dispatch(editor.state.tr.setMeta('bulletMethodDisplay', { enabled: false, replaceBullets: true, dimCompleted: true }));
+  editor.view.dispatch(editor.state.tr.setMeta('bulletMethodDisplay', { enabled: false, replaceBullets: true }));
   expect(editor.view.dom.querySelector('[data-bullet-method-completed],button')).toBeNull();
 });
 
@@ -245,7 +247,7 @@ it("dims configured statuses but ignores legacy dimming for unmarked and unknown
   expect(dimmed()).toEqual(['WAITING: Dim me', 'Custom: Dim me too']);
   editor.view.dispatch(editor.state.tr.setMeta(bulletMethodMarkersKey, statuses.map(status => status.prefix === null ? { ...status, dim: true } : status)));
   expect(dimmed()).toEqual(['WAITING: Dim me', 'Custom: Dim me too']);
-  editor.view.dispatch(editor.state.tr.setMeta('bulletMethodDisplay', { enabled: true, replaceBullets: true, dimCompleted: false }));
+  editor.view.dispatch(editor.state.tr.setMeta(bulletMethodMarkersKey, statuses.map(status => ({ ...status, dim: false }))));
   expect(dimmed()).toEqual([]);
   expect(editor.getHTML()).not.toContain('data-bullet-method-dim');
 });
@@ -431,4 +433,77 @@ it("uses updated custom predecessors and skips removed statuses when Shift-click
   expect(editor.view.dom.querySelector('button')!.title).toContain('Shift-click: WAITING');
   editor.view.dom.querySelector('button')!.dispatchEvent(new MouseEvent('click', { bubbles: true, shiftKey: true }));
   expect(editor.state.doc.textContent).toBe('WAITING: Work');
+});
+
+
+it.each([false, true])("updates bolding across checked and unchecked status clicks, including the colon (bold: %s)", include => {
+  const editor = make('<ul><li><p><strong>IN PROGRESS:</strong> Plain <strong>Body</strong></p></li></ul>');
+  const display = { enabled: true, replaceBullets: true, autoSortOnClick: false };
+  const statuses = (bold: boolean) => defaultBulletMethodStatuses.map(status => ['done', 'closed'].includes(status.id) ? { ...status, bold } : status);
+  editor.view.dispatch(editor.state.tr.setMeta('bulletMethodDisplay', display).setMeta(bulletMethodMarkersKey, statuses(include)));
+  const before = editor.getHTML();
+  const click = () => editor.view.dom.querySelector<HTMLButtonElement>('.bullet-method-marker-button')!.click();
+  for (const prefix of ['DONE', 'CLOSED']) {
+    click();
+    expect(editor.getHTML().includes(`<strong>${prefix}:</strong>`)).toBe(include);
+    expect(editor.getHTML()).toContain(' Plain <strong>Body</strong>');
+  }
+  editor.commands.undo(); editor.commands.undo();
+  expect(editor.getHTML()).toBe(before);
+  editor.view.dispatch(editor.state.tr.setMeta(bulletMethodMarkersKey, statuses(true)));
+  click(); expect(editor.getHTML()).toContain('<strong>DONE:</strong>');
+  editor.view.dispatch(editor.state.tr.setMeta(bulletMethodMarkersKey, statuses(false)));
+  click(); expect(editor.getHTML()).not.toContain('<strong>CLOSED:</strong>');
+  click(); expect(editor.getHTML()).toContain('<strong>QUESTION:</strong>');
+});
+
+it("follows per-status Bold choices independently of Dim when cycling", () => {
+  const editor = make('<ul><li><p><strong>QUESTION:</strong> Plain</p></li></ul>');
+  const statuses = defaultBulletMethodStatuses.map(status => status.id === 'todo' ? { ...status, dim: false, bold: false } : status.id === 'done' ? { ...status, dim: true, bold: true } : status);
+  editor.view.dispatch(editor.state.tr.setMeta(bulletMethodMarkersKey, statuses));
+  const click = () => editor.view.dom.querySelector<HTMLButtonElement>('.bullet-method-marker-button')!.click();
+  click(); expect(editor.getHTML()).not.toContain('<strong>TODO:</strong>');
+  click(); expect(editor.getHTML()).toContain('<strong>IN PROGRESS:</strong>');
+  click(); expect(editor.getHTML()).toContain('<strong>DONE:</strong>');
+});
+
+it("uses live global Bold and Dim switches without changing saved marks or status choices", () => {
+  const editor = make('<ul><li><p>IN PROGRESS: Work <strong>Body</strong></p></li></ul>');
+  const statuses = defaultBulletMethodStatuses.map(status => ({ ...status, bold: true }));
+  const display = { enabled: true, replaceBullets: true, autoSortOnClick: false };
+  editor.view.dispatch(editor.state.tr.setMeta(bulletMethodMarkersKey, statuses)
+    .setMeta('bulletMethodDisplay', { ...display, boldStatusesEnabled: false, dimmedStatusesEnabled: false }));
+  const click = () => editor.view.dom.querySelector<HTMLButtonElement>('.bullet-method-marker-button')!.click();
+  click();
+  expect(editor.getHTML()).toContain('<p>DONE: Work <strong>Body</strong></p>');
+  expect(editor.view.dom.querySelector('[data-bullet-method-dim]')).toBeNull();
+  const saved = editor.getHTML();
+  editor.view.dispatch(editor.state.tr.setMeta('bulletMethodDisplay', display));
+  expect(editor.getHTML()).toBe(saved);
+  expect(editor.view.dom.querySelector('[data-bullet-method-dim]')).not.toBeNull();
+  click();
+  expect(editor.getHTML()).toContain('<strong>CLOSED:</strong> Work <strong>Body</strong>');
+  editor.view.dispatch(editor.state.tr.setMeta('bulletMethodDisplay', { ...display, boldStatusesEnabled: false }));
+  click();
+  expect(editor.getHTML()).toContain('<strong>QUESTION:</strong>');
+  expect(bulletMethodMarkersKey.getState(editor.state)!.statuses).toEqual(statuses);
+});
+
+it("disables celebrations immediately, then restores them without changing the DONE choice", () => {
+  vi.useFakeTimers();
+  const editor = make('<ul><li><p>IN PROGRESS: Finish</p></li></ul>');
+  document.body.append(editor.view.dom);
+  const display = { enabled: true, replaceBullets: true, autoSortOnClick: false };
+  const click = () => editor.view.dom.querySelector<HTMLButtonElement>('.bullet-method-marker-button')!.click();
+  try {
+    editor.view.dispatch(editor.state.tr.setMeta('bulletMethodDisplay', { ...display, celebrationsEnabled: false }));
+    click(); vi.advanceTimersByTime(20);
+    expect(document.querySelector('.bullet-status-celebration')).toBeNull();
+    editor.commands.undo();
+    editor.view.dispatch(editor.state.tr.setMeta('bulletMethodDisplay', display));
+    click(); vi.advanceTimersByTime(20);
+    expect(document.querySelectorAll('.bullet-status-celebration > i')).toHaveLength(12);
+    editor.view.dispatch(editor.state.tr.setMeta('bulletMethodDisplay', { ...display, celebrationsEnabled: false }));
+    expect(document.querySelector('.bullet-status-celebration')).toBeNull();
+  } finally { editor.view.dom.remove(); vi.useRealTimers(); }
 });

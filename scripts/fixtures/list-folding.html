@@ -23,7 +23,7 @@
     content: '<h1>Nested list experiment</h1><ul><li><p>DONE: Finished leaf</p></li><li><p>IN PROGRESS: Review the release</p><ul><li><p>DONE: Review the changes</p></li><li><p>TODO: Deploy</p><ul><li><p>Check development</p></li><li><p>Check production</p></li></ul></li></ul></li><li><p>Plain parent with a longer line that wraps without moving its text or the bullet marker from their existing positions</p><ul><li><p>Plain child</p></li></ul></li></ul><ol><li><p>Numbered parent</p><ul><li><p>Nested bullet</p></li></ul></li></ol><p>Text after the lists.</p>',
   });
   let enabled = true;
-  const settings = () => editor.view.dispatch(editor.state.tr.setMeta('bulletMethodDisplay', { enabled, replaceBullets: true, dimCompleted: true }));
+  const settings = () => editor.view.dispatch(editor.state.tr.setMeta('bulletMethodDisplay', { enabled, replaceBullets: true }));
   settings();
   let writingStyle = 'notes';
   document.querySelector('#style').onclick = () => {

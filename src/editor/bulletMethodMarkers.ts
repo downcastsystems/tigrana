@@ -9,7 +9,7 @@ import { sortAfterStatusClick } from "./sortLines";
 import { listFoldingKey } from "./listFolding";
 import { Plugin, PluginKey, TextSelection } from "@tiptap/pm/state";
 import { Decoration, DecorationSet } from "@tiptap/pm/view";
-import { bulletMethodDimPercent, defaultBulletMethodDisplay, type BulletMethodDisplay, defaultBulletMethodStatuses, firstBulletMethodStatus, statusShortcut, statusCelebrates, statusDims, statusIcon, nextBulletMethodStatus, type BulletMethodStatus } from "../lib/bulletMethod";
+import { bulletMethodDimPercent, defaultBulletMethodDisplay, type BulletMethodDisplay, defaultBulletMethodStatuses, firstBulletMethodStatus, statusShortcut, statusCelebrates, statusDims, statusIcon, nextBulletMethodStatus, statusBolds, type BulletMethodStatus } from "../lib/bulletMethod";
 
 type MarkerState = { decorations: DecorationSet; statuses: readonly BulletMethodStatus[]; display: BulletMethodDisplay };
 export const bulletMethodMarkersKey = new PluginKey<MarkerState>("bulletMethodMarkers");
@@ -41,7 +41,7 @@ function decorationsIn(doc: ProseMirrorNode, from: number, to: number, statuses:
       for (let depth = $pos.depth; depth > 0; depth--) {
         if ($pos.node(depth).type.name === "listItem") { inListItem = true; break; }
       }
-      if (display.dimCompleted && inListItem && node.type.name === "paragraph") node.forEach((child, offset) => {
+      if (display.dimmedStatusesEnabled !== false && inListItem && node.type.name === "paragraph") node.forEach((child, offset) => {
         if (child.isText && child.marks.some(mark => mark.type.name === "bold")
           && !child.marks.some(mark => mark.type.name === "textColor" || mark.type.name === "highlight")) {
           const start = pos + 1 + offset;
@@ -59,7 +59,7 @@ function decorationsIn(doc: ProseMirrorNode, from: number, to: number, statuses:
     const completePrefix = paragraph?.type.name === "paragraph" && /^COMPLETE:/i.test(paragraph.textBetween(0, Math.min(9, paragraph.content.size)));
     // COMPLETE remains a legacy alias for DONE unless explicitly configured.
     const dimStatus = match?.status ?? (completePrefix ? statuses.find(status => status.id === "done") : statuses.find(status => status.prefix === null));
-    const dimmed = display.dimCompleted && dimStatus !== undefined && statusDims(dimStatus);
+    const dimmed = display.dimmedStatusesEnabled !== false && dimStatus !== undefined && statusDims(dimStatus);
     const attributes: Record<string, string> = {};
     if (dimmed) {
       attributes["data-bullet-method-completed"] = "true";
@@ -99,8 +99,13 @@ function decorationsIn(doc: ProseMirrorNode, from: number, to: number, statuses:
         const tr = closeHistory(view.state.tr).replaceWith(start, start + current.colon,
           view.state.schema.text(destination.prefix!, marks));
         const settings = bulletMethodMarkersKey.getState(view.state);
-        if (settings?.display.autoBoldStatus !== false && view.state.schema.marks.bold) {
-          tr.addMark(start, start + destination.prefix!.length + 1, view.state.schema.marks.bold.create());
+        if (settings?.display.boldStatusesEnabled !== false && view.state.schema.marks.bold) {
+          if (statusBolds(destination)) {
+            tr.addMark(start, start + destination.prefix!.length + 1, view.state.schema.marks.bold.create());
+          } else {
+            // An unchecked destination must not inherit the previous label's bold.
+            tr.removeMark(start, start + destination.prefix!.length + 1, view.state.schema.marks.bold);
+          }
         }
         let clicked = start + Math.min(destination.prefix!.length + 2, paragraph.content.size + destination.prefix!.length - current.colon);
         const beforeSort = clicked;
@@ -112,7 +117,7 @@ function decorationsIn(doc: ProseMirrorNode, from: number, to: number, statuses:
         if (destination.id === "done" && settings?.display.autoCollapseDone === true) {
           tr.setMeta(listFoldingKey, { position: tr.doc.resolve(clicked).before(-1), collapsed: true });
         }
-        if (statusCelebrates(destination)) tr.setMeta(bulletCelebrationKey, tr.doc.resolve(clicked).before());
+        if (settings?.display.celebrationsEnabled !== false && statusCelebrates(destination)) tr.setMeta(bulletCelebrationKey, tr.doc.resolve(clicked).before());
         view.dispatch(tr);
         // Keep the same point of the clicked bullet under the pointer. The
         // browser clamps at the document edges when exact anchoring is impossible.
@@ -131,7 +136,7 @@ function decorationsIn(doc: ProseMirrorNode, from: number, to: number, statuses:
         // margins even when sorting leaves the item in place: near the upper
         // edge that needlessly scrolls the note. Keyboard activation may scroll.
         const selectionTr = view.state.tr.setSelection(TextSelection.create(view.state.doc, clicked)).setMeta("addToHistory", false);
-        if (settings?.display.autoBoldStatus !== false && selectionTr.selection.$from.parent.content.size === destination.prefix!.length + 1) {
+        if (settings?.display.boldStatusesEnabled !== false && selectionTr.selection.$from.parent.content.size === destination.prefix!.length + 1) {
           // With no body or separating space yet, the caret touches the bold
           // label. Keep the next typed text from inheriting its generated bold.
           selectionTr.setStoredMarks(selectionTr.selection.$from.marks().filter(mark => mark.type.name !== "bold"));
@@ -155,13 +160,14 @@ export const BulletMethodMarkers = Extension.create({
       handler: ({ state, range, match }) => {
         const settings = bulletMethodMarkersKey.getState(state);
         const bold = state.schema.marks.bold;
-        if (!settings?.display.enabled || settings.display.autoBoldStatus === false || !bold) return null;
+        if (!settings?.display.enabled || settings.display.boldStatusesEnabled === false || !bold) return null;
         const { $from, empty } = state.selection;
         if (!empty || $from.parent.type.name !== "paragraph" || $from.depth < 3
           || $from.node(-1).type.name !== "listItem" || $from.node(-2).type.name !== "bulletList"
           || $from.index(-1) !== 0 || range.from !== $from.start()) return null;
         const prefix = match[0].slice(0, -1).trim().toUpperCase();
-        if (!settings.statuses.some(status => status.prefix !== null && status.prefix.trim().toUpperCase() === prefix)) return null;
+        const status = settings.statuses.find(status => status.prefix !== null && status.prefix.trim().toUpperCase() === prefix);
+        if (!status || !statusBolds(status)) return null;
         const tr = state.tr;
         const typingMarks = tr.storedMarks ?? $from.marks();
         // Insert only the new input so split formatting in the label survives.
@@ -190,8 +196,10 @@ export const BulletMethodMarkers = Extension.create({
         const conversion = chain().command(({ tr }) => {
           const typingMarks = tr.storedMarks ?? tr.selection.$from.marks();
           tr.insertText(prefix ? `${prefix}: ` : "", range.from, range.to);
-          if (prefix && settings.display.autoBoldStatus !== false && state.schema.marks.bold) {
-            tr.addMark(range.from, range.from + prefix.length + 1, state.schema.marks.bold.create());
+          if (prefix && settings.display.boldStatusesEnabled !== false && state.schema.marks.bold) {
+            if (statusBolds(status)) {
+              tr.addMark(range.from, range.from + prefix.length + 1, state.schema.marks.bold.create());
+            } else tr.removeMark(range.from, range.from + prefix.length + 1, state.schema.marks.bold);
             // Bold only the generated label, without changing the user's typing marks.
             tr.setStoredMarks(typingMarks);
           }

@@ -141,7 +141,7 @@ it("keeps one ellipsis at the end after preceding edits, parent edits, splits, a
 
 it.each([true, false])("collapses the clicked DONE parent after sorting (auto-sort %s), and allows reopening", autoSortOnClick => {
   const editor = make('<ul><li><p>TODO: Sibling</p></li><li><p>IN PROGRESS: Parent</p><ul><li><p>TODO: Child</p></li></ul></li></ul>');
-  editor.view.dispatch(editor.state.tr.setMeta("bulletMethodDisplay", { enabled: true, replaceBullets: true, dimCompleted: true, autoSortOnClick, autoCollapseDone: true }));
+  editor.view.dispatch(editor.state.tr.setMeta("bulletMethodDisplay", { enabled: true, replaceBullets: true, autoSortOnClick, autoCollapseDone: true }));
   editor.view.dom.querySelectorAll<HTMLButtonElement>(".bullet-method-marker-button")[1].click();
   expect(folded(editor)).toEqual(["DONE: Parent"]);
   expect(editor.state.selection.$from.parent.textContent).toBe("DONE: Parent");
@@ -152,7 +152,7 @@ it.each([true, false])("collapses the clicked DONE parent after sorting (auto-so
 it("recognizes DONE by stable status identity when its prefix is renamed", () => {
   const editor = make(nested);
   editor.view.dispatch(editor.state.tr.setMeta(bulletMethodMarkersKey, defaultBulletMethodStatuses.map(status => status.id === "done" ? { ...status, prefix: "FINISHED" } : status))
-    .setMeta("bulletMethodDisplay", { enabled: true, replaceBullets: true, dimCompleted: true, autoCollapseDone: true }));
+    .setMeta("bulletMethodDisplay", { enabled: true, replaceBullets: true, autoCollapseDone: true }));
   editor.view.dom.querySelector<HTMLButtonElement>(".bullet-method-marker-button")!.click();
   expect(folded(editor)).toEqual(["FINISHED: Parent"]);
 });
@@ -208,7 +208,7 @@ it("bounds decoration work to the edited item and ancestors in a long note", () 
 
 it.each([undefined, false])("leaves DONE parents expanded when automatic collapse is %s, with a live opt-in", autoCollapseDone => {
   const editor = make(nested);
-  const display = { enabled: true, replaceBullets: true, dimCompleted: true, autoCollapseDone };
+  const display = { enabled: true, replaceBullets: true, autoCollapseDone };
   editor.view.dispatch(editor.state.tr.setMeta("bulletMethodDisplay", display));
   editor.view.dom.querySelector<HTMLButtonElement>(".bullet-method-marker-button")!.click();
   expect(editor.state.doc.textContent).toContain("DONE: Parent");

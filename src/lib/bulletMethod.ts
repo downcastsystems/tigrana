@@ -7,6 +7,9 @@ export function statusIcon(status: BulletMethodStatus): BulletMethodIcon | null 
 export function statusDims(status: BulletMethodStatus): boolean {
   return status.prefix !== null && (status.dim ?? (status.id === "done" || status.id === "closed"));
 }
+export function statusBolds(status: BulletMethodStatus): boolean {
+  return status.prefix !== null && (status.bold ?? ["todo", "in-progress", "question"].includes(status.id));
+}
 export function statusCelebrates(status: BulletMethodStatus): boolean {
   return status.prefix !== null && (status.celebrate ?? status.id === "done");
 }
@@ -34,6 +37,7 @@ export type BulletMethodStatus = {
   description: string;
   icon?: BulletMethodIcon;
   dim?: boolean;
+  bold?: boolean;
   celebrate?: boolean;
   cycle?: boolean;
   shortcut?: string;
@@ -73,6 +77,7 @@ export function validateBulletMethodStatuses(statuses: readonly BulletMethodStat
     ids.add(status.id);
     if (status.celebrate !== undefined && typeof status.celebrate !== "boolean") return "Choose whether to celebrate each status.";
     if (status.dim !== undefined && typeof status.dim !== "boolean") return "Choose whether to dim each status.";
+    if (status.bold !== undefined && typeof status.bold !== "boolean") return "Choose whether to bold each status.";
     if (status.cycle !== undefined && typeof status.cycle !== "boolean") return "Choose whether to include each status in the click cycle.";
     if (status.icon !== undefined && !bulletMethodIcons.includes(status.icon)) return "Choose a supported circle icon.";
     const shortcutError = validateBulletMethodShortcut(status, statuses);
@@ -117,8 +122,8 @@ export function bulletMethodRank(text: string, statuses: readonly BulletMethodSt
   return index >= 0 ? index : statuses.findIndex(status => status.prefix === null);
 }
 
-export type BulletMethodDisplay = { autoSortOnClick?: boolean; autoCollapseDone?: boolean; autoBoldStatus?: boolean; shortcutsEnabled?: boolean; enabled?: boolean; replaceBullets: boolean; dimCompleted: boolean; lightPercent?: number; darkPercent?: number };
-export const defaultBulletMethodDisplay: BulletMethodDisplay = { enabled: false, replaceBullets: true, dimCompleted: true, autoCollapseDone: false, autoBoldStatus: true };
+export type BulletMethodDisplay = { autoSortOnClick?: boolean; autoCollapseDone?: boolean; shortcutsEnabled?: boolean; boldStatusesEnabled?: boolean; dimmedStatusesEnabled?: boolean; celebrationsEnabled?: boolean; enabled?: boolean; replaceBullets: boolean; lightPercent?: number; darkPercent?: number };
+export const defaultBulletMethodDisplay: BulletMethodDisplay = { enabled: false, replaceBullets: true, autoCollapseDone: false, boldStatusesEnabled: true, dimmedStatusesEnabled: true, celebrationsEnabled: true };
 export const bulletMethodDisplayKey = "tigrana.bulletMethod.display.v1";
 export function bulletMethodDimPercent(display: BulletMethodDisplay, mode: "light" | "dark"): number {
   const value = mode === "light" ? display.lightPercent : display.darkPercent;
@@ -132,9 +137,10 @@ export function readBulletMethodDisplay(): BulletMethodDisplay {
       ...(typeof stored?.autoSortOnClick === "boolean" ? { autoSortOnClick: stored.autoSortOnClick } : {}),
       ...(typeof stored?.shortcutsEnabled === "boolean" ? { shortcutsEnabled: stored.shortcutsEnabled } : {}),
       autoCollapseDone: stored?.autoCollapseDone === true,
-      autoBoldStatus: typeof stored?.autoBoldStatus === "boolean" ? stored.autoBoldStatus : true,
+      boldStatusesEnabled: stored?.boldStatusesEnabled !== false,
+      dimmedStatusesEnabled: stored?.dimmedStatusesEnabled !== false,
+      celebrationsEnabled: stored?.celebrationsEnabled !== false,
       replaceBullets: typeof stored?.replaceBullets === "boolean" ? stored.replaceBullets : true,
-      dimCompleted: typeof stored?.dimCompleted === "boolean" ? stored.dimCompleted : true,
       ...(stored?.lightPercent !== undefined ? { lightPercent: bulletMethodDimPercent(stored, "light") } : {}),
       ...(stored?.darkPercent !== undefined ? { darkPercent: bulletMethodDimPercent(stored, "dark") } : {}),
     };
