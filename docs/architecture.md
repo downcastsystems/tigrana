@@ -84,7 +84,8 @@ details in feature modules:
 - `editorImages.tsx` owns image node views, clipboard assets, and preview hydration.
 - `searchHighlight.ts` owns match discovery, decorations, and match scrolling.
 - `listFolding.ts` owns Notes-style list folding decorations and maps them through local edits and sorting. Folding does not change the editor document, Markdown, or Undo history.
-- Bullet folding is an app-wide, default-on General setting, saved locally like Bullet Statuses. Disabling it shows all children and suppresses automatic DONE folding. Unchanged folds return when re-enabled; editing while disabled clears the suspended ranges without doing folding work during typing.
+- Bullet folding is an app-wide, default-on General setting, saved locally like Bullet Statuses. Automatic DONE folding is a separate Bullet Statuses option, off by default, applied on status-icon clicks. Disabling general folding shows all children and suppresses automatic DONE folding. Unchanged folds return when re-enabled; editing while disabled clears the suspended ranges without doing folding work during typing.
+- Bullet Statuses automatically bolds converted or cycled status labels, including the colon, by default. Typing a recognized label and colon at the start of an ordinary bullet also applies bold immediately, independently of the shortcut switch. This can be disabled independently; existing formatting is preserved. The bold marks persist as ordinary Markdown (`**TODO:**`).
 - `foldedListClipboard.ts` expands full-row clipboard selections over collapsed list items to include hidden descendants. Partial-text selections keep their normal semantics.
 - `listFoldingPersistence.ts` captures compact fold ranges at idle or navigation/close boundaries. Document edits share the existing deferred Markdown conversion; fold-only changes do not serialize the document.
 - `textExtensions.ts` owns emoji input rules, manual spacing, and list separators.

@@ -100,9 +100,9 @@ it("persists icon choices while accepting older settings without icons", () => {
 it("defaults both display options on and persists each independently", () => {
   expect(readBulletMethodDisplay()).toEqual(defaultBulletMethodDisplay);
   writeBulletMethodDisplay({ replaceBullets: false, dimCompleted: true });
-  expect(readBulletMethodDisplay()).toEqual({ enabled: false, replaceBullets: false, dimCompleted: true });
+  expect(readBulletMethodDisplay()).toEqual({ ...defaultBulletMethodDisplay, replaceBullets: false });
   writeBulletMethodDisplay({ replaceBullets: true, dimCompleted: false });
-  expect(readBulletMethodDisplay()).toEqual({ enabled: false, replaceBullets: true, dimCompleted: false });
+  expect(readBulletMethodDisplay()).toEqual({ ...defaultBulletMethodDisplay, dimCompleted: false });
   localStorage.setItem(bulletMethodDisplayKey, "invalid");
   expect(readBulletMethodDisplay()).toEqual(defaultBulletMethodDisplay);
 });
@@ -132,4 +132,14 @@ it("defaults click sorting on and persists an explicit off choice", () => {
   expect(readBulletMethodDisplay().autoSortOnClick).toBe(false);
   writeBulletMethodDisplay({ ...defaultBulletMethodDisplay, autoSortOnClick: true });
   expect(readBulletMethodDisplay().autoSortOnClick).toBe(true);
+});
+
+it("defaults DONE collapsing off and status bolding on for new and legacy preferences", () => {
+  expect(readBulletMethodDisplay()).toMatchObject({ autoCollapseDone: false, autoBoldStatus: true });
+  localStorage.setItem(bulletMethodDisplayKey, JSON.stringify({ enabled: true, replaceBullets: false, dimCompleted: false }));
+  expect(readBulletMethodDisplay()).toMatchObject({ enabled: true, replaceBullets: false, dimCompleted: false, autoCollapseDone: false, autoBoldStatus: true });
+  writeBulletMethodDisplay({ ...readBulletMethodDisplay(), autoCollapseDone: true, autoBoldStatus: false });
+  expect(readBulletMethodDisplay()).toMatchObject({ enabled: true, replaceBullets: false, dimCompleted: false, autoCollapseDone: true, autoBoldStatus: false });
+  localStorage.setItem(bulletMethodDisplayKey, JSON.stringify({ autoCollapseDone: "true", autoBoldStatus: "false" }));
+  expect(readBulletMethodDisplay()).toEqual(defaultBulletMethodDisplay);
 });

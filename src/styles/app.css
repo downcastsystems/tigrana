@@ -1196,8 +1196,7 @@ body.is-dragging-section * {
   bottom: -2px;
 }
 
-.bookmark-item:hover,
-.bookmark-item.is-active {
+.bookmark-item:hover {
   color: var(--accent-strong);
   background: var(--accent-active);
 }
@@ -3110,6 +3109,8 @@ html[data-theme="dark"] .tab-list-separator {
 }
 
 .note-surface {
+  /* Symmetric space for the floating grip and fold caret, including large type. */
+  --note-side-inset: max(44px, calc(var(--editor-font-size) * 1.15 + 24px));
   --note-scroll-fade-size: 22px;
   display: flex;
   flex: 1;
@@ -3156,7 +3157,7 @@ html[data-theme="dark"] .tab-list-separator {
 }
 
 .note-meta {
-  width: min(860px, calc(100% - 72px));
+  width: min(860px, calc(100% - var(--note-side-inset) * 2));
   margin: 26px auto -8px;
   color: #938a7f;
   font-size: 12px;
@@ -3172,7 +3173,7 @@ html[data-theme="dark"] .tab-list-separator {
 .title-shell {
   position: relative;
   flex-shrink: 0;
-  width: min(860px, calc(100% - 72px));
+  width: min(860px, calc(100% - var(--note-side-inset) * 2));
   margin: 0 auto -4px;
   padding-bottom: 14px;
   border-bottom: 1px solid rgba(52, 48, 43, 0.12);
@@ -3275,7 +3276,7 @@ html[data-theme="dark"] .tab-list-separator {
 }
 
 .note-load-fallback {
-  width: min(640px, calc(100% - 72px));
+  width: min(640px, calc(100% - var(--note-side-inset) * 2));
   margin: 24px auto 0;
   color: #a13d31;
   font-size: 13px;
@@ -3287,7 +3288,7 @@ html[data-theme="dark"] .tab-list-separator {
   flex: 1 0 auto;
   flex-direction: column;
   --editor-bottom-breathing-room: clamp(160px, 32vh, 280px);
-  width: min(860px, calc(100% - 72px));
+  width: min(860px, calc(100% - var(--note-side-inset) * 2));
   margin: 0 auto;
   padding: 28px 0 0;
 }
@@ -3313,7 +3314,7 @@ html[data-theme="dark"] .tab-list-separator {
 .note-surface.is-left-aligned .editor-shell,
 .note-surface.is-left-aligned .raw-markdown-shell,
 .note-surface.is-left-aligned .note-meta {
-  margin-left: 36px;
+  margin-left: var(--note-side-inset);
   margin-right: auto;
 }
 
@@ -3416,7 +3417,7 @@ html[data-theme="dark"] .tab-list-separator {
 .raw-markdown-shell {
   display: flex;
   flex-direction: column;
-  width: min(860px, calc(100% - 72px));
+  width: min(860px, calc(100% - var(--note-side-inset) * 2));
   margin: 0 auto;
   padding: 24px 0 28px;
   flex: 1 1 auto;
@@ -3471,7 +3472,7 @@ html[data-theme="dark"] .tab-list-separator {
 .note-surface.is-narrow-width .editor-shell,
 .note-surface.is-narrow-width .raw-markdown-shell,
 .note-surface.is-narrow-width .note-meta {
-  width: min(640px, calc(100% - 72px));
+  width: min(640px, calc(100% - var(--note-side-inset) * 2));
 }
 
 /* Full-width mode: let the content fill the pane with a small margin on each side */
@@ -3479,7 +3480,7 @@ html[data-theme="dark"] .tab-list-separator {
 .note-surface.is-full-width .editor-shell,
 .note-surface.is-full-width .raw-markdown-shell,
 .note-surface.is-full-width .note-meta {
-  width: calc(100% - 48px);
+  width: calc(100% - var(--note-side-inset) * 2);
   max-width: none;
 }
 
@@ -3487,7 +3488,7 @@ html[data-theme="dark"] .tab-list-separator {
 .note-surface.is-left-aligned.is-full-width .editor-shell,
 .note-surface.is-left-aligned.is-full-width .raw-markdown-shell,
 .note-surface.is-left-aligned.is-full-width .note-meta {
-  margin-left: 24px;
+  margin-left: var(--note-side-inset);
 }
 
 .raw-markdown-input {
@@ -3996,6 +3997,10 @@ html[data-theme="dark"] .tab-list-separator {
   margin-top: 4px;
 }
 
+.ProseMirror li + li {
+  margin-top: 6px;
+}
+
 .ProseMirror ul:not([data-type="taskList"]) > li,
 .ProseMirror ol > li {
   padding-inline-start: 2px;
@@ -4050,6 +4055,49 @@ html[data-theme="dark"] .tab-list-separator {
 }
 .ProseMirror .bullet-method-marker-button:focus-visible { outline: 2px solid currentColor; outline-offset: 3px; }
 
+/* Floating bullet controls do not participate in the centered text column. */
+.list-drag-handle {
+  position: fixed;
+  z-index: 30;
+  width: 20px;
+  height: 22px;
+  padding: 0;
+  border: 0;
+  border-radius: 4px;
+  color: var(--text-muted);
+  background: transparent;
+  cursor: grab;
+  touch-action: none;
+  user-select: none;
+  -webkit-user-select: none;
+  -webkit-user-drag: none;
+}
+.list-drag-handle::before {
+  content: "";
+  position: absolute;
+  inset: 4px 5px;
+  background: radial-gradient(circle, currentColor 1.2px, transparent 1.5px) 0 0 / 5px 5px;
+}
+.list-drag-handle:hover { color: var(--text); background: color-mix(in srgb, currentColor 9%, transparent); }
+.list-drag-handle:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.list-drag-handle[hidden], .list-drag-indicator[hidden] { display: none; }
+.list-drag-indicator {
+  position: fixed;
+  z-index: 30;
+  height: 2px;
+  background: var(--drag-indicator);
+  border-radius: 2px;
+  pointer-events: none;
+}
+body.is-dragging-list-item, body.is-dragging-list-item * {
+  cursor: grabbing !important;
+  user-select: none !important;
+  -webkit-user-select: none !important;
+}
+.ProseMirror .is-dragging-list-source { opacity: 0.45; }
+body.is-dragging-list-item .list-drag-handle.is-invalid-drop { cursor: not-allowed !important; }
+@media print { .list-drag-handle, .list-drag-indicator { display: none; } }
+
 /* Use the outer gutter without moving the marker, text, or nested indentation. */
 .ProseMirror li[data-list-foldable] { position: relative; --list-fold-gutter: 2.5em; }
 .ProseMirror li[data-list-foldable] > p { transform: translate(0); }
@@ -4088,6 +4136,7 @@ html[data-theme="dark"] .tab-list-separator {
 }
 .ProseMirror li[data-bullet-method-marker] > .list-fold-button { width: 1.25em; }
 .ProseMirror .list-fold-button[aria-expanded="true"] { opacity: 0; }
+.ProseMirror .list-fold-button.is-list-drag-hovered,
 .ProseMirror li[data-list-foldable]:has(> p:first-of-type:hover) > .list-fold-button,
 .ProseMirror li[data-list-foldable]:has(> .bullet-method-marker-button:hover) > .list-fold-button,
 .ProseMirror .list-fold-button:hover,
@@ -5932,8 +5981,7 @@ html[data-theme="dark"] .bookmark-item {
   background: transparent;
 }
 
-html[data-theme="dark"] .bookmark-item:hover,
-html[data-theme="dark"] .bookmark-item.is-active {
+html[data-theme="dark"] .bookmark-item:hover {
   color: var(--accent-contrast);
   background: var(--accent);
 }
@@ -6013,7 +6061,7 @@ html[data-theme="dark"] .ProseMirror pre {
   .editor-shell,
   .raw-markdown-shell,
   .title-shell {
-    width: min(760px, calc(100% - 40px));
+    width: min(760px, calc(100% - var(--note-side-inset) * 2));
   }
 
   .note-surface.is-left-aligned .title-shell,
@@ -6024,7 +6072,7 @@ html[data-theme="dark"] .ProseMirror pre {
   .note-surface.is-left-aligned.is-full-width .editor-shell,
   .note-surface.is-left-aligned.is-full-width .raw-markdown-shell,
   .note-surface.is-left-aligned.is-full-width .note-meta {
-    margin-left: 20px;
+    margin-left: var(--note-side-inset);
   }
 
 }
@@ -6909,7 +6957,7 @@ html[data-theme="dark"] .bullet-method-order-section { background: rgb(0 0 0 / 1
 /* Story layout only affects ordinary top-level paragraphs. */
 .writing-style-story .ProseMirror > p { margin-top: 0; margin-bottom: 0; text-indent: 0; }
 .writing-style-story .ProseMirror > p + p {
-  margin-top: 0;
+  margin-top: 4px;
   margin-bottom: 0;
   text-indent: 1.5em;
 }
@@ -7008,6 +7056,13 @@ body.is-dragging-bullet-status, body.is-dragging-bullet-status * { cursor: grabb
    Apply color to paragraphs and markers, not list containers, so nesting never compounds dimming. */
 .ProseMirror li[data-bullet-method-completed="true"] p, .ProseMirror p[data-bullet-method-dim="true"] { --bullet-link-opacity: var(--bullet-dim-dark, 70%); color: color-mix(in srgb, currentColor var(--bullet-dim-dark, 70%), transparent); }
 html[data-theme="light"] .ProseMirror li[data-bullet-method-completed="true"] p, html[data-theme="light"] .ProseMirror p[data-bullet-method-dim="true"] { --bullet-link-opacity: var(--bullet-dim-light, 65%); color: color-mix(in srgb, currentColor var(--bullet-dim-light, 65%), transparent); }
+/* Composite bold glyphs once: WebKit's synthesized bold ignores color alpha.
+   These view-only spans exclude explicit colors/highlights and never nest. */
+.ProseMirror li[data-bullet-method-completed="true"] p .bullet-method-dim-bold,
+.ProseMirror p[data-bullet-method-dim="true"] .bullet-method-dim-bold {
+  color: rgb(from currentColor r g b / 1);
+  opacity: var(--bullet-link-opacity);
+}
 .bullet-method-display-options { display: flex; flex-direction: column; gap: 10px; margin-bottom: 20px; }
 .bullet-method-display-options label { display: flex; align-items: center; gap: 8px; }
 .bullet-method-display-options p { margin: 0; color: var(--text-muted); font-size: 13px; }

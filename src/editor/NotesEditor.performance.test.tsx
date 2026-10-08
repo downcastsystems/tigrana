@@ -259,6 +259,44 @@ describe("Note editor typing performance", () => {
     });
     expect(editor.state.doc.firstChild?.type.name).toBe('bulletList');
     expect(editor.state.doc.textContent).toBe('QUESTION: ');
+    expect(editor.getHTML()).toContain('<strong>QUESTION:</strong> ');
+    await act(async () => {
+      const { from, to } = editor.state.selection;
+      const text = 'Body';
+      const handled = editor.view.someProp('handleTextInput', handler => handler(editor.view, from, to, text, () => editor.state.tr.insertText(text, from, to)));
+      if (!handled) editor.view.dispatch(editor.state.tr.insertText(text, from, to));
+    });
+    expect(editor.getHTML()).toContain('<strong>QUESTION:</strong> Body');
+  });
+  it('bolds a directly typed bullet status locally and saves one Markdown update per burst', async () => {
+    vi.useFakeTimers();
+    const container = document.createElement('div'); document.body.append(container);
+    const root = createRoot(container); mounted.push({ container, root });
+    const changed = vi.fn();
+    await act(async () => root.render(<NotesEditor content='- TODO' editable findRequest={0}
+      focusAtEndRequest={0} focusRequest={0} historyKey='typed-status' notePath='Typed.md'
+      bulletMethodDisplay={{ enabled: true, replaceBullets: true, dimCompleted: true, shortcutsEnabled: false }}
+      onChange={changed} onLoadError={error => { throw error; }} onPendingChange={() => undefined}
+      onPositionChange={() => undefined} restorePosition={null} spellcheckEnabled workspace='/Notebook' />));
+    await act(async () => { await vi.advanceTimersByTimeAsync(markdownCommitDelayMs); });
+    changed.mockClear(); vi.mocked(htmlToMarkdown).mockClear();
+    const editor = (container.querySelector('.ProseMirror') as HTMLElement & { editor: import('@tiptap/core').Editor }).editor;
+    const setContent = vi.spyOn(editor.commands, 'setContent');
+    await act(async () => {
+      editor.commands.setTextSelection(7);
+      for (const text of ': Body') {
+        const { from, to } = editor.state.selection;
+        const handled = editor.view.someProp('handleTextInput', handler => handler(editor.view, from, to, text, () => editor.state.tr.insertText(text, from, to)));
+        if (!handled) editor.view.dispatch(editor.state.tr.insertText(text, from, to));
+      }
+    });
+    expect(editor.getHTML()).toContain('<strong>TODO:</strong> Body');
+    expect(changed).not.toHaveBeenCalled(); expect(htmlToMarkdown).not.toHaveBeenCalled();
+    await act(async () => { await vi.advanceTimersByTimeAsync(markdownCommitDelayMs); });
+    expect(changed).toHaveBeenCalledOnce(); expect(htmlToMarkdown).toHaveBeenCalledOnce();
+    expect(changed.mock.calls[0][0]).toContain('- **TODO:** Body');
+    expect(setContent).not.toHaveBeenCalled();
+    expect(container.querySelector('.ProseMirror')).toBe(editor.view.dom);
   });
   it('returns from a typed footnote on Escape with the complete editor extensions', async () => {
     const container = document.createElement('div'); document.body.append(container);
@@ -612,6 +650,66 @@ describe("Note editor typing performance", () => {
     await act(async () => editor.commands.setContent(markdownToHtml(serialized)));
     expect(container.querySelector(".image-resizable")?.getAttribute("style")).toContain("250px");
     if (imageMarkdown.startsWith("-")) expect(container.querySelector("li .image-resizable")).not.toBeNull();
+
+  });
+
+  it("keeps bullet drag previews local and publishes one deferred Markdown move", async () => {
+    vi.useFakeTimers();
+    const container = document.createElement("div"); container.className = "note-surface"; document.body.appendChild(container);
+    const root = createRoot(container); mounted.push({ container, root });
+    const onChange = vi.fn();
+    await act(async () => root.render(<NotesEditor content={"- Parent\n  - Child\n- Sibling"} editable findRequest={0}
+      focusAtEndRequest={0} focusRequest={0} historyKey="drag" notePath="Drag.md"
+      onChange={onChange} onLoadError={error => { throw error; }}
+      onPendingChange={() => undefined} onPositionChange={() => undefined}
+      restorePosition={null} spellcheckEnabled workspace="/Notebook" />));
+    const editor = (container.querySelector(".ProseMirror") as HTMLElement & { editor: import("@tiptap/core").Editor }).editor;
+    const setContent = vi.spyOn(editor.commands, "setContent");
+    vi.spyOn(container, "getBoundingClientRect").mockReturnValue(new DOMRect(0, 0, 800, 800));
+    vi.spyOn(editor.view.dom, "getBoundingClientRect").mockReturnValue(new DOMRect(50, 0, 700, 700));
+    const items = container.querySelectorAll("li");
+    items.forEach((li, index) => {
+      vi.spyOn(li, "getBoundingClientRect").mockReturnValue(new DOMRect(80, 40 + index * 30, 670, 30 * (li.querySelectorAll("li").length + 1)));
+      vi.spyOn(li.querySelector(":scope > p")!, "getBoundingClientRect").mockReturnValue(new DOMRect(82, 40 + index * 30, 668, 30));
+    });
+    container.querySelectorAll("ul").forEach(list => {
+      const children = [...list.children];
+      const first = children[0].getBoundingClientRect(), last = children.at(-1)!.getBoundingClientRect();
+      vi.spyOn(list, "getBoundingClientRect").mockReturnValue(new DOMRect(50, first.top, 700, last.bottom - first.top));
+    });
+    if (editor.view.dom.lastElementChild?.tagName === "P") {
+      vi.spyOn(editor.view.dom.lastElementChild, "getBoundingClientRect").mockReturnValue(new DOMRect(50, 145, 700, 20));
+    }
+    const pointer = (target: EventTarget, type: string, x: number, y: number) => {
+      const event = new MouseEvent(type, { bubbles: true, cancelable: true, clientX: x, clientY: y });
+      Object.defineProperty(event, "pointerId", { value: 1 }); target.dispatchEvent(event);
+    };
+    await act(async () => {
+      pointer(items[0].querySelector("p")!, "pointermove", 160, 50);
+      const grip = document.querySelector(".list-drag-handle:not([hidden])")!;
+      expect(grip).not.toBeNull();
+      vi.spyOn(grip, "getBoundingClientRect").mockReturnValue(new DOMRect(20, 40, 20, 22));
+      editor.view.dom.dispatchEvent(new MouseEvent("pointerleave", { relatedTarget: container }));
+      pointer(container, "pointermove", 24, 50);
+      expect((grip as HTMLButtonElement).hidden).toBe(false);
+      pointer(grip, "pointerdown", 20, 50);
+      for (const x of [100, 120, 140, 160]) pointer(document, "pointermove", x, 122);
+    });
+    expect(document.body.classList.contains("is-dragging-list-item")).toBe(true);
+    expect(document.querySelector(".list-drag-indicator:not([hidden])")).not.toBeNull();
+    expect(editor.state.doc.textContent).toBe("ParentChildSibling");
+    expect(htmlToMarkdown).not.toHaveBeenCalled(); expect(onChange).not.toHaveBeenCalled();
+    await act(async () => pointer(document, "pointerup", 160, 122));
+    expect(editor.state.doc.textContent).toBe("SiblingParentChild");
+    expect(container.querySelector('.bullet-method-moved')?.textContent).toBe('Parent');
+    expect(htmlToMarkdown).not.toHaveBeenCalled(); expect(onChange).not.toHaveBeenCalled();
+    await act(async () => { await vi.advanceTimersByTimeAsync(markdownCommitDelayMs); });
+    expect(htmlToMarkdown).toHaveBeenCalledOnce(); expect(onChange).toHaveBeenCalledOnce();
+    expect(onChange).toHaveBeenCalledWith("- Sibling\n- Parent\n  - Child\n", "Drag.md");
+    await act(async () => { await vi.advanceTimersByTimeAsync(900); });
+    expect(container.querySelector('.bullet-method-moved')).toBeNull();
+    expect(htmlToMarkdown).toHaveBeenCalledOnce(); expect(onChange).toHaveBeenCalledOnce();
+    expect(setContent).not.toHaveBeenCalled(); expect(container.querySelector(".ProseMirror")).toBe(editor.view.dom);
 
   });
 

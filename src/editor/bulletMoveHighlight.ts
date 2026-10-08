@@ -4,7 +4,7 @@ import { Decoration, DecorationSet } from "@tiptap/pm/view";
 type HighlightState = { decorations: DecorationSet; revision: number };
 export const bulletMoveHighlightKey = new PluginKey<HighlightState>("bulletMoveHighlight");
 
-/** View-only feedback. Each click replaces the previous highlight and its expiry. */
+/** View-only feedback. Each move replaces the previous highlight and its expiry. */
 export function createBulletMoveHighlightPlugin() {
   return new Plugin<HighlightState>({
     key: bulletMoveHighlightKey,

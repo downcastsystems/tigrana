@@ -3,7 +3,7 @@ import { bulletMethodIconUrl } from "../lib/bulletMethodIcons";
 import { Extension, InputRule } from "@tiptap/core";
 import type { Node as ProseMirrorNode } from "@tiptap/pm/model";
 import { closeHistory } from "@tiptap/pm/history";
-import { canJoin, Mapping } from "@tiptap/pm/transform";
+import { AddMarkStep, RemoveMarkStep, canJoin, Mapping } from "@tiptap/pm/transform";
 import { bulletMoveHighlightKey, createBulletMoveHighlightPlugin } from "./bulletMoveHighlight";
 import { sortAfterStatusClick } from "./sortLines";
 import { listFoldingKey } from "./listFolding";
@@ -27,10 +27,29 @@ function marker(node: ProseMirrorNode, statuses: readonly BulletMethodStatus[]) 
   return status ? { status, colon } : null;
 }
 
-function decorationsIn(doc: ProseMirrorNode, from: number, to: number, statuses: readonly BulletMethodStatus[], display: BulletMethodDisplay, positions?: Set<number>) {
+function decorationsIn(doc: ProseMirrorNode, from: number, to: number, statuses: readonly BulletMethodStatus[], display: BulletMethodDisplay, positions?: Set<number>, textblocks?: Map<number, number>) {
   const decorations: Decoration[] = [];
   if (!display.enabled) return decorations;
   doc.nodesBetween(from, to, (node, pos, parent) => {
+    if (node.isTextblock) {
+      textblocks?.set(pos, pos + node.nodeSize);
+      // WebKit paints synthesized bold with an opaque foreground even when
+      // its inherited color has alpha. Composite only uncolored bold runs;
+      // CSS activates the fade when this paragraph inherits status dimming.
+      const $pos = doc.resolve(pos);
+      let inListItem = false;
+      for (let depth = $pos.depth; depth > 0; depth--) {
+        if ($pos.node(depth).type.name === "listItem") { inListItem = true; break; }
+      }
+      if (display.dimCompleted && inListItem && node.type.name === "paragraph") node.forEach((child, offset) => {
+        if (child.isText && child.marks.some(mark => mark.type.name === "bold")
+          && !child.marks.some(mark => mark.type.name === "textColor" || mark.type.name === "highlight")) {
+          const start = pos + 1 + offset;
+          decorations.push(Decoration.inline(start, start + child.nodeSize, { class: "bullet-method-dim-bold" }, { dimBold: true }));
+        }
+      });
+      return false;
+    }
     if (node.type.name !== "listItem") return;
     positions?.add(pos);
     if (parent?.type.name !== "bulletList") return;
@@ -80,6 +99,9 @@ function decorationsIn(doc: ProseMirrorNode, from: number, to: number, statuses:
         const tr = closeHistory(view.state.tr).replaceWith(start, start + current.colon,
           view.state.schema.text(destination.prefix!, marks));
         const settings = bulletMethodMarkersKey.getState(view.state);
+        if (settings?.display.autoBoldStatus !== false && view.state.schema.marks.bold) {
+          tr.addMark(start, start + destination.prefix!.length + 1, view.state.schema.marks.bold.create());
+        }
         let clicked = start + Math.min(destination.prefix!.length + 2, paragraph.content.size + destination.prefix!.length - current.colon);
         const beforeSort = clicked;
         if (settings?.display.autoSortOnClick !== false) {
@@ -87,7 +109,9 @@ function decorationsIn(doc: ProseMirrorNode, from: number, to: number, statuses:
         }
         tr.setMeta(bulletMoveHighlightKey, clicked !== beforeSort ? tr.doc.resolve(clicked).before() : null);
         // Resolve after sorting so the fold follows the clicked parent.
-        if (destination.id === "done") tr.setMeta(listFoldingKey, { position: tr.doc.resolve(clicked).before(-1), collapsed: true });
+        if (destination.id === "done" && settings?.display.autoCollapseDone === true) {
+          tr.setMeta(listFoldingKey, { position: tr.doc.resolve(clicked).before(-1), collapsed: true });
+        }
         if (statusCelebrates(destination)) tr.setMeta(bulletCelebrationKey, tr.doc.resolve(clicked).before());
         view.dispatch(tr);
         // Keep the same point of the clicked bullet under the pointer. The
@@ -107,6 +131,11 @@ function decorationsIn(doc: ProseMirrorNode, from: number, to: number, statuses:
         // margins even when sorting leaves the item in place: near the upper
         // edge that needlessly scrolls the note. Keyboard activation may scroll.
         const selectionTr = view.state.tr.setSelection(TextSelection.create(view.state.doc, clicked)).setMeta("addToHistory", false);
+        if (settings?.display.autoBoldStatus !== false && selectionTr.selection.$from.parent.content.size === destination.prefix!.length + 1) {
+          // With no body or separating space yet, the caret touches the bold
+          // label. Keep the next typed text from inheriting its generated bold.
+          selectionTr.setStoredMarks(selectionTr.selection.$from.marks().filter(mark => mark.type.name !== "bold"));
+        }
         view.dispatch(anchorTop !== null ? selectionTr : selectionTr.scrollIntoView());
         view.dispatch(closeHistory(view.state.tr));
         view.focus();
@@ -122,6 +151,25 @@ export const BulletMethodMarkers = Extension.create({
   name: "bulletMethodMarkers",
   addInputRules() {
     return [new InputRule({
+      find: /^[^:\r\n]+:$/,
+      handler: ({ state, range, match }) => {
+        const settings = bulletMethodMarkersKey.getState(state);
+        const bold = state.schema.marks.bold;
+        if (!settings?.display.enabled || settings.display.autoBoldStatus === false || !bold) return null;
+        const { $from, empty } = state.selection;
+        if (!empty || $from.parent.type.name !== "paragraph" || $from.depth < 3
+          || $from.node(-1).type.name !== "listItem" || $from.node(-2).type.name !== "bulletList"
+          || $from.index(-1) !== 0 || range.from !== $from.start()) return null;
+        const prefix = match[0].slice(0, -1).trim().toUpperCase();
+        if (!settings.statuses.some(status => status.prefix !== null && status.prefix.trim().toUpperCase() === prefix)) return null;
+        const tr = state.tr;
+        const typingMarks = tr.storedMarks ?? $from.marks();
+        // Insert only the new input so split formatting in the label survives.
+        tr.insertText(match[0].slice($from.pos - range.from), $from.pos, range.to);
+        tr.addMark(range.from, range.from + match[0].length, bold.create());
+        tr.setStoredMarks(typingMarks);
+      },
+    }), new InputRule({
       find: /^(-[^\s:][^:\r\n]*:|(?=\S*:)\S{2,9}) $/,
       handler: ({ state, range, match, chain }) => {
         const settings = bulletMethodMarkersKey.getState(state);
@@ -140,7 +188,13 @@ export const BulletMethodMarkers = Extension.create({
           && $from.node(-2).type.name === "bulletList" && $from.index(-1) === 0;
         if ($from.depth !== 1 && !inBullet) return null;
         const conversion = chain().command(({ tr }) => {
+          const typingMarks = tr.storedMarks ?? tr.selection.$from.marks();
           tr.insertText(prefix ? `${prefix}: ` : "", range.from, range.to);
+          if (prefix && settings.display.autoBoldStatus !== false && state.schema.marks.bold) {
+            tr.addMark(range.from, range.from + prefix.length + 1, state.schema.marks.bold.create());
+            // Bold only the generated label, without changing the user's typing marks.
+            tr.setStoredMarks(typingMarks);
+          }
           return true;
         });
         if (!inBullet) {
@@ -191,18 +245,29 @@ export const BulletMethodMarkers = Extension.create({
             decorations = decorations.map(new Mapping([map]), tr.docs[index + 1] ?? tr.doc);
           });
           const positions = new Set<number>();
+          const textblocks = new Map<number, number>();
           // A paragraph decoration and its preceding widget share a start.
           const updated = new Map<string, Decoration>();
+          const recheck = (from: number, to: number) => {
+            for (const decoration of decorationsIn(tr.doc, from, to, previous.statuses, previous.display, positions, textblocks)) updated.set(`${decoration.from}:${decoration.to}`, decoration);
+          };
           tr.mapping.maps.forEach((map, index) => {
             const remaining = tr.mapping.slice(index + 1);
             map.forEach((_oldFrom, _oldTo, newFrom, newTo) => {
               const from = Math.max(0, remaining.map(newFrom, -1) - 1);
               const to = Math.min(tr.doc.content.size, remaining.map(newTo, 1) + 1);
-              for (const decoration of decorationsIn(tr.doc, from, to, previous.statuses, previous.display, positions)) updated.set(`${decoration.from}:${decoration.to}`, decoration);
+              recheck(from, to);
             });
+            // Mark changes have empty position maps but can split a bold run
+            // or give it an explicit color. Recheck only their affected text.
+            const step = tr.steps[index];
+            if (step instanceof AddMarkStep || step instanceof RemoveMarkStep) {
+              recheck(remaining.map(step.from, -1), remaining.map(step.to, 1));
+            }
           });
           // Recheck changed items and their ancestors, not every item on each key.
           for (const pos of positions) decorations = decorations.remove(decorations.find(pos, pos + 2).filter(decoration => decoration.from >= pos && decoration.from <= pos + 2));
+          for (const [from, to] of textblocks) decorations = decorations.remove(decorations.find(from, to).filter(decoration => decoration.spec.dimBold));
           decorations = decorations.add(tr.doc, [...updated.values()]);
           return { statuses: previous.statuses, display: previous.display, decorations };
         },

@@ -111,7 +111,6 @@ export function BookmarksSection({
               <button
                 className={[
                   "bookmark-item",
-                  bookmark.selected ? "is-active" : "",
                   bookmark.missing ? "is-missing" : "",
                   draggedBookmarkId === bookmark.id ? "is-dragging" : "",
                   dropIndicator?.id === bookmark.id ? `is-reorder-${dropIndicator.placement}` : "",

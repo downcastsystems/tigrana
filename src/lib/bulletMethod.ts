@@ -117,8 +117,8 @@ export function bulletMethodRank(text: string, statuses: readonly BulletMethodSt
   return index >= 0 ? index : statuses.findIndex(status => status.prefix === null);
 }
 
-export type BulletMethodDisplay = { autoSortOnClick?: boolean; shortcutsEnabled?: boolean; enabled?: boolean; replaceBullets: boolean; dimCompleted: boolean; lightPercent?: number; darkPercent?: number };
-export const defaultBulletMethodDisplay: BulletMethodDisplay = { enabled: false, replaceBullets: true, dimCompleted: true };
+export type BulletMethodDisplay = { autoSortOnClick?: boolean; autoCollapseDone?: boolean; autoBoldStatus?: boolean; shortcutsEnabled?: boolean; enabled?: boolean; replaceBullets: boolean; dimCompleted: boolean; lightPercent?: number; darkPercent?: number };
+export const defaultBulletMethodDisplay: BulletMethodDisplay = { enabled: false, replaceBullets: true, dimCompleted: true, autoCollapseDone: false, autoBoldStatus: true };
 export const bulletMethodDisplayKey = "tigrana.bulletMethod.display.v1";
 export function bulletMethodDimPercent(display: BulletMethodDisplay, mode: "light" | "dark"): number {
   const value = mode === "light" ? display.lightPercent : display.darkPercent;
@@ -131,6 +131,8 @@ export function readBulletMethodDisplay(): BulletMethodDisplay {
       enabled: stored?.enabled === true,
       ...(typeof stored?.autoSortOnClick === "boolean" ? { autoSortOnClick: stored.autoSortOnClick } : {}),
       ...(typeof stored?.shortcutsEnabled === "boolean" ? { shortcutsEnabled: stored.shortcutsEnabled } : {}),
+      autoCollapseDone: stored?.autoCollapseDone === true,
+      autoBoldStatus: typeof stored?.autoBoldStatus === "boolean" ? stored.autoBoldStatus : true,
       replaceBullets: typeof stored?.replaceBullets === "boolean" ? stored.replaceBullets : true,
       dimCompleted: typeof stored?.dimCompleted === "boolean" ? stored.dimCompleted : true,
       ...(stored?.lightPercent !== undefined ? { lightPercent: bulletMethodDimPercent(stored, "light") } : {}),

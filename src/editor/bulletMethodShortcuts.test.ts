@@ -5,6 +5,7 @@ import { StarterKit } from "@tiptap/starter-kit";
 import { afterEach, expect, it } from "vitest";
 import { BulletMethodMarkers, bulletMethodMarkersKey } from "./bulletMethodMarkers";
 import { statusShortcut, defaultBulletMethodStatuses, validateBulletMethodStatuses, readBulletMethodStatuses, writeBulletMethodStatuses, readBulletMethodDisplay, writeBulletMethodDisplay, bulletMethodSettingsKey, bulletMethodDisplayKey } from "../lib/bulletMethod";
+import { TextColor } from "./inlineColorMarks";
 import { htmlToMarkdown } from "../lib/markdown";
 
 const editors: Editor[] = [];
@@ -26,7 +27,7 @@ it.each([["::", "TODO"], [".:", "IN PROGRESS"], ["?:", "QUESTION"]])("converts %
   type(editor, " ");
   expect(editor.state.doc.firstChild?.type.name).toBe("bulletList");
   expect(editor.state.doc.textContent).toBe(`${status}: `);
-  expect(htmlToMarkdown(editor.getHTML())).toContain(`- ${status}:`);
+  expect(htmlToMarkdown(editor.getHTML())).toContain(`- **${status}:**`);
   expect(editor.commands.undoInputRule()).toBe(true);
   expect(editor.state.doc.firstChild?.type.name).toBe("paragraph");
   expect(editor.state.doc.textContent).toBe(`${shortcut} `);
@@ -62,7 +63,7 @@ it.each([":q", "q:q", "q:", "-:q", ":12345678"])("accepts and expands custom sho
   type(editor, " ");
   expect(editor.state.doc.firstChild?.type.name).toBe("bulletList");
   expect(editor.state.doc.textContent).toBe("NEXT: ");
-  expect(htmlToMarkdown(editor.getHTML())).toContain("- NEXT:");
+  expect(htmlToMarkdown(editor.getHTML())).toContain("- **NEXT:**");
   expect(editor.commands.undoInputRule()).toBe(true);
   expect(editor.state.doc.textContent).toBe(`${shortcut} `);
 });
@@ -176,7 +177,7 @@ it.each(["TODO", "IN PROGRESS", "DONE", "CLOSED", "QUESTION", "todo"])("converts
   type(editor, " ");
   expect(editor.state.doc.firstChild?.type.name).toBe("bulletList");
   expect(editor.state.doc.textContent).toBe(`${name.toUpperCase()}: `);
-  expect(htmlToMarkdown(editor.getHTML())).toContain(`- ${name.toUpperCase()}:`);
+  expect(htmlToMarkdown(editor.getHTML())).toContain(`- **${name.toUpperCase()}:**`);
   expect(editor.commands.undoInputRule()).toBe(true);
   expect(editor.state.doc.textContent).toBe(`-${name}: `);
 });
@@ -232,7 +233,7 @@ it("preserves intentional paragraph separators and different list types", () => 
 it("serializes a joined status bullet without a blank line between items", () => {
   const editor = create('<ul><li><p>DONE: Existing</p></li></ul><p>::</p>');
   type(editor, " ");
-  expect(htmlToMarkdown(editor.getHTML()).trim()).toBe('- DONE: Existing\n- TODO:');
+  expect(htmlToMarkdown(editor.getHTML()).trim()).toBe('- DONE: Existing\n- **TODO:**');
 });
 
 it.each([true, false])("celebrates a completion shortcut only when enabled (%s)", celebrate => {
@@ -256,3 +257,115 @@ it.each(defaultBulletMethodStatuses.map(status => ({ ...status, shortcut: status
     expect(editor.state.doc.textContent).toBe(`${status.shortcut} Existing text`);
   },
 );
+
+it.each(["::", ".:", "-:", "-TODO:"])("bolds only the status and colon for %s, preserving following typing and undo", shortcut => {
+  const editor = create(`<p>${shortcut}</p>`);
+  type(editor, " ");
+  const label = editor.state.doc.firstChild!.firstChild!.firstChild!.firstChild!.text!;
+  expect(label.endsWith(":")).toBe(true);
+  expect(editor.getHTML()).toContain(`<strong>${label}</strong> `);
+  expect(editor.state.storedMarks?.some(mark => mark.type.name === "bold") ?? false).toBe(false);
+  expect(editor.commands.undoInputRule()).toBe(true);
+  expect(editor.getHTML()).not.toContain("<strong>");
+  editor.commands.setContent(`<p>${shortcut}</p>`);
+  editor.commands.setTextSelection(shortcut.length + 1);
+  type(editor, " ");
+  type(editor, "Body");
+  expect(editor.getHTML()).toContain(`<strong>${label}</strong> Body`);
+});
+
+it("uses the live bold switch without removing manually bold text or changing other marks", () => {
+  const editor = create('<p><em>::</em></p>');
+  editor.view.dispatch(editor.state.tr.setMeta("bulletMethodDisplay", { enabled: true, autoBoldStatus: false }));
+  type(editor, " ");
+  expect(editor.getHTML()).not.toContain("<strong>");
+  expect(editor.state.doc.firstChild!.firstChild!.firstChild!.firstChild!.marks.map(mark => mark.type.name)).toEqual(["italic"]);
+  editor.commands.undoInputRule();
+  editor.commands.setContent('<p><em>::</em></p>');
+  editor.commands.setTextSelection(3);
+  editor.view.dispatch(editor.state.tr.setMeta("bulletMethodDisplay", { enabled: true, autoBoldStatus: true }));
+  type(editor, " ");
+  type(editor, "Body");
+  const paragraph = editor.state.doc.firstChild!.firstChild!.firstChild!;
+  expect(paragraph.firstChild!.text).toBe("TODO:");
+  expect(paragraph.firstChild!.marks.map(mark => mark.type.name)).toEqual(["bold", "italic"]);
+  expect(paragraph.lastChild!.text).toBe(" Body");
+  expect(paragraph.lastChild!.marks.map(mark => mark.type.name)).toEqual(["italic"]);
+  editor.commands.setContent('<p><strong>::</strong></p>');
+  editor.commands.setTextSelection(3);
+  editor.view.dispatch(editor.state.tr.setMeta("bulletMethodDisplay", { enabled: true, autoBoldStatus: false }));
+  type(editor, " ");
+  expect(editor.getHTML()).toContain("<strong>TODO: </strong>");
+});
+
+
+it.each(["TODO", "IN PROGRESS", "DONE", "CLOSED", "QUESTION", "todo"])("bolds typed %s: immediately in a bullet, without bolding following text", prefix => {
+  const editor = create('<ul><li><p></p></li></ul>');
+  editor.commands.setTextSelection(3);
+  for (const character of prefix) type(editor, character);
+  expect(editor.getHTML()).not.toContain('<strong>');
+  type(editor, ':');
+  expect(editor.getHTML()).toContain(`<strong>${prefix}:</strong>`);
+  expect(editor.commands.undoInputRule()).toBe(true);
+  expect(editor.state.doc.textContent).toBe(`${prefix}:`);
+  expect(editor.getHTML()).not.toContain('<strong>');
+  editor.commands.setContent('<ul><li><p></p></li></ul>');
+  editor.commands.setTextSelection(3);
+  for (const character of `${prefix}: Body`) type(editor, character);
+  expect(editor.getHTML()).toContain(`<strong>${prefix}:</strong> Body`);
+  expect(htmlToMarkdown(editor.getHTML())).toContain(`- **${prefix}:** Body`);
+});
+
+it("uses live custom names and the bold switch independently of status shortcuts", () => {
+  const editor = create('<ul><li><p></p><ul><li><p></p></li></ul></li></ul>');
+  editor.commands.setTextSelection(7);
+  const statuses = defaultBulletMethodStatuses.map(status => status.id === 'todo' ? { ...status, prefix: 'Waiting (on review)' } : status);
+  editor.view.dispatch(editor.state.tr.setMeta(bulletMethodMarkersKey, statuses)
+    .setMeta('bulletMethodDisplay', { enabled: true, shortcutsEnabled: false }));
+  for (const character of 'Waiting (on review): Body') type(editor, character);
+  expect(editor.getHTML()).toContain('<strong>Waiting (on review):</strong> Body');
+  editor.commands.setContent('<ul><li><p>Waiting (on review)</p></li></ul>');
+  editor.commands.setTextSelection(3 + 'Waiting (on review)'.length);
+  editor.view.dispatch(editor.state.tr.setMeta('bulletMethodDisplay', { enabled: true, autoBoldStatus: false }));
+  type(editor, ':');
+  expect(editor.getHTML()).not.toContain('<strong>');
+  editor.commands.undo();
+  editor.commands.setContent('<ul><li><p>Waiting (on review)</p></li></ul>');
+  editor.commands.setTextSelection(3 + 'Waiting (on review)'.length);
+  editor.view.dispatch(editor.state.tr.setMeta('bulletMethodDisplay', { enabled: true, autoBoldStatus: true }));
+  type(editor, ':');
+  expect(editor.getHTML()).toContain('<strong>Waiting (on review):</strong>');
+});
+
+it.each([
+  '<p>TODO</p>', '<h2>TODO</h2>', '<pre><code>TODO</code></pre>',
+  '<ol><li><p>TODO</p></li></ol>', '<ul><li><p>Discuss TODO</p></li></ul>',
+  '<ul><li><p>UNKNOWN</p></li></ul>', '<ul><li><p><code>TODO</code></p></li></ul>',
+  '<ul><li><p>Parent</p><p>TODO</p></li></ul>',
+])("leaves typed status-like text outside a recognized bullet prefix unchanged: %s", content => {
+  const editor = create(content);
+  type(editor, ':');
+  expect(editor.getHTML()).not.toContain('<strong>');
+});
+
+it("does not bold typed statuses when Bullet Statuses is disabled", () => {
+  const editor = create('<ul><li><p>TODO</p></li></ul>', false);
+  type(editor, ':');
+  expect(editor.getHTML()).not.toContain('<strong>');
+});
+
+it("preserves split label formatting and explicit colors when typing the colon", () => {
+  const editor = new Editor({ extensions: [StarterKit, BulletMethodMarkers, TextColor],
+    content: '<ul><li><p><em>TO</em><span style="color: #ff0000">DO</span></p></li></ul>' });
+  editors.push(editor);
+  editor.view.dispatch(editor.state.tr.setMeta('bulletMethodDisplay', { enabled: true }));
+  editor.commands.setTextSelection(7);
+  type(editor, ':');
+  const paragraph = editor.state.doc.firstChild!.firstChild!.firstChild!;
+  expect(paragraph.firstChild!.text).toBe('TO');
+  expect(paragraph.firstChild!.marks.map(mark => mark.type.name)).toEqual(['bold', 'italic']);
+  expect(paragraph.lastChild!.text).toBe('DO:');
+  expect(paragraph.lastChild!.marks.map(mark => mark.type.name)).toEqual(['bold', 'textColor']);
+  type(editor, ' Body');
+  expect(editor.state.doc.firstChild!.firstChild!.firstChild!.lastChild!.marks.map(mark => mark.type.name)).toEqual(['textColor']);
+});

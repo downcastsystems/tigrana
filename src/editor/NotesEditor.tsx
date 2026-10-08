@@ -70,6 +70,7 @@ import { isInlineColorCommand } from "../lib/inlineColors";
 import { markdownToHtml } from "../lib/markdown";
 import { BulletMethodMarkers, bulletMethodMarkersKey } from "./bulletMethodMarkers";
 import { ListFolding, listFoldingKey } from "./listFolding";
+import { ListDragging } from "./listDragging";
 import { getFoldedListCutDeleteRange } from "./foldedListClipboard";
 import { CodeBlockWithControls, lowlight } from "./codeBlock";
 import type {
@@ -261,6 +262,7 @@ export function NotesEditor({ bulletMethodDisplay = defaultBulletMethodDisplay, 
       OrderedListWithGutter,
       BulletMethodMarkers,
       ListFolding,
+      ListDragging,
       CodeBlockWithControls.configure({ lowlight }),
       TextColor,
       ColorHighlight,

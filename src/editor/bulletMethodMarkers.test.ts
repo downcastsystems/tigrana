@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { Editor } from "@tiptap/core";
+import { Editor, type Extensions } from "@tiptap/core";
 import { closeHistory } from "@tiptap/pm/history";
 import StarterKit from "@tiptap/starter-kit";
 import { TaskList, TaskItem } from "@tiptap/extension-list";
@@ -7,10 +7,11 @@ import { afterEach, expect, it, vi } from "vitest";
 import { BulletMethodMarkers, bulletMethodMarkersKey } from "./bulletMethodMarkers";
 import { defaultBulletMethodStatuses } from "../lib/bulletMethod";
 import { sortSelectedLines } from "./sortLines";
+import { TextColor, ColorHighlight } from "./inlineColorMarks";
 const editors: Editor[] = [];
 afterEach(() => { editors.splice(0).forEach(editor => editor.destroy()); vi.restoreAllMocks(); });
-function make(content: string) {
-  const editor = new Editor({ editorProps: { handleScrollToSelection: () => true }, extensions: [StarterKit, TaskList, TaskItem.configure({ nested: true }), BulletMethodMarkers], content });
+function make(content: string, extraExtensions: Extensions = []) {
+  const editor = new Editor({ editorProps: { handleScrollToSelection: () => true }, extensions: [StarterKit, TaskList, TaskItem.configure({ nested: true }), BulletMethodMarkers, ...extraExtensions], content });
   editor.view.dispatch(editor.state.tr.setMeta("bulletMethodDisplay", { enabled: true, replaceBullets: true, dimCompleted: true }));
   vi.spyOn(editor.view, "coordsAtPos").mockReturnValue({ top: 20, bottom: 40, left: 20, right: 20 });
   editors.push(editor);
@@ -80,14 +81,16 @@ it("keeps markers with their status after sorting, indenting, and changing list 
 });
 
 it("does not scan unrelated items or rebuild decorations for selection changes", () => {
-  const editor = make('<ul>' + Array.from({ length: 1000 }, (_, i) => `<li><p>TODO: Item ${i}</p></li>`).join('') + '</ul>');
+  const editor = make('<ul>' + Array.from({ length: 1000 }, (_, i) => `<li><p>TODO: <strong>Item ${i}</strong></p></li>`).join('') + '</ul>');
   const before = bulletMethodMarkersKey.getState(editor.state);
   editor.commands.setTextSelection(8);
   expect(bulletMethodMarkersKey.getState(editor.state)).toBe(before);
   const unrelated = editor.state.doc.firstChild!.child(500).firstChild!;
   const read = vi.spyOn(unrelated, 'textBetween');
+  const visitBold = vi.spyOn(unrelated, 'forEach');
   editor.commands.insertContent('x');
   expect(read).not.toHaveBeenCalled();
+  expect(visitBold).not.toHaveBeenCalled();
   expect(markers(editor)).toHaveLength(1000);
 });
 
@@ -120,6 +123,46 @@ it("uses saved circle choices and skips removed statuses when cycling renamed st
   expect(editor.state.doc.textContent).toBe('DONE: Work');
 });
 
+it("bolds the full cycled label and colon, preserving body marks, colors, and isolated undo", () => {
+  const editor = make('<ul><li><p><em><span style="color: #ff0000">TODO</span></em>: Plain <strong>Bold</strong></p><ul><li><p>Child</p></li></ul></li></ul>', [TextColor]);
+  const before = editor.getHTML();
+  editor.view.dom.querySelector<HTMLButtonElement>('.bullet-method-marker-button')!.click();
+  const paragraph = editor.state.doc.firstChild!.firstChild!.firstChild!;
+  expect(paragraph.firstChild!.text).toBe('IN PROGRESS');
+  expect(paragraph.firstChild!.marks.map(mark => mark.type.name)).toEqual(['bold', 'italic', 'textColor']);
+  expect(paragraph.child(1).text).toBe(':');
+  expect(paragraph.child(1).marks.map(mark => mark.type.name)).toEqual(['bold']);
+  expect(paragraph.child(2).text).toBe(' Plain ');
+  expect(paragraph.child(2).marks).toEqual([]);
+  expect(editor.getHTML()).toContain('<strong>Bold</strong>');
+  expect(editor.state.selection.$from.marks().some(mark => mark.type.name === 'bold')).toBe(false);
+  editor.commands.undo();
+  expect(editor.getHTML()).toBe(before);
+});
+
+it("honors live status bolding choices without rewriting existing formatting", () => {
+  const editor = make('<ul><li><p>TODO: Plain</p></li></ul>');
+  const display = { enabled: true, replaceBullets: true, dimCompleted: true, autoSortOnClick: false };
+  const click = () => editor.view.dom.querySelector<HTMLButtonElement>('.bullet-method-marker-button')!.click();
+  editor.view.dispatch(editor.state.tr.setMeta('bulletMethodDisplay', { ...display, autoBoldStatus: false }));
+  click();
+  expect(editor.getHTML()).not.toContain('<strong>');
+  editor.view.dispatch(editor.state.tr.setMeta('bulletMethodDisplay', { ...display, autoBoldStatus: true }));
+  expect(editor.getHTML()).not.toContain('<strong>');
+  click();
+  expect(editor.getHTML()).toContain('<strong>DONE:</strong> Plain');
+  editor.view.dispatch(editor.state.tr.setMeta('bulletMethodDisplay', { ...display, autoBoldStatus: false }));
+  click();
+  expect(editor.getHTML()).toContain('<strong>CLOSED:</strong> Plain');
+});
+
+it("does not carry generated status bolding into typing after a label-only bullet", () => {
+  const editor = make('<ul><li><p>TODO:</p></li></ul>');
+  editor.view.dom.querySelector<HTMLButtonElement>('.bullet-method-marker-button')!.click();
+  editor.commands.insertContent(' Body');
+  expect(editor.getHTML()).toContain('<strong>IN PROGRESS:</strong> Body');
+});
+
 it("dims completed paragraphs independently of icons without modifying nested statuses or saved content", () => {
   const editor = make('<ul><li><p>DONE: Parent</p><ul><li><p>TODO: Child</p></li></ul></li><li><p>CLOSED: Finished</p></li></ul>');
   const dimmed = () => [...editor.view.dom.querySelectorAll('[data-bullet-method-dim]')].map(node => node.textContent);
@@ -140,6 +183,40 @@ it("dims completed paragraphs independently of icons without modifying nested st
   expect(dimmed()).toEqual(['CLOSED: Parent', 'CLOSED: Finished']);
   editor.view.dom.querySelector<HTMLButtonElement>('button')!.click();
   expect(dimmed()).toEqual(['CLOSED: Finished']);
+});
+
+it("composites uncolored bold runs without dimming explicit colors or highlights, or persisting wrappers", () => {
+  const editor = make('<ul><li><p>DONE: <strong>Plain <span style="color: #ff0000">Red</span> After <mark>Highlight</mark></strong></p><ul><li><p>TODO: <strong>Child</strong> <a href="https://example.com"><strong>Link</strong></a></p></li></ul></li><li><p>TODO: <strong>Active</strong></p></li></ul>', [TextColor, ColorHighlight]);
+  const saved = editor.getHTML();
+  const runs = () => [...editor.view.dom.querySelectorAll('.bullet-method-dim-bold')].map(node => node.textContent);
+  expect(runs()).toEqual(['Plain ', ' After ', 'Child', 'Link', 'Active']);
+  expect(editor.view.dom.querySelector('[data-text-color] .bullet-method-dim-bold, mark .bullet-method-dim-bold')).toBeNull();
+  expect(editor.view.dom.querySelector('.bullet-method-dim-bold .bullet-method-dim-bold')).toBeNull();
+  expect(saved).not.toContain('bullet-method-dim-bold');
+  editor.view.dispatch(editor.state.tr.setMeta('bulletMethodDisplay', { enabled: true, replaceBullets: false, dimCompleted: false }));
+  expect(runs()).toEqual([]);
+  expect(editor.getHTML()).toBe(saved);
+});
+
+it("keeps bold fade ranges current through typing, partial formatting, colors, and undo", () => {
+  const editor = make('<ul><li><p>DONE: <strong>Alpha Bravo</strong></p><ul><li><p>Child <strong>Charlie</strong></p></li></ul></li></ul>', [TextColor, ColorHighlight]);
+  const ranges = () => bulletMethodMarkersKey.getState(editor.state)!.decorations.find().filter(d => d.spec.dimBold).map(d => [d.from, d.to]);
+  const check = () => {
+    const incremental = ranges();
+    editor.view.dispatch(editor.state.tr.setMeta('bulletMethodDisplay', { enabled: true, replaceBullets: true, dimCompleted: true }));
+    expect(incremental).toEqual(ranges());
+    expect(editor.view.dom.querySelector('.bullet-method-dim-bold .bullet-method-dim-bold')).toBeNull();
+  };
+  const select = (text: string) => editor.commands.setTextSelection({ from: textPosition(editor, text), to: textPosition(editor, text) + text.length });
+  select('Bravo'); editor.commands.toggleBold(); check();
+  editor.commands.insertContent('Beta'); check();
+  select('Alpha'); editor.commands.setMark('textColor', { color: '#ff0000' }); check();
+  editor.commands.unsetMark('textColor'); check();
+  select('Charlie'); editor.commands.setHighlight(); check();
+  editor.commands.undo(); check();
+  select('DONE'); editor.commands.insertContent('TODO'); check();
+  expect(editor.view.dom.querySelector('[data-bullet-method-completed]')).toBeNull();
+  expect(editor.getHTML()).not.toContain('bullet-method-dim-bold');
 });
 
 it("recognizes COMPLETE as a completed parent without inventing a status icon", () => {

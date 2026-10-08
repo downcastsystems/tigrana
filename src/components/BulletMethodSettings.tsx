@@ -166,6 +166,14 @@ export default function BulletMethodSettings({ statuses, onChange, display = def
           try { onDisplayChange?.({ ...display, autoSortOnClick: event.target.checked }); setSaveError(null); }
           catch { setSaveError("Could not save sorting settings. Please try again."); }
         }} /> Auto-sort when clicking a status icon</label>
+        <label><input type="checkbox" checked={display.autoCollapseDone === true} onChange={event => {
+          try { onDisplayChange?.({ ...display, autoCollapseDone: event.target.checked }); setSaveError(null); }
+          catch { setSaveError("Could not save collapse settings. Please try again."); }
+        }} /> Auto-collapse DONE on status click</label>
+        <label><input type="checkbox" checked={display.autoBoldStatus !== false} onChange={event => {
+          try { onDisplayChange?.({ ...display, autoBoldStatus: event.target.checked }); setSaveError(null); }
+          catch { setSaveError("Could not save bold settings. Please try again."); }
+        }} /> Automatically bold the status and colon</label>
         <label><input type="checkbox" checked={display.dimCompleted} onChange={event => {
           try { onDisplayChange?.({ ...display, dimCompleted: event.target.checked }); setSaveError(null); }
           catch { setSaveError("Could not save display settings. Please try again."); }
