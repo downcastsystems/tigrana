@@ -1,6 +1,6 @@
 import { useEffect, useId, useRef, useState } from "react";
 import { ImageIcon, RotateCcw } from "lucide-react";
-import type { NotebookAppearance } from "../types";
+import type { NotebookAppearance, NotebookWallpaper } from "../types";
 import type { ThemeDocument } from "../lib/themes";
 import { quickEditorFonts, quickPanelOpacity, themeFontLabel, type QuickAppearanceField } from "../lib/quickAppearance";
 import { defaultThemeDesign, parseThemeDesign } from "../lib/themeDesign";
@@ -47,6 +47,11 @@ export function QuickAppearanceControls({ theme, mode, current, quick, wallpaper
   const imagePreview = imageAsset ? `data:${imageAsset.mime};base64,${imageAsset.data}` : themeBackgroundImage(theme);
   const latestChange = useRef(onChange);
   latestChange.current = onChange;
+  const latestOpacity = useRef(quick?.panelOpacity ?? quickPanelOpacity(theme));
+  latestOpacity.current = quick?.panelOpacity ?? quickPanelOpacity(theme);
+  const changeBackgroundImage = (backgroundImage: NotebookWallpaper) => {
+    latestChange.current({ backgroundImage, ...(latestOpacity.current === 100 ? { panelOpacity: 90 } : {}) });
+  };
   useEffect(() => {
     imageRequest.current += 1;
     setImageLoading(false);
@@ -72,7 +77,7 @@ export function QuickAppearanceControls({ theme, mode, current, quick, wallpaper
       parseThemeDesign({ ...(theme.design ?? defaultThemeDesign), assets: {
         ...theme.design?.assets, [`assets/quick-upload-check.${extension}`]: asset,
       } });
-      latestChange.current({ backgroundImage: { name: file.name, asset } });
+      changeBackgroundImage({ name: file.name, asset });
     } catch (error) {
       if (request === imageRequest.current) setImageError(error instanceof Error ? error.message : String(error));
     } finally {
@@ -137,7 +142,7 @@ export function QuickAppearanceControls({ theme, mode, current, quick, wallpaper
                 parseThemeDesign({ ...(theme.design ?? defaultThemeDesign), assets: {
                   ...theme.design?.assets, [`assets/quick-upload-check.${extension}`]: backgroundImage.asset,
                 } });
-                onChange({ backgroundImage });
+                changeBackgroundImage(backgroundImage);
               } catch (error) {
                 setImageError(error instanceof Error ? error.message : String(error));
               }

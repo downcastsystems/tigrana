@@ -4001,6 +4001,11 @@ html[data-theme="dark"] .tab-list-separator {
   margin-top: 6px;
 }
 
+/* Keep child rows compact at every depth, including mixed and task lists. */
+.ProseMirror li li {
+  margin-top: 4px;
+}
+
 .ProseMirror ul:not([data-type="taskList"]) > li,
 .ProseMirror ol > li {
   padding-inline-start: 2px;
@@ -6543,6 +6548,7 @@ html[data-theme] .settings-modal .toolbar-button:hover:not(:disabled) {
 
 /* The preview extends the compact settings window only while editing a theme. */
 .settings-window {
+  position: relative;
   display: flex;
   align-items: stretch;
   gap: 12px;
@@ -6685,6 +6691,8 @@ html[data-theme] .theme-conflict .theme-actions .toolbar-button.is-recommended:h
 .theme-advanced-surfaces select, .theme-advanced-surfaces input { max-width: 55%; min-width: 0; }
 
 .settings-window-actions { display: flex; align-items: center; gap: 16px; flex-shrink: 0; }
+.settings-window:not(.is-maximized) .settings-drag-handle { cursor: grab; touch-action: none; user-select: none; -webkit-user-select: none; }
+.settings-window.is-dragging .settings-drag-handle { cursor: grabbing; }
 .settings-window-actions .icon-button { width: 32px; height: 32px; flex-shrink: 0; }
 .settings-window.is-maximized {
   width: calc(100vw - 32px);

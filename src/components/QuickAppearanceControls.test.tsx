@@ -3,7 +3,7 @@ import { act } from 'react';
 import { createRoot } from 'react-dom/client';
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 import { QuickAppearanceControls } from './QuickAppearanceControls';
-import type { NotebookWallpaper } from '../types';
+import type { NotebookAppearance, NotebookWallpaper } from '../types';
 import { exampleTheme } from '../lib/themes.fixture';
 
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
@@ -16,24 +16,32 @@ beforeEach(() => {
 });
 afterEach(() => { vi.restoreAllMocks(); });
 
-async function mount(customized = true, wallpapers?: NotebookWallpaper[]) {
+async function mount(customized = true, wallpapers?: NotebookWallpaper[], opacity?: { theme?: number; quick?: number }) {
   const host = document.createElement('div');
   document.body.appendChild(host);
   const root = createRoot(host);
   const theme = exampleTheme();
+  if (opacity?.theme !== undefined) theme.surfaces = {
+    background: '#112233', navigation: opacity.theme, editor: opacity.theme, outline: opacity.theme, titlebar: opacity.theme,
+  };
+  let quick: NotebookAppearance['quickAppearance'] = customized
+    ? { panelOpacity: 45, backgroundImage: { name: 'original.png', asset: { mime: 'image/png', data: png } } } : undefined;
+  if (opacity?.quick !== undefined) quick = { ...quick, panelOpacity: opacity.quick };
   const onChange = vi.fn();
   const onReset = vi.fn();
-  await act(async () => root.render(<QuickAppearanceControls theme={theme} mode="dark"
+  const render = async () => act(async () => root.render(<QuickAppearanceControls theme={theme} mode="dark"
     current={{ accentColor: theme.dark.accent, editorFontFamily: theme.editorFontFamily, editorFontSize: theme.editorFontSize }}
-    quick={customized ? { panelOpacity: 45, backgroundImage: { name: 'original.png', asset: { mime: 'image/png', data: png } } } : undefined}
+    quick={quick}
     onDeleteWallpaper={vi.fn(async () => {})} wallpapers={wallpapers} onChange={onChange} onReset={onReset} />));
+  await render();
   const choose = async (file: File) => {
     const input = host.querySelector<HTMLInputElement>('input[type="file"]')!;
     Object.defineProperty(input, 'files', { configurable: true, value: [file] });
     await act(async () => input.dispatchEvent(new Event('change', { bubbles: true })));
   };
   const close = async () => { await act(async () => root.unmount()); host.remove(); };
-  return { host, onChange, onReset, choose, close };
+  const setOpacity = async (panelOpacity: number) => { quick = { ...quick, panelOpacity }; await render(); };
+  return { host, onChange, onReset, choose, close, setOpacity };
 }
 
 it('uploads a validated portable image and resets controls independently', async () => {
@@ -142,7 +150,7 @@ it('offers saved wallpapers even after the active background has been reset', as
     const thumbnail = test.host.querySelector<HTMLButtonElement>('.notebook-wallpaper-choice')!;
     expect(thumbnail.textContent).toBe('saved.png');
     await act(async () => thumbnail.click());
-    expect(test.onChange).toHaveBeenCalledWith({ backgroundImage: wallpaper });
+    expect(test.onChange).toHaveBeenCalledWith({ backgroundImage: wallpaper, panelOpacity: 90 });
   } finally { await test.close(); }
 });
 
@@ -160,5 +168,54 @@ it('shows an empty notebook gallery and dismisses it with Escape without changin
     expect(test.host.querySelector('dialog')).toBeNull();
     expect(document.activeElement).toBe(trigger);
     expect(test.onChange).not.toHaveBeenCalled();
+  } finally { await test.close(); }
+});
+
+it.each([
+  { theme: undefined, quick: undefined, expected: 90 },
+  { theme: 100, quick: undefined, expected: 90 },
+  { theme: 40, quick: 100, expected: 90 },
+  { theme: 100, quick: 99, expected: undefined },
+  { theme: 75, quick: undefined, expected: undefined },
+  { theme: 100, quick: 0, expected: undefined },
+])('reveals chosen backgrounds only at full opacity: theme=$theme quick=$quick', async opacity => {
+  const wallpaper = { name: 'chosen.png', asset: { mime: 'image/png', data: png } };
+  for (const source of ['upload', 'notebook']) {
+    const test = await mount(false, [wallpaper], opacity);
+    try {
+      if (source === 'upload') {
+        const file = new File([], wallpaper.name, { type: 'image/png' });
+        Object.defineProperty(file, 'arrayBuffer', { value: async () => bytes });
+        await test.choose(file);
+      } else {
+        await act(async () => test.host.querySelector<HTMLButtonElement>('.quick-background-control .toolbar-button')!.click());
+        await act(async () => test.host.querySelectorAll<HTMLButtonElement>('[role="menuitem"]')[1].click());
+        await act(async () => test.host.querySelector<HTMLButtonElement>('.notebook-wallpaper-choice')!.click());
+      }
+      expect(test.onChange).toHaveBeenCalledOnce();
+      expect(test.onChange).toHaveBeenCalledWith({
+        backgroundImage: wallpaper, ...(opacity.expected === undefined ? {} : { panelOpacity: opacity.expected }),
+      });
+    } finally { await test.close(); }
+  }
+});
+
+it.each([
+  { initial: 100, latest: 35 },
+  { initial: 35, latest: 100 },
+])('uses the current opacity when an upload finishes: $initial → $latest', async ({ initial, latest }) => {
+  const test = await mount(false, undefined, { quick: initial });
+  let finish!: (value: ArrayBuffer) => void;
+  const file = new File([], 'slow.png', { type: 'image/png' });
+  Object.defineProperty(file, 'arrayBuffer', { value: () => new Promise<ArrayBuffer>(resolve => { finish = resolve; }) });
+  try {
+    await test.choose(file);
+    await test.setOpacity(latest);
+    await act(async () => finish(bytes));
+    expect(test.onChange).toHaveBeenCalledOnce();
+    expect(test.onChange).toHaveBeenCalledWith({
+      backgroundImage: { name: 'slow.png', asset: { mime: 'image/png', data: png } },
+      ...(latest === 100 ? { panelOpacity: 90 } : {}),
+    });
   } finally { await test.close(); }
 });

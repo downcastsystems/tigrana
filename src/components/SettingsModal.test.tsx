@@ -124,3 +124,80 @@ it.each(["Create theme", "Edit theme"])(
     }
   },
 );
+
+it("drags from the header, stays within the window, and keeps controls independent", async () => {
+  vi.stubGlobal("innerWidth", 1200);
+  vi.stubGlobal("innerHeight", 900);
+  const geometry = vi.spyOn(HTMLElement.prototype, "getBoundingClientRect").mockImplementation(function (this: HTMLElement) {
+    return { left: 300 + (parseFloat(this.style.left) || 0), top: 150 + (parseFloat(this.style.top) || 0), width: 600, height: 500 } as DOMRect;
+  });
+  const host = document.createElement("div"), root = createRoot(host), close = vi.fn();
+  const pointer = async (target: EventTarget, type: string, x: number, y: number, pointerId = 1, button = 0) => act(async () => {
+    const event = new MouseEvent(type, { bubbles: true, cancelable: true, button, clientX: x, clientY: y });
+    Object.defineProperty(event, "pointerId", { value: pointerId });
+    target.dispatchEvent(event);
+  });
+  try {
+    await act(async () => root.render(<SettingsModal
+      bulletMethodStatuses={defaultBulletMethodStatuses} onBulletMethodStatusesChange={vi.fn()}
+      newNoteWritingStyle="notes" lastWritingStyle="notes" onNewNoteWritingStyleChange={vi.fn()}
+      editorWidthMode="comfortable" onEditorWidthModeChange={vi.fn()}
+      noteAlignment="center" onNoteAlignmentChange={vi.fn()}
+      navigationStyle="section-view" onNavigationStyleChange={vi.fn()}
+      wordCountVisible onWordCountVisibleChange={vi.fn()}
+      spellcheckEnabled onSpellcheckEnabledChange={vi.fn()} onClose={close} themeContent={null}
+    />));
+    const dialog = host.querySelector<HTMLElement>(".settings-window")!;
+    const header = host.querySelector(".settings-content-header h2")!;
+    const position = () => [dialog.style.left, dialog.style.top];
+    await pointer(header, "pointerdown", 400, 200);
+    await pointer(window, "pointermove", 475, 240, 2);
+    expect(position()).toEqual(["0px", "0px"]);
+    await pointer(window, "pointermove", 475, 240);
+    expect(position()).toEqual(["75px", "40px"]);
+    await pointer(window, "pointerup", 475, 240);
+    await pointer(window, "pointermove", 500, 260);
+    expect(position()).toEqual(["75px", "40px"]);
+    expect(close).not.toHaveBeenCalled();
+    await pointer(header, "pointerdown", 400, 200);
+    await pointer(window, "pointermove", -1000, -1000);
+    expect(position()).toEqual(["-292px", "-142px"]);
+    await pointer(window, "pointermove", 3000, 3000);
+    expect(position()).toEqual(["292px", "242px"]);
+    await pointer(window, "pointercancel", 3000, 3000);
+    expect(dialog.classList.contains("is-dragging")).toBe(false);
+    vi.stubGlobal("innerWidth", 700);
+    vi.stubGlobal("innerHeight", 600);
+    await act(async () => window.dispatchEvent(new Event("resize")));
+    expect(position()).toEqual(["-208px", "-58px"]);
+    const maximize = host.querySelector<HTMLButtonElement>('[aria-label="Maximize settings"]')!;
+    await pointer(maximize.querySelector("svg")!, "pointerdown", 400, 200);
+    expect(dialog.classList.contains("is-dragging")).toBe(false);
+    await act(async () => maximize.click());
+    expect(position()).toEqual(["0px", "0px"]);
+    await pointer(header, "pointerdown", 400, 200);
+    await pointer(window, "pointermove", 475, 240);
+    expect(position()).toEqual(["0px", "0px"]);
+    await act(async () => host.querySelector<HTMLButtonElement>('[aria-label="Restore settings size"]')!.click());
+    // The restored dialog is clamped to the smaller viewport.
+    expect(position()).toEqual(["-208px", "-58px"]);
+    await pointer(host.querySelector(".settings-title")!, "pointerdown", 400, 200);
+    expect(dialog.classList.contains("is-dragging")).toBe(true);
+    await act(async () => window.dispatchEvent(new Event("blur")));
+    expect(dialog.classList.contains("is-dragging")).toBe(false);
+    await pointer(header, "pointerdown", 400, 200, 1, 2);
+    expect(dialog.classList.contains("is-dragging")).toBe(false);
+    await pointer(host.querySelector(".settings-scroll")!, "pointerdown", 400, 200);
+    expect(dialog.classList.contains("is-dragging")).toBe(false);
+    await act(async () => host.querySelector<HTMLButtonElement>('[aria-label="Close settings"]')!.click());
+    expect(close).toHaveBeenCalledOnce();
+    await pointer(header, "pointerdown", 400, 200);
+    await act(async () => root.unmount());
+    expect(dialog.classList.contains("is-dragging")).toBe(false);
+    await pointer(window, "pointermove", 475, 240);
+    expect(position()).toEqual(["-208px", "-58px"]);
+  } finally {
+    await act(async () => root.unmount());
+    geometry.mockRestore();
+  }
+});

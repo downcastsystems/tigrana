@@ -8,6 +8,7 @@ import type { ReactNode } from "react";
 import { useState } from "react";
 import { Maximize2, Minimize2, RotateCcw, Settings, X } from "lucide-react";
 import type { NavigationStyle } from "../types";
+import { useSettingsWindowDrag } from "../lib/useSettingsWindowDrag";
 
 export type SettingsSection = "general" | "appearance" | "bullet-method";
 
@@ -39,6 +40,7 @@ export default function SettingsModal(props: {
   themeContent: ReactNode;
 }) {
   const [maximized, setMaximized] = useState(false);
+  const { windowRef, onPointerDown } = useSettingsWindowDrag(maximized);
   const [section, setSection] = useState<SettingsSection>(props.initialSection ?? "general");
   const [previewHost, setPreviewHost] = useState<HTMLDivElement | null>(null);
   const navigationControls = (
@@ -60,6 +62,7 @@ export default function SettingsModal(props: {
     >
       <ThemePreviewHostContext.Provider value={previewHost}>
         <div
+          ref={windowRef}
           className={`settings-window${maximized ? " is-maximized" : ""}`}
           role="dialog"
           aria-modal="true"
@@ -68,7 +71,7 @@ export default function SettingsModal(props: {
         >
           <section className="settings-modal">
             <aside className="settings-sidebar">
-              <div className="settings-title">
+              <div className="settings-title settings-drag-handle" onPointerDown={onPointerDown}>
                 <Settings size={18} />
                 <h2>Settings</h2>
               </div>
@@ -85,7 +88,7 @@ export default function SettingsModal(props: {
               </nav>
             </aside>
             <div className="settings-content">
-              <div className="settings-content-header">
+              <div className="settings-content-header settings-drag-handle" onPointerDown={onPointerDown}>
                 <div>
                   <h2 className={section === "bullet-method" ? "bullet-method-heading" : undefined}>
                     {section === "bullet-method" ? "Bullet Statuses" : section === "appearance" ? "Appearance" : "General"}
