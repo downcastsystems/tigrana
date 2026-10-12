@@ -82,6 +82,48 @@ it('rejects disguised image contents without publishing an override', async () =
   } finally { await test.close(); }
 });
 
+it('resizes a PNG above the stored asset limit before publishing the background', async () => {
+  const test = await mount(false);
+  const revoke = vi.fn();
+  vi.stubGlobal('URL', { createObjectURL: vi.fn(() => 'blob:large-background'), revokeObjectURL: revoke });
+  vi.stubGlobal('Image', class {
+    naturalWidth = 1920;
+    naturalHeight = 1076;
+    onload?: () => void;
+    set src(_value: string) { queueMicrotask(() => this.onload?.()); }
+  });
+  const draw = vi.fn();
+  vi.spyOn(HTMLCanvasElement.prototype, 'getContext').mockReturnValue({ drawImage: draw } as unknown as CanvasRenderingContext2D);
+  vi.spyOn(HTMLCanvasElement.prototype, 'toBlob').mockImplementation(callback => {
+    const blob = new Blob([bytes], { type: 'image/png' });
+    Object.defineProperty(blob, 'arrayBuffer', { value: async () => bytes });
+    callback(blob);
+  });
+  try {
+    const file = new File([], 'large.png', { type: 'image/png' });
+    Object.defineProperty(file, 'size', { value: 3_258_585 });
+    await test.choose(file);
+    expect(test.onChange).toHaveBeenCalledWith({ backgroundImage: {
+      name: 'large.png', asset: { mime: 'image/png', data: png },
+    }, panelOpacity: 90 });
+    expect(draw).toHaveBeenCalledOnce();
+    expect(revoke).toHaveBeenCalledWith('blob:large-background');
+    expect(test.host.querySelector('[role="alert"]')).toBeNull();
+  } finally { await test.close(); vi.unstubAllGlobals(); }
+});
+
+it('opens additional options to show image errors even when they were collapsed', async () => {
+  const test = await mount(false);
+  try {
+    const file = new File([], 'too-large.png', { type: 'image/png' });
+    Object.defineProperty(file, 'size', { value: 30 * 1024 * 1024 });
+    await test.choose(file);
+    expect(test.onChange).not.toHaveBeenCalled();
+    expect(test.host.querySelector('details')?.open).toBe(true);
+    expect(test.host.querySelector('[role="alert"]')?.textContent).toContain('25 MB');
+  } finally { await test.close(); }
+});
+
 it('discards an image read that finishes after the controls unmount', async () => {
   const test = await mount();
   let finish!: (value: ArrayBuffer) => void;

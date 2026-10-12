@@ -8,6 +8,7 @@ import { themeBackgroundImage } from "../lib/themeRuntime";
 import { WallpaperMenu } from "./WallpaperMenu";
 import { notebookWallpapers } from "../lib/notebookWallpapers";
 import { ThemeColorField } from "./ThemeColorField";
+import { backgroundImageExtension, readBackgroundImage } from "../lib/backgroundImage";
 
 function ResetControl({ label, changed, onReset }: { label: string; changed: boolean; onReset: () => void }) {
   const title = `Reset ${label} to theme default`;
@@ -62,24 +63,21 @@ export function QuickAppearanceControls({ theme, mode, current, quick, wallpaper
     const request = ++imageRequest.current;
     setImageLoading(true);
     setImageError('');
+    setMoreOpen(true);
     try {
-      const extension = file.name.split('.').pop()?.toLowerCase();
-      const mime = extension === 'png' ? 'image/png' : extension === 'webp' ? 'image/webp'
-        : extension === 'jpg' || extension === 'jpeg' ? 'image/jpeg' : null;
-      if (!mime) throw new Error('Choose a PNG, JPEG, or WebP image.');
-      if (file.size > 2_100_000) throw new Error('Choose an image smaller than 2 MB.');
-      const bytes = new Uint8Array(await file.arrayBuffer());
+      const asset = await readBackgroundImage(file);
       if (request !== imageRequest.current) return;
-      let binary = '';
-      for (let i = 0; i < bytes.length; i += 8192) binary += String.fromCharCode(...bytes.subarray(i, i + 8192));
-      const asset = { mime, data: btoa(binary) };
+      const extension = backgroundImageExtension(asset);
       // Validate signature and the combined theme asset budget before persisting.
       parseThemeDesign({ ...(theme.design ?? defaultThemeDesign), assets: {
         ...theme.design?.assets, [`assets/quick-upload-check.${extension}`]: asset,
       } });
       changeBackgroundImage({ name: file.name, asset });
     } catch (error) {
-      if (request === imageRequest.current) setImageError(error instanceof Error ? error.message : String(error));
+      if (request === imageRequest.current) {
+        setMoreOpen(true);
+        setImageError(error instanceof Error ? error.message : String(error));
+      }
     } finally {
       if (request === imageRequest.current) setImageLoading(false);
     }
@@ -162,7 +160,7 @@ export function QuickAppearanceControls({ theme, mode, current, quick, wallpaper
         </div>
         <div className="quick-background-info">
           <span>{quick?.backgroundImage ? 'Custom image' : imagePreview ? 'Theme background' : 'No background image'}</span>
-          <small id={`${id}-background-formats`} className="setting-help-text">PNG, JPEG or WebP · Up to 2 MB</small>
+          <small id={`${id}-background-formats`} className="setting-help-text">PNG, JPEG or WebP · Up to 25 MB. Large images are resized automatically.</small>
           {quick?.backgroundImage && <button type="button" className="quick-background-reset"
             aria-label="Reset background image to theme default" onClick={() => {
               imageControls.current?.querySelector<HTMLButtonElement>('button')?.focus();

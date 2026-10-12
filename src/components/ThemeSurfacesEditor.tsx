@@ -3,6 +3,7 @@ import { defaultPlasmaSettings, type ThemeDocument } from '../lib/themes';
 import { defaultThemeDesign, parseThemeDesign } from '../lib/themeDesign';
 import { surfacesForMode, surfaceKeys } from '../lib/themeSurfaces';
 import { ThemeColorField } from './ThemeColorField';
+import { backgroundImageExtension, readBackgroundImage } from '../lib/backgroundImage';
 
 export function ThemeSurfacesEditor({ theme, mode, change }: {
   theme: ThemeDocument; mode: 'light' | 'dark'; change: (patch: Partial<ThemeDocument>) => void;
@@ -40,16 +41,11 @@ export function ThemeSurfacesEditor({ theme, mode, change }: {
         const file = e.target.files?.[0]; e.target.value = ''; if (!file) return;
         try {
           setError('');
-          const ext = file.name.split('.').pop()?.toLowerCase();
-          if (!ext || !['png','jpg','jpeg','webp'].includes(ext)) throw new Error('Choose a PNG, JPEG, or WebP image.');
-          if (file.size > 2_100_000) throw new Error('Choose an image smaller than 2 MB.');
-          const bytes = new Uint8Array(await file.arrayBuffer());
+          const asset = await readBackgroundImage(file);
           if (!mounted.current) return;
-          let binary = '';
-          for (let i=0; i<bytes.length; i+=8192) binary += String.fromCharCode(...bytes.subarray(i,i+8192));
           const current = latest.current;
-          const path = `assets/background-${crypto.randomUUID()}.${ext}`;
-          const design = parseThemeDesign({ ...(current.design ?? defaultThemeDesign), assets: { ...current.design?.assets, [path]: { mime: ext === 'png' ? 'image/png' : ext === 'webp' ? 'image/webp' : 'image/jpeg', data: btoa(binary) } } });
+          const path = `assets/background-${crypto.randomUUID()}.${backgroundImageExtension(asset)}`;
+          const design = parseThemeDesign({ ...(current.design ?? defaultThemeDesign), assets: { ...current.design?.assets, [path]: asset } });
           change({ schemaVersion: 2, design, surfaces: { ...(current.surfaces ?? surfaces), image: path } });
         } catch (e) { if (mounted.current) setError(String(e)); }
       }}/>
