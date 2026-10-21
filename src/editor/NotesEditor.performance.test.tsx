@@ -241,6 +241,163 @@ describe("Note editor typing performance", () => {
     });
     expect(focusTitle).toHaveBeenCalledOnce();
   });
+  it.each(['- ', '- TODO: Merge\n- TODO: Deploy to dev\n- TODO: Deploy to prod'])("restores a nested shortcut on real Backspace before list editing: %s", async markdown => {
+    vi.useFakeTimers();
+    const container = document.createElement('div'); document.body.append(container);
+    const root = createRoot(container); mounted.push({ container, root });
+    const onChange = vi.fn();
+    await act(async () => root.render(<NotesEditor content={'- Parent\n  - n:a'} editable findRequest={0}
+      textShortcuts={[{ id: 'a', name: 'Avery', trigger: 'n:a', markdown }]}
+      focusAtEndRequest={0} focusRequest={0} historyKey='shortcut-undo' notePath='Note.md'
+      onChange={onChange} onLoadError={error => { throw error; }} onPendingChange={() => undefined}
+      onPositionChange={() => undefined} restorePosition={null} spellcheckEnabled workspace='/Notebook' />));
+    const editor = (container.querySelector('.ProseMirror') as HTMLElement & { editor: import('@tiptap/core').Editor }).editor;
+    const setContent = vi.spyOn(editor.commands, 'setContent');
+    vi.mocked(htmlToMarkdown).mockClear();
+    await act(async () => {
+      let end = 0;
+      editor.state.doc.descendants((node, pos) => { if (node.isText && node.text === 'n:a') end = pos + node.nodeSize; });
+      editor.commands.setTextSelection(end);
+      editor.view.dom.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true, cancelable: true }));
+      editor.view.dom.dispatchEvent(new KeyboardEvent('keydown', { key: 'Backspace', bubbles: true, cancelable: true }));
+    });
+    expect(editor.state.selection.$from.parent.textContent).toBe('n:a');
+    expect(editor.state.selection.$from.depth).toBe(5);
+    expect(container.querySelectorAll('li')).toHaveLength(2);
+    expect(setContent).not.toHaveBeenCalled();
+    expect(htmlToMarkdown).not.toHaveBeenCalled();
+    expect(onChange).not.toHaveBeenCalled();
+    await act(async () => { vi.advanceTimersByTime(markdownCommitDelayMs); });
+    expect(htmlToMarkdown).toHaveBeenCalledOnce();
+    expect(onChange).toHaveBeenCalledOnce();
+  });
+  it("clears immediate shortcut undo when returning to a cached note", async () => {
+    vi.useFakeTimers();
+    const { undoTextShortcut } = await import('./textShortcutUndo');
+    const container = document.createElement('div'); document.body.append(container);
+    const root = createRoot(container); mounted.push({ container, root });
+    const contents: Record<string, string> = { 'One.md': 'n:a', 'Two.md': 'Other' };
+    const shortcuts = [{ id: 'a', name: 'Avery', trigger: 'n:a', markdown: 'AVERY' }];
+    const render = (path: string) => <NotesEditor content={contents[path]} editable findRequest={0}
+      textShortcuts={shortcuts} focusAtEndRequest={0} focusRequest={0} historyKey={path} notePath={path}
+      onChange={(markdown, source) => { if (source) contents[source] = markdown; }} onLoadError={error => { throw error; }} onPendingChange={() => undefined}
+      onPositionChange={() => undefined} restorePosition={null} spellcheckEnabled workspace='/Notebook' />;
+    await act(async () => root.render(render('One.md')));
+    const editor = (container.querySelector('.ProseMirror') as HTMLElement & { editor: import('@tiptap/core').Editor }).editor;
+    await act(async () => {
+      editor.commands.setTextSelection(4);
+      editor.view.dom.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true, cancelable: true }));
+      vi.advanceTimersByTime(markdownCommitDelayMs);
+    });
+    expect(editor.state.doc.textContent).toBe('AVERY');
+    await act(async () => root.render(render('Two.md')));
+    const setContent = vi.spyOn(editor.commands, 'setContent');
+    await act(async () => root.render(render('One.md')));
+    expect(setContent).not.toHaveBeenCalled();
+    expect(editor.state.doc.textContent).toBe('AVERY');
+    expect(undoTextShortcut(editor)).toBe(false);
+  });
+  it("expands a list shortcut into the current nested bullet with one deferred save", async () => {
+    vi.useFakeTimers();
+    const container = document.createElement('div'); document.body.append(container);
+    const root = createRoot(container); mounted.push({ container, root });
+    const onChange = vi.fn();
+    const shortcuts = [{ id: 'deploy', name: 'Deploy', trigger: ':mdp', markdown: '- TODO: Merge\n- TODO: Deploy to dev\n- TODO: Deploy to prod' }];
+    await act(async () => root.render(<NotesEditor content={'- TODO: atest\n  - :mdp'} editable findRequest={0}
+      textShortcuts={shortcuts} bulletMethodDisplay={{ enabled: true, replaceBullets: true }}
+      focusAtEndRequest={0} focusRequest={0} historyKey='nested-shortcut' notePath='Note.md'
+      onChange={onChange} onLoadError={error => { throw error; }} onPendingChange={() => undefined}
+      onPositionChange={() => undefined} restorePosition={null} spellcheckEnabled workspace='/Notebook' />));
+    const editor = (container.querySelector('.ProseMirror') as HTMLElement & { editor: import('@tiptap/core').Editor }).editor;
+    const setContent = vi.spyOn(editor.commands, 'setContent');
+    vi.mocked(htmlToMarkdown).mockClear();
+    await act(async () => {
+      let end = 0;
+      editor.state.doc.descendants((node, pos) => { if (node.isText && node.text === ':mdp') end = pos + node.nodeSize; });
+      editor.commands.setTextSelection(end);
+      editor.view.someProp('handleTextInput', handler => handler(editor.view, end, end, ' ', () => editor.state.tr.insertText(' ', end, end)));
+    });
+    expect(container.querySelectorAll('li')).toHaveLength(4);
+    expect(container.querySelectorAll('.bullet-method-marker-button')).toHaveLength(4);
+    expect(editor.state.selection.$from.parent.textContent).toBe('TODO: Deploy to prod');
+    expect(setContent).not.toHaveBeenCalled();
+    expect(htmlToMarkdown).not.toHaveBeenCalled();
+    expect(onChange).not.toHaveBeenCalled();
+    await act(async () => { vi.advanceTimersByTime(markdownCommitDelayMs); });
+    expect(htmlToMarkdown).toHaveBeenCalledOnce();
+    expect(onChange).toHaveBeenCalledOnce();
+    expect(onChange.mock.calls[0][0].trimEnd()).toBe('- TODO: atest\n  - TODO: Merge\n  - TODO: Deploy to dev\n  - TODO: Deploy to prod');
+  });
+  it("keeps live text shortcuts across cached notes and expands Enter before Story mode splits", async () => {
+    vi.useFakeTimers();
+    const container = document.createElement('div'); document.body.append(container);
+    const root = createRoot(container); mounted.push({ container, root });
+    const onChange = vi.fn();
+    const original = [{ id: 'avery', name: 'Avery', trigger: 'n:a', markdown: 'AVERY' }];
+    const changed = [{ ...original[0], markdown: '**AVERY**' }];
+    const render = (path: string, shortcuts = original) => <NotesEditor content="n:a" editable findRequest={0}
+      textShortcuts={shortcuts} writingStyle="story" focusAtEndRequest={0} focusRequest={0} historyKey={path} notePath={path}
+      onChange={onChange} onLoadError={error => { throw error; }} onPendingChange={() => undefined}
+      onPositionChange={() => undefined} restorePosition={null} spellcheckEnabled workspace="/Notebook" />;
+    await act(async () => root.render(render('One.md')));
+    const editor = (container.querySelector('.ProseMirror') as HTMLElement & { editor: import('@tiptap/core').Editor }).editor;
+    await act(async () => root.render(render('Two.md', changed)));
+    await act(async () => root.render(render('One.md', changed)));
+    const setContent = vi.spyOn(editor.commands, 'setContent');
+    const convert = vi.mocked(htmlToMarkdown); convert.mockClear();
+    await act(async () => {
+      editor.commands.setTextSelection(4);
+      editor.view.dom.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true, cancelable: true }));
+    });
+    expect(editor.state.doc.textContent).toBe('AVERY');
+    expect(editor.getHTML()).toContain('<strong>AVERY</strong>');
+    expect(editor.state.doc.childCount).toBe(1);
+    expect((container.querySelector('.ProseMirror') as HTMLElement & { editor: typeof editor }).editor).toBe(editor);
+    expect(setContent).not.toHaveBeenCalled();
+    await act(async () => { vi.advanceTimersByTime(markdownCommitDelayMs); });
+    expect(onChange).toHaveBeenCalledOnce();
+    expect(convert).toHaveBeenCalledOnce();
+  });
+  it("preserves every status marker across nested list copies with the complete editor", async () => {
+    const { serializeEditorSelectionForClipboard } = await import('./notesEditorBehavior');
+    const container = document.createElement('div'); document.body.append(container);
+    const root = createRoot(container); mounted.push({ container, root });
+    await act(async () => root.render(<NotesEditor content={'- **TODO:** shell-app\n  - **TODO:** Merge\n  - **TODO:** Deploy to dev\n  - **TODO:** Deploy to prod'} editable findRequest={0}
+      focusAtEndRequest={0} focusRequest={0} historyKey='paste-statuses' notePath='Note.md'
+      bulletMethodDisplay={{ enabled: true, replaceBullets: true }}
+      onChange={() => undefined} onLoadError={error => { throw error; }} onPendingChange={() => undefined}
+      onPositionChange={() => undefined} restorePosition={null} spellcheckEnabled workspace='/Notebook' />));
+    const editor = (container.querySelector('.ProseMirror') as HTMLElement & { editor: import('@tiptap/core').Editor }).editor;
+    await act(async () => { editor.commands.selectAll(); });
+    const clipboard = serializeEditorSelectionForClipboard(editor.view)!;
+    await act(async () => {
+      editor.commands.setTextSelection(editor.state.doc.content.size - 1);
+      editor.view.pasteHTML(clipboard.html, new Event('paste') as ClipboardEvent);
+    });
+    expect(container.querySelectorAll('li[data-bullet-method-marker]')).toHaveLength(8);
+    expect(container.querySelectorAll('.bullet-method-marker-button')).toHaveLength(8);
+  });
+  it("opens code-block options without selecting the block or its controls", async () => {
+    const container = document.createElement('div'); document.body.append(container);
+    const root = createRoot(container); mounted.push({ container, root });
+    await act(async () => root.render(<NotesEditor content={'```\n\n```'} editable findRequest={0}
+      focusAtEndRequest={0} focusRequest={0} historyKey='code-menu' notePath='Note.md'
+      onChange={() => undefined} onLoadError={error => { throw error; }} onPendingChange={() => undefined}
+      onPositionChange={() => undefined} restorePosition={null} spellcheckEnabled workspace='/Notebook' />));
+    const editor = (container.querySelector('.ProseMirror') as HTMLElement & { editor: import('@tiptap/core').Editor }).editor;
+    await act(async () => { editor.commands.setTextSelection(1); });
+    const before = editor.state.selection;
+    await act(async () => container.querySelector<HTMLButtonElement>('[aria-label="Code block options"]')!.click());
+    expect(editor.state.selection.eq(before)).toBe(true);
+    expect(container.querySelector('.code-block-context-menu')).not.toBeNull();
+    expect(container.querySelector('.code-block-node-view.ProseMirror-selectednode')).toBeNull();
+    await act(async () => {
+      const button = [...container.querySelectorAll<HTMLButtonElement>('.code-block-context-menu button')].find(button => button.textContent === 'Add line below')!;
+      button.click();
+    });
+    expect(container.querySelector('.code-block-context-menu')).toBeNull();
+    expect(editor.state.selection.$from.parent.type.name).toBe('paragraph');
+  });
   it('expands the QUESTION shortcut :? with the complete editor extensions', async () => {
     const { defaultBulletMethodStatuses } = await import('../lib/bulletMethod');
     const statuses = defaultBulletMethodStatuses.map(status => status.id === 'question' ? { ...status, shortcut: ':?' } : status);

@@ -1,3 +1,5 @@
+import { TextShortcutSettings } from "./TextShortcutSettings";
+import { emptyTextShortcuts, type TextShortcut } from "../lib/textShortcuts";
 import { DateFormatSetting } from "./DateFormatSetting";
 import BulletMethodSettings from "./BulletMethodSettings";
 import { BulletMethodIcon } from "./BulletMethodIcon";
@@ -10,9 +12,11 @@ import { Maximize2, Minimize2, RotateCcw, Settings, X } from "lucide-react";
 import type { NavigationStyle } from "../types";
 import { useSettingsWindowDrag } from "../lib/useSettingsWindowDrag";
 
-export type SettingsSection = "general" | "appearance" | "bullet-method";
+export type SettingsSection = "general" | "appearance" | "bullet-method" | "shortcuts";
 
 export default function SettingsModal(props: {
+  textShortcuts?: readonly TextShortcut[];
+  onTextShortcutsChange?: (shortcuts: readonly TextShortcut[]) => void;
   colorMode?: "light" | "dark";
   bulletMethodDisplay?: BulletMethodDisplay;
   onBulletMethodDisplayChange?: (display: BulletMethodDisplay) => void;
@@ -76,13 +80,13 @@ export default function SettingsModal(props: {
                 <h2>Settings</h2>
               </div>
               <nav className="settings-nav" aria-label="Settings sections">
-                {(["general", "appearance", "bullet-method"] as const).map((id) => (
+                {(["general", "appearance", "bullet-method", "shortcuts"] as const).map((id) => (
                   <button
                     key={id}
                     className={`settings-nav-item ${section === id ? "is-active" : ""}`}
                     onClick={() => { setSection(id); props.onSectionChange?.(id); }}
                   >
-                    {id === "bullet-method" ? "Bullet Statuses" : id === "appearance" ? "Appearance" : "General"}
+                    {id === "shortcuts" ? "Shortcuts" : id === "bullet-method" ? "Bullet Statuses" : id === "appearance" ? "Appearance" : "General"}
                   </button>
                 ))}
               </nav>
@@ -91,11 +95,11 @@ export default function SettingsModal(props: {
               <div className="settings-content-header settings-drag-handle" onPointerDown={onPointerDown}>
                 <div>
                   <h2 className={section === "bullet-method" ? "bullet-method-heading" : undefined}>
-                    {section === "bullet-method" ? "Bullet Statuses" : section === "appearance" ? "Appearance" : "General"}
+                    {section === "shortcuts" ? "Shortcuts" : section === "bullet-method" ? "Bullet Statuses" : section === "appearance" ? "Appearance" : "General"}
                     {section === "bullet-method" ? <BulletMethodIcon size={20} /> : null}
                   </h2>
                   <p>
-                    {section === "bullet-method" ? <>Keep tasks in your everyday notes. Start a bullet with a status and a colon, such as <code>TODO: Review the proposal</code>. Other statuses: IN PROGRESS, DONE, CLOSED, QUESTION. Leave general notes unmarked.</> : section === "appearance"
+                    {section === "shortcuts" ? "Expand short triggers into reusable text and formatted notes." : section === "bullet-method" ? <>Keep tasks in your everyday notes. Start a bullet with a status and a colon, such as <code>TODO: Review the proposal</code>. Other statuses: IN PROGRESS, DONE, CLOSED, QUESTION. Leave general notes unmarked.</> : section === "appearance"
                       ? "Customize themes, colors, and typography."
                       : "Navigation, editing, and word count preferences."}
                   </p>
@@ -121,6 +125,7 @@ export default function SettingsModal(props: {
                 </div>
               </div>
               <div className="settings-scroll" key={section}>
+                {section === "shortcuts" ? <TextShortcutSettings shortcuts={props.textShortcuts ?? emptyTextShortcuts} statuses={props.bulletMethodStatuses} onChange={props.onTextShortcutsChange ?? (() => undefined)} /> : null}
                 {section === "bullet-method" ? <BulletMethodSettings colorMode={props.colorMode} display={props.bulletMethodDisplay} onDisplayChange={props.onBulletMethodDisplayChange} statuses={props.bulletMethodStatuses} onChange={props.onBulletMethodStatusesChange} /> : null}
                 {section === "appearance" ? (
                   <div className="settings-appearance">

@@ -8,6 +8,8 @@ import { BulletMethodMarkers, bulletMethodMarkersKey } from "./bulletMethodMarke
 import { defaultBulletMethodStatuses } from "../lib/bulletMethod";
 import { sortSelectedLines } from "./sortLines";
 import { TextColor, ColorHighlight } from "./inlineColorMarks";
+import { serializeEditorSelectionForClipboard } from "./notesEditorBehavior";
+import { markdownToHtml } from "../lib/markdown";
 const editors: Editor[] = [];
 afterEach(() => { editors.splice(0).forEach(editor => editor.destroy()); vi.restoreAllMocks(); });
 function make(content: string, extraExtensions: Extensions = []) {
@@ -18,6 +20,51 @@ function make(content: string, extraExtensions: Extensions = []) {
   return editor;
 }
 const markers = (editor: Editor) => [...editor.view.dom.querySelectorAll('li')].map(li => li.getAttribute('data-bullet-method-marker'));
+
+it("keeps every status marker when a selected group is indented and outdented", () => {
+  const editor = make(markdownToHtml('- **TODO:** Do something about Suffolk report (bad owner_id)\n- **TODO:** Merge\n- **TODO:** Deploy to dev\n- **TODO:** Deploy to prod'));
+  editor.commands.setTextSelection({ from: textPosition(editor, 'Merge') - 6, to: textPosition(editor, 'Deploy to prod') + 'Deploy to prod'.length });
+  editor.commands.sinkListItem('listItem');
+  expect(markers(editor)).toEqual(['circle', 'circle', 'circle', 'circle']);
+  expect(editor.view.dom.querySelectorAll('.bullet-method-marker-button')).toHaveLength(4);
+  editor.commands.liftListItem('listItem');
+  expect(markers(editor)).toEqual(['circle', 'circle', 'circle', 'circle']);
+  editor.commands.undo();
+  expect(markers(editor)).toEqual(['circle', 'circle', 'circle', 'circle']);
+});
+
+it("does not scan unrelated status paragraphs when indenting a selected group", () => {
+  const editor = make('<ul>' + Array.from({ length: 1000 }, (_, i) => `<li><p>TODO: Item ${i}</p></li>`).join('') + '</ul>');
+  const unrelated = editor.state.doc.firstChild!.child(500).firstChild!;
+  const read = vi.spyOn(unrelated, 'textBetween');
+  editor.commands.setTextSelection({ from: textPosition(editor, 'Item 997'), to: textPosition(editor, 'Item 999') + 'Item 999'.length });
+  editor.commands.sinkListItem('listItem');
+  expect(read).not.toHaveBeenCalled();
+  expect(markers(editor).every(marker => marker === 'circle')).toBe(true);
+});
+
+it("keeps every nested TODO marker when a copied list is pasted, edited, and undone", () => {
+  const html = markdownToHtml('- **TODO:** shell-app\n  - **TODO:** Merge\n  - **TODO:** Deploy to dev\n  - **TODO:** Deploy to prod');
+  const source = make(html);
+  source.commands.selectAll();
+  const clipboard = serializeEditorSelectionForClipboard(source.view)!;
+  for (const content of ['<p></p>', html + '<p></p>', '<ul><li><p>Destination</p></li></ul><p></p>']) {
+    const editor = make(content);
+    editor.commands.setTextSelection(editor.state.doc.content.size - 1);
+    editor.view.pasteHTML(clipboard.html, new Event("paste") as ClipboardEvent);
+    const check = () => {
+      const incremental = markers(editor);
+      editor.view.dispatch(editor.state.tr.setMeta('bulletMethodDisplay', { enabled: true, replaceBullets: true }));
+      expect(incremental).toEqual(markers(editor));
+      expect([...editor.view.dom.querySelectorAll('li')].filter(li => li.querySelector(':scope > p')?.textContent?.startsWith('TODO:')).every(li => li.hasAttribute('data-bullet-method-marker'))).toBe(true);
+    };
+    check();
+    editor.commands.insertContent('!');
+    check();
+    editor.commands.undo();
+    check();
+  }
+});
 
 it("updates click and Shift-click destinations when the shared order or Cycle choices change", () => {
   const editor = make('<ul><li><p>TODO: Task</p></li></ul>');

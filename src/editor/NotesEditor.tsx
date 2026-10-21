@@ -1,3 +1,6 @@
+import { handleTextShortcutBackspace } from "./textShortcutUndo";
+import { emptyTextShortcuts } from "../lib/textShortcuts";
+import { TextShortcuts, textShortcutsKey, handleTextShortcutEnter } from "./textShortcuts";
 import { handleEditorTabKeyDown } from "./editorTab";
 import { handleEditorTitleArrow } from "./editorTitleNavigation";
 import { seedEditorFootnoteEntries } from './editorFootnoteEntries';
@@ -139,7 +142,7 @@ type SlashState = {
 
 const noteHistoryCacheLimit = 30;
 
-export function NotesEditor({ bulletMethodDisplay = defaultBulletMethodDisplay, bulletMethodStatuses = defaultBulletMethodStatuses, listFoldingEnabled = true, writingStyle = "notes", colorsDisabled = false, colorToolbarElement, content, commandRequest, focusRequest, focusAtEndRequest, findRequest, searchRevealRequest, historyKey, reloadRequest, notePath, restorePosition, restoreListFolding, onListFoldingChange, editable, spellcheckEnabled, workspace, onChange, onPendingChange, onPersistenceReady, onLoadError, onPositionChange, onInternalLinkClick, onFocusTitle, onRequestEmoji, onRequestLink, onRequestImage }: NotesEditorProps) {
+export function NotesEditor({ textShortcuts = emptyTextShortcuts, bulletMethodDisplay = defaultBulletMethodDisplay, bulletMethodStatuses = defaultBulletMethodStatuses, listFoldingEnabled = true, writingStyle = "notes", colorsDisabled = false, colorToolbarElement, content, commandRequest, focusRequest, focusAtEndRequest, findRequest, searchRevealRequest, historyKey, reloadRequest, notePath, restorePosition, restoreListFolding, onListFoldingChange, editable, spellcheckEnabled, workspace, onChange, onPendingChange, onPersistenceReady, onLoadError, onPositionChange, onInternalLinkClick, onFocusTitle, onRequestEmoji, onRequestLink, onRequestImage }: NotesEditorProps) {
   const onFocusTitleRef = useRef(onFocusTitle);
   onFocusTitleRef.current = onFocusTitle;
   const writingStyleRef = useRef(writingStyle);
@@ -261,6 +264,7 @@ export function NotesEditor({ bulletMethodDisplay = defaultBulletMethodDisplay, 
       FootnoteInteractions,
       OrderedListWithGutter,
       BulletMethodMarkers,
+      TextShortcuts,
       ListFolding,
       ListDragging,
       CodeBlockWithControls.configure({ lowlight }),
@@ -381,6 +385,7 @@ export function NotesEditor({ bulletMethodDisplay = defaultBulletMethodDisplay, 
       handleDOMEvents: {
         beforeinput: handleListTextReplacement,
         keydown(_view, event) {
+          if (editorRef.current && handleTextShortcutBackspace(editorRef.current, event)) return true;
           if (editorRef.current && handleFootnoteArrow(editorRef.current, event)) return true;
           if (editorRef.current && handleEmptyFootnoteDelete(editorRef.current, event)) return true;
           prepareListTextReplacement(_view, event);
@@ -393,6 +398,7 @@ export function NotesEditor({ bulletMethodDisplay = defaultBulletMethodDisplay, 
           if (handleSlashKeyDown(event)) return true;
           if (handleEditorTitleArrow(_view, event, onFocusTitleRef.current)) return true;
           const currentEditor = editorRef.current;
+          if (currentEditor && handleTextShortcutEnter(currentEditor, event)) return true;
           if (currentEditor && handleStoryParagraphKey(currentEditor, event, writingStyleRef.current)) return true;
           if (currentEditor && handleEditorTabKeyDown(currentEditor, event)) return true;
           return false;
@@ -655,6 +661,10 @@ export function NotesEditor({ bulletMethodDisplay = defaultBulletMethodDisplay, 
 
   // Loading resets plugin state; cached notes may carry old global settings.
   // Reapply after either path, without reloading content or disturbing history.
+  useEffect(() => {
+    if (editor) editor.view.dispatch(editor.state.tr.setMeta(textShortcutsKey, textShortcuts));
+  }, [editor, textShortcuts, historyKey, notePath, reloadRequest, workspace]);
+
   useEffect(() => {
     if (editor) editor.view.dispatch(editor.state.tr.setMeta(bulletMethodMarkersKey, bulletMethodStatuses).setMeta("bulletMethodDisplay", bulletMethodDisplay));
   }, [editor, bulletMethodStatuses, bulletMethodDisplay, historyKey, notePath, reloadRequest, workspace]);

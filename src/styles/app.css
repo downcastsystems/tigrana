@@ -7493,3 +7493,42 @@ html[data-theme="light"] .ProseMirror li[data-list-foldable][data-list-collapsed
 .create-notebook-dialog button:focus-visible, .create-notebook-dialog input:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 .create-notebook-backdrop { background: rgba(0, 0, 0, 0.35); }
 .create-notebook-dialog .field-label { color: var(--text-muted); }
+
+/* Editor chrome must never become part of a browser text selection. */
+.code-block-side-tools, .code-block-controls { user-select: none; -webkit-user-select: none; }
+.text-shortcut-settings { max-width: 860px; }
+.text-shortcut-settings p, .text-shortcut-dialog p { color: var(--text-muted); line-height: 1.55; }
+.text-shortcut-guide { margin: 16px 0 20px; }
+.text-shortcut-guide summary { cursor: pointer; color: var(--text-muted); }
+.text-shortcut-settings pre, .text-shortcut-dialog textarea { font-family: var(--font-mono, monospace); font-size: 13px; white-space: pre-wrap; }
+.text-shortcut-table-scroll { overflow-x: auto; margin: 20px 0; }
+.text-shortcut-table { width: 100%; border-collapse: collapse; table-layout: fixed; }
+.text-shortcut-table th { color: var(--text-muted); font-size: 12px; font-weight: 600; text-align: left; }
+.text-shortcut-table th, .text-shortcut-table td { padding: 12px 8px; border-bottom: 1px solid var(--border); vertical-align: middle; }
+.text-shortcut-table th:first-child { width: 32%; }
+.text-shortcut-table th:nth-child(2) { width: 18%; }
+.text-shortcut-table th:last-child { width: 80px; }
+.text-shortcut-table td { overflow-wrap: anywhere; }
+.text-shortcut-table .text-shortcut-empty { padding: 28px 8px; color: var(--text-muted); text-align: center; }
+.text-shortcut-name { border: 0; padding: 0; background: transparent; color: var(--text); font: inherit; font-weight: 500; text-align: left; cursor: pointer; }
+.text-shortcut-name:hover { text-decoration: underline; }
+.text-shortcut-preview { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--text-muted); font-size: 13px; }
+.text-shortcut-row-actions { display: flex; justify-content: flex-end; gap: 4px; }
+.text-shortcut-row-actions .icon-button { width: 28px; height: 28px; flex-shrink: 0; }
+.text-shortcut-table .text-shortcut-row-error { margin: 6px 0 0; font-size: 12px; }
+.text-shortcut-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; }
+.text-shortcut-actions .toolbar-button { display: inline-flex; align-items: center; gap: 6px; }
+.text-shortcut-dialog .primary-button:not(:disabled) { background: var(--accent); color: var(--accent-contrast); border-color: var(--accent); }
+.text-shortcut-dialog .primary-button:not(:disabled):hover { filter: brightness(1.1); }
+.text-shortcut-dialog button:disabled { opacity: .45; cursor: default; }
+.text-shortcut-dialog { width: min(620px, calc(100vw - 48px)); max-height: calc(100dvh - 48px); overflow-y: auto; padding: 24px; border: 1px solid var(--border); border-radius: 10px; background: var(--surface-strong); color: var(--text); box-shadow: var(--shadow-modal-strong); }
+.text-shortcut-dialog::backdrop { background: rgb(0 0 0 / 45%); }
+.text-shortcut-dialog header { display: flex; align-items: center; justify-content: space-between; gap: 16px; margin-bottom: 20px; }
+.text-shortcut-dialog h2 { margin: 0; font-size: 18px; overflow-wrap: anywhere; }
+.text-shortcut-dialog label { display: grid; gap: 6px; margin-bottom: 16px; }
+.text-shortcut-dialog input, .text-shortcut-dialog textarea { box-sizing: border-box; width: 100%; min-width: 0; padding: 9px; border: 1px solid var(--border); border-radius: 5px; color: var(--text); background: var(--surface); font: inherit; }
+.text-shortcut-dialog textarea { resize: vertical; font-family: var(--font-mono, monospace); font-size: 13px; }
+.text-shortcut-dialog footer { display: flex; justify-content: flex-end; flex-wrap: wrap; gap: 8px; margin-top: 20px; }
+.text-shortcut-dialog .text-shortcut-dialog-help { font-size: 12px; }
+.text-shortcut-settings [role="alert"], .text-shortcut-dialog [role="alert"] { color: var(--danger, #c74c4c); }
+.text-shortcut-dialog :is(input, textarea, button):focus-visible, .text-shortcut-settings button:focus-visible { outline: 2px solid var(--settings-focus, var(--accent)); outline-offset: 2px; }

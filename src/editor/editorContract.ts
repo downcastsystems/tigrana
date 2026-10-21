@@ -1,3 +1,4 @@
+import type { TextShortcut } from "../lib/textShortcuts";
 import type { SearchRevealRequest } from "./searchResultReveal";
 import type { BulletMethodDisplay, BulletMethodStatus } from "../lib/bulletMethod";
 import type { InlineColorCommand } from "../lib/inlineColors";
@@ -9,6 +10,7 @@ import type { SortCommand } from "./sortLines";
 export const markdownCommitDelayMs = 300;
 
 export type NotesEditorProps = {
+  textShortcuts?: readonly TextShortcut[];
   bulletMethodDisplay?: BulletMethodDisplay;
   bulletMethodStatuses?: readonly BulletMethodStatus[];
   listFoldingEnabled?: boolean;

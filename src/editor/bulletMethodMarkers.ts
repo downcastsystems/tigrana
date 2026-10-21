@@ -3,7 +3,7 @@ import { bulletMethodIconUrl } from "../lib/bulletMethodIcons";
 import { Extension, InputRule } from "@tiptap/core";
 import type { Node as ProseMirrorNode } from "@tiptap/pm/model";
 import { closeHistory } from "@tiptap/pm/history";
-import { AddMarkStep, RemoveMarkStep, canJoin, Mapping } from "@tiptap/pm/transform";
+import { AddMarkStep, RemoveMarkStep, ReplaceAroundStep, canJoin, Mapping } from "@tiptap/pm/transform";
 import { bulletMoveHighlightKey, createBulletMoveHighlightPlugin } from "./bulletMoveHighlight";
 import { sortAfterStatusClick } from "./sortLines";
 import { listFoldingKey } from "./listFolding";
@@ -269,6 +269,16 @@ export const BulletMethodMarkers = Extension.create({
             // Mark changes have empty position maps but can split a bold run
             // or give it an explicit color. Recheck only their affected text.
             const step = tr.steps[index];
+            // Indenting/outdenting wraps a preserved gap. StepMap.forEach only
+            // reports its boundaries, but mapping can drop node decorations
+            // throughout the moved gap. Recheck the entire wrapped group so
+            // middle items keep their status, without scanning unrelated lists.
+            if (step instanceof ReplaceAroundStep) {
+              recheck(
+                Math.max(0, remaining.map(map.map(step.from, -1), -1) - 1),
+                Math.min(tr.doc.content.size, remaining.map(map.map(step.to, 1), 1) + 1),
+              );
+            }
             if (step instanceof AddMarkStep || step instanceof RemoveMarkStep) {
               recheck(remaining.map(step.from, -1), remaining.map(step.to, 1));
             }

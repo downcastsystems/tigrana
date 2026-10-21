@@ -1,5 +1,5 @@
 import { DOMSerializer, type Node as ProseMirrorNode } from "@tiptap/pm/model";
-import { NodeSelection, Selection, TextSelection } from "@tiptap/pm/state";
+import { Selection, TextSelection } from "@tiptap/pm/state";
 import { NodeViewContent, NodeViewWrapper, type Editor } from "@tiptap/react";
 import { lowlight } from "./codeHighlighting";
 import { Check, Copy, Menu, Plus, Scissors, Trash2 } from "lucide-react";
@@ -45,14 +45,6 @@ export function CodeBlockNodeView({
   const resolvePos = () => {
     const pos = getPos();
     return typeof pos === "number" ? pos : null;
-  };
-
-  const selectCodeBlock = () => {
-    const pos = resolvePos();
-    if (pos == null) return;
-    const { state, view } = editor;
-    view.dispatch(state.tr.setSelection(NodeSelection.create(state.doc, pos)).scrollIntoView());
-    view.focus();
   };
 
   const deleteCodeBlock = () => {
@@ -148,7 +140,6 @@ export function CodeBlockNodeView({
             aria-label="Code block options"
             aria-expanded={menuOpen}
             onClick={() => {
-              selectCodeBlock();
               setMenuOpen((value) => !value);
             }}
           >

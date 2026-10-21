@@ -1,3 +1,4 @@
+import { readTextShortcuts, writeTextShortcuts, textShortcutsStorageKey } from "./lib/textShortcuts";
 import { CreateNotebookDialog } from "./components/CreateNotebookDialog";
 import { NotebookStartup, StartupThemeToggle } from "./components/NotebookStartup";
 import { startupThemeStyles } from "./lib/startupAppearance";
@@ -431,9 +432,11 @@ export default function App() {
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [listFoldingEnabled, setListFoldingEnabled] = useListFoldingPreference();
   const [bulletMethodDisplay, setBulletMethodDisplay] = useState(readBulletMethodDisplay);
+  const [textShortcuts, setTextShortcuts] = useState(readTextShortcuts);
   const [bulletMethodStatuses, setBulletMethodStatuses] = useState(readBulletMethodStatuses);
   useEffect(() => {
     const syncBulletMethod = (event: StorageEvent) => {
+      if (event.key === textShortcutsStorageKey || event.key === null) setTextShortcuts(readTextShortcuts());
       if (event.key === bulletMethodDisplayKey || event.key === null) setBulletMethodDisplay(readBulletMethodDisplay());
       if (event.key === bulletMethodSettingsKey || event.key === null) setBulletMethodStatuses(readBulletMethodStatuses());
     };
@@ -5527,6 +5530,7 @@ export default function App() {
             ) : (
               <EditorErrorBoundary resetKey={activePath ?? "pending-note"} onError={handleNoteLoadError}>
                 <NotesEditor
+                  textShortcuts={textShortcuts}
                   listFoldingEnabled={listFoldingEnabled}
                   bulletMethodDisplay={bulletMethodDisplay}
                   bulletMethodStatuses={bulletMethodStatuses}
@@ -5880,6 +5884,8 @@ export default function App() {
       <ThemeStyles theme={renderedTheme} mode={resolvedTheme} onReset={resetThemeAppearance} />
       {settingsOpen ? (
           <SettingsModal
+            textShortcuts={textShortcuts}
+            onTextShortcutsChange={shortcuts => setTextShortcuts(writeTextShortcuts(shortcuts, bulletMethodStatuses, textShortcuts))}
             listFoldingEnabled={listFoldingEnabled}
             onListFoldingEnabledChange={setListFoldingEnabled}
             colorMode={renderedColorMode}

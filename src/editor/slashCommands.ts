@@ -1,3 +1,4 @@
+import { availableTextShortcuts, insertTextShortcut } from "./textShortcuts";
 import { requestFootnote } from "./footnotes";
 import { requestDate } from "./dateInsertion";
 import { canAlignText, setTextAlignment } from "./textAlignment";
@@ -352,7 +353,15 @@ export function ensureParagraphAfterCurrentTable(editor: Editor) {
 
 export function filterSlashCommands(query: string, editor?: Editor | null) {
   const lower = query.trim().toLowerCase();
-  const available = slashCommands.filter(command => !editor || !command.isAvailable || command.isAvailable(editor));
+  const shortcuts: SlashCommand[] = editor ? availableTextShortcuts(editor.state, "menu").map(shortcut => ({
+    id: `shortcut-${shortcut.id}`, title: shortcut.name, hint: `Shortcut · ${shortcut.trigger}`,
+    icon: Type, keywords: ["shortcut", "shortcuts", shortcut.trigger.toLowerCase(), shortcut.name.toLowerCase()],
+    run: (currentEditor, range) => { insertTextShortcut(currentEditor, range, shortcut); },
+  })) : [];
+  const shortcutQuery = /^shortcuts?(?:\s+(.*))?$/.exec(lower);
+  if (shortcutQuery) return shortcuts.filter(command => !shortcutQuery[1] || command.title.toLowerCase().includes(shortcutQuery[1])
+    || command.keywords.some(keyword => keyword.includes(shortcutQuery[1])));
+  const available = [...slashCommands, ...shortcuts].filter(command => !editor || !command.isAvailable || command.isAvailable(editor));
   if (!lower) return available;
   const rank = (command: SlashCommand) => {
     const title = command.title.toLowerCase();
@@ -364,8 +373,16 @@ export function filterSlashCommands(query: string, editor?: Editor | null) {
     if (command.keywords.some(keyword => keyword.includes(lower))) return 5;
     return 6;
   };
-  return available.map(command => ({ command, rank: rank(command) }))
+  return available.map(command => {
+    const commandRank = rank(command);
+    // Prefer the closest keyword completion before comparing display names.
+    // For /short, "shortcut" is closer than Emoji's "shortcode" alias.
+    const keywordLength = commandRank === 3
+      ? Math.min(...command.keywords.filter(keyword => keyword.startsWith(lower)).map(keyword => keyword.length))
+      : 0;
+    return { command, rank: commandRank, keywordLength };
+  })
     .filter(match => match.rank < 6)
-    .sort((a, b) => a.rank - b.rank || a.command.title.length - b.command.title.length)
+    .sort((a, b) => a.rank - b.rank || a.keywordLength - b.keywordLength || a.command.title.length - b.command.title.length)
     .map(match => match.command);
 }
