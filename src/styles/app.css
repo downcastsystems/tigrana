@@ -7019,7 +7019,7 @@ html[data-theme="dark"] .bullet-method-settings { --bullet-method-error: #ff9292
 .bullet-method-status-table { overflow-x: auto; margin: 12px 0; }
 .bullet-method-statuses { list-style: none; margin: 0; padding: 0; }
 .bullet-method-status,
-.bullet-method-column-headings { display: grid; grid-template-columns: 14px 18px minmax(136px, 1fr) 76px 36px 36px 64px 40px 30px 94px; align-items: center; gap: 8px; min-width: 616px; }
+.bullet-method-column-headings { display: grid; grid-template-columns: 14px 18px minmax(136px, 1fr) 76px 36px 36px 36px 64px 40px 30px 94px; align-items: center; gap: 8px; min-width: 660px; }
 .bullet-method-settings .is-disabled { opacity: .4; }
 .bullet-method-dim-choice:has(input:disabled) { cursor: default; }
 .bullet-method-dim-choice input:disabled { cursor: default; }
@@ -7027,7 +7027,8 @@ html[data-theme="dark"] .bullet-method-settings { --bullet-method-error: #ff9292
 .bullet-method-column-headings > :nth-child(5),
 .bullet-method-column-headings > :nth-child(6),
 .bullet-method-column-headings > :nth-child(7),
-.bullet-method-column-headings > :nth-child(8) { text-align: center; }
+.bullet-method-column-headings > :nth-child(8),
+.bullet-method-column-headings > :nth-child(9) { text-align: center; }
 .bullet-method-status { padding: 8px 0; border-top: 1px solid var(--border); }
 .bullet-method-no-shortcut { padding-left: 8px; color: var(--text-muted); }
 .bullet-method-unavailable { text-align: center; color: var(--text-muted); }
@@ -7064,10 +7065,27 @@ body.is-dragging-bullet-status, body.is-dragging-bullet-status * { cursor: grabb
 .bullet-method-icon-menu button[aria-checked="true"] { border-color: currentColor; }
 .bullet-method-icon-menu button:focus-visible { outline: 2px solid var(--settings-focus, currentColor); outline-offset: -2px; }
 
+.bullet-method-color-trigger { justify-self: center; }
+.bullet-method-color-trigger .inline-color-swatch { width: 22px; }
+.bullet-method-color-menu { position: fixed; z-index: 2000; width: 180px; max-width: calc(100vw - 16px); max-height: calc(100vh - 16px); overflow: auto; padding: 6px; border: 1px solid var(--border); border-radius: 9px; background: var(--surface); color: var(--text); box-shadow: 0 6px 24px #0004; }
+.bullet-method-color-menu button { display: flex; align-items: center; gap: 8px; width: 100%; padding: 5px 6px; border: 0; border-radius: 5px; background: transparent; color: inherit; font: inherit; font-size: 12px; text-align: left; cursor: pointer; }
+.bullet-method-color-menu button:hover, .bullet-method-color-menu button[aria-checked="true"] { background: color-mix(in srgb, currentColor 12%, transparent); }
+.bullet-method-color-menu button:focus-visible { outline: 2px solid var(--settings-focus, currentColor); outline-offset: -2px; }
+.bullet-method-color-menu button > svg { margin-left: auto; }
+
+/* Inherit a status color through its subtree, allowing a nested status to choose
+   its own color. Keep the list containers uncolored so dimming never compounds. */
+.ProseMirror li[data-bullet-method-color] p,
+.ProseMirror li[data-bullet-method-color] li::marker,
+.ProseMirror li[data-bullet-method-color]::marker,
+.ProseMirror li[data-bullet-method-color] .bullet-method-marker-button,
+.ProseMirror li[data-bullet-method-color] .list-fold-button { color: var(--bullet-status-color); }
+.ProseMirror li[data-bullet-method-color] p a { color: inherit; }
+
 /* Dim inherited text only, so explicit colors keep their original appearance.
    Apply color to paragraphs and markers, not list containers, so nesting never compounds dimming. */
-.ProseMirror li[data-bullet-method-completed="true"] p, .ProseMirror p[data-bullet-method-dim="true"] { --bullet-link-opacity: var(--bullet-dim-dark, 70%); color: color-mix(in srgb, currentColor var(--bullet-dim-dark, 70%), transparent); }
-html[data-theme="light"] .ProseMirror li[data-bullet-method-completed="true"] p, html[data-theme="light"] .ProseMirror p[data-bullet-method-dim="true"] { --bullet-link-opacity: var(--bullet-dim-light, 65%); color: color-mix(in srgb, currentColor var(--bullet-dim-light, 65%), transparent); }
+.ProseMirror li[data-bullet-method-completed="true"] p, .ProseMirror p[data-bullet-method-dim="true"] { --bullet-link-opacity: var(--bullet-dim-dark, 70%); color: color-mix(in srgb, var(--bullet-status-color, currentColor) var(--bullet-dim-dark, 70%), transparent); }
+html[data-theme="light"] .ProseMirror li[data-bullet-method-completed="true"] p, html[data-theme="light"] .ProseMirror p[data-bullet-method-dim="true"] { --bullet-link-opacity: var(--bullet-dim-light, 65%); color: color-mix(in srgb, var(--bullet-status-color, currentColor) var(--bullet-dim-light, 65%), transparent); }
 /* Composite bold glyphs once: WebKit's synthesized bold ignores color alpha.
    These view-only spans exclude explicit colors/highlights and never nest. */
 .ProseMirror li[data-bullet-method-completed="true"] p .bullet-method-dim-bold,
@@ -7093,13 +7111,13 @@ html[data-theme="light"] .ProseMirror li[data-bullet-method-completed="true"] p,
 .ProseMirror li[data-bullet-method-completed="true"]::marker,
 .ProseMirror li[data-bullet-method-completed="true"] .bullet-method-marker-button,
 .ProseMirror li[data-bullet-method-completed="true"] .list-fold-button {
-  color: color-mix(in srgb, currentColor var(--bullet-dim-dark, 70%), transparent);
+  color: color-mix(in srgb, var(--bullet-status-color, currentColor) var(--bullet-dim-dark, 70%), transparent);
 }
 html[data-theme="light"] .ProseMirror li[data-bullet-method-completed="true"] li::marker,
 html[data-theme="light"] .ProseMirror li[data-bullet-method-completed="true"]::marker,
 html[data-theme="light"] .ProseMirror li[data-bullet-method-completed="true"] .bullet-method-marker-button,
 html[data-theme="light"] .ProseMirror li[data-bullet-method-completed="true"] .list-fold-button {
-  color: color-mix(in srgb, currentColor var(--bullet-dim-light, 65%), transparent);
+  color: color-mix(in srgb, var(--bullet-status-color, currentColor) var(--bullet-dim-light, 65%), transparent);
 }
 
 /* Collapsed fold indicators keep the theme's full link color, including DONE items. */

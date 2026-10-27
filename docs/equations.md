@@ -16,6 +16,23 @@ Inside lists, quotes, and tables, use inline equations. Separate equation blocks
 are available in the main note body. Tables containing equations use Tigrana's
 HTML-table format to preserve formula characters such as vertical bars.
 
+## Automatic calculations
+
+For a quick calculation in ordinary note text, type an arithmetic expression
+followed by `=`, such as `1 + 2 =` → `1 + 2 = 3`. A dollar amount gives a
+currency result: `$1 + 2 =` → `$1 + 2 = $3.00`. Results always have a space
+after the equals sign. Immediate Backspace removes the automatic answer and
+leaves the expression and `=` so you can continue typing literally.
+
+Calculations support `+`, `-`, `*`, `/`, `^`, `×`, `÷`, parentheses, decimals,
+thousands separators, and percentages (`200 * 10% = 20`). They trigger at the
+end of a line containing only arithmetic, optionally after a label such as
+`Total:`, outside code and links. Invalid or incomplete expressions stay
+literal. Calculation is limited to 256 characters on the current line; normal
+typing does no calculation work. Results persist as ordinary Markdown text.
+
+## Equation notation
+
 Equations display mathematical notation. They do not calculate answers.
 The formula is written in a small subset of LaTeX, a text notation for math.
 You do not need to write a full LaTeX document or install LaTeX.

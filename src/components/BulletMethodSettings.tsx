@@ -5,6 +5,7 @@ import { ArrowDown, ArrowUp, GripVertical, Plus, RotateCcw, Trash2 } from "lucid
 import { bulletMethodDimPercent, defaultBulletMethodDisplay, type BulletMethodDisplay, statusBolds, statusCelebrates, statusCycles, statusDims, statusIcon, defaultBulletMethodStatuses, validateBulletMethodStatuses, validateBulletMethodShortcut, type BulletMethodStatus, statusShortcut } from "../lib/bulletMethod";
 
 import { BulletMethodIconPicker } from "./BulletMethodIconPicker";
+import { BulletMethodColorPicker } from "./BulletMethodColorPicker";
 
 export default function BulletMethodSettings({ statuses, onChange, display = defaultBulletMethodDisplay, onDisplayChange, colorMode = "light" }: {
   colorMode?: "light" | "dark";
@@ -223,7 +224,7 @@ export default function BulletMethodSettings({ statuses, onChange, display = def
         <h3 id="bullet-method-status-order-heading">Status order</h3>
         <div className="bullet-method-status-table">
         <div className="bullet-method-column-headings" aria-hidden="true">
-          <span /><span /><span>Status</span><span>Shortcut</span><span className={boldEnabled ? undefined : "is-disabled"}>Bold</span><span className={dimEnabled ? undefined : "is-disabled"}>Dim</span><span className={celebrationsEnabled ? undefined : "is-disabled"}>Celebrate</span><span>Cycle</span><span /><span />
+          <span /><span /><span>Status</span><span>Shortcut</span><span>Color</span><span className={boldEnabled ? undefined : "is-disabled"}>Bold</span><span className={dimEnabled ? undefined : "is-disabled"}>Dim</span><span className={celebrationsEnabled ? undefined : "is-disabled"}>Celebrate</span><span>Cycle</span><span /><span />
         </div>
         <ol ref={listRef} className="bullet-method-statuses" aria-label="Bullet Statuses status order">
           {draft.map((status, index) => {
@@ -248,6 +249,8 @@ export default function BulletMethodSettings({ statuses, onChange, display = def
                     aria-invalid={Boolean(shortcutError)} aria-describedby={shortcutError ? shortcutErrorId : undefined}
                     onChange={event => update(status.id, { shortcut: event.target.value })} /> : <span className="bullet-method-no-shortcut" aria-label="No shortcut">—</span>}
                 </div>
+                {status.prefix === null ? <span className="bullet-method-unavailable" aria-label="Text color unavailable for No status">—</span> : <BulletMethodColorPicker
+                  name={name} value={status.color} colorMode={colorMode} onChange={color => update(status.id, { color })} />}
                 {status.prefix === null ? <span className={`bullet-method-unavailable${boldEnabled ? "" : " is-disabled"}`} aria-label="Bolding unavailable for No status">—</span> : <label className={`bullet-method-dim-choice${boldEnabled ? "" : " is-disabled"}`}>
                   <input type="checkbox" disabled={!boldEnabled} aria-label={`Bold ${name}`} checked={statusBolds(status)}
                     title="Bold the status and colon automatically"
@@ -289,6 +292,7 @@ export default function BulletMethodSettings({ statuses, onChange, display = def
           next.splice(next.findIndex(status => status.prefix === null), 0, { id: crypto.randomUUID(), prefix: name, description: "", icon: "circle" });
           setDraft(next); setMessage("");
         }}><Plus size={16} /> Add status</button>
+        <p className="bullet-method-help">Color applies to the entire bullet and its nested notes, with Dim applied to the chosen color. Choose Theme default to use the note theme’s text color.</p>
         <p className="bullet-method-help">No status includes unmarked notes and unrecognized prefixes. It can move, but cannot be removed. Renaming or removing a status does not change existing notes; their old prefixes become unrecognized.</p>
         <div className="bullet-status-transfer">
           <input ref={importRef} type="file" accept=".json,application/json" aria-label="Import Bullet Statuses" hidden onChange={async event => {
@@ -317,7 +321,7 @@ export default function BulletMethodSettings({ statuses, onChange, display = def
       </section>
       <section className="settings-reset-appearance">
         <h3>Default Bullet Statuses</h3>
-        <p>Restore the default status names, icons, order, shortcuts, and row choices. Enable bolding, dimming, and celebrations, with dimming at 65% in light mode and 70% in dark mode. Your notes stay unchanged.</p>
+        <p>Restore the default status names, icons, colors, order, shortcuts, and row choices. Enable bolding, dimming, and celebrations, with dimming at 65% in light mode and 70% in dark mode. Your notes stay unchanged.</p>
         <button className="toolbar-button" onClick={() => save(defaultBulletMethodStatuses, "Bullet Statuses defaults restored.", true)}><RotateCcw size={16} /> Restore defaults</button>
       </section>
     </div>

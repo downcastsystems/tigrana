@@ -1,4 +1,5 @@
 import { bulletMethodIcons, type BulletMethodIcon } from "./bulletMethodIcons";
+import { inlineColors } from "./inlineColors";
 export { bulletMethodIcons, type BulletMethodIcon } from "./bulletMethodIcons";
 const defaultIcons: Record<string, BulletMethodIcon> = { closed: "slash", done: "check", todo: "circle", "in-progress": "dot" };
 export function statusIcon(status: BulletMethodStatus): BulletMethodIcon | null {
@@ -36,6 +37,8 @@ export type BulletMethodStatus = {
   prefix: string | null;
   description: string;
   icon?: BulletMethodIcon;
+  // Text palette id; null/undefined leaves the inherited text color unchanged.
+  color?: string | null;
   dim?: boolean;
   bold?: boolean;
   celebrate?: boolean;
@@ -80,6 +83,7 @@ export function validateBulletMethodStatuses(statuses: readonly BulletMethodStat
     if (status.bold !== undefined && typeof status.bold !== "boolean") return "Choose whether to bold each status.";
     if (status.cycle !== undefined && typeof status.cycle !== "boolean") return "Choose whether to include each status in the click cycle.";
     if (status.icon !== undefined && !bulletMethodIcons.includes(status.icon)) return "Choose a supported circle icon.";
+    if (status.color != null && !inlineColors.some(color => color.id === status.color)) return "Choose a supported text color or Theme default.";
     const shortcutError = validateBulletMethodShortcut(status, statuses);
     if (shortcutError) return shortcutError;
     if (status.prefix === null) continue;

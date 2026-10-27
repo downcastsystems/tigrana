@@ -1,4 +1,5 @@
 import { handleTextShortcutBackspace } from "./textShortcutUndo";
+import { AutomaticCalculation } from "./automaticCalculation";
 import { emptyTextShortcuts } from "../lib/textShortcuts";
 import { TextShortcuts, textShortcutsKey, handleTextShortcutEnter } from "./textShortcuts";
 import { handleEditorTabKeyDown } from "./editorTab";
@@ -272,6 +273,7 @@ export function NotesEditor({ textShortcuts = emptyTextShortcuts, bulletMethodDi
       ColorHighlight,
       InlineMath,
       BlockMath,
+      AutomaticCalculation,
       EmojiText,
       SearchHighlight,
       SearchResultReveal,

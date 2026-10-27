@@ -1,5 +1,6 @@
 import { bulletCelebrationKey, createBulletCelebrationPlugin } from "./bulletCelebration";
 import { bulletMethodIconUrl } from "../lib/bulletMethodIcons";
+import { inlineColors, inlineColorStyle } from "../lib/inlineColors";
 import { Extension, InputRule } from "@tiptap/core";
 import type { Node as ProseMirrorNode } from "@tiptap/pm/model";
 import { closeHistory } from "@tiptap/pm/history";
@@ -58,12 +59,17 @@ function decorationsIn(doc: ProseMirrorNode, from: number, to: number, statuses:
     const paragraph = node.firstChild;
     const completePrefix = paragraph?.type.name === "paragraph" && /^COMPLETE:/i.test(paragraph.textBetween(0, Math.min(9, paragraph.content.size)));
     // COMPLETE remains a legacy alias for DONE unless explicitly configured.
-    const dimStatus = match?.status ?? (completePrefix ? statuses.find(status => status.id === "done") : statuses.find(status => status.prefix === null));
-    const dimmed = display.dimmedStatusesEnabled !== false && dimStatus !== undefined && statusDims(dimStatus);
+    const appearanceStatus = match?.status ?? (completePrefix ? statuses.find(status => status.id === "done") : statuses.find(status => status.prefix === null));
+    const dimmed = display.dimmedStatusesEnabled !== false && appearanceStatus !== undefined && statusDims(appearanceStatus);
     const attributes: Record<string, string> = {};
+    const color = appearanceStatus?.prefix != null && inlineColors.find(color => color.id === appearanceStatus.color);
+    if (color) {
+      attributes["data-bullet-method-color"] = color.id;
+      attributes.style = `--bullet-status-color: ${inlineColorStyle(color.text.light, "text")};`;
+    }
     if (dimmed) {
       attributes["data-bullet-method-completed"] = "true";
-      attributes.style = `--bullet-dim-light: ${bulletMethodDimPercent(display, "light")}%; --bullet-dim-dark: ${bulletMethodDimPercent(display, "dark")}%`;
+      attributes.style = `${attributes.style ?? ""} --bullet-dim-light: ${bulletMethodDimPercent(display, "light")}%; --bullet-dim-dark: ${bulletMethodDimPercent(display, "dark")}%`;
       decorations.push(Decoration.node(pos + 1, pos + 1 + node.firstChild!.nodeSize, { "data-bullet-method-dim": "true", style: `--bullet-dim-light: ${bulletMethodDimPercent(display, "light")}%; --bullet-dim-dark: ${bulletMethodDimPercent(display, "dark")}%` }));
     }
     if (display.replaceBullets && icon) attributes["data-bullet-method-marker"] = icon;

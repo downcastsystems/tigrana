@@ -49,6 +49,55 @@ function setReactInputValue(input: HTMLInputElement, value: string) {
 }
 
 describe("Note editor typing performance", () => {
+  it.each([false, true])("keeps automatic calculations in one deferred update in a long Note (Backspace: %s)", async backspace => {
+    vi.useFakeTimers();
+    const container = document.createElement("div"); document.body.append(container);
+    const root = createRoot(container); mounted.push({ container, root });
+    const initial = "word ".repeat(5000).trim() + "\n\n1 + 2";
+    const committed: string[] = [];
+    let renders = 0;
+    function Harness() {
+      const [content, setContent] = useState(initial);
+      renders++;
+      return <NotesEditor content={content} editable findRequest={0}
+        focusAtEndRequest={0} focusRequest={0} historyKey="calculation" notePath="Math.md"
+        onChange={markdown => { committed.push(markdown); setContent(markdown); }}
+        onLoadError={error => { throw error; }} onPendingChange={() => undefined}
+        onPositionChange={() => undefined} restorePosition={null} spellcheckEnabled workspace="/Notebook" />;
+    }
+    await act(async () => root.render(<Harness />));
+    const element = container.querySelector<HTMLElement>(".ProseMirror")!;
+    const editor = (element as HTMLElement & { editor: import("@tiptap/core").Editor }).editor;
+    await act(async () => {
+      editor.commands.setTextSelection(editor.state.doc.content.size - 1);
+      for (const text of " =") {
+        const { from, to } = editor.state.selection;
+        const handled = editor.view.someProp("handleTextInput", handler => handler(editor.view, from, to, text, () => editor.state.tr.insertText(text, from, to)));
+        if (!handled) editor.view.dispatch(editor.state.tr.insertText(text, from, to));
+      }
+    });
+    expect(element.textContent).toMatch(/1 \+ 2 = 3$/);
+    if (backspace) await act(async () => {
+      element.dispatchEvent(new KeyboardEvent("keydown", { key: "Backspace", bubbles: true, cancelable: true }));
+    });
+    expect(renders).toBe(1);
+    expect(htmlToMarkdown).not.toHaveBeenCalled();
+    expect(committed).toEqual([]);
+    await act(async () => { await vi.advanceTimersByTimeAsync(markdownCommitDelayMs); });
+    expect(htmlToMarkdown).toHaveBeenCalledOnce();
+    expect(committed).toEqual([initial + (backspace ? " =\n" : " = 3\n")]);
+    expect(renders).toBe(2);
+    expect(container.querySelector(".ProseMirror")).toBe(element);
+    expect((element as HTMLElement & { editor: unknown }).editor).toBe(editor);
+    if (!backspace) {
+      // A serialized Markdown echo must preserve the editor and its immediate undo.
+      await act(async () => {
+        element.dispatchEvent(new KeyboardEvent("keydown", { key: "Backspace", bubbles: true, cancelable: true }));
+      });
+      expect(element.textContent).toMatch(/1 \+ 2 =$/);
+    }
+  });
+
   it("applies the folding setting without replacing the editor, serializing Markdown, or leaking it across cached notes", async () => {
     const container = document.createElement("div"); document.body.append(container);
     const root = createRoot(container); mounted.push({ container, root });

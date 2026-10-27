@@ -6,6 +6,7 @@ export function encodeBulletStatusSystem(statuses: readonly BulletMethodStatus[]
   return JSON.stringify({ format: 'tigrana-bullet-statuses', version: 1, statuses: statuses.map(status => ({
     id: status.id, prefix: status.prefix?.trim() ?? null, description: status.description,
     ...(statusIcon(status) ? { icon: statusIcon(status) } : {}),
+    ...(status.color != null ? { color: status.color } : {}),
     celebrate: statusCelebrates(status), dim: statusDims(status), bold: statusBolds(status), cycle: statusCycles(status), shortcut: statusShortcut(status),
   })) }, null, 2) + '\n';
 }
@@ -23,6 +24,7 @@ export function decodeBulletStatusSystem(text: string): readonly BulletMethodSta
     // Copy only status fields. Display preferences never enter the import path.
     return { id: s.id, prefix: s.prefix?.trim() ?? null, description: s.description,
       ...(s.icon !== undefined ? { icon: s.icon } : {}),
+      ...(s.color !== undefined ? { color: s.color } : {}),
       ...(s.celebrate !== undefined ? { celebrate: s.celebrate } : {}),
       ...(s.dim !== undefined ? { dim: s.dim } : {}),
       ...(s.bold !== undefined ? { bold: s.bold } : {}),

@@ -1,10 +1,10 @@
 import { expect, it } from 'vitest';
 import { decodeBulletStatusSystem, encodeBulletStatusSystem } from './bulletStatusSystem';
-import { defaultBulletMethodStatuses, statusBolds, statusCelebrates, statusCycles, statusDims, statusIcon, statusShortcut } from './bulletMethod';
+import { defaultBulletMethodStatuses, statusBolds, statusCelebrates, statusCycles, statusDims, statusIcon, statusShortcut, type BulletMethodStatus } from './bulletMethod';
 
 it('round trips order, custom names, icons, shortcuts and dim choices without display settings', () => {
-  const rows = [...defaultBulletMethodStatuses].reverse().map(row => ({ ...row, dim: false, bold: row.id === "done", cycle: row.id !== "done", celebrate: row.id === "todo" }));
-  rows[1] = { ...rows[1], prefix: 'WAITING', icon: 'x', shortcut: ':w' };
+  const rows: BulletMethodStatus[] = [...defaultBulletMethodStatuses].reverse().map(row => ({ ...row, dim: false, bold: row.id === "done", cycle: row.id !== "done", celebrate: row.id === "todo" }));
+  rows[1] = { ...rows[1], prefix: 'WAITING', icon: 'x', shortcut: ':w', color: 'blue' };
   const encoded = encodeBulletStatusSystem(rows);
   const imported = decodeBulletStatusSystem(encoded);
   expect(imported.map(s => s.id)).toEqual(rows.map(s => s.id));
@@ -16,6 +16,7 @@ it('round trips order, custom names, icons, shortcuts and dim choices without di
     expect(statusDims(imported[i])).toBe(statusDims(rows[i]));
     expect(statusBolds(imported[i])).toBe(statusBolds(rows[i]));
     expect(statusShortcut(imported[i])).toBe(statusShortcut(rows[i]));
+    expect(imported[i].color).toBe(rows[i].color);
   }
   expect(Object.keys(JSON.parse(encoded))).toEqual(['format', 'version', 'statuses']);
   const withExtras = { ...JSON.parse(encoded), display: { enabled: true }, statuses: imported.map(s => ({ ...s, enabled: true })) };
@@ -33,6 +34,7 @@ it('rejects malformed, unsupported and conflicting systems', () => {
     { ...file, statuses: file.statuses.map((s: object) => ({ ...s, bold: 'yes' })) },
     { ...file, statuses: file.statuses.map((s: object) => ({ ...s, celebrate: 'yes' })) },
     { ...file, statuses: file.statuses.map((s: object) => ({ ...s, cycle: 'yes' })) },
+    { ...file, statuses: file.statuses.map((s: object) => ({ ...s, color: '#ff0000' })) },
   ]) expect(() => decodeBulletStatusSystem(JSON.stringify(value))).toThrow();
   expect(() => decodeBulletStatusSystem('{')).toThrow();
 });

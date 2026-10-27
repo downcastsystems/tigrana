@@ -21,6 +21,48 @@ function make(content: string, extraExtensions: Extensions = []) {
 }
 const markers = (editor: Editor) => [...editor.view.dom.querySelectorAll('li')].map(li => li.getAttribute('data-bullet-method-marker'));
 
+it("applies live status colors with dimming without persisting formatting, and resets to theme default", () => {
+  const editor = make('<ul><li><p>DONE: Parent <strong>Bold</strong></p><ul><li><p>TODO: Child</p></li></ul></li><li><p>Unmarked</p></li></ul><ol><li><p>DONE: Numbered</p></li></ol>');
+  const before = editor.getHTML();
+  const statuses = defaultBulletMethodStatuses.map(status => ({ ...status, color: status.id === 'done' ? 'green' : status.id === 'todo' ? 'blue' : null }));
+  editor.view.dispatch(editor.state.tr.setMeta(bulletMethodMarkersKey, statuses));
+  const colors = () => [...editor.view.dom.querySelectorAll('li')].map(li => li.getAttribute('data-bullet-method-color'));
+  expect(colors()).toEqual(['green', 'blue', null, null]);
+  const done = editor.view.dom.querySelector<HTMLElement>('li')!;
+  expect(done.style.getPropertyValue('--bullet-status-color')).toBe('var(--note-text-green, #276343)');
+  expect(done.style.getPropertyValue('--bullet-dim-dark')).toBe('70%');
+  expect(done.querySelector('p')!.getAttribute('data-bullet-method-dim')).toBe('true');
+  expect(done.querySelector('.bullet-method-dim-bold')?.textContent).toBe('Bold');
+  expect(editor.getHTML()).toBe(before);
+  editor.view.dispatch(editor.state.tr.setMeta('bulletMethodDisplay', { enabled: true, replaceBullets: false, dimmedStatusesEnabled: false }));
+  expect(colors()).toEqual(['green', 'blue', null, null]);
+  expect(editor.view.dom.querySelector('[data-bullet-method-completed], button')).toBeNull();
+  editor.view.dispatch(editor.state.tr.setMeta(bulletMethodMarkersKey, statuses.map(status => ({ ...status, color: null }))));
+  expect(colors()).toEqual([null, null, null, null]);
+  expect(editor.view.dom.querySelector('[style*="--bullet-status-color"]')).toBeNull();
+  editor.view.dispatch(editor.state.tr.setMeta(bulletMethodMarkersKey, statuses).setMeta('bulletMethodDisplay', { enabled: false, replaceBullets: true }));
+  expect(colors()).toEqual([null, null, null, null]);
+  expect(editor.getHTML()).toBe(before);
+});
+
+it("updates color on status edits, click cycling, and undo", () => {
+  const editor = make('<ul><li><p>TODO: Task</p></li></ul>');
+  editor.view.dispatch(editor.state.tr.setMeta(bulletMethodMarkersKey, defaultBulletMethodStatuses.map(status => ({ ...status,
+    color: status.id === 'todo' ? 'red' : status.id === 'in-progress' ? 'blue' : null,
+  }))));
+  const color = () => editor.view.dom.querySelector('li')!.getAttribute('data-bullet-method-color');
+  expect(color()).toBe('red');
+  editor.view.dom.querySelector<HTMLButtonElement>('.bullet-method-marker-button')!.click();
+  expect(color()).toBe('blue');
+  editor.commands.undo();
+  expect(color()).toBe('red');
+  editor.view.dispatch(closeHistory(editor.state.tr));
+  editor.commands.deleteRange({ from: 3, to: 8 });
+  expect(color()).toBeNull();
+  editor.commands.undo();
+  expect(color()).toBe('red');
+});
+
 it("keeps every status marker when a selected group is indented and outdented", () => {
   const editor = make(markdownToHtml('- **TODO:** Do something about Suffolk report (bad owner_id)\n- **TODO:** Merge\n- **TODO:** Deploy to dev\n- **TODO:** Deploy to prod'));
   editor.commands.setTextSelection({ from: textPosition(editor, 'Merge') - 6, to: textPosition(editor, 'Deploy to prod') + 'Deploy to prod'.length });

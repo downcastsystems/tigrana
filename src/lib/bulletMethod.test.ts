@@ -3,6 +3,18 @@ import { beforeEach, describe, expect, it } from "vitest";
 import { firstBulletMethodStatus, nextBulletMethodStatus, statusBolds, statusCycles, statusDims, bulletMethodDimPercent, bulletMethodDisplayKey, defaultBulletMethodDisplay, readBulletMethodDisplay, writeBulletMethodDisplay, bulletMethodRank, bulletMethodSettingsKey, defaultBulletMethodStatuses, readBulletMethodStatuses, validateBulletMethodStatuses, writeBulletMethodStatuses } from "./bulletMethod";
 
 beforeEach(() => localStorage.clear());
+it("persists palette colors and accepts legacy or reset colors", () => {
+  const statuses = defaultBulletMethodStatuses.map(status => ({ ...status, color: status.id === 'done' ? 'green' : null }));
+  writeBulletMethodStatuses(statuses);
+  expect(readBulletMethodStatuses()).toEqual(statuses);
+  writeBulletMethodStatuses(defaultBulletMethodStatuses);
+  expect(readBulletMethodStatuses().every(status => status.color == null)).toBe(true);
+  for (const color of ['invalid', '#ff0000', 'var(--text)', 42, {}]) {
+    const invalid = statuses.map(status => ({ ...status, color })) as typeof statuses;
+    expect(validateBulletMethodStatuses(invalid)).toContain('supported text color');
+    expect(() => writeBulletMethodStatuses(invalid)).toThrow();
+  }
+});
 describe("shared sort and cycle order", () => {
   it("sorts downward and cycles upward, wrapping in both directions", () => {
     expect(defaultBulletMethodStatuses.map(s => s.prefix)).toEqual(["CLOSED", "DONE", "IN PROGRESS", "TODO", "QUESTION", null]);

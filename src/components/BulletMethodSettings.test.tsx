@@ -4,11 +4,73 @@ import { createRoot } from "react-dom/client";
 import { expect, it, vi } from "vitest";
 import Settings from "./BulletMethodSettings";
 import { defaultBulletMethodStatuses, type BulletMethodStatus } from "../lib/bulletMethod";
+import { inlineColors } from "../lib/inlineColors";
 // Existing configuration tests exercise the enabled controls.
 function BulletMethodSettings(props: ComponentProps<typeof Settings>) {
   return <Settings {...props} display={{ replaceBullets: true, ...props.display, enabled: true }} />;
 }
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
+
+it.each(['light', 'dark'] as const)("saves a status palette color in %s mode, resets it, and restores defaults", async colorMode => {
+  const host = document.createElement('div'); document.body.append(host);
+  const root = createRoot(host), saved = vi.fn();
+  function Harness() {
+    const [statuses, setStatuses] = useState<readonly BulletMethodStatus[]>(defaultBulletMethodStatuses);
+    return <BulletMethodSettings statuses={statuses} onChange={next => { saved(next); setStatuses(next); }} colorMode={colorMode} />;
+  }
+  const trigger = () => host.querySelector<HTMLButtonElement>('[aria-label^="Text color for DONE:"]')!;
+  const menu = () => document.querySelector<HTMLElement>('[role="menu"][aria-label="Text color for DONE"]')!;
+  const choose = async (label: string) => {
+    await act(async () => trigger().click());
+    await act(async () => [...menu().querySelectorAll('button')].find(button => button.textContent === `A${label}`)!.click());
+  };
+  try {
+    await act(async () => root.render(<Harness />));
+    expect(trigger().getAttribute('aria-label')).toContain('Theme default');
+    expect(host.querySelector('[aria-label="Text color unavailable for No status"]')).not.toBeNull();
+    await act(async () => trigger().click());
+    expect([...menu().querySelectorAll('button')].map(button => button.textContent?.replace(/^A/, ''))).toEqual(['Theme default', ...inlineColors.map(color => color.label)]);
+    expect(document.activeElement?.getAttribute('aria-checked')).toBe('true');
+    const green = [...menu().querySelectorAll('button')].find(button => button.textContent === 'AGreen')!;
+    expect(green.querySelector<HTMLElement>('span')!.style.color).toBe(colorMode === 'dark' ? 'rgb(158, 214, 173)' : 'rgb(39, 99, 67)');
+    await act(async () => green.click());
+    expect(menu()).toBeNull();
+    expect(document.activeElement).toBe(trigger());
+    expect(saved.mock.lastCall![0].find((status: BulletMethodStatus) => status.id === 'done')).toMatchObject({ color: 'green' });
+    expect(host.querySelector<HTMLInputElement>('[aria-label="Dim DONE"]')!.checked).toBe(true);
+    await choose('Theme default');
+    expect(saved.mock.lastCall![0].find((status: BulletMethodStatus) => status.id === 'done').color).toBeNull();
+    await choose('Red');
+    await act(async () => [...host.querySelectorAll('button')].find(button => button.textContent?.includes('Restore defaults'))!.click());
+    expect(trigger().getAttribute('aria-label')).toContain('Theme default');
+    expect(saved.mock.lastCall![0]).toEqual(defaultBulletMethodStatuses);
+  } finally { await act(async () => root.unmount()); host.remove(); }
+});
+
+it("supports color palette keyboard navigation, Escape, and outside dismissal", async () => {
+  const host = document.createElement('div'); document.body.append(host);
+  const root = createRoot(host), saved = vi.fn();
+  const key = async (target: Element, key: string) => act(async () => { target.dispatchEvent(new KeyboardEvent('keydown', { key, bubbles: true })); });
+  try {
+    await act(async () => root.render(<BulletMethodSettings statuses={defaultBulletMethodStatuses} onChange={saved} />));
+    const trigger = host.querySelector<HTMLButtonElement>('[aria-label="Text color for DONE: Theme default"]')!;
+    await key(trigger, 'ArrowDown');
+    const menu = document.querySelector<HTMLElement>('[role="menu"][aria-label="Text color for DONE"]')!;
+    await key(menu, 'End');
+    expect(document.activeElement?.textContent).toBe('ARed');
+    await key(menu, 'ArrowDown');
+    expect(document.activeElement?.textContent).toBe('ATheme default');
+    await key(menu, 'ArrowDown');
+    expect(document.activeElement?.textContent).toBe('AGray');
+    await key(menu, 'Escape');
+    expect(document.activeElement).toBe(trigger);
+    expect(document.querySelector('.bullet-method-color-menu')).toBeNull();
+    await act(async () => trigger.click());
+    await act(async () => document.body.dispatchEvent(new Event('pointerdown', { bubbles: true })));
+    expect(document.querySelector('.bullet-method-color-menu')).toBeNull();
+    expect(saved).not.toHaveBeenCalled();
+  } finally { await act(async () => root.unmount()); host.remove(); }
+});
 
 it("connects shortcut errors to their fields and clears them when corrected", async () => {
   const host = document.createElement("div"); document.body.append(host);
